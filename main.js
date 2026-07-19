@@ -864,6 +864,35 @@ float slabNoise(vec2 p){
   // y≈-1..-0.42 — a slab at street level buried them (and all their clutter)
   slab.position.y = SAFETY_FLOOR_Y - 0.01;
   scene.add(slab);
+
+  // Visual cue for deliberate slab openings: without border markers the floor
+  // can read as perfectly flat until the player steps into a lower level.
+  const edgeW = 0.22;
+  const edgeH = 1.15;
+  const edgeY = SAFETY_FLOOR_Y + edgeH * 0.5 - 0.01;
+  const edgeMat = new THREE.MeshBasicMaterial({ color: 0xffd84a });
+  const stripeMat = new THREE.MeshBasicMaterial({ color: 0x151515 });
+  const makeEdge = (sx, sz, x, z, stripe = false) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(sx, edgeH, sz), stripe ? stripeMat : edgeMat);
+    m.position.set(x, edgeY, z);
+    scene.add(m);
+  };
+  for (const h of SAFETY_FLOOR_HOLES) {
+    const w = h.x1 - h.x0;
+    const d = h.z1 - h.z0;
+    const cx = (h.x0 + h.x1) / 2;
+    const cz = (h.z0 + h.z1) / 2;
+    // Outer band: bright curb.
+    makeEdge(w + edgeW * 2, edgeW, cx, h.z0 - edgeW * 0.5);
+    makeEdge(w + edgeW * 2, edgeW, cx, h.z1 + edgeW * 0.5);
+    makeEdge(edgeW, d + edgeW * 2, h.x0 - edgeW * 0.5, cz);
+    makeEdge(edgeW, d + edgeW * 2, h.x1 + edgeW * 0.5, cz);
+    // Inner band: dark stripe to read as a warning mark, not a random prop.
+    makeEdge(w + 0.06, 0.06, cx, h.z0 - 0.03, true);
+    makeEdge(w + 0.06, 0.06, cx, h.z1 + 0.03, true);
+    makeEdge(0.06, d + 0.06, h.x0 - 0.03, cz, true);
+    makeEdge(0.06, d + 0.06, h.x1 + 0.03, cz, true);
+  }
 }
 // frame a district: stand back from its centroid and look at it
 function frameView(c, back = 55, up = 9, lookUp = 3) {
@@ -1030,6 +1059,20 @@ import { Input } from './input.js?v=3';
   };
   const _bm = new THREE.Matrix4();
   const _bc = new THREE.Vector3();
+  // Authored vehicles mark intentional open space: the pack parks them in
+  // covered nooks under building overhangs, and a plinth extruded down over
+  // one buries it in concrete (the Quadron at the tow-away pad). Collect
+  // their world AABBs and refuse any podium whose footprint touches one.
+  const VEH_RE = /^CP_(Quadron|Taxi|Minivan)$/;
+  const vehBoxes = [];
+  for (const im of world.children) {
+    if (!im.isInstancedMesh || !VEH_RE.test(im.userData.prefab || '')) continue;
+    if (!im.geometry.boundingBox) im.geometry.computeBoundingBox();
+    for (let i = 0; i < im.count; i++) {
+      im.getMatrixAt(i, _bm);
+      vehBoxes.push(new THREE.Box3().copy(im.geometry.boundingBox).applyMatrix4(_bm));
+    }
+  }
   const pods = [];
   for (const im of [...world.children]) {
     if (!im.isInstancedMesh) continue;
@@ -1075,6 +1118,11 @@ import { Input } from './input.js?v=3';
       // (fences, crates) read as random gray blocks, worse than the gap itself
       if (depth < 2.2 || depth > 80) continue;
       if (!(Math.max(fx, fz) > 8 || depth > 5 || (y1 - y0) > 8)) continue;
+      // a parked vehicle inside the would-be plinth volume = covered nook,
+      // not a hanging void — leave it open
+      if (vehBoxes.some(vb => vb.max.x > x0 && vb.min.x < x1 &&
+                              vb.max.z > z0 && vb.min.z < z1 &&
+                              vb.min.y < y0)) continue;
       pods.push({ cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, sx: Math.max(fx * 0.96, 0.4),
                   sz: Math.max(fz * 0.96, 0.4), top: y0 + 0.08, depth });
     }
@@ -1183,8 +1231,10 @@ function groundAt(x, z, yFrom, feetY = yFrom - 3, prevY = feetY) {
   // bypasses the safety floor and the player sinks through the rendered slab.
   // Only the authored slab openings are allowed to expose lower geometry.
   const needsSafetyFloor = best === null || best < SAFETY_FLOOR_Y - 0.08;
-  if (needsSafetyFloor && insideSafetyFloor(x, z) &&
-      feetY > SAFETY_FLOOR_Y - 3.6) {
+    // Also check prevY: on a long frame the feet can jump across the 3.6 m
+    // activation band in one step and miss the slab entirely.
+    if (needsSafetyFloor && insideSafetyFloor(x, z) &&
+      (feetY > SAFETY_FLOOR_Y - 3.6 || prevY > SAFETY_FLOOR_Y - 3.6)) {
     // the pack's giant photo-carpet planes render ABOVE the slab; stand ON
     // the picture, not 24 cm inside it (they are plain Meshes — no raycast)
     for (const r of matteRects)

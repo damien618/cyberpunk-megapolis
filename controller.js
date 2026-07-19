@@ -437,9 +437,29 @@ export class Controller {
     // land only when we actually crossed the surface from above this frame, or
     // it's a small step-up — otherwise walking/swinging UNDER a low canopy or
     // walkway teleports you onto its roof (the down-ray sees its top as "ground")
+    const deepPenetration = gh !== null && this.vel.y <= 0 && this.pos.y < gh - 0.9;
     if (gh !== null && this.pos.y < gh && this.vel.y <= 0 &&
-        (this.prevY + 0.3 >= gh || gh - this.pos.y < 0.55)) {
+        (this.prevY + 0.3 >= gh || gh - this.pos.y < 0.55 || deepPenetration)) {
       this.land(gh);
+    }
+
+    // unbury (ground mode only): feet stuck inside street-level geometry —
+    // dropped through a tile seam onto the safety floor with the real street
+    // ~1.2 m overhead, or walked into the side of a raised box-less road
+    // plate. groundFn's canopy cap (feetY + 0.55) hides that surface from the
+    // normal query above, so probe again with virtual feet 0.9 m higher: a
+    // surface 0.55–1.45 m above the real feet can never be walked under (the
+    // body is 1.8 m tall), so snap up onto it. Ground mode only — air/swing
+    // paths grazing beneath a walkway must keep passing under it. Throttled:
+    // burial recovery doesn't need frame precision and groundFn probes are
+    // not free.
+    this._unburyT = (this._unburyT || 0) + dt;
+    if (this.mode === 'ground' && this._unburyT > 0.15) {
+      this._unburyT = 0;
+      const bh = this.groundFn(this.pos.x, this.pos.z, this.pos.y + 3,
+                               this.pos.y + 0.9, this.pos.y + 0.9);
+      if (bh !== null && bh - this.pos.y > 0.55 && bh - this.pos.y < 1.45)
+        this.land(bh);
     }
 
     this.resolveWalls(dt);
