@@ -1436,6 +1436,7 @@ function animate() {
     camera.lookAt(cx - 130, 322, cz + 8);               // down the street, horizon high in frame
     for (const g in players) players[g].mixer?.update(dt);
   } else {
+    if (phase === 'play') input.updateLook(dt);
     rig.forward(camDir, input);
     if (phase === 'play') ctrl.update(dt, input, input.yaw, camDir);
     if (chosen) {

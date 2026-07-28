@@ -13,7 +13,8 @@ export class Input {
       if (e.repeat) return;            // OS auto-repeat would spam jumps/webs
       this.keys.add(e.code);
       this.justPressed.add(e.code);
-      if (['Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) e.preventDefault();
+      if (['Space', 'KeyW', 'KeyA', 'KeyS', 'KeyD',
+           'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
@@ -40,6 +41,17 @@ export class Input {
   down(code) { return this.keys.has(code); }
   pressed(code) { return this.justPressed.has(code); }
   endFrame() { this.justPressed.clear(); }
+
+  // arrow-key look: stands in for the mouse when pointer lock isn't available
+  // (no mouse, or the browser/embedding refuses to grant the lock)
+  updateLook(dt) {
+    const yawSpeed = 1.8, pitchSpeed = 1.2;
+    if (this.down('ArrowLeft')) this.yaw += yawSpeed * dt;
+    if (this.down('ArrowRight')) this.yaw -= yawSpeed * dt;
+    if (this.down('ArrowUp')) this.pitch += pitchSpeed * dt;
+    if (this.down('ArrowDown')) this.pitch -= pitchSpeed * dt;
+    this.pitch = Math.max(-1.25, Math.min(1.35, this.pitch));
+  }
 
   // camera-relative movement vector from WASD, on the XZ plane
   moveVector(out) {
