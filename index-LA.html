@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Cyberpunk Megapolis — Villa LA</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<style>
+  :root {
+    --fg: #f1f4ff;
+    --muted: #b8bfd1;
+    --accent: #5fd7ff;
+    --bg: #070c12;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); }
+  body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+  #app { position: fixed; inset: 0; }
+  #overlay {
+    position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 65% 30%, rgba(95, 215, 255, 0.15), rgba(5, 8, 15, 0.95) 60%);
+  }
+  #panel {
+    width: min(680px, 90vw);
+    border: 1px solid rgba(125, 165, 255, 0.35);
+    border-radius: 14px;
+    background: rgba(9, 14, 25, 0.65);
+    backdrop-filter: blur(4px);
+    padding: 28px;
+  }
+  #panel h1 { font-size: clamp(24px, 4vw, 42px); letter-spacing: 0.02em; margin-bottom: 12px; }
+  #panel p { color: var(--muted); line-height: 1.7; margin-bottom: 14px; }
+  #panel .tag {
+    display: inline-block; font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 14px;
+  }
+  #startBtn {
+    margin-top: 16px; padding: 12px 28px; border-radius: 9px; border: 1px solid rgba(95, 215, 255, 0.55);
+    color: #eaffff; background: linear-gradient(90deg, rgba(95, 215, 255, 0.35), rgba(160, 116, 255, 0.28));
+    cursor: pointer; font: inherit; letter-spacing: 0.16em; text-transform: uppercase;
+  }
+  #hud {
+    position: fixed; left: 14px; bottom: 14px; z-index: 8; font-size: 12px; line-height: 1.55;
+    background: rgba(6, 10, 19, 0.5); border: 1px solid rgba(121, 149, 220, 0.32); border-radius: 10px;
+    padding: 10px 12px; color: #dbe5ff; pointer-events: none;
+  }
+  #hud b { color: var(--accent); }
+  #crosshair {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6;
+    width: 14px; height: 14px; pointer-events: none;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ""; position: absolute; background: rgba(215, 245, 255, 0.8);
+  }
+  #crosshair::before { left: 6px; top: 0; width: 2px; height: 14px; }
+  #crosshair::after { left: 0; top: 6px; width: 14px; height: 2px; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three/three.module.js",
+  "three/addons/": "./vendor/addons/"
+}}
+</script>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="overlay">
+    <div id="panel">
+      <span class="tag">Nouvelle map</span>
+      <h1>Villa luxueuse — Los Angeles</h1>
+      <p>Map jouable avec les mécaniques de déplacement du projet (saut, swing, zip, course).</p>
+      <p>Contrôles: <b>WASD</b> se déplacer, <b>Space</b> sauter / tenir pour tirer la toile, <b>E</b> zip, <b>Shift</b> sprint, <b>R</b> reset.</p>
+      <button id="startBtn">Entrer dans la villa</button>
+    </div>
+  </div>
+  <div id="crosshair"></div>
+  <div id="hud">Mode: <b id="mode">air</b> · Vitesse: <b id="speed">0</b> km/h · Hauteur: <b id="height">0</b> m</div>
+  <script type="module" src="./main-LA.js?v=202607281513"></script>
+</body>
+</html>
