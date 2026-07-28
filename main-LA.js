@@ -1510,6 +1510,11 @@ await player.load('girl', girlMatFor);
 
 const forward = new THREE.Vector3();
 const clock = new THREE.Clock();
+// game logic must not depend on pointer lock (headless/automated preview can't lock):
+// `started` drives ctrl.update unconditionally; `paused` only engages once a real
+// lock has actually been used and then dropped (e.g. Escape), so a normal desktop
+// player still gets the expected pause-on-unlock behaviour.
+let started = false, usedLock = false, paused = false;
 
 function updateAvatar(dt) {
   if (!player) return;
@@ -1563,7 +1568,8 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.033, clock.getDelta());
 
-  if (input.locked) {
+  if (started && !paused) {
+    input.updateLook(dt);
     const cp = Math.cos(input.pitch);
     forward.set(-Math.sin(input.yaw) * cp, Math.sin(input.pitch), -Math.cos(input.yaw) * cp).normalize();
     ctrl.update(dt, input, input.yaw, forward);
@@ -1597,11 +1603,16 @@ animate();
 
 startBtn.addEventListener('click', () => {
   overlay.style.display = 'none';
+  started = true;
+  paused = false;
   renderer.domElement.requestPointerLock();
 });
 
 document.addEventListener('pointerlockchange', () => {
-  if (!input.locked) overlay.style.display = 'flex';
+  usedLock = usedLock || document.pointerLockElement !== null;
+  if (!usedLock) return;
+  paused = !input.locked;
+  overlay.style.display = paused ? 'flex' : 'none';
 });
 
 window.addEventListener('resize', () => {
