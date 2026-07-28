@@ -4,6 +4,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=3';
 import { CameraRig } from './cameraRig.js?v=3';
 import { buildCityBoxes } from './cityBoxes.js?v=3';
+import { buildCar, carBounds, rollCars } from './cars.js?v=1';
 
 // ---------------------------------------------------------------------------
 // Villa LA — single-storey modern California estate, laid out like the hillside
@@ -323,6 +324,10 @@ const M = {
   lampShade: new THREE.MeshStandardMaterial({
     color: 0xfff6e2, emissive: 0xffe6b8, emissiveIntensity: 0.85, roughness: 0.85
   }),
+  // Invisible proxy: cars are lofted meshes, but cityBoxes only derives AABBs
+  // from InstancedMeshes, so each parked car also emits one box through the kit.
+  // An invisible material is skipped by the shadow pass too, so it casts none.
+  collider: new THREE.MeshBasicMaterial({ visible: false }),
 };
 
 const world = new THREE.Group();
@@ -922,14 +927,15 @@ function hedge(x0, x1, z0, z1, h = 1.5) {
     shape(G.blob, M.hedge, x, h - 0.05, z, 1.35, 0.55, Math.abs(along ? z1 - z0 : x1 - x0) * 0.95);
   }
 }
-function car(color) {
-  const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.6 });
-  box(paint, 0, 0.72, 0, 4.5, 0.62, 1.9);
-  box(paint, -0.15, 1.16, 0, 2.5, 0.3, 1.78);
-  box(M.glass, -0.15, 1.24, 0, 2.2, 0.44, 1.62);
-  box(M.black, 0, 0.42, 0, 4.3, 0.3, 1.94);
-  for (const [dx, dz] of [[-1.45, -0.92], [1.45, -0.92], [-1.45, 0.92], [1.45, 0.92]])
-    shape(G.cyl, M.black, dx, 0.36, dz, 0.72, 0.28, 0.72, { rz: Math.PI / 2 });
+// A parked car is a real lofted mesh in `world` (so the player can raycast onto
+// its roof) plus one invisible kit box so the AABB collider still sees it.
+function parkCar(type, color, x, z, ry, ground, opts) {
+  const mesh = buildCar(type, color, opts);
+  mesh.position.set(x, ground, z);
+  mesh.rotation.y = ry;
+  world.add(mesh);
+  const b = carBounds(type);
+  frame(x, z, ry, () => box(M.collider, 0, ground + b.height / 2, 0, b.length, b.height, b.width));
 }
 
 // ---------------------------------------------------------------------------
@@ -1190,8 +1196,8 @@ for (let i = 0; i < 6; i++) {
   slab(M.stuccoWarm, 19.2, 23.4, 15.9, 16.02, 0.4 + i * 0.44, 0.46 + i * 0.44);
   slab(M.stuccoWarm, 24.6, 28.8, 15.9, 16.02, 0.4 + i * 0.44, 0.46 + i * 0.44);
 }
-frame(4.5, 26.5, Math.PI / 2, () => car(0x1d222a));
-frame(-6.0, 27.5, Math.PI / 2 + 0.25, () => car(0xb8bec6));
+parkCar('coupe', 0x1b2b4d, 4.5, 26.5, Math.PI / 2, 0.15);
+parkCar('suv', 0xb8bec6, -6.0, 27.5, Math.PI / 2 + 0.25, 0.15, { metallic: false });
 
 // Entry reflecting pool + stepping stones
 slab(M.marbleDark, 4.2, 7.6, 13.2, 19.2, -0.6, FLOOR - 0.3);
@@ -1419,33 +1425,13 @@ scene.add(fireLight);
 // ---------------------------------------------------------------------------
 // Traffic on the street
 // ---------------------------------------------------------------------------
-function buildCar(color = 0xff4444) {
-  const g = new THREE.Group();
-  const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.32, metalness: 0.6 });
-  const body = new THREE.Mesh(withUV2(new THREE.BoxGeometry(4.4, 0.66, 1.9)), paint);
-  body.position.y = 0.74;
-  body.castShadow = true;
-  g.add(body);
-  const cabin = new THREE.Mesh(withUV2(new THREE.BoxGeometry(2.3, 0.56, 1.72)),
-    new THREE.MeshPhysicalMaterial({ color: 0x9fc1e8, roughness: 0.08, metalness: 0.1, transmission: 0.6, transparent: true, opacity: 0.75 }));
-  cabin.position.set(-0.2, 1.3, 0);
-  g.add(cabin);
-  const wheelGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.26, 12);
-  for (const [dx, dz] of [[-1.4, -0.9], [1.4, -0.9], [-1.4, 0.9], [1.4, 0.9]]) {
-    const w = new THREE.Mesh(wheelGeo, M.black);
-    w.rotation.x = Math.PI / 2;
-    w.position.set(dx, 0.36, dz);
-    g.add(w);
-  }
-  return g;
-}
 const traffic = [
-  { mesh: buildCar(0xd6604a), x: -180, z: 69.5, speed: 13.5, dir: 1 },
-  { mesh: buildCar(0x3f4f66), x: -60, z: 69.5, speed: 11.0, dir: 1 },
-  { mesh: buildCar(0xe8e4dc), x: 70, z: 69.5, speed: 12.6, dir: 1 },
-  { mesh: buildCar(0x2f3336), x: 170, z: 76.5, speed: 12.0, dir: -1 },
-  { mesh: buildCar(0x9aa7b4), x: 30, z: 76.5, speed: 10.2, dir: -1 },
-  { mesh: buildCar(0xc8b273), x: -110, z: 76.5, speed: 14.2, dir: -1 },
+  { mesh: buildCar('coupe', 0xa8231c), x: -180, z: 69.5, speed: 15.5, dir: 1 },
+  { mesh: buildCar('suv', 0x1b1d21, { metallic: false }), x: -60, z: 69.5, speed: 11.0, dir: 1 },
+  { mesh: buildCar('sedan', 0xeae7e0, { metallic: false }), x: 70, z: 69.5, speed: 12.6, dir: 1 },
+  { mesh: buildCar('sedan', 0x27303e), x: 170, z: 76.5, speed: 12.0, dir: -1 },
+  { mesh: buildCar('coupe', 0x93a0ad), x: 30, z: 76.5, speed: 13.8, dir: -1 },
+  { mesh: buildCar('suv', 0x5f6b57), x: -110, z: 76.5, speed: 11.4, dir: -1 },
 ];
 for (const c of traffic) {
   c.mesh.position.set(c.x, 0.02, c.z);
@@ -1599,6 +1585,7 @@ function animate() {
     if (c.dir > 0 && c.mesh.position.x > 200) c.mesh.position.x = -200;
     if (c.dir < 0 && c.mesh.position.x < -200) c.mesh.position.x = 200;
   }
+  rollCars(traffic, dt);
 
   updateAvatar(dt);
   rig.update(dt, input, ctrl);
