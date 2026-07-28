@@ -2,8 +2,17 @@
 <html lang="zh">
 <head>
 <meta charset="utf-8">
+<script>
+  document.documentElement.dataset.mode =
+    new URLSearchParams(location.search).get('map') === 'la' ? 'la' : 'menu';
+  if (document.documentElement.dataset.mode === 'la')
+    document.title = 'Cyberpunk Megapolis — Villa LA';
+</script>
 <title>Cyberpunk Megapolis — Web-Swing Edition</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0c10'/%3E%3Cpath d='M6 26 L16 4 L26 26' fill='none' stroke='%235ff' stroke-width='2.4'/%3E%3Ccircle cx='16' cy='20' r='3' fill='%23ff4fd8'/%3E%3C/svg%3E">
 <style>
   @font-face {
@@ -18,6 +27,7 @@
     --pink: #ff4fd8;
     --ink: #eef1f8;
     --dim: #8b93a8;
+    --la-accent: #5fd7ff;
     --mono: 'Geist Mono', ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -61,7 +71,7 @@
   #menuCol { position: absolute; left: clamp(40px, 7vw, 120px); top: 0; bottom: 0;
     display: flex; flex-direction: column; justify-content: center;
     min-width: 320px; max-width: 480px; }
-  #brand .kicker { font-size: 11px; font-weight: 300; letter-spacing: .52em;
+  .kicker { font-size: 11px; font-weight: 300; letter-spacing: .52em;
     color: #93a8e8; text-transform: uppercase; margin-bottom: 14px; }
   #brand h1 { font-weight: 800; font-size: clamp(36px, 4.4vw, 60px);
     letter-spacing: -0.02em; line-height: 1.02; color: var(--ink);
@@ -84,17 +94,34 @@
     text-transform: uppercase; }
   .m-name { font-size: 16.5px; letter-spacing: .18em; text-transform: uppercase; }
   .m-desc { font-size: 10.5px; font-weight: 300; color: var(--dim); letter-spacing: .04em; }
-  #enterBtn { margin-top: 36px; align-self: flex-start; padding: 13px 44px;
+  .enter-btn { margin-top: 36px; align-self: flex-start; padding: 13px 44px;
     font-size: 14px; letter-spacing: .35em; text-transform: uppercase;
     color: #466; border: 1px solid #1f3346; border-radius: 6px; cursor: not-allowed;
     transition: all .25s; }
-  #enterBtn.ready { color: #042; background: linear-gradient(90deg, #0ff3, #0ff1);
+  .enter-btn.ready { color: #042; background: linear-gradient(90deg, #0ff3, #0ff1);
     border-color: var(--cyan); cursor: pointer; text-shadow: 0 0 8px #0ff;
     box-shadow: 0 0 26px #0ff4; }
-  #enterBtn.ready:hover { background: linear-gradient(90deg, #0ff6, #0ff3); }
+  .enter-btn.ready:hover { background: linear-gradient(90deg, #0ff6, #0ff3); }
   #menuFoot { position: absolute; bottom: 30px; left: 0;
     font-size: 10.5px; font-weight: 300; letter-spacing: .22em;
     color: #707a92; text-transform: uppercase; text-shadow: 0 1px 8px rgba(0,0,0,.9); }
+
+  /* ---------- menu (right corner, Chilling in L.A.) ---------- */
+  #menuColLA { position: absolute; right: clamp(40px, 7vw, 120px); top: 0; bottom: 0;
+    display: flex; flex-direction: column; justify-content: center; align-items: flex-end; }
+  .la-panel { background: rgba(9,14,25,0.55); border: 1px solid rgba(125,165,255,0.3);
+    border-radius: 14px; padding: 26px 32px; backdrop-filter: blur(4px);
+    display: flex; flex-direction: column; align-items: flex-end; text-align: right;
+    min-width: 260px; max-width: 340px; }
+  .la-panel h2 { font-weight: 800; font-size: clamp(22px, 2.6vw, 32px);
+    letter-spacing: -0.01em; line-height: 1.05; color: var(--ink);
+    text-shadow: 0 2px 22px rgba(0,0,0,.85); }
+  .la-panel .accent-la { color: var(--la-accent); text-shadow: 0 0 24px rgba(95,215,255,.45); }
+  #brandRuleLA { margin-top: 18px; width: 64px; height: 1px;
+    background: linear-gradient(270deg, var(--la-accent), transparent); }
+  .la-card { margin-top: 26px; display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
+  .la-card .m-name { color: var(--la-accent); text-shadow: 0 0 12px rgba(95,215,255,.4); }
+  #enterBtnLA { align-self: flex-end; }
 
   /* ---------- pause ---------- */
   #pause { position: fixed; inset: 0; z-index: 19; display: flex;
@@ -107,7 +134,7 @@
     text-transform: uppercase; margin-bottom: 10px; }
   #pause .p-sub { font-size: 11px; letter-spacing: .2em; color: var(--dim); }
 
-  /* ---------- in-game HUD ---------- */
+  /* ---------- in-game HUD (cyberpunk) ---------- */
   #stats { position: fixed; left: 22px; bottom: 20px; z-index: 10; display: flex; gap: 10px;
     opacity: 0; transition: opacity .6s; pointer-events: none; }
   #stats.on { opacity: 1; }
@@ -140,6 +167,60 @@
     color: var(--cyan); border: 1px solid rgba(95,255,255,0.5); border-radius: 6px;
     padding: 10px 26px; background: rgba(95,255,255,0.06); cursor: pointer; }
   #errOv .e-btn:hover { background: rgba(95,255,255,0.14); box-shadow: 0 0 14px #5ff4; }
+
+  /* ---------- L.A. villa intro overlay + HUD ---------- */
+  #overlay {
+    position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 65% 30%, rgba(95, 215, 255, 0.15), rgba(5, 8, 15, 0.95) 60%);
+  }
+  #panel {
+    width: min(680px, 90vw);
+    border: 1px solid rgba(125, 165, 255, 0.35);
+    border-radius: 14px;
+    background: rgba(9, 14, 25, 0.65);
+    backdrop-filter: blur(4px);
+    padding: 28px;
+  }
+  #panel h1 { font-size: clamp(24px, 4vw, 42px); letter-spacing: 0.02em; margin-bottom: 12px; }
+  #panel p { color: var(--dim); line-height: 1.7; margin-bottom: 14px; }
+  #panel .tag {
+    display: inline-block; font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--la-accent); margin-bottom: 14px;
+  }
+  #startBtn {
+    margin-top: 16px; padding: 12px 28px; border-radius: 9px; border: 1px solid rgba(95, 215, 255, 0.55);
+    color: #eaffff; background: linear-gradient(90deg, rgba(95, 215, 255, 0.35), rgba(160, 116, 255, 0.28));
+    cursor: pointer; font: inherit; letter-spacing: 0.16em; text-transform: uppercase;
+  }
+  #hud {
+    position: fixed; left: 14px; bottom: 14px; z-index: 8; font-size: 12px; line-height: 1.55;
+    background: rgba(6, 10, 19, 0.5); border: 1px solid rgba(121, 149, 220, 0.32); border-radius: 10px;
+    padding: 10px 12px; color: #dbe5ff; pointer-events: none;
+  }
+  #hud b { color: var(--la-accent); }
+  #crosshair {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6;
+    width: 14px; height: 14px; pointer-events: none;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ""; position: absolute; background: rgba(215, 245, 255, 0.8);
+  }
+  #crosshair::before { left: 6px; top: 0; width: 2px; height: 14px; }
+  #crosshair::after { left: 0; top: 6px; width: 14px; height: 2px; }
+
+  /* ---------- mode gate: only one engine's DOM is active at a time ---------- */
+  html:not([data-mode="la"]) #overlay,
+  html:not([data-mode="la"]) #crosshair,
+  html:not([data-mode="la"]) #hud { display: none !important; }
+
+  html[data-mode="la"] #loader,
+  html[data-mode="la"] #menu,
+  html[data-mode="la"] #pause,
+  html[data-mode="la"] #stats,
+  html[data-mode="la"] #fps,
+  html[data-mode="la"] #msg,
+  html[data-mode="la"] #fade,
+  html[data-mode="la"] #errOv { display: none !important; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -177,8 +258,20 @@
         <span class="m-desc">鸭舌帽 · 双肩背包</span>
       </button>
     </div>
-    <button id="enterBtn" disabled>Enter Game</button>
+    <button id="enterBtn" class="enter-btn" disabled>Enter Game</button>
     <div id="menuFoot">← → 选择 · Enter 开始</div>
+  </div>
+  <div id="menuColLA">
+    <div class="la-panel">
+      <div class="kicker">New Map</div>
+      <h2>CHILLING IN<br><span class="accent-la">L.A.</span></h2>
+      <div id="brandRuleLA"></div>
+      <div class="la-card">
+        <span class="m-tag">Runner 01</span>
+        <span class="m-name">California Girl</span>
+      </div>
+      <button id="enterBtnLA" class="enter-btn ready">Enter Game</button>
+    </div>
   </div>
 </div>
 <div id="pause">
@@ -202,6 +295,29 @@
     <button class="e-btn" id="errRetry">重新加载 · Retry</button>
   </div>
 </div>
-<script type="module" src="./main.js?v=6"></script>
+<div id="overlay">
+  <div id="panel">
+    <span class="tag">Nouvelle map</span>
+    <h1>Villa luxueuse — Los Angeles</h1>
+    <p>Villa californienne de plain-pied: cour d'entrée et bassin, séjour cathédrale ouvert sur la terrasse, cuisine ouverte avec îlot, suite parentale et chambre d'amis, garage. Côté canyon: piscine à débordement, spa, pergola, cuisine d'été et brasero.</p>
+    <p>Vous démarrez sur l'allée d'entrée: la porte est ouverte, la piscine est derrière la maison.</p>
+    <p>Contrôles: <b>WASD</b> se déplacer, <b>Space</b> sauter / tenir pour tirer la toile, <b>E</b> zip, <b>Shift</b> sprint, <b>R</b> reset.</p>
+    <button id="startBtn">Entrer dans la villa</button>
+  </div>
+</div>
+<div id="crosshair"></div>
+<div id="hud">Mode: <b id="mode">air</b> · Vitesse: <b id="speed">0</b> km/h · Hauteur: <b id="height">0</b> m</div>
+<script>
+  document.getElementById('enterBtnLA').addEventListener('click', () => {
+    location.href = 'index.html?map=la';
+  });
+</script>
+<script type="module">
+  if (document.documentElement.dataset.mode === 'la') {
+    import('./main-LA.js?v=202607282300');
+  } else {
+    import('./main.js?v=6');
+  }
+</script>
 </body>
 </html>
