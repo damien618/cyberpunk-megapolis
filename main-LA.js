@@ -283,6 +283,10 @@ const M = {
   marbleDark: new THREE.MeshStandardMaterial({ color: 0x3b3f45, roughness: 0.2, metalness: 0.05 }),
   cabinet: new THREE.MeshStandardMaterial({ color: 0xeceae4, roughness: 0.42, metalness: 0.03 }),
   steel: new THREE.MeshStandardMaterial({ color: 0xd3d8dd, roughness: 0.28, metalness: 0.78 }),
+  // Double-sided so the inside of the sink bowls reads as brushed steel.
+  steelIn: new THREE.MeshStandardMaterial({
+    color: 0xc4ccd3, roughness: 0.3, metalness: 0.72, side: THREE.DoubleSide
+  }),
   bronze: new THREE.MeshStandardMaterial({ color: 0x2e2c29, roughness: 0.36, metalness: 0.75 }),
   black: new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.42, metalness: 0.25 }),
   linen: new THREE.MeshStandardMaterial({ color: 0xf7f4ec, roughness: 0.93, metalness: 0.01 }),
@@ -397,6 +401,11 @@ const G = {
   blob: withUV2(new THREE.IcosahedronGeometry(0.5, 1)),
   cone: withUV2(new THREE.ConeGeometry(0.5, 1, 12).translate(0, 0.5, 0)),
   frond: withUV2(new THREE.ConeGeometry(0.22, 1, 4).translate(0, 0.5, 0)),
+  // Open-top tapered square tube: with a 45° yaw the section is axis-aligned,
+  // 1×1 at the rim and 0.7×0.7 at the base — the kitchen sink bowls.
+  bowl: withUV2(new THREE.CylinderGeometry(0.70711, 0.49497, 1, 4, 1, true).translate(0, 0.5, 0)),
+  // Half torus in the XY plane — the gooseneck bend of the kitchen faucets.
+  arc: withUV2(new THREE.TorusGeometry(0.14, 0.017, 10, 20, Math.PI)),
 };
 
 const kits = new Map();
@@ -821,18 +830,75 @@ function dresser(w = 1.7) {
   for (let i = 0; i < 3; i++)
     box(M.bronze, -w / 2 + w * (i + 0.5) / 3, F + 0.5, 0.27, 0.32, 0.03, 0.03);
 }
+// Slab with a rectangular hole, emitted as four boxes (back/front strips span
+// the full width, left/right fill the gaps beside the hole). Used to cut the
+// countertop and the cabinet top around the sink so the bowls show real depth.
+function holedTop(mat, cx, cy, cz, w, h, d, hcx, hcz, hw, hd) {
+  const x0 = cx - w / 2, z0 = cz - d / 2;
+  const hx0 = hcx - hw / 2, hx1 = hcx + hw / 2, hz0 = hcz - hd / 2, hz1 = hcz + hd / 2;
+  box(mat, cx, cy, (z0 + hz0) / 2, w, h, hz0 - z0);            // back strip
+  box(mat, cx, cy, (hz1 + z0 + d) / 2, w, h, z0 + d - hz1);    // front strip
+  box(mat, (x0 + hx0) / 2, cy, hcz, hx0 - x0, h, hd);          // left
+  box(mat, (hx1 + x0 + w) / 2, cy, hcz, x0 + w - hx1, h, hd);  // right
+}
+// Inset double-bowl sink. The counter and cabinet are cut by the caller around
+// a 0.96×0.54 opening, so the tapered steel bowls genuinely descend below the
+// countertop. `top` is the counter surface height; the faucet deck is at -Z.
+function detailedKitchenSink(x, z, top, { drainer = false, faucetOffsetX = 0.02 } = {}) {
+  const HW = 0.96, HD = 0.54;                                    // cutout size
+  // Slim topmount flange framing the cutout.
+  box(M.steel, x, top + 0.003, z - HD / 2 - 0.014, HW + 0.056, 0.006, 0.028);
+  box(M.steel, x, top + 0.003, z + HD / 2 + 0.014, HW + 0.056, 0.006, 0.028);
+  box(M.steel, x - HW / 2 - 0.014, top + 0.003, z, 0.028, 0.006, HD - 0.028);
+  box(M.steel, x + HW / 2 + 0.014, top + 0.003, z, 0.028, 0.006, HD - 0.028);
+  // Dark reveal just inside the cutout — the undermount shadow gap.
+  box(M.black, x, top - 0.008, z - HD / 2 + 0.03, HW, 0.016, 0.06);
+  box(M.black, x, top - 0.008, z + HD / 2 - 0.03, HW, 0.016, 0.06);
+  box(M.black, x - HW / 2 + 0.03, top - 0.008, z, 0.06, 0.016, HD - 0.12);
+  box(M.black, x + HW / 2 - 0.03, top - 0.008, z, 0.06, 0.016, HD - 0.12);
+  for (const bx of [-0.23, 0.23]) {
+    const cx = x + bx;
+    shape(G.bowl, M.steelIn, cx, top - 0.19, z, 0.42, 0.19, 0.46, { ry: Math.PI / 4 }); // tapered bowl
+    box(M.steelIn, cx, top - 0.187, z, 0.28, 0.004, 0.3);      // bowl floor
+    shape(G.cyl, M.steel, cx, top - 0.1848, z, 0.09, 0.0016, 0.09);  // drain flange
+    shape(G.cyl, M.black, cx, top - 0.1838, z, 0.07, 0.0016, 0.07);  // drain hole
+    box(M.black, cx, top - 0.045, z - 0.215, 0.1, 0.012, 0.004);     // overflow slot
+  }
+  // Welded full-height divider between the bowls + steel floor for the
+  // widening gap below it (the bowls taper inward).
+  box(M.steel, x, top - 0.08, z, 0.05, 0.16, 0.38);
+  box(M.steelIn, x, top - 0.17, z, 0.17, 0.02, 0.3);
+  if (drainer) {
+    for (let i = 0; i < 6; i++) {                                // grooves milled in the counter
+      const dz = -0.175 + i * 0.07;
+      box(M.marbleDark, x + 0.66, top + 0.0012, z + dz, 0.22, 0.0016, 0.012);
+    }
+  }
+  // Gooseneck mixer on the deck behind the cutout.
+  const fx = x + faucetOffsetX, fz = z - HD / 2 - 0.045;
+  shape(G.cylBase, M.bronze, fx, top, fz, 0.05, 0.012, 0.05);          // escutcheon
+  shape(G.cylBase, M.bronze, fx, top + 0.012, fz, 0.042, 0.2, 0.042);  // riser
+  shape(G.arc, M.bronze, fx, top + 0.212, fz + 0.14, 1, 1, 1, { ry: Math.PI / 2 }); // bend
+  shape(G.cyl, M.bronze, fx, top + 0.177, fz + 0.28, 0.034, 0.07, 0.034); // spout
+  shape(G.cyl, M.black, fx, top + 0.14, fz + 0.28, 0.03, 0.008, 0.03);    // aerator
+  shape(G.cyl, M.bronze, fx + 0.03, top + 0.1, fz, 0.034, 0.024, 0.034, { rz: Math.PI / 2 }); // mixer hub
+  box(M.bronze, fx + 0.042, top + 0.14, fz, 0.012, 0.08, 0.02);        // lever
+}
 // Base cabinets + counter run of `len` along local X, `depth` along local Z.
 function counterRun(len, depth = 0.66, { uppers = 0, sink = false, cooktop = false } = {}) {
-  box(M.cabinet, 0, F + 0.44, 0, len, 0.78, depth);
+  if (sink) {
+    // Cabinet + marble top are cut around the sink so the bowls read as real depth.
+    box(M.cabinet, 0, F + 0.375, 0, len, 0.65, depth);           // below the bowls
+    holedTop(M.cabinet, 0, F + 0.765, 0, len, 0.13, depth, 0, 0, 0.96, 0.54);
+    holedTop(M.marble, 0, F + 0.87, 0, len + 0.04, 0.06, depth + 0.04, 0, 0, 0.96, 0.54);
+    detailedKitchenSink(0, 0, F + 0.9, { drainer: true, faucetOffsetX: 0.02 });
+  } else {
+    box(M.cabinet, 0, F + 0.44, 0, len, 0.78, depth);
+    box(M.marble, 0, F + 0.87, 0, len + 0.04, 0.06, depth + 0.04);
+  }
   box(M.bronze, 0, F + 0.06, depth / 2 - 0.05, len, 0.12, 0.06);
-  box(M.marble, 0, F + 0.87, 0, len + 0.04, 0.06, depth + 0.04);
   const n = Math.max(1, Math.round(len / 0.8));
   for (let i = 1; i < n; i++) box(M.bronze, -len / 2 + (len * i) / n, F + 0.44, depth / 2 + 0.01, 0.015, 0.68, 0.015);
-  if (sink) {
-    box(M.steel, 0, F + 0.84, 0, 0.78, 0.06, 0.44);
-    shape(G.cylBase, M.bronze, 0, F + 0.9, -0.2, 0.035, 0.34, 0.035);
-    box(M.bronze, 0, F + 1.22, -0.11, 0.04, 0.04, 0.22);
-  }
   if (cooktop) box(M.black, 0, F + 0.905, 0, 0.86, 0.02, 0.5);
   if (uppers > 0) {
     box(M.cabinet, 0, F + 2.05, -depth / 2 + 0.19, uppers, 0.72, 0.38);
@@ -840,12 +906,14 @@ function counterRun(len, depth = 0.66, { uppers = 0, sink = false, cooktop = fal
   }
 }
 function kitchenIsland(len, wid) {
-  box(M.walnut, 0, F + 0.44, 0, wid, 0.78, len);
+  box(M.walnut, 0, F + 0.375, 0, wid, 0.65, len);                // below the bowls
+  holedTop(M.walnut, 0, F + 0.765, 0, wid, 0.13, len, 0.08, 1.3, 0.96, 0.54);
   box(M.bronze, 0, F + 0.06, 0, wid - 0.1, 0.12, len - 0.1);
-  box(M.marble, 0, F + 0.9, 0, wid + 0.5, 0.08, len + 0.1);
-  box(M.steel, 0.1, F + 0.9, 0.5, 0.5, 0.03, 0.8);
-  shape(G.cylBase, M.bronze, 0.1, F + 0.94, 0.95, 0.035, 0.36, 0.035);
-  box(M.bronze, 0.1, F + 1.28, 0.82, 0.04, 0.04, 0.28);
+  holedTop(M.marble, 0, F + 0.9, 0, wid + 0.5, 0.08, len + 0.1, 0.08, 1.3, 0.96, 0.54);
+  // Sink at the east end of the island so the middle stays clear: the flipped
+  // frame puts the faucet deck on the end, facing the cooking aisle.
+  frame(0.08, 1.3, Math.PI, () =>
+    detailedKitchenSink(0, 0, F + 0.94, { drainer: false, faucetOffsetX: 0.02 }));
   box(M.fabricWarm, -0.1, F + 0.96, -0.9, 0.4, 0.05, 0.62);                  // fruit board
   shape(G.sphere, M.foliage, -0.1, F + 1.03, -0.9, 0.16, 0.14, 0.16);
 }
@@ -1120,7 +1188,9 @@ frame(14.9, -8.6, -Math.PI / 2, () => fridge(1.9));
 frame(14.9, -6.2, -Math.PI / 2, () => ovenStack());
 frame(15.0, -1.6, -Math.PI / 2, () => counterRun(4.8, 0.66, { sink: true }));
 frame(9.6, -4.6, Math.PI / 2, () => kitchenIsland(4.2, 1.25));
-for (let i = 0; i < 4; i++) frame(8.5, -6.2 + i * 1.05, 0, () => stool());
+// Bar stools line the island's south long side (great-room side); the old row
+// ran along Z at x=8.5 and two of them clipped through the island cabinet.
+for (let i = 0; i < 4; i++) frame(7.9 + i * 1.05, -3.55, 0, () => stool());
 pendant(9.6, 2.75, -6.0, 0.18);
 pendant(9.6, 2.75, -4.6, 0.18);
 pendant(9.6, 2.75, -3.2, 0.18);
