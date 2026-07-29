@@ -298,7 +298,16 @@ const M = {
     transparent: true, opacity: 0.15, depthWrite: false,
     clearcoat: 1, clearcoatRoughness: 0.04, side: THREE.DoubleSide
   }),
-  mirror: new THREE.MeshStandardMaterial({ color: 0xdfe8ef, roughness: 0.05, metalness: 0.95 }),
+  tubWater: new THREE.MeshPhysicalMaterial({
+    color: 0x9ed3e4, roughness: 0.05, metalness: 0.0,
+    transparent: true, opacity: 0.55, clearcoat: 1, clearcoatRoughness: 0.05
+  }),
+  // Fake mirror: no reflection pass here, so this is a pale pearlescent panel.
+  // A smooth pure metal would sample the environment only and read as black
+  // indoors, which is exactly what the old 0.95-metalness version did.
+  mirror: new THREE.MeshStandardMaterial({
+    color: 0xb9c8d6, roughness: 0.09, metalness: 0.35, envMapIntensity: 2.4
+  }),
   lawn: new THREE.MeshStandardMaterial({ map: lawnA, color: 0x9fb076, roughness: 0.98, metalness: 0.0 }),
   hedge: new THREE.MeshStandardMaterial({ color: 0x4a6b3c, roughness: 0.97, metalness: 0.0 }),
   foliage: new THREE.MeshStandardMaterial({ color: 0x5b8a4a, roughness: 0.95, metalness: 0.0 }),
@@ -803,34 +812,86 @@ function pendant(x, y, z, r = 0.2) {
   box(M.bronze, x, y + 0.5, z, 0.03, 1.0, 0.03);
   shape(G.cone, M.lampShade, x, y + 0.24, z, r * 2, -0.34, r * 2);
 }
-function vanity(w) {
-  box(M.walnut, 0, F + 0.42, 0, w, 0.6, 0.55);
-  box(M.marble, 0, F + 0.75, 0, w + 0.06, 0.08, 0.6);
-  const n = w > 1.5 ? 2 : 1;
-  for (let i = 0; i < n; i++) {
-    const x = n === 1 ? 0 : -w / 4 + (w / 2) * i;
-    box(M.marble, x, F + 0.83, 0, 0.5, 0.12, 0.35);
-    shape(G.cylBase, M.bronze, x, F + 0.83, -0.2, 0.03, 0.28, 0.03);
-    box(M.bronze, x, F + 1.09, -0.12, 0.03, 0.03, 0.18);
+// Bathroom kit. Every fixture is authored with its back against a wall on -Z,
+// so a frame() yaw is all that is needed to hang it on any wall of a room.
+function vanity(w, { basins = w > 1.5 ? 2 : 1, sconces = true } = {}) {
+  // Floating walnut cabinet, marble counter, vessel basin(s), round mirror(s)
+  const D = 0.58;
+  box(M.walnut, 0, F + 0.38, 0, w, 0.44, D);                         // floating cabinet
+  for (let i = 0; i < basins; i++)                                   // recessed drawer pulls
+    box(M.bronze, (basins === 1 ? 0 : -w / 4 + (w / 2) * i), F + 0.38, D / 2 + 0.01,
+      w / basins - 0.16, 0.015, 0.02);
+  box(M.marble, 0, F + 0.63, 0, w + 0.08, 0.06, D + 0.06);           // counter slab
+  box(M.marble, 0, F + 0.73, -D / 2 - 0.02, w + 0.08, 0.14, 0.03);   // upstand
+  for (let i = 0; i < basins; i++) {
+    const x = basins === 1 ? 0 : -w / 4 + (w / 2) * i;
+    // Vessel basin, wider at the rim, with a dark drain well inside
+    shape(G.trunk, M.marble, x, F + 0.82, 0.02, 0.46, 0.16, 0.40, { rx: Math.PI });
+    shape(G.cyl, M.marbleDark, x, F + 0.79, 0.02, 0.38, 0.02, 0.33);
+    // Wall tap: riser, spout arm over the basin, lever handle
+    shape(G.cylBase, M.bronze, x, F + 0.66, -0.22, 0.045, 0.26, 0.045);
+    box(M.bronze, x, F + 0.9, -0.1, 0.045, 0.045, 0.26);
+    box(M.bronze, x - 0.15, F + 0.86, -0.22, 0.14, 0.03, 0.03);
+    // Round mirror in a slim bronze rim
+    shape(G.cyl, M.bronze, x, F + 1.62, -0.29, 0.7, 0.02, 0.7, { rx: Math.PI / 2 });
+    shape(G.cyl, M.mirror, x, F + 1.62, -0.27, 0.64, 0.02, 0.64, { rx: Math.PI / 2 });
   }
-  box(M.mirror, 0, F + 1.65, -0.29, w - 0.1, 1.0, 0.03);
+  if (sconces) for (const dx of [-1, 1]) {
+    const x = dx * (w / 2 + 0.13);
+    box(M.bronze, x, F + 1.62, -0.28, 0.09, 0.09, 0.04);
+    shape(G.cyl, M.lampShade, x, F + 1.62, -0.2, 0.09, 0.3, 0.09);
+  }
 }
 function wc() {
-  box(M.cabinet, 0, F + 0.2, 0, 0.4, 0.4, 0.62);
-  box(M.cabinet, 0, F + 0.42, -0.06, 0.42, 0.08, 0.5);
-  box(M.cabinet, 0, F + 0.4, -0.32, 0.42, 0.8, 0.18);
+  // Wall-hung bowl on a concealed-cistern duct panel with a flush plate
+  box(M.cabinet, 0, F + 0.55, -0.32, 0.66, 1.1, 0.2);                // duct panel
+  box(M.marble, 0, F + 1.12, -0.32, 0.72, 0.04, 0.26);               // shelf cap
+  box(M.steel, 0, F + 0.92, -0.21, 0.22, 0.15, 0.02);                // flush plate
+  box(M.cabinet, 0, F + 0.32, -0.16, 0.28, 0.16, 0.14);              // bowl-to-wall spur
+  shape(G.trunk, M.cabinet, 0, F + 0.41, 0.03, 0.38, 0.23, 0.5, { rx: Math.PI });
+  shape(G.cyl, M.cabinet, 0, F + 0.43, 0.03, 0.4, 0.05, 0.52);       // rim
+  shape(G.cyl, M.linen, 0, F + 0.465, 0.03, 0.385, 0.03, 0.5);       // seat
+  shape(G.cyl, M.cabinet, 0, F + 0.49, 0.02, 0.375, 0.02, 0.49);     // lid
+  box(M.bronze, 0.44, F + 0.72, -0.24, 0.03, 0.03, 0.18);            // paper holder arm
+  shape(G.cyl, M.linen, 0.44, F + 0.72, -0.16, 0.12, 0.11, 0.12, { rx: Math.PI / 2 });
 }
-function bathtub() {
-  box(M.cabinet, 0, F + 0.3, 0, 0.86, 0.6, 1.8);
-  box(M.glass, 0, F + 0.56, 0, 0.72, 0.06, 1.62);
-  shape(G.cylBase, M.bronze, 0, F, -1.15, 0.05, 1.1, 0.05);
-  box(M.bronze, 0, F + 1.05, -0.95, 0.05, 0.05, 0.42);
+function bathtub(len = 1.78, wid = 0.86) {
+  // Freestanding oval soaker on a low plinth, floor filler at the tap end
+  shape(G.cyl, M.cabinet, 0, F + 0.07, 0, len - 0.55, 0.14, wid - 0.3);  // plinth
+  shape(G.cyl, M.cabinet, 0, F + 0.35, 0, len, 0.44, wid);              // shell, rim at 0.57
+  shape(G.cyl, M.tubWater, 0, F + 0.585, 0, len - 0.26, 0.03, wid - 0.26); // water inside the rim
+  shape(G.cyl, M.bronze, 0, F + 0.6, 0, 0.09, 0.02, 0.09);              // overflow plate
+  const fx = -len / 2 - 0.26;
+  shape(G.cyl, M.bronze, fx, F + 0.03, 0, 0.18, 0.06, 0.18);            // filler base
+  shape(G.cylBase, M.bronze, fx, F, 0, 0.05, 1.02, 0.05);               // filler column
+  box(M.bronze, fx + 0.16, F + 1.0, 0, 0.36, 0.05, 0.05);               // spout over the rim
+  box(M.bronze, fx, F + 0.84, 0.14, 0.04, 0.04, 0.16);                  // handle
+  box(M.fabric, 0, F + 0.47, -wid / 2 - 0.01, 0.36, 0.28, 0.07);        // towel over the rim
 }
 function shower(w, d) {
-  box(M.marble, 0, F + 0.03, 0, w, 0.06, d);
-  box(M.glass, w / 2, F + 1.1, 0, 0.04, 2.2, d);
-  box(M.glass, 0, F + 1.1, d / 2, w, 2.2, 0.04);
-  box(M.steel, 0, F + 2.15, -d / 2 + 0.3, 0.24, 0.04, 0.24);
+  // Walk-in: walls on -X and -Z, fixed glass screens on +X and +Z
+  box(M.marble, 0, F + 0.02, 0, w, 0.04, d);                           // flush tray
+  box(M.steel, 0, F + 0.045, -d / 2 + 0.22, w - 0.5, 0.012, 0.06);     // linear drain
+  box(M.glass, w / 2, F + 1.15, 0, 0.03, 2.3, d);
+  box(M.glass, 0, F + 1.15, d / 2, w, 2.3, 0.03);
+  box(M.bronze, w / 2, F + 1.15, d / 2, 0.05, 2.3, 0.05);              // corner post
+  box(M.bronze, w / 2, F + 2.32, 0, 0.05, 0.05, d);                    // head rails
+  box(M.bronze, 0, F + 2.32, d / 2, w, 0.05, 0.05);
+  // Wall-arm rain head plus a thermostatic bar and hand shower below it
+  box(M.bronze, 0, F + 2.25, -d / 2 + 0.28, 0.05, 0.05, 0.5);
+  shape(G.cyl, M.steel, 0, F + 2.2, -d / 2 + 0.5, 0.34, 0.04, 0.34);
+  box(M.bronze, -w / 2 + 0.35, F + 1.15, -d / 2 + 0.06, 0.05, 0.05, 0.06);
+  box(M.bronze, -w / 2 + 0.35, F + 1.42, -d / 2 + 0.07, 0.04, 0.6, 0.04);
+  shape(G.cyl, M.steel, -w / 2 + 0.35, F + 1.6, -d / 2 + 0.13, 0.07, 0.16, 0.07, { rx: 0.3 });
+}
+// Teak towel ladder standing against a wall on -Z, hung with rolled towels
+function towelLadder(h = 1.7) {
+  for (const dx of [-0.24, 0.24]) box(M.teak, dx, F + h / 2, -0.05, 0.05, h, 0.05);
+  for (let i = 0; i < 4; i++) {
+    const y = F + 0.45 + i * 0.38;
+    box(M.teak, 0, y, -0.05, 0.5, 0.05, 0.05);
+    if (i < 3) box(M.fabric, 0, y - 0.16, 0.02, 0.42, 0.3, 0.09);
+  }
 }
 function lounger() {
   box(M.teak, 0, F + 0.32, 0, 0.78, 0.1, 2.0);
@@ -967,9 +1028,9 @@ frame(5.2, -10.7, 0, () => {
 frame(-4.6, -7.6, -Math.PI / 2, () => {
   sofa(4.6, { depth: 1.05 });
 });
-frame(-4.9, -10.3, Math.PI, () => sofa(2.4, { depth: 0.95, mat: M.fabricOlive, cushion: M.linen, arms: false }));
-frame(-5.6, -4.6, 0.5, () => armchair());
-frame(-7.4, -4.2, 1.1, () => armchair());
+frame(-6.6, -10.0, 0, () => sofa(2.4, { depth: 0.95, mat: M.fabricOlive, cushion: M.linen, arms: false }));
+frame(-5.6, -5.3, Math.PI, () => armchair());
+frame(-7.6, -5.3, Math.PI, () => armchair());
 frame(-6.6, -7.6, 0, () => lowTable(1.5, 0.85));
 frame(-6.2, -7.6, 0, () => rug(5.4, 6.6, M.rug));
 frame(-4.3, -4.9, 0, () => {
@@ -1030,9 +1091,46 @@ frame(11.2, 8.0, 0, () => {
 });
 frame(14.6, 9.4, -Math.PI / 2, () => wardrobe(4.2, 0.55, 2.4));
 
-// Powder room
-frame(4.9, 10.6, 0, () => vanity(1.1));
-frame(5.9, 8.2, Math.PI / 2, () => wc());
+// ---------------------------------------------------------------------------
+// Guest bath (x 3.5 → 6.5, z 6.6 → 11.66). Door on the west wall at z 8.6, a
+// high window on the street facade at x 5.0. Laid out the way these rooms are
+// done in the hills: soaker under the window, walk-in shower and WC tucked in
+// the back corners, double vanity on the long blank wall.
+// ---------------------------------------------------------------------------
+{
+  const BX0 = PX_E + INT_T / 2, BX1 = PX_K - INT_T / 2;   // 3.5 → 6.5
+  const BZ0 = PZ_S + INT_T / 2, BZ1 = WZ1 - EXT_T / 2;    // 6.6 → 11.66
+  // Marble floor over the poured slab, and stone on the wet walls
+  slab(M.marble, BX0, BX1, BZ0, BZ1, FIN, FLOOR + 0.004);
+  slab(M.marble, 4.85, BX1, BZ0, BZ0 + 0.02, FLOOR, FLOOR + 2.4);        // shower, south
+  slab(M.marble, BX1 - 0.02, BX1, BZ0, 8.05, FLOOR, FLOOR + 2.4);        // shower, east
+  slab(M.marbleDark, BX1 - 0.03, BX1 - 0.02, 6.95, 7.75, FLOOR + 1.35, FLOOR + 1.9);
+  slab(M.bronze, BX1 - 0.09, BX1 - 0.02, 6.95, 7.75, FLOOR + 1.6, FLOOR + 1.63);  // niche shelf
+  slab(M.marble, BX1 - 0.02, BX1, 8.6, 10.8, FLOOR, FLOOR + 2.2);        // vanity wall
+  slab(M.marble, 3.85, 6.05, BZ1 - 0.02, BZ1, FLOOR, FLOOR + 1.9);       // wainscot under the window
+
+  frame(5.675, 7.325, -Math.PI / 2, () => shower(1.45, 1.65));
+  frame(4.15, 7.05, 0, () => wc());
+  frame(6.15, 9.7, -Math.PI / 2, () => vanity(1.6));
+  frame(4.95, 10.95, 0, () => {
+    bathtub();
+    box(M.rug, 0.1, F + 0.014, -0.85, 1.2, 0.028, 0.7);                 // bath mat
+    shape(G.cyl, M.marble, -1.1, F + 0.25, -0.55, 0.36, 0.5, 0.36);     // stool
+    box(M.fabric, -1.1, F + 0.54, -0.55, 0.3, 0.08, 0.26);
+  });
+  frame(3.62, 9.55, Math.PI / 2, () => towelLadder());
+  // Toiletries on the counter and a fern in the corner by the window
+  frame(6.0, 9.7, -Math.PI / 2, () => {
+    shape(G.cylBase, M.glass, -0.62, F + 0.66, 0, 0.07, 0.19, 0.07);
+    shape(G.cylBase, M.linen, -0.5, F + 0.66, 0.04, 0.06, 0.13, 0.06);
+    shape(G.cylBase, M.bronze, 0.6, F + 0.66, 0.02, 0.08, 0.11, 0.08);
+  });
+  frame(6.2, 11.35, 0, () => {
+    shape(G.cyl, M.terracotta, 0, F + 0.22, 0, 0.42, 0.44, 0.42);
+    shape(G.blob, M.foliage, 0, F + 0.66, 0, 0.8, 0.7, 0.8);
+  });
+  pendant(4.95, 3.0, 10.95, 0.16);
+}
 
 // Foyer
 frame(-2.6, 9.6, Math.PI / 2, () => {
@@ -1052,12 +1150,15 @@ frame(2.6, 9.6, -Math.PI / 2, () => {
 frame(0, 8.4, 0, () => rug(2.6, 1.6, M.rugDark));
 pendant(0, 3.05, 9.8, 0.26);
 
-// Hallway art + runner
+// Hallway runner + a chair against the living-band partition, clear of the door
 frame(-6.5, 7.8, 0, () => rug(5.0, 1.2, M.rugDark));
-for (const z of [7.0, 8.6]) {
-  slab(M.walnut, -6.9, -5.3, z - 0.03, z + 0.03, FLOOR + 1.15, FLOOR + 2.25);
-  slab(M.linen, -6.8, -5.4, z - 0.05, z + 0.01, FLOOR + 1.22, FLOOR + 2.18);
-}
+frame(-9.2, 8.65, Math.PI / 2, () => chair());
+// Modern-art canvas on the east partition, facing the front window
+slab(M.walnut, -3.56, -3.5, 10.2, 11.8, FLOOR + 1.0, FLOOR + 2.2);
+slab(M.linen, -3.555, -3.505, 10.3, 11.7, FLOOR + 1.1, FLOOR + 2.1);
+slab(M.terracotta, -3.56, -3.5, 10.5, 11.0, FLOOR + 1.3, FLOOR + 1.9);
+slab(M.fabricOlive, -3.56, -3.5, 11.1, 11.55, FLOOR + 1.5, FLOOR + 2.0);
+slab(M.black, -3.56, -3.5, 10.6, 11.4, FLOOR + 1.15, FLOOR + 1.28);
 
 // ---------------------------------------------------------------------------
 // Master suite
@@ -1081,10 +1182,16 @@ frame(-13.4, -10.6, 0, () => {
 });
 frame(-10.05, -9.4, -Math.PI / 2, () => dresser(1.6));
 
-// Master bath
-frame(-13.2, 1.5, Math.PI, () => bathtub());
-frame(-15.1, -0.7, Math.PI / 2, () => vanity(1.8));
-frame(-13.2, -0.4, 0, () => shower(1.6, 1.4));
+// Master bath: soaker under the west window, double vanity beside it on the
+// same wall, shower boxed into the north-east corner, WC on the south wall.
+frame(-15.32, 1.35, -Math.PI / 2, () => bathtub());
+frame(-15.5, -0.75, Math.PI / 2, () => vanity(1.8));
+frame(-13.05, 1.65, Math.PI, () => shower(1.7, 1.3));
+frame(-12.75, -1.55, 0, () => wc());
+frame(-14.3, 2.0, 0, () => {
+  shape(G.cyl, M.terracotta, 0, F + 0.24, 0, 0.46, 0.48, 0.46);
+  shape(G.blob, M.foliage, 0, F + 0.72, 0, 0.85, 0.75, 0.85);
+});
 // Dressing
 frame(-11.9, -0.3, Math.PI / 2, () => wardrobe(3.8, 0.6));
 frame(-10.0, 1.2, -Math.PI / 2, () => wardrobe(2.0, 0.6));
@@ -1412,6 +1519,8 @@ for (const [x, y, z, intensity, color] of [
   [0.0, 3.0, 9.6, 34, 0xffe6c0],     // foyer
   [-12.6, 3.1, -6.0, 45, 0xffe4bc],  // master
   [-12.6, 3.1, 8.4, 34, 0xffe4bc],   // guest room
+  [5.0, 3.0, 9.6, 30, 0xfff1de],     // guest bath
+  [-14.0, 3.0, 0.3, 30, 0xfff1de],   // master bath
 ]) {
   const l = new THREE.PointLight(color, intensity, 18, 2);
   l.position.set(x, y, z);
