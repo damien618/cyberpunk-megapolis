@@ -326,7 +326,26 @@ const M = {
   neighbor: new THREE.MeshStandardMaterial({
     normalMap: stuccoN, color: 0xe6ddcd, roughness: 0.92, metalness: 0.02
   }),
-  tower: new THREE.MeshStandardMaterial({ color: 0xa9bccb, roughness: 0.55, metalness: 0.2 }),
+  tower: new THREE.MeshStandardMaterial({ color: 0xa9bccb, roughness: 0.52, metalness: 0.24 }),
+  towerDark: new THREE.MeshStandardMaterial({ color: 0x5b6b7c, roughness: 0.42, metalness: 0.38 }),
+  towerTrim: new THREE.MeshStandardMaterial({ color: 0x6f7b88, roughness: 0.44, metalness: 0.46 }),
+  lobbyGlass: new THREE.MeshStandardMaterial({ color: 0x2f3c48, roughness: 0.14, metalness: 0.42 }),
+  towerGlass: new THREE.MeshPhysicalMaterial({
+    color: 0x9fc5df, roughness: 0.1, metalness: 0.0,
+    transparent: true, opacity: 0.24, depthWrite: false,
+    clearcoat: 1, clearcoatRoughness: 0.08, side: THREE.DoubleSide
+  }),
+  towerGlassShadow: new THREE.MeshPhysicalMaterial({
+    color: 0x4f6478, roughness: 0.2, metalness: 0.0,
+    transparent: true, opacity: 0.34, depthWrite: false,
+    clearcoat: 0.7, clearcoatRoughness: 0.14, side: THREE.DoubleSide
+  }),
+  towerGlassLit: new THREE.MeshPhysicalMaterial({
+    color: 0xd8e6f4, roughness: 0.14, metalness: 0.0,
+    emissive: 0xb7d2ff, emissiveIntensity: 0.26,
+    transparent: true, opacity: 0.28, depthWrite: false,
+    clearcoat: 1, clearcoatRoughness: 0.08, side: THREE.DoubleSide
+  }),
   ember: new THREE.MeshStandardMaterial({
     color: 0xff8b3d, emissive: 0xff6a1a, emissiveIntensity: 2.4, roughness: 0.7
   }),
@@ -461,6 +480,7 @@ const SPA_RIM = 0.98;
 // ---------------------------------------------------------------------------
 // Terrain — flat building platform, canyon dropping away on the view side.
 // ---------------------------------------------------------------------------
+const URBAN_Y = -41;   // downtown district sits on a flat urban plate
 function terrainHeight(x, z) {
   const drop = THREE.MathUtils.smoothstep(-z, 26, 96);          // canyon on -Z
   const side = THREE.MathUtils.smoothstep(Math.abs(x), 48, 140); // ridges left/right
@@ -469,7 +489,9 @@ function terrainHeight(x, z) {
   if (rough > 0.001) {
     h += (Math.sin(x * 0.021) * 2.4 + Math.cos(z * 0.017) * 2.0 + Math.sin((x + z) * 0.011) * 1.6) * rough;
   }
-  return h;
+  // flatten the far basin so the skyline stands on streets, not on a lawn
+  const urban = THREE.MathUtils.smoothstep(-z, 250, 310);
+  return THREE.MathUtils.lerp(h, URBAN_Y, urban);
 }
 
 const terrain = new THREE.Mesh(
@@ -1466,16 +1488,142 @@ for (const [x, z, w, d, h] of [
   slab(M.poolTile, x - 7, x + 7, z + d / 2 + 3, z + d / 2 + 9, g - 0.6, g + 0.1);
   slab(M.deck, x - 10, x + 10, z + d / 2, z + d / 2 + 12, g - 3, g - 0.6);
 }
-// Downtown far away in the marine layer
-for (const [x, z, w, h] of [
-  [-40, -340, 20, 76], [-8, -352, 24, 98], [26, -336, 18, 62], [58, -358, 22, 84],
-  [-74, -348, 18, 58], [92, -342, 20, 70], [10, -390, 26, 112], [-110, -366, 22, 66],
-  [128, -374, 24, 80], [-150, -352, 20, 60],
-]) {
-  const g = terrainHeight(x, z);
-  slab(M.tower, x - w / 2, x + w / 2, z - w / 2, z + w / 2, g - 10, g + h);
-  slab(M.glass, x - w / 2 + 1, x + w / 2 - 1, z - w / 2 - 0.1, z - w / 2 + 0.1, g + 6, g + h - 6);
+// Downtown far away in the marine layer — LA/SF financial-district towers
+// standing on an asphalt street grid (terrain is flattened under the district).
+slab(M.asphalt, -230, 210, -434, -312, URBAN_Y - 0.5, URBAN_Y + 0.1);
+// sidewalk / avenue bands breaking up the asphalt
+for (const zz of [-330, -362, -396]) slab(M.concrete, -230, 210, zz - 3.2, zz + 3.2, URBAN_Y - 0.4, URBAN_Y + 0.16);
+for (const xx of [-130, -58, -24, 42, 76, 110]) slab(M.concrete, xx - 3, xx + 3, -434, -312, URBAN_Y - 0.4, URBAN_Y + 0.15);
+
+function litRatio(x, z, row, col) {
+  const v = Math.sin(x * 0.17 + z * 0.11 + row * 1.71 + col * 2.37) * 43758.5453;
+  return v - Math.floor(v);
 }
+function facadeWindowsX(x0, x1, zFace, dir, y0, y1, rows, cols, xSeed, zSeed) {
+  const mx = 0.55, my = 0.5;
+  const paneZ0 = zFace - 0.03, paneZ1 = zFace + 0.03;
+  const spanX = x1 - x0 - mx * 2;
+  const spanY = y1 - y0 - my * 2;
+  if (spanX < 1.2 || spanY < 2.2) return;
+  const stepX = spanX / cols;
+  const stepY = spanY / rows;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (litRatio(xSeed, zSeed, r, c) < 0.1) continue;
+      const wx0 = x0 + mx + c * stepX + 0.12;
+      const wx1 = x0 + mx + (c + 1) * stepX - 0.12;
+      const wy0 = y0 + my + r * stepY + 0.1;
+      const wy1 = y0 + my + (r + 1) * stepY - 0.1;
+      if (wx1 - wx0 < 0.22 || wy1 - wy0 < 0.28) continue;
+      const lit = litRatio(xSeed * 0.7, zSeed * 1.1, r + 11, c + 7) > 0.84;
+      slab(lit ? M.towerGlassLit : M.towerGlass, wx0, wx1, paneZ0, paneZ1, wy0, wy1);
+      const sh0 = wy1 - (wy1 - wy0) * 0.38;
+      slab(M.towerGlassShadow, wx0, wx1, paneZ0 + dir * 0.01, paneZ1 + dir * 0.01, sh0, wy1 - 0.02);
+    }
+  }
+  for (let c = 1; c < cols; c++) {
+    const sx = x0 + mx + c * stepX;
+    slab(M.towerTrim, sx - 0.06, sx + 0.06, zFace - 0.09, zFace + 0.09, y0 + 0.2, y1 - 0.2);
+  }
+}
+function facadeWindowsZ(z0, z1, xFace, dir, y0, y1, rows, cols, xSeed, zSeed) {
+  const mz = 0.55, my = 0.5;
+  const paneX0 = xFace - 0.03, paneX1 = xFace + 0.03;
+  const spanZ = z1 - z0 - mz * 2;
+  const spanY = y1 - y0 - my * 2;
+  if (spanZ < 1.2 || spanY < 2.2) return;
+  const stepZ = spanZ / cols;
+  const stepY = spanY / rows;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (litRatio(xSeed, zSeed, r + 3, c + 5) < 0.1) continue;
+      const wz0 = z0 + mz + c * stepZ + 0.12;
+      const wz1 = z0 + mz + (c + 1) * stepZ - 0.12;
+      const wy0 = y0 + my + r * stepY + 0.1;
+      const wy1 = y0 + my + (r + 1) * stepY - 0.1;
+      if (wz1 - wz0 < 0.22 || wy1 - wy0 < 0.28) continue;
+      const lit = litRatio(xSeed * 1.2, zSeed * 0.8, r + 17, c + 2) > 0.84;
+      slab(lit ? M.towerGlassLit : M.towerGlass, paneX0, paneX1, wz0, wz1, wy0, wy1);
+      const sh0 = wy1 - (wy1 - wy0) * 0.38;
+      slab(M.towerGlassShadow, paneX0 + dir * 0.01, paneX1 + dir * 0.01, wz0, wz1, sh0, wy1 - 0.02);
+    }
+  }
+  for (let c = 1; c < cols; c++) {
+    const sz = z0 + mz + c * stepZ;
+    slab(M.towerTrim, xFace - 0.09, xFace + 0.09, sz - 0.06, sz + 0.06, y0 + 0.2, y1 - 0.2);
+  }
+}
+// Window grid on all four faces of a shaft volume, ~3.4 m floor pitch.
+function shaftWindows(x0, x1, z0, z1, y0, y1, sx, sz) {
+  const rows = Math.max(4, Math.round((y1 - y0) / 3.4));
+  const colsX = Math.max(3, Math.round((x1 - x0) / 2.9));
+  const colsZ = Math.max(3, Math.round((z1 - z0) / 2.9));
+  facadeWindowsX(x0, x1, z0 + 0.03, -1, y0, y1, rows, colsX, sx, sz);
+  facadeWindowsX(x0, x1, z1 - 0.03, 1, y0, y1, rows, colsX, sx + 19, sz - 13);
+  facadeWindowsZ(z0, z1, x0 + 0.03, -1, y0, y1, rows, colsZ, sx - 11, sz + 7);
+  facadeWindowsZ(z0, z1, x1 - 0.03, 1, y0, y1, rows, colsZ, sx + 5, sz + 23);
+}
+function downtownTower(x, z, w, d, h, style, dark) {
+  const g = terrainHeight(x, z);
+  const yTop = g + h;
+  const x0 = x - w / 2, x1 = x + w / 2, z0 = z - d / 2, z1 = z + d / 2;
+  const shaft = dark ? M.towerDark : M.tower;
+
+  // paved forecourt instead of a bare podium cube
+  slab(M.concrete, x0 - 5.5, x1 + 5.5, z0 - 5.5, z1 + 5.5, g - 0.45, g + 0.18);
+
+  // massing: single shaft, or classic FiDi setback (lower block + inset upper)
+  let pTop = 0;   // parapet inset
+  if (style === 'setback') {
+    const mid = g + h * 0.62, ins = 1.8;
+    slab(shaft, x0, x1, z0, z1, g, mid);
+    shaftWindows(x0, x1, z0, z1, g + 6, mid - 0.8, x, z);
+    slab(M.towerTrim, x0 - 0.15, x1 + 0.15, z0 - 0.15, z1 + 0.15, mid, mid + 0.5);   // setback cornice
+    slab(shaft, x0 + ins, x1 - ins, z0 + ins, z1 - ins, mid + 0.5, yTop);
+    shaftWindows(x0 + ins, x1 - ins, z0 + ins, z1 - ins, mid + 1.3, yTop - 1, x + 31, z + 17);
+    pTop = ins;
+  } else {
+    slab(shaft, x0, x1, z0, z1, g, yTop);
+    shaftWindows(x0, x1, z0, z1, g + 6, yTop - 1, x, z);
+  }
+
+  // double-height glass lobby wrapped around the base + entrance canopy
+  slab(M.lobbyGlass, x0 - 0.15, x1 + 0.15, z0 - 0.15, z1 + 0.15, g + 0.15, g + 5.0);
+  slab(M.towerTrim, x0 - 0.7, x1 + 0.7, z0 - 0.7, z1 + 0.7, g + 5.0, g + 5.45);
+
+  // parapet + rooftop mechanical penthouse
+  slab(M.towerTrim, x0 + pTop - 0.12, x1 - pTop + 0.12, z0 + pTop - 0.12, z1 - pTop + 0.12, yTop, yTop + 0.7);
+  slab(M.towerDark, x - 3.4, x + 3.4, z - 2.5, z + 2.5, yTop + 0.7, yTop + 3.0);
+  if (style === 'crown' || style === 'spire') {
+    slab(M.towerTrim, x - 0.9, x + 0.9, z - 0.9, z + 0.9, yTop + 3.0, yTop + 10);
+  }
+  if (style === 'spire') {
+    slab(M.towerTrim, x - 0.2, x + 0.2, z - 0.2, z + 0.2, yTop + 10, yTop + 19);
+  }
+
+  // strong verticals common on West Coast business towers (Downtown LA / FiDi)
+  const finTop = style === 'setback' ? g + h * 0.62 : yTop + 0.4;
+  for (const [fx, fz, sx, sz] of [
+    [x0 + 0.22, z, 0.18, z1 - z0 - 0.7],
+    [x1 - 0.22, z, 0.18, z1 - z0 - 0.7],
+    [x, z0 + 0.22, x1 - x0 - 0.7, 0.18],
+    [x, z1 - 0.22, x1 - x0 - 0.7, 0.18],
+  ]) {
+    slab(M.towerTrim, fx - sx / 2, fx + sx / 2, fz - sz / 2, fz + sz / 2, g + 5.45, finTop);
+  }
+}
+for (const [x, z, w, d, h, style, dark] of [
+  [-40, -340, 22, 20, 82, 'setback', false],
+  [-8, -352, 26, 24, 104, 'crown', true],
+  [26, -336, 20, 18, 68, 'box', false],
+  [58, -358, 24, 22, 90, 'setback', true],
+  [-74, -348, 20, 18, 64, 'box', true],
+  [92, -342, 22, 20, 76, 'setback', false],
+  [10, -390, 28, 26, 118, 'spire', false],
+  [-110, -366, 24, 22, 72, 'box', false],
+  [128, -374, 26, 24, 86, 'crown', true],
+  [-150, -352, 22, 20, 66, 'setback', false],
+]) downtownTower(x, z, w, d, h, style, dark);
 
 flushKits();
 
