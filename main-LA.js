@@ -610,12 +610,12 @@ wallZ(M.stucco, WX0, WZ0, WZ1, {
     { a: 7.2, w: 3.0, sill: 0.95, top: 2.7 },
   ]
 });
-// East flank — window over the kitchen sink plus a service door to the side yard
+// East flank — window over the kitchen sink plus a service door to the side yard.
+// No opening in the laundry: the built-in wardrobe is flush against this wall.
 wallZ(M.stucco, WX1, WZ0, WZ1, {
   openings: [
     { a: -1.5, w: 3.4, sill: 1.05, top: 2.6 },
     { a: 5.2, w: 1.1, top: 2.3, glass: false },
-    { a: 9.2, w: 1.8, sill: 1.2, top: 2.6 },
   ]
 });
 
@@ -754,11 +754,44 @@ function nightstand() {
   shape(G.cylBase, M.bronze, 0, F + 0.56, 0, 0.05, 0.3, 0.05);
   shape(G.cyl, M.lampShade, 0, F + 0.95, 0, 0.28, 0.3, 0.28);
 }
-function wardrobe(w, d = 0.62, h = 2.35) {
-  box(M.cabinet, 0, F + h / 2, 0, w, h, d);
-  const n = Math.max(2, Math.round(w / 0.9));
-  for (let i = 1; i < n; i++)
-    box(M.bronze, -w / 2 + (w * i) / n, F + h / 2, d / 2 + 0.01, 0.02, h - 0.16, 0.02);
+// Panelled wardrobe: real carcass (top/back/kick/dividers), slab doors with
+// vertical bronze pulls, cornice on top. Bays listed in `open` have no door and
+// show their interior: shelf with folded stacks, rail with clothes on hangers.
+function wardrobe(w, d = 0.62, h = 2.35, { open = [] } = {}) {
+  const n = Math.max(2, Math.round(w / 0.84));
+  const bw = w / n, t = 0.03;
+  box(M.cabinet, 0, F + h - t / 2, 0, w, t, d);                       // top
+  box(M.cabinet, 0, F + 0.1, 0, w, 0.04, d);                          // bottom shelf
+  box(M.cabinet, 0, F + 0.045, -0.03, w, 0.09, d - 0.06);             // recessed kick
+  box(M.cabinet, 0, F + h / 2, -d / 2 + t / 2, w, h, t);              // back
+  for (let i = 0; i <= n; i++)
+    box(M.cabinet, -w / 2 + i * bw, F + h / 2, 0, t, h, d);           // sides + dividers
+  box(M.cabinet, 0, F + h + 0.035, 0, w + 0.08, 0.07, d + 0.06);      // cornice
+  const cloth = [M.linen, M.fabric, M.fabricOlive, M.fabricWarm];
+  for (let i = 0; i < n; i++) {
+    const cx = -w / 2 + bw * (i + 0.5);
+    if (!open.includes(i)) {                                          // closed bay: door + pull
+      box(M.cabinet, cx, F + h / 2 + 0.03, d / 2 + 0.015, bw - 0.04, h - 0.18, t);
+      box(M.bronze, cx + bw / 2 - 0.09, F + 1.05, d / 2 + 0.04, 0.02, 0.4, 0.025);
+      continue;
+    }
+    box(M.cabinet, cx, F + h - 0.42, 0, bw - t, t, d - 0.08);         // shelf
+    box(M.linen, cx - 0.13, F + h - 0.33, 0, 0.3, 0.16, 0.32);        // folded stacks
+    box(M.fabricWarm, cx + 0.15, F + h - 0.35, 0, 0.26, 0.12, 0.3);
+    shape(G.cyl, M.bronze, cx, F + h - 0.62, 0, bw - 0.1, 0.025, 0.025, { rz: Math.PI / 2 }); // rail
+    const k = Math.max(2, Math.floor(bw / 0.22));
+    for (let j = 0; j < k; j++) {                                     // hangers + garments
+      const gx = cx - (bw - 0.24) / 2 + (j * (bw - 0.24)) / (k - 1);
+      box(M.bronze, gx, F + h - 0.65, 0, 0.02, 0.07, 0.02);           // hook
+      box(M.bronze, gx, F + h - 0.68, 0, 0.3, 0.015, 0.02);           // hanger bar
+      box(cloth[(i + j) % cloth.length], gx, F + h - 1.16, 0.03, 0.3, 0.95, 0.24, j % 2 ? 0.06 : -0.04);
+    }
+  }
+}
+function vase(h, r, mat, y0 = F) {
+  shape(G.sphere, mat, 0, y0 + h * 0.3, 0, r * 2, h * 0.6, r * 2);          // belly
+  shape(G.cylBase, mat, 0, y0 + h * 0.52, 0, r * 0.85, h * 0.48, r * 0.85); // neck
+  shape(G.cyl, mat, 0, y0 + h, 0, r * 1.15, 0.03, r * 1.15);                // rim
 }
 function dresser(w = 1.7) {
   box(M.walnut, 0, F + 0.42, 0, w, 0.84, 0.5);
@@ -1082,14 +1115,26 @@ frame(13.4, 3.2, 0, () => {
 
 // Pantry / laundry
 frame(8.1, 9.0, Math.PI / 2, () => counterRun(3.6, 0.6, {}));
-frame(11.2, 8.0, 0, () => {
-  box(M.steel, -0.7, F + 0.44, 0, 0.7, 0.88, 0.7);
-  box(M.steel, 0.1, F + 0.44, 0, 0.7, 0.88, 0.7);
-  box(M.black, -0.7, F + 0.5, 0.36, 0.42, 0.42, 0.03);
-  box(M.black, 0.1, F + 0.5, 0.36, 0.42, 0.42, 0.03);
-  box(M.marble, -0.3, F + 0.9, 0, 1.7, 0.05, 0.74);
+// Decorative vases on the counter, near the window end
+frame(8.1, 9.0, Math.PI / 2, () => {
+  frame(-1.3, 0, 0, () => vase(0.44, 0.11, M.terracotta, F + 0.9));
+  frame(-0.92, 0, 0, () => vase(0.3, 0.09, M.marbleDark, F + 0.9));
+  frame(-0.6, 0, 0, () => vase(0.52, 0.08, M.bronze, F + 0.9));
 });
-frame(14.6, 9.4, -Math.PI / 2, () => wardrobe(4.2, 0.55, 2.4));
+// Front-loading washer + dryer against the north wall, marble folding counter on top
+frame(11.2, 6.98, 0, () => {
+  for (const mx of [-0.37, 0.37]) {
+    box(M.steel, mx, F + 0.44, 0, 0.7, 0.88, 0.66);                            // body
+    box(M.black, mx, F + 0.8, 0.335, 0.66, 0.12, 0.02);                        // control panel
+    box(M.mirror, mx + 0.13, F + 0.8, 0.346, 0.18, 0.06, 0.012);               // display
+    shape(G.cyl, M.steel, mx - 0.19, F + 0.8, 0.35, 0.08, 0.05, 0.08, { rx: Math.PI / 2 }); // programme knob
+    shape(G.cyl, M.steel, mx, F + 0.45, 0.335, 0.56, 0.03, 0.56, { rx: Math.PI / 2 });      // door rim
+    shape(G.cyl, M.black, mx, F + 0.45, 0.352, 0.44, 0.04, 0.44, { rx: Math.PI / 2 });      // porthole glass
+  }
+  box(M.marble, 0, F + 0.925, 0, 1.6, 0.05, 0.74);
+});
+// Built-in wardrobe flush to the east wall, two centre bays open with clothes
+frame(15.38, 9.4, -Math.PI / 2, () => wardrobe(4.2, 0.55, 2.4, { open: [1, 2] }));
 
 // ---------------------------------------------------------------------------
 // Guest bath (x 3.5 → 6.5, z 6.6 → 11.66). Door on the west wall at z 8.6, a
