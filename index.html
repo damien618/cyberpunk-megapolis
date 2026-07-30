@@ -121,6 +121,17 @@
     background: linear-gradient(270deg, var(--la-accent), transparent); }
   .la-card { margin-top: 26px; display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
   .la-card .m-name { color: var(--la-accent); text-shadow: 0 0 12px rgba(95,215,255,.4); }
+  #laTimeToggle {
+    display: flex; margin-top: 22px; border-radius: 8px; overflow: hidden;
+    border: 1px solid rgba(95,215,255,0.35);
+  }
+  .la-tt-btn {
+    padding: 8px 18px; font: inherit; font-size: 10px; letter-spacing: 0.22em;
+    text-transform: uppercase; background: transparent; border: none; cursor: pointer;
+    color: rgba(95,215,255,0.45); transition: background .18s, color .18s;
+  }
+  .la-tt-btn.active { background: rgba(95,215,255,0.15); color: #dff5ff; }
+  .la-tt-btn:hover:not(.active) { background: rgba(95,215,255,0.07); color: rgba(95,215,255,0.75); }
   #enterBtnLA { align-self: flex-end; }
 
   /* ---------- pause ---------- */
@@ -192,6 +203,17 @@
     color: #eaffff; background: linear-gradient(90deg, rgba(95, 215, 255, 0.35), rgba(160, 116, 255, 0.28));
     cursor: pointer; font: inherit; letter-spacing: 0.16em; text-transform: uppercase;
   }
+  #timeToggle {
+    display: flex; margin: 18px 0 4px; border-radius: 8px; overflow: hidden;
+    border: 1px solid rgba(95,215,255,0.35); align-self: flex-start;
+  }
+  .tt-btn {
+    padding: 9px 22px; font: inherit; font-size: 12px; letter-spacing: 0.24em;
+    text-transform: uppercase; background: transparent; border: none; cursor: pointer;
+    color: rgba(95,215,255,0.45); transition: background .18s, color .18s;
+  }
+  .tt-btn.active { background: rgba(95,215,255,0.15); color: #dff5ff; }
+  .tt-btn:hover:not(.active) { background: rgba(95,215,255,0.07); color: rgba(95,215,255,0.75); }
   #hud {
     position: fixed; left: 14px; bottom: 14px; z-index: 8; font-size: 12px; line-height: 1.55;
     background: rgba(6, 10, 19, 0.5); border: 1px solid rgba(121, 149, 220, 0.32); border-radius: 10px;
@@ -270,6 +292,10 @@
         <span class="m-tag">Runner 01</span>
         <span class="m-name">California Girl</span>
       </div>
+      <div id="laTimeToggle">
+        <button class="la-tt-btn active" data-time="day">☀ Day</button>
+        <button class="la-tt-btn" data-time="night">🌙 Night</button>
+      </div>
       <button id="enterBtnLA" class="enter-btn ready">Enter Game</button>
     </div>
   </div>
@@ -302,19 +328,43 @@
     <p>Villa californienne de plain-pied: cour d'entrée et bassin, séjour cathédrale ouvert sur la terrasse, cuisine ouverte avec îlot, suite parentale et chambre d'amis, garage. Côté canyon: piscine à débordement, spa, pergola, cuisine d'été et brasero.</p>
     <p>Vous démarrez sur l'allée d'entrée: la porte est ouverte, la piscine est derrière la maison.</p>
     <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter / tenir pour tirer la toile, <b>E</b> zip, <b>Shift</b> sprint, <b>R</b> reset.</p>
+    <div id="timeToggle">
+      <button class="tt-btn active" data-time="day">☀ Day</button>
+      <button class="tt-btn" data-time="night">🌙 Night</button>
+    </div>
     <button id="startBtn">Entrer dans la villa</button>
   </div>
 </div>
 <div id="crosshair"></div>
 <div id="hud">Mode: <b id="mode">air</b> · Vitesse: <b id="speed">0</b> km/h · Hauteur: <b id="height">0</b> m</div>
 <script>
+  const laNightSelected = new URLSearchParams(location.search).get('night') === '1';
+  const syncLaTimeButtons = selectedNight => {
+    document.querySelectorAll('.la-tt-btn, .tt-btn').forEach(btn => {
+      const isNightBtn = btn.dataset.time === 'night';
+      btn.classList.toggle('active', selectedNight ? isNightBtn : !isNightBtn);
+    });
+    window.__nightMode = selectedNight;
+  };
+  syncLaTimeButtons(laNightSelected);
+
   document.getElementById('enterBtnLA').addEventListener('click', () => {
-    location.href = 'index.html?map=la';
+    location.href = `index.html?map=la${window.__nightMode ? '&night=1' : ''}`;
   });
+  // Day/Night toggle — capture phase so window.__nightMode is set before the
+  // module's bubble-phase handler fires.
+  document.querySelectorAll('.tt-btn, .la-tt-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      syncLaTimeButtons(btn.dataset.time === 'night');
+    });
+  });
+  document.getElementById('startBtn')?.addEventListener('click', () => {
+    window.__nightMode = document.querySelector('.tt-btn.active')?.dataset.time === 'night';
+  }, true);
 </script>
 <script type="module">
   if (document.documentElement.dataset.mode === 'la') {
-    import('./main-LA.js?v=202607291800');
+    import('./main-LA.js?v=202607300002');
   } else {
     import('./main.js?v=6');
   }

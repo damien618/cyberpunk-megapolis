@@ -661,3 +661,17 @@ export function rollCars(cars, dt) {
     for (const w of c.mesh.wheels) w.rotation.z -= d;
   }
 }
+
+/**
+ * Night mode (villa map): make the optics actually shine — headlamps warm and
+ * bright, DRL blades up, taillights hot red. Materials are shared across all
+ * cars, so one call covers the fleet. One-way: only called when the player
+ * starts in night mode, so the day look is untouched.
+ */
+export function setCarLightsNight() {
+  MAT.headlight.emissive.set(0xffe9c4);
+  MAT.headlight.emissiveIntensity = 2.6;
+  MAT.drl.emissiveIntensity = 2.4;
+  MAT.taillight.emissive.set(0xff2015);
+  MAT.taillight.emissiveIntensity = 3.0;
+}

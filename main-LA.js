@@ -4,7 +4,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=3';
 import { CameraRig } from './cameraRig.js?v=3';
 import { buildCityBoxes } from './cityBoxes.js?v=3';
-import { buildCar, carBounds, rollCars } from './cars.js?v=1';
+import { buildCar, carBounds, rollCars, setCarLightsNight } from './cars.js?v=2';
 
 // ---------------------------------------------------------------------------
 // Villa LA — single-storey modern California estate, laid out like the hillside
@@ -1113,11 +1113,13 @@ function hedge(x0, x1, z0, z1, h = 1.5) {
 }
 // A parked car is a real lofted mesh in `world` (so the player can raycast onto
 // its roof) plus one invisible kit box so the AABB collider still sees it.
+const parkedCars = [];
 function parkCar(type, color, x, z, ry, ground, opts) {
   const mesh = buildCar(type, color, opts);
   mesh.position.set(x, ground, z);
   mesh.rotation.y = ry;
   world.add(mesh);
+  parkedCars.push(mesh);
   const b = carBounds(type);
   frame(x, z, ry, () => box(M.collider, 0, ground + b.height / 2, 0, b.length, b.height, b.width));
 }
@@ -1537,19 +1539,21 @@ slab(M.concrete, -400, 400, 63.6, 66, -0.1, 0.16);
 slab(M.concrete, -400, 400, 80, 82.4, -0.1, 0.16);
 for (let i = -24; i <= 24; i++) slab(M.roadLine, i * 8 - 2, i * 8 + 2, 72.8, 73.2, 0.02, 0.04);
 
-for (const [x, z, w, d, h] of [
+const STREET_NEIGHBORS = [
   [-72, 104, 26, 20, 7.5], [-30, 106, 22, 18, 6.5], [18, 104, 24, 20, 8.5],
   [64, 102, 26, 18, 7.0], [110, 106, 22, 20, 6.8], [-118, 104, 24, 18, 7.4],
-]) {
+];
+for (const [x, z, w, d, h] of STREET_NEIGHBORS) {
   slab(M.neighbor, x - w / 2, x + w / 2, z - d / 2, z + d / 2, 0, h);
   slab(M.stuccoWarm, x - w / 2 - 0.5, x + w / 2 + 0.5, z - d / 2 - 0.5, z + d / 2 + 0.5, h, h + 0.4);
   slab(M.glass, x - w / 2 + 1, x + w / 2 - 1, z - d / 2 - 0.06, z - d / 2 + 0.06, 1.2, h - 1.2);
   hedge(x - w / 2, x + w / 2, z - d / 2 - 5, z - d / 2 - 3.6, 1.6);
 }
 // Hillside estates below the ridge — extra swing anchors
-for (const [x, z, w, d, h] of [
+const HILLSIDE_ESTATES = [
   [-58, -46, 20, 16, 8], [56, -52, 22, 16, 8], [-86, -74, 24, 18, 9], [78, -80, 20, 18, 9],
-]) {
+];
+for (const [x, z, w, d, h] of HILLSIDE_ESTATES) {
   const g = terrainHeight(x, z);
   slab(M.neighbor, x - w / 2, x + w / 2, z - d / 2, z + d / 2, g - 8, g + h);
   slab(M.stuccoWarm, x - w / 2 - 0.5, x + w / 2 + 0.5, z - d / 2 - 0.5, z + d / 2 + 0.5, g + h, g + h + 0.4);
@@ -1682,7 +1686,7 @@ function downtownTower(x, z, w, d, h, style, dark) {
     slab(M.towerTrim, fx - sx / 2, fx + sx / 2, fz - sz / 2, fz + sz / 2, g + 5.45, finTop);
   }
 }
-for (const [x, z, w, d, h, style, dark] of [
+const DOWNTOWN_TOWERS = [
   [-40, -340, 22, 20, 82, 'setback', false],
   [-8, -352, 26, 24, 104, 'crown', true],
   [26, -336, 20, 18, 68, 'box', false],
@@ -1693,7 +1697,8 @@ for (const [x, z, w, d, h, style, dark] of [
   [-110, -366, 24, 22, 72, 'box', false],
   [128, -374, 26, 24, 86, 'crown', true],
   [-150, -352, 22, 20, 66, 'setback', false],
-]) downtownTower(x, z, w, d, h, style, dark);
+];
+for (const [x, z, w, d, h, style, dark] of DOWNTOWN_TOWERS) downtownTower(x, z, w, d, h, style, dark);
 
 flushKits();
 
@@ -1775,6 +1780,7 @@ world.add(tvScreen);
 // ---------------------------------------------------------------------------
 // Interior lighting — the roof is closed, so the rooms need fill light
 // ---------------------------------------------------------------------------
+const interiorLights = [];
 for (const [x, y, z, intensity, color] of [
   [-4.5, 3.2, -7.0, 70, 0xffe9c9],   // living
   [2.0, 2.8, -1.4, 55, 0xffeed6],    // dining
@@ -1788,6 +1794,7 @@ for (const [x, y, z, intensity, color] of [
   const l = new THREE.PointLight(color, intensity, 18, 2);
   l.position.set(x, y, z);
   scene.add(l);
+  interiorLights.push(l);
 }
 // Warm glow from the fire pit
 const fireLight = new THREE.PointLight(0xff7a2a, 12, 14, 2);
@@ -1812,8 +1819,302 @@ for (const c of traffic) {
 }
 
 // ---------------------------------------------------------------------------
-// Engine hookup
+// Night mode — applied on demand when user starts with "Night" selected
 // ---------------------------------------------------------------------------
+// Performance: every PointLight is evaluated per fragment by the forward
+// renderer, and the first night version added 44 of them (~53 total) — the
+// game crawled. The night look is now mostly FAKE light: emissive glow heads
+// and additive ground pools drawn as a couple of InstancedMeshes, with real
+// point lights only where they genuinely shape the scene (pool, spa, terrace
+// corners, driveway spine, car headlights). The sun's shadow pass is also
+// switched off. Everything here is night-only; day mode never runs this code.
+let nightFx = null;   // per-frame night animation handles (beacon pulse)
+
+// soft radial sprite shared by the fake ground light pools and the moon halo
+function makeGlowTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 2, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.4, 'rgba(255,255,255,0.42)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function enableNightMode() {
+  // Sky & atmosphere — fog reaches past downtown (~400 m from the pool) so
+  // the lit skyline stays visible instead of sinking into black haze
+  scene.background = new THREE.Color(0x04070e);
+  scene.fog = new THREE.Fog(0x07101e, 60, 750);
+  renderer.toneMappingExposure = 0.50;
+
+  // Sun below horizon, hemisphere → near-black cool ambient. castShadow off:
+  // a dark sun still re-rendered the 2048² shadow map every frame for nothing.
+  sun.intensity = 0;
+  sun.castShadow = false;
+  hemi.color.set(0x0d1828);
+  hemi.groundColor.set(0x050608);
+  hemi.intensity = 0.07;
+  scene.environmentIntensity = 0.05;
+
+  // Interior rooms — warm glow through windows
+  for (const l of interiorLights) l.intensity *= 3.8;
+
+  // Fire pit — more vivid against the dark
+  fireLight.color.set(0xff6010);
+  fireLight.distance = 22;
+
+  // ── Fake-lamp infrastructure ─────────────────────────────────────────────
+  // glow heads (small bright spheres) + ground pools (additive gradient
+  // discs), collected as spot lists then drawn as one InstancedMesh each.
+  const glowTex = makeGlowTexture();
+  const headSpots = [];   // [x, y, z, scale] — G.sphere is r=0.5: scale = 2r
+  const discSpots = [];   // [x, y, z, radius] — bright warm pool under a lamp
+  const wideSpots = [];   // street-lamp pools: wider, fainter
+  const lamp = (x, y, z, headR, discY, discR) => {
+    headSpots.push([x, y, z, headR * 2]);
+    discSpots.push([x, discY, z, discR]);
+  };
+  const _gm = new THREE.Matrix4();
+  const addGlow = (spots, mat, geo) => {
+    const im = new THREE.InstancedMesh(geo, mat, spots.length);
+    spots.forEach(([x, y, z, s], i) => {
+      _gm.makeScale(s, s, s).setPosition(x, y, z);
+      im.setMatrixAt(i, _gm);
+    });
+    im.instanceMatrix.needsUpdate = true;
+    scene.add(im);
+    return im;
+  };
+  const discGeo = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
+
+  // ── Entry court & driveway bollards: fake glow + 4 real spine lights ────
+  for (const [x, z] of [
+    [-3.2, 19.6], [3.2, 19.6],
+    [-3.2, 16.4], [3.2, 16.4],
+    [-8.0, 22.0], [8.0, 22.0],
+    [-12.0, 23.0], [12.0, 23.0],
+    [-4.0, 30.0], [4.0, 30.0],
+    [-4.0, 42.0], [4.0, 42.0],
+    [-4.0, 54.0], [4.0, 54.0],
+  ]) lamp(x, FLOOR + 0.55, z, 0.09, FLOOR + 0.04, 2.3);
+  for (const z of [19.6, 30, 42, 54]) {
+    const l = new THREE.PointLight(0xffec9a, 26, 17, 2);
+    l.position.set(0, FLOOR + 1.7, z);
+    scene.add(l);
+  }
+
+  // ── Infinity pool — underwater LED strip (teal), 2 diagonal real lights ──
+  const poolCx = (PLX0 + PLX1) / 2;   // −1
+  const poolCz = (PLZ0 + PLZ1) / 2;   // −21
+  for (const [ox, oz] of [[-3.5, -2.5], [3.5, 2.5]]) {
+    const l = new THREE.PointLight(0x00cce0, 58, 18, 1.5);
+    l.position.set(poolCx + ox, WATER_Y - 0.15, poolCz + oz);
+    scene.add(l);
+  }
+  // Spa underwater glow
+  {
+    const l = new THREE.PointLight(0x00b8d8, 30, 10, 1.5);
+    l.position.set((SPA_X0 + SPA_X1) / 2, SPA_RIM - 0.2, (SPA_Z0 + SPA_Z1) / 2);
+    scene.add(l);
+  }
+
+  // ── Poolside & terrace: fake bollards, real light at the far corners only ──
+  for (const [x, z] of [
+    [PLX0 - 1.1, PLZ0 - 0.8], [PLX1 + 1.1, PLZ0 - 0.8],
+    [PLX0 - 1.1, PLZ1 + 0.5], [PLX1 + 1.1, PLZ1 + 0.5],
+    [(PLX0 + PLX1) / 2, PLZ0 - 1.4],  // infinity-edge centre
+    [-16, -22], [16, -22],              // terrace far corners
+    [-14.5, -18], [14.5, -18],          // pergola area
+  ]) lamp(x, FLOOR + 0.45, z, 0.08, FLOOR + 0.04, 2.1);
+  for (const [x, z] of [[-16, -22], [16, -22]]) {
+    const l = new THREE.PointLight(0xffd580, 20, 13, 2);
+    l.position.set(x, FLOOR + 1.0, z);
+    scene.add(l);
+  }
+
+  // ── Street lamps along the road below — poles + fake heads, no real lights ──
+  const poleX = [-160, -114, -68, -22, 24, 70, 116, 162];
+  const poles = new THREE.InstancedMesh(G.cyl,
+    new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.6, metalness: 0.5 }),
+    poleX.length);
+  poleX.forEach((x, i) => {
+    _gm.makeScale(0.14, 5.2, 0.14).setPosition(x, 2.6, 64.9);
+    poles.setMatrixAt(i, _gm);
+    headSpots.push([x, 5.3, 64.9, 0.34]);
+    wideSpots.push([x, 0.06, 64.9, 5.2]);
+  });
+  poles.instanceMatrix.needsUpdate = true;
+  scene.add(poles);
+
+  // flush the fake lamps (3 draw calls total)
+  addGlow(headSpots, new THREE.MeshBasicMaterial({ color: 0xffe2ae }), G.sphere);
+  addGlow(discSpots, new THREE.MeshBasicMaterial({
+    map: glowTex, color: 0xffc684, transparent: true, opacity: 0.5,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }), discGeo);
+  addGlow(wideSpots, new THREE.MeshBasicMaterial({
+    map: glowTex, color: 0xffb670, transparent: true, opacity: 0.28,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }), discGeo);
+
+  // ── Background buildings: classic lit windows (zero real lights) ────────
+  const winSpots = [];   // [x, y, z, ry, sx, sy, warmCoolMix]
+  // hillside estates across the canyon — windows on both faces
+  for (const [x, z, w, d] of HILLSIDE_ESTATES) {
+    const g = terrainHeight(x, z);
+    for (const face of [1, -1]) {
+      for (let r = 0; r < 2; r++) {
+        for (let c = 0, n = Math.floor((w - 3) / 3); c < n; c++) {
+          if (litRatio(x * face, z, r + 5, c + 3) < 0.45) continue;
+          winSpots.push([
+            x - w / 2 + 2 + c * 3, g + 2.1 + r * 3.1, z + face * (d / 2 + 0.08),
+            face > 0 ? 0 : Math.PI, 1.7, 1.4, litRatio(x, z, r, c),
+          ]);
+        }
+      }
+    }
+  }
+  // across-the-street neighbours — facade facing the villa
+  for (const [x, z, w, d] of STREET_NEIGHBORS) {
+    for (let r = 0; r < 2; r++) {
+      for (let c = 0, n = Math.floor((w - 2) / 3); c < n; c++) {
+        if (litRatio(x, z, r + 9, c + 1) < 0.42) continue;
+        winSpots.push([
+          x - w / 2 + 1.5 + c * 3, 2.0 + r * 2.6, z - d / 2 - 0.08,
+          Math.PI, 1.6, 1.3, litRatio(x, z, r + 4, c + 8),
+        ]);
+      }
+    }
+  }
+  {
+    const winIm = new THREE.InstancedMesh(
+      new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }),
+      winSpots.length);
+    const q = new THREE.Quaternion(), e = new THREE.Euler();
+    const v = new THREE.Vector3(), s = new THREE.Vector3(), m4 = new THREE.Matrix4();
+    const warm = new THREE.Color(0xffc27a), cool = new THREE.Color(0xcfe0ff), cc = new THREE.Color();
+    winSpots.forEach(([x, y, z, ry, sx, sy, t], i) => {
+      q.setFromEuler(e.set(0, ry, 0));
+      m4.compose(v.set(x, y, z), q, s.set(sx, sy, 1));
+      winIm.setMatrixAt(i, m4);
+      winIm.setColorAt(i, cc.lerpColors(warm, cool, t));
+    });
+    winIm.instanceMatrix.needsUpdate = true;
+    winIm.instanceColor.needsUpdate = true;
+    scene.add(winIm);
+  }
+
+  // ── Downtown towers — lit windows punch through the marine layer ────────
+  M.towerGlassLit.emissiveIntensity = 5.2;
+  M.towerGlassLit.emissive.set(0xffe090);
+  M.towerGlassLit.color.set(0xffebcc);
+  M.towerGlassLit.fog = false;            // haze must not swallow lit windows
+  M.towerGlassLit.needsUpdate = true;
+  M.lobbyGlass.emissive.set(0xffc98a);    // glowing tower lobbies at street level
+  M.lobbyGlass.emissiveIntensity = 1.1;
+
+  // rooftop aviation beacons (red pulse driven in animate())
+  const beaconMat = new THREE.MeshBasicMaterial({
+    color: 0xff2a1e, transparent: true, opacity: 1, fog: false,
+  });
+  const beacons = new THREE.InstancedMesh(G.sphere, beaconMat, DOWNTOWN_TOWERS.length);
+  DOWNTOWN_TOWERS.forEach(([x, z, , , h, style], i) => {
+    const yTop = terrainHeight(x, z) + h;
+    const y = style === 'spire' ? yTop + 19.4 : style === 'crown' ? yTop + 10.3 : yTop + 3.4;
+    _gm.makeScale(3.2, 3.2, 3.2).setPosition(x, y, z);
+    beacons.setMatrixAt(i, _gm);
+  });
+  beacons.instanceMatrix.needsUpdate = true;
+  scene.add(beacons);
+  nightFx = { beaconMat };
+
+  // ── Stars — two point layers (dim field + brighter heroes) ──────────────
+  for (const [count, size, color, opacity] of [
+    [1100, 1.5, 0xbfccff, 0.75],
+    [220, 2.6, 0xffffff, 0.95],
+  ]) {
+    const posArr = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const az = Math.random() * Math.PI * 2;
+      const el = Math.asin(0.06 + Math.random() * 0.94);   // keep off the horizon
+      posArr[i * 3] = Math.cos(el) * Math.cos(az) * 860;
+      posArr[i * 3 + 1] = Math.sin(el) * 860;
+      posArr[i * 3 + 2] = Math.cos(el) * Math.sin(az) * 860;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+    const p = new THREE.Points(g, new THREE.PointsMaterial({
+      color, size, sizeAttenuation: false, transparent: true, opacity,
+      fog: false, depthWrite: false,
+    }));
+    p.frustumCulled = false;
+    scene.add(p);
+  }
+
+  // ── Moon — canvas-textured disc + additive halo, high over the canyon ───
+  {
+    const mc = document.createElement('canvas');
+    mc.width = mc.height = 256;
+    const mg = mc.getContext('2d');
+    const mgrad = mg.createRadialGradient(108, 100, 10, 128, 128, 126);
+    mgrad.addColorStop(0, '#fdfdf4');
+    mgrad.addColorStop(0.75, '#e8e9d8');
+    mgrad.addColorStop(1, '#c9cbba');
+    mg.fillStyle = mgrad;
+    mg.beginPath(); mg.arc(128, 128, 126, 0, Math.PI * 2); mg.fill();
+    mg.fillStyle = 'rgba(148,152,140,0.35)';   // maria blotches
+    for (const [bx, by, br] of [[96, 92, 26], [150, 120, 32], [118, 160, 22], [168, 84, 16], [86, 140, 14]]) {
+      mg.beginPath(); mg.arc(bx, by, br, 0, Math.PI * 2); mg.fill();
+    }
+    const moonTex = new THREE.CanvasTexture(mc);
+    moonTex.colorSpace = THREE.SRGBColorSpace;
+    const moon = new THREE.Mesh(
+      new THREE.CircleGeometry(30, 48),
+      new THREE.MeshBasicMaterial({ map: moonTex, transparent: true, fog: false }));
+    moon.position.set(-390, 410, -780);
+    moon.lookAt(0, 40, 0);
+    scene.add(moon);
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, color: 0x9fb4e8, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, fog: false, depthWrite: false,
+    }));
+    halo.scale.setScalar(190);
+    halo.position.copy(moon.position);
+    scene.add(halo);
+  }
+
+  // ── Car headlights: real lights sweeping the road; hot taillight lenses ──
+  setCarLightsNight();
+
+  // Parked cars have their lights off (engines cut) — clone the shared
+  // emissive materials so only the traffic fleet stays lit.
+  for (const mesh of parkedCars) {
+    mesh.traverse(child => {
+      if (!child.isMesh) return;
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      const replaced = mats.map(m => {
+        if (!m || !(m.emissiveIntensity > 0.05)) return m;
+        const c = m.clone();
+        c.emissiveIntensity = 0;
+        return c;
+      });
+      child.material = Array.isArray(child.material) ? replaced : replaced[0];
+    });
+  }
+
+  for (const c of traffic) {
+    const hl = new THREE.PointLight(0xfff5e0, 120, 34, 1.8);
+    scene.add(hl);
+    c.headLight = hl;
+  }
+}
+
 const rays = {
   ray: new THREE.Raycaster(),
   tempMatrix: new THREE.Matrix4(),
@@ -1951,6 +2252,9 @@ function animate() {
   const t = clock.elapsedTime;
   drawTv(t);
 
+  // Night only: pulse the downtown aviation beacons
+  if (nightFx) nightFx.beaconMat.opacity = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 2.3));
+
   waterN.offset.x = t * 0.016;
   waterN.offset.y = -t * 0.01;
   poolWater.material.opacity = 0.76 + Math.sin(t * 1.3) * 0.03;
@@ -1962,6 +2266,10 @@ function animate() {
     c.mesh.position.x += c.speed * c.dir * dt;
     if (c.dir > 0 && c.mesh.position.x > 200) c.mesh.position.x = -200;
     if (c.dir < 0 && c.mesh.position.x < -200) c.mesh.position.x = 200;
+    // Night mode: track the headlight position with the car
+    if (c.headLight) {
+      c.headLight.position.set(c.mesh.position.x + c.dir * 2.5, 0.85, c.mesh.position.z);
+    }
   }
   rollCars(traffic, dt);
 
@@ -1974,6 +2282,14 @@ function animate() {
 animate();
 
 startBtn.addEventListener('click', () => {
+  if (window.__nightMode) {
+    try {
+      enableNightMode();
+    } catch (e) {
+      window.__nightModeError = e.stack || e.message;
+      console.error('[night mode]', e);
+    }
+  }
   overlay.style.display = 'none';
   started = true;
   paused = false;
