@@ -121,18 +121,7 @@
     background: linear-gradient(270deg, var(--la-accent), transparent); }
   .la-card { margin-top: 26px; display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
   .la-card .m-name { color: var(--la-accent); text-shadow: 0 0 12px rgba(95,215,255,.4); }
-  #laTimeToggle {
-    display: flex; margin-top: 22px; border-radius: 8px; overflow: hidden;
-    border: 1px solid rgba(95,215,255,0.35);
-  }
-  .la-tt-btn {
-    padding: 8px 18px; font: inherit; font-size: 10px; letter-spacing: 0.22em;
-    text-transform: uppercase; background: transparent; border: none; cursor: pointer;
-    color: rgba(95,215,255,0.45); transition: background .18s, color .18s;
-  }
-  .la-tt-btn.active { background: rgba(95,215,255,0.15); color: #dff5ff; }
-  .la-tt-btn:hover:not(.active) { background: rgba(95,215,255,0.07); color: rgba(95,215,255,0.75); }
-  #enterBtnLA { align-self: flex-end; }
+  #enterBtnLA { align-self: flex-end; margin-top: 22px; }
 
   /* ---------- pause ---------- */
   #pause { position: fixed; inset: 0; z-index: 19; display: flex;
@@ -292,10 +281,6 @@
         <span class="m-tag">Runner 01</span>
         <span class="m-name">California Girl</span>
       </div>
-      <div id="laTimeToggle">
-        <button class="la-tt-btn active" data-time="day">☀ Day</button>
-        <button class="la-tt-btn" data-time="night">🌙 Night</button>
-      </div>
       <button id="enterBtnLA" class="enter-btn ready">Enter Game</button>
     </div>
   </div>
@@ -340,7 +325,7 @@
 <script>
   const laNightSelected = new URLSearchParams(location.search).get('night') === '1';
   const syncLaTimeButtons = selectedNight => {
-    document.querySelectorAll('.la-tt-btn, .tt-btn').forEach(btn => {
+    document.querySelectorAll('.tt-btn').forEach(btn => {
       const isNightBtn = btn.dataset.time === 'night';
       btn.classList.toggle('active', selectedNight ? isNightBtn : !isNightBtn);
     });
@@ -349,11 +334,11 @@
   syncLaTimeButtons(laNightSelected);
 
   document.getElementById('enterBtnLA').addEventListener('click', () => {
-    location.href = `index.html?map=la${window.__nightMode ? '&night=1' : ''}`;
+    location.href = 'index.html?map=la';
   });
   // Day/Night toggle — capture phase so window.__nightMode is set before the
   // module's bubble-phase handler fires.
-  document.querySelectorAll('.tt-btn, .la-tt-btn').forEach(btn => {
+  document.querySelectorAll('.tt-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       syncLaTimeButtons(btn.dataset.time === 'night');
     });

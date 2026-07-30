@@ -1902,7 +1902,7 @@ function enableNightMode() {
     [-4.0, 30.0], [4.0, 30.0],
     [-4.0, 42.0], [4.0, 42.0],
     [-4.0, 54.0], [4.0, 54.0],
-  ]) lamp(x, FLOOR + 0.55, z, 0.09, FLOOR + 0.04, 2.3);
+  ]) lamp(x, FLOOR + 0.09, z, 0.09, FLOOR + 0.04, 2.3);
   for (const z of [19.6, 30, 42, 54]) {
     const l = new THREE.PointLight(0xffec9a, 26, 17, 2);
     l.position.set(0, FLOOR + 1.7, z);
@@ -1931,7 +1931,7 @@ function enableNightMode() {
     [(PLX0 + PLX1) / 2, PLZ0 - 1.4],  // infinity-edge centre
     [-16, -22], [16, -22],              // terrace far corners
     [-14.5, -18], [14.5, -18],          // pergola area
-  ]) lamp(x, FLOOR + 0.45, z, 0.08, FLOOR + 0.04, 2.1);
+  ]) lamp(x, FLOOR + 0.08, z, 0.08, FLOOR + 0.04, 2.1);
   for (const [x, z] of [[-16, -22], [16, -22]]) {
     const l = new THREE.PointLight(0xffd580, 20, 13, 2);
     l.position.set(x, FLOOR + 1.0, z);
