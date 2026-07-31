@@ -66,35 +66,42 @@ const LEG_SPAN = 0.8955;   // hip to ankle on the reference rig
 // Chain parameter: 0 shoulder, 1 elbow, 2 wrist. Starts above the shoulder so
 // the opening is buried in the torso, and ends just past the wrist on a cuff.
 //
-// Down to the elbow these radii are the t-shirt's own short sleeve plus about
-// 5 mm of clearance (measured off its skin weights: 79 mm at the shoulder,
-// hem at u = 0.66). Undercutting it is what made the long sleeve read as a
-// separate tube bolted onto the shirt — it has to swallow the short sleeve,
-// not slide underneath it.
+// Sized as a fitted knit sleeve. The obvious move — inflate it until it
+// swallows the t-shirt's short sleeve — gives puffed, leg-of-mutton shoulders,
+// because the short sleeve is not a tube: measured off its own skin weights it
+// runs 68 mm out to the side but essentially nothing towards the torso, since
+// that side is the armhole. A circle drawn round its widest point balloons
+// four centimetres into the armpit.
+//
+// So `lat` tracks the short sleeve's outer edge (68 mm at the deltoid, 49 mm by
+// its hem) and `med` stays tucked inside the chest. Where the armhole flares
+// past this, the t-shirt simply shows through — both are the same white, so
+// the overlap costs nothing and the silhouette stays the one the short-sleeved
+// version already reads correctly.
 const SLEEVE_PROFILE = [
   // u,     lat,    med,    ant,    post,   ex,   enA,  enP
-  [-0.10, 0.0620, 0.0610, 0.0600, 0.0620, 1.00, 1.00, 1.00],  // buried opening
-  [-0.04, 0.0740, 0.0726, 0.0710, 0.0736, 1.00, 1.00, 1.00],  // shoulder seam
-  [0.00, 0.0828, 0.0812, 0.0792, 0.0822, 1.00, 1.00, 1.00],   // deltoid
-  [0.10, 0.0845, 0.0828, 0.0808, 0.0840, 1.00, 1.00, 1.00],
-  [0.20, 0.0840, 0.0824, 0.0806, 0.0836, 1.00, 1.00, 1.00],
-  [0.30, 0.0810, 0.0794, 0.0778, 0.0806, 1.00, 1.00, 1.00],
-  [0.42, 0.0744, 0.0730, 0.0722, 0.0740, 1.00, 1.00, 1.00],
-  [0.55, 0.0692, 0.0680, 0.0678, 0.0686, 1.00, 1.00, 1.00],
-  [0.70, 0.0650, 0.0640, 0.0636, 0.0646, 1.00, 1.00, 1.00],   // past the short hem
-  [0.85, 0.0568, 0.0560, 0.0554, 0.0566, 1.00, 1.00, 1.00],
-  [0.94, 0.0518, 0.0512, 0.0504, 0.0522, 1.00, 1.00, 1.00],
-  [1.00, 0.0508, 0.0502, 0.0488, 0.0532, 1.00, 1.00, 1.00],   // olecranon
-  [1.08, 0.0506, 0.0500, 0.0492, 0.0520, 1.00, 1.00, 1.00],   // fabric bunching
-  [1.20, 0.0498, 0.0494, 0.0498, 0.0486, 1.00, 1.00, 1.00],
-  [1.32, 0.0488, 0.0486, 0.0492, 0.0472, 1.00, 1.00, 1.00],   // flexor swell
-  [1.48, 0.0458, 0.0456, 0.0460, 0.0442, 1.00, 1.00, 1.00],
-  [1.65, 0.0408, 0.0406, 0.0406, 0.0396, 1.00, 1.00, 1.00],
-  [1.82, 0.0348, 0.0348, 0.0342, 0.0338, 1.00, 1.00, 1.00],
-  [1.94, 0.0310, 0.0310, 0.0302, 0.0300, 1.00, 1.00, 1.00],
-  [2.00, 0.0300, 0.0300, 0.0290, 0.0290, 1.00, 1.00, 1.00],   // wrist
-  [2.03, 0.0316, 0.0316, 0.0306, 0.0306, 1.00, 1.00, 1.00],   // cuff lip
-  [2.06, 0.0264, 0.0264, 0.0256, 0.0256, 1.00, 1.00, 1.00],
+  [-0.10, 0.0480, 0.0400, 0.0450, 0.0470, 1.00, 1.00, 1.00],  // buried opening
+  [-0.04, 0.0600, 0.0430, 0.0532, 0.0558, 1.00, 1.00, 1.00],  // shoulder seam
+  [0.00, 0.0685, 0.0450, 0.0600, 0.0605, 1.00, 1.00, 1.00],   // deltoid
+  [0.10, 0.0672, 0.0470, 0.0640, 0.0630, 1.00, 1.00, 1.00],
+  [0.20, 0.0635, 0.0520, 0.0650, 0.0640, 1.00, 1.00, 1.00],
+  [0.30, 0.0575, 0.0545, 0.0620, 0.0610, 1.00, 1.00, 1.00],
+  [0.42, 0.0535, 0.0530, 0.0570, 0.0545, 1.00, 1.00, 1.00],
+  [0.55, 0.0522, 0.0524, 0.0545, 0.0520, 1.00, 1.00, 1.00],
+  [0.70, 0.0512, 0.0518, 0.0530, 0.0508, 1.00, 1.00, 1.00],   // short hem ends
+  [0.85, 0.0480, 0.0484, 0.0490, 0.0478, 1.00, 1.00, 1.00],
+  [0.94, 0.0462, 0.0464, 0.0464, 0.0468, 1.00, 1.00, 1.00],
+  [1.00, 0.0456, 0.0456, 0.0448, 0.0486, 1.00, 1.00, 1.00],   // olecranon
+  [1.08, 0.0452, 0.0452, 0.0450, 0.0476, 1.00, 1.00, 1.00],   // fabric bunching
+  [1.20, 0.0446, 0.0446, 0.0452, 0.0442, 1.00, 1.00, 1.00],
+  [1.32, 0.0440, 0.0440, 0.0448, 0.0428, 1.00, 1.00, 1.00],   // flexor swell
+  [1.50, 0.0414, 0.0414, 0.0418, 0.0400, 1.00, 1.00, 1.00],
+  [1.68, 0.0366, 0.0366, 0.0364, 0.0356, 1.00, 1.00, 1.00],
+  [1.85, 0.0308, 0.0308, 0.0302, 0.0300, 1.00, 1.00, 1.00],
+  [1.96, 0.0278, 0.0278, 0.0270, 0.0270, 1.00, 1.00, 1.00],
+  [2.00, 0.0272, 0.0272, 0.0264, 0.0264, 1.00, 1.00, 1.00],   // wrist
+  [2.03, 0.0288, 0.0288, 0.0280, 0.0280, 1.00, 1.00, 1.00],   // cuff lip
+  [2.06, 0.0240, 0.0240, 0.0234, 0.0234, 1.00, 1.00, 1.00],
 ];
 const SLEEVE_SPAN = 0.5537;   // shoulder to wrist on the reference rig
 
