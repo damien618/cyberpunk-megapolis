@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { buildBareLegs, buildSleeves } from './limbs.js';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
 
@@ -47,23 +48,93 @@ function clothingPart(materialName = '') {
   return Object.keys(CLOTHING_PARTS).find(part => name.includes(part)) || null;
 }
 
+// Clips a geometry to the half-space y >= minY, splitting the triangles that
+// straddle the plane. Keeping or dropping whole triangles on a centroid test is
+// much simpler but leaves the cut in saw teeth, which on the shorts reads as a
+// torn hem rather than a sewn one.
 function croppedGeometry(geometry, minY) {
-  const cropped = geometry.clone();
-  const position = cropped.getAttribute('position');
-  const source = cropped.index
-    ? Array.from(cropped.index.array)
+  const attributes = Object.entries(geometry.attributes);
+  const position = geometry.attributes.position;
+  const skinIndex = geometry.attributes.skinIndex;
+  const skinWeight = geometry.attributes.skinWeight;
+  const source = geometry.index
+    ? Array.from(geometry.index.array)
     : Array.from({ length: position.count }, (_, i) => i);
-  const kept = [];
+
+  const out = Object.fromEntries(attributes.map(([name]) => [name, []]));
+  const emitted = new Map();
+  const triangles = [];
+  let count = 0;
+
+  const emit = vertex => {
+    const key = `o${vertex}`;
+    if (emitted.has(key)) return emitted.get(key);
+    for (const [name, attribute] of attributes) {
+      for (let c = 0; c < attribute.itemSize; c++) {
+        out[name].push(attribute.getComponent(vertex, c));
+      }
+    }
+    emitted.set(key, count);
+    return count++;
+  };
+
+  const emitCut = (a, b) => {
+    const key = a < b ? `c${a},${b}` : `c${b},${a}`;
+    if (emitted.has(key)) return emitted.get(key);
+    const t = (minY - position.getY(a)) / (position.getY(b) - position.getY(a));
+    for (const [name, attribute] of attributes) {
+      if (attribute === skinIndex || attribute === skinWeight) continue;
+      for (let c = 0; c < attribute.itemSize; c++) {
+        const va = attribute.getComponent(a, c), vb = attribute.getComponent(b, c);
+        out[name].push(va + (vb - va) * t);
+      }
+    }
+    // Bone ids are labels, not quantities: merge the two influence sets by
+    // weight and keep the four strongest rather than averaging the indices.
+    if (skinIndex) {
+      const blend = new Map();
+      for (const [vertex, share] of [[a, 1 - t], [b, t]]) {
+        for (let c = 0; c < 4; c++) {
+          const weight = skinWeight.getComponent(vertex, c) * share;
+          if (weight <= 0) continue;
+          const bone = skinIndex.getComponent(vertex, c);
+          blend.set(bone, (blend.get(bone) ?? 0) + weight);
+        }
+      }
+      const top = [...blend].sort((p, q) => q[1] - p[1]).slice(0, 4);
+      const total = top.reduce((sum, [, w]) => sum + w, 0) || 1;
+      for (let c = 0; c < 4; c++) {
+        out.skinIndex.push(top[c] ? top[c][0] : 0);
+        out.skinWeight.push(top[c] ? top[c][1] / total : 0);
+      }
+    }
+    emitted.set(key, count);
+    return count++;
+  };
 
   for (let i = 0; i < source.length; i += 3) {
-    const a = source[i], b = source[i + 1], c = source[i + 2];
-    const centroidY = (position.getY(a) + position.getY(b) + position.getY(c)) / 3;
-    if (centroidY >= minY) kept.push(a, b, c);
+    const v = [source[i], source[i + 1], source[i + 2]];
+    const inside = v.map(k => position.getY(k) >= minY);
+    const kept = inside.filter(Boolean).length;
+    if (kept === 0) continue;
+    if (kept === 3) { triangles.push(...v.map(emit)); continue; }
+    // Sutherland-Hodgman against the single plane: a triangle or a quad out.
+    const poly = [];
+    for (let e = 0; e < 3; e++) {
+      const next = (e + 1) % 3;
+      if (inside[e]) poly.push(emit(v[e]));
+      if (inside[e] !== inside[next]) poly.push(emitCut(v[e], v[next]));
+    }
+    for (let f = 2; f < poly.length; f++) triangles.push(poly[0], poly[f - 1], poly[f]);
   }
 
-  cropped.setIndex(kept);
-  cropped.clearGroups();
-  cropped.addGroup(0, kept.length, 0);
+  const cropped = new THREE.BufferGeometry();
+  for (const [name, attribute] of attributes) {
+    const Attribute = attribute === skinIndex
+      ? THREE.Uint16BufferAttribute : THREE.Float32BufferAttribute;
+    cropped.setAttribute(name, new Attribute(out[name], attribute.itemSize));
+  }
+  cropped.setIndex(triangles);
   cropped.computeBoundingSphere();
   return cropped;
 }
@@ -116,8 +187,14 @@ export class Player {
             this.clothing[part].materials.push(materials[index]);
             if (o.isSkinnedMesh && !this.clothing[part].mesh) this.clothing[part].mesh = o;
           }
-          if (material?.name?.toLowerCase().includes('body') && !this.bodyMaterial) {
-            this.bodyMaterial = materials[index];
+          if (material?.name?.toLowerCase().includes('body')) {
+            if (!this.bodyMaterial) this.bodyMaterial = materials[index];
+            // The bare-arm skin, kept apart so long sleeves can retire it: it
+            // is weighted to the twist bones the sleeve ignores, so left on it
+            // punches through the cloth as the elbow rotates. Everything of it
+            // that is not sleeve-covered is under the t-shirt anyway.
+            const skeleton = o.isSkinnedMesh ? o.skeleton.bones.map(b => b.name) : [];
+            if (skeleton.includes('upperarm_l') && skeleton.includes('hand_l')) this.armsMesh = o;
           }
         });
         o.frustumCulled = false;
@@ -175,68 +252,32 @@ export class Player {
     return clone;
   }
 
-  createBoneCover(startName, endName, radiusStart, radiusEnd, material) {
-    const start = this.bones[startName], end = this.bones[endName];
-    if (!start || !end) return null;
-    const direction = end.position.clone();
-    const length = direction.length();
-    const geometry = new THREE.CylinderGeometry(radiusEnd, radiusStart, length * 1.04, 12, 2);
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.copy(direction).multiplyScalar(0.5);
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
-    mesh.castShadow = true;
-    mesh.frustumCulled = false;
-    mesh.visible = false;
-    start.add(mesh);
-    return mesh;
-  }
-
-  createBareFoot(footName, ballName, material) {
-    const foot = this.bones[footName], ball = this.bones[ballName];
-    if (!foot || !ball) return null;
-    const direction = ball.position.clone();
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), material);
-    mesh.position.copy(direction).multiplyScalar(0.72);
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
-    mesh.scale.set(0.058, direction.length() * 0.82, 0.052);
-    mesh.castShadow = true;
-    mesh.frustumCulled = false;
-    mesh.visible = false;
-    foot.add(mesh);
-    return mesh;
-  }
-
   createWardrobeAlternates() {
     const tshirtMaterial = new THREE.MeshStandardMaterial({
       color: 0xfdfdf7,
       roughness: 0.82,
       metalness: 0.02,
     });
+    // Skin tone sampled off the pack's own body albedo, so the bare legs read
+    // as the same person as the bare arms.
     const skinMaterial = new THREE.MeshStandardMaterial({
-      color: 0xd49375,
-      roughness: 0.88,
+      color: 0xd3a189,
+      roughness: 0.66,
       metalness: 0,
     });
+    // Double-sided: the shorts are an open-hemmed crop, and you can see up
+    // inside them from below once the legs no longer plug the hole.
     const swimMaterial = new THREE.MeshStandardMaterial({
       color: 0x168fb0,
       roughness: 0.76,
       metalness: 0.01,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
+      side: THREE.DoubleSide,
     });
 
-    const sleeves = [
-      this.createBoneCover('upperarm_l', 'lowerarm_l', 0.076, 0.064, tshirtMaterial),
-      this.createBoneCover('lowerarm_l', 'hand_l', 0.066, 0.049, tshirtMaterial),
-      this.createBoneCover('upperarm_r', 'lowerarm_r', 0.076, 0.064, tshirtMaterial),
-      this.createBoneCover('lowerarm_r', 'hand_r', 0.066, 0.049, tshirtMaterial),
-    ].filter(Boolean);
+    const sleeves = buildSleeves(this.model, tshirtMaterial);
+    const swimLegs = buildBareLegs(this.model, skinMaterial);
 
     const pants = this.clothing.pants.mesh;
-    const swimLegs = pants
-      ? this.createSkinnedClone(pants, pants.geometry.clone(), skinMaterial, 'Wardrobe_BareLegs')
-      : null;
     const swimShorts = pants
       ? this.createSkinnedClone(
         pants,
@@ -245,14 +286,12 @@ export class Player {
         'Wardrobe_SwimShorts'
       )
       : null;
-    if (swimShorts) swimShorts.scale.multiplyScalar(1.012);
+    // No inflation here: the 1.2% the shorts used to be scaled by existed only
+    // to break the z-fight with the recoloured trousers that stood in for legs.
+    // The lofted legs are well inside the trouser silhouette, and the scale was
+    // riding the hem a centimetre up the thigh.
 
-    const bareFeet = [
-      this.createBareFoot('foot_l', 'ball_l', skinMaterial),
-      this.createBareFoot('foot_r', 'ball_r', skinMaterial),
-    ].filter(Boolean);
-
-    this.wardrobe = { sleeves, swimLegs, swimShorts, bareFeet };
+    this.wardrobe = { sleeves, swimLegs, swimShorts };
   }
 
   setPartVisible(part, visible) {
@@ -278,10 +317,10 @@ export class Player {
     this.setPartVisible('tshirt', outfit.tshirt);
     this.setPartVisible('pants', outfit.pants && !outfit.swim);
     this.setPartVisible('shoes', outfit.shoes && !outfit.swim);
-    for (const sleeve of this.wardrobe.sleeves) sleeve.visible = outfit.longSleeves;
+    if (this.wardrobe.sleeves) this.wardrobe.sleeves.visible = outfit.longSleeves;
+    if (this.armsMesh) this.armsMesh.visible = !outfit.longSleeves;
     if (this.wardrobe.swimLegs) this.wardrobe.swimLegs.visible = outfit.swim;
     if (this.wardrobe.swimShorts) this.wardrobe.swimShorts.visible = outfit.swim;
-    for (const foot of this.wardrobe.bareFeet) foot.visible = outfit.swim;
   }
 
   play(key, fade = 0.25, loop = true) {
