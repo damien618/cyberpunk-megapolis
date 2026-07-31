@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Player } from './player.js?v=3';
+import { Player } from './player.js?v=4';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=3';
 import { CameraRig } from './cameraRig.js?v=3';
@@ -1852,11 +1852,13 @@ function enableNightMode() {
   scene.background = new THREE.Color(0x04070e);
   scene.fog = new THREE.Fog(0x07101e, 60, 750);
   renderer.toneMappingExposure = 0.50;
+  renderer.shadowMap.enabled = false;
 
   // Sun below horizon, hemisphere → near-black cool ambient. castShadow off:
   // a dark sun still re-rendered the 2048² shadow map every frame for nothing.
   sun.intensity = 0;
   sun.castShadow = false;
+  sun.visible = false;
   hemi.color.set(0x0d1828);
   hemi.groundColor.set(0x050608);
   hemi.intensity = 0.07;
@@ -1876,6 +1878,8 @@ function enableNightMode() {
   const headSpots = [];   // [x, y, z, scale] — G.sphere is r=0.5: scale = 2r
   const discSpots = [];   // [x, y, z, radius] — bright warm pool under a lamp
   const wideSpots = [];   // street-lamp pools: wider, fainter
+  const drivewayLights = [];
+  const poolLights = [];
   const lamp = (x, y, z, headR, discY, discR) => {
     headSpots.push([x, y, z, headR * 2]);
     discSpots.push([x, discY, z, discR]);
@@ -1907,6 +1911,7 @@ function enableNightMode() {
     const l = new THREE.PointLight(0xffec9a, 26, 17, 2);
     l.position.set(0, FLOOR + 1.7, z);
     scene.add(l);
+    drivewayLights.push(l);
   }
 
   // ── Infinity pool — underwater LED strip (teal), 2 diagonal real lights ──
@@ -1916,12 +1921,14 @@ function enableNightMode() {
     const l = new THREE.PointLight(0x00cce0, 58, 18, 1.5);
     l.position.set(poolCx + ox, WATER_Y - 0.15, poolCz + oz);
     scene.add(l);
+    poolLights.push(l);
   }
   // Spa underwater glow
   {
     const l = new THREE.PointLight(0x00b8d8, 30, 10, 1.5);
     l.position.set((SPA_X0 + SPA_X1) / 2, SPA_RIM - 0.2, (SPA_Z0 + SPA_Z1) / 2);
     scene.add(l);
+    poolLights.push(l);
   }
 
   // ── Poolside & terrace: fake bollards, real light at the far corners only ──
@@ -1936,6 +1943,7 @@ function enableNightMode() {
     const l = new THREE.PointLight(0xffd580, 20, 13, 2);
     l.position.set(x, FLOOR + 1.0, z);
     scene.add(l);
+    poolLights.push(l);
   }
 
   // ── Street lamps along the road below — poles + fake heads, no real lights ──
@@ -2032,8 +2040,6 @@ function enableNightMode() {
   });
   beacons.instanceMatrix.needsUpdate = true;
   scene.add(beacons);
-  nightFx = { beaconMat };
-
   // ── Stars — two point layers (dim field + brighter heroes) ──────────────
   for (const [count, size, color, opacity] of [
     [1100, 1.5, 0xbfccff, 0.75],
@@ -2108,11 +2114,55 @@ function enableNightMode() {
     });
   }
 
-  for (const c of traffic) {
+  // Only the two cars nearest the player cast real light. Every vehicle keeps
+  // its emissive lenses, so the fleet looks identical while distant headlights
+  // no longer enter every material's fragment-light loop.
+  const trafficHeadLights = [];
+  for (let i = 0; i < 2; i++) {
     const hl = new THREE.PointLight(0xfff5e0, 120, 34, 1.8);
     scene.add(hl);
-    c.headLight = hl;
+    trafficHeadLights.push(hl);
   }
+  nightFx = { beaconMat, drivewayLights, poolLights, trafficHeadLights, lightZone: '' };
+  updateNightLightBudget();
+}
+
+function updateNightLightBudget() {
+  if (!nightFx) return;
+  // Real lights only shape nearby surfaces. The fake emissive heads and light
+  // pools remain visible everywhere, so switching sides does not remove detail.
+  const lightZone = ctrl.pos.z < 2 ? 'pool' : 'cars';
+  if (lightZone === nightFx.lightZone) return;
+  nightFx.lightZone = lightZone;
+  const poolSide = lightZone === 'pool';
+  for (const light of nightFx.poolLights) light.visible = poolSide;
+  for (const light of nightFx.drivewayLights) light.visible = !poolSide;
+  for (const light of nightFx.trafficHeadLights) light.visible = !poolSide;
+  fireLight.visible = poolSide;
+}
+
+function updateTrafficHeadlights() {
+  if (!nightFx || nightFx.lightZone !== 'cars') return;
+  let nearest = null, second = null;
+  let nearestD2 = Infinity, secondD2 = Infinity;
+  for (const car of traffic) {
+    const dx = car.mesh.position.x - ctrl.pos.x;
+    const dz = car.mesh.position.z - ctrl.pos.z;
+    const distance2 = dx * dx + dz * dz;
+    if (distance2 < nearestD2) {
+      second = nearest;
+      secondD2 = nearestD2;
+      nearest = car;
+      nearestD2 = distance2;
+    } else if (distance2 < secondD2) {
+      second = car;
+      secondD2 = distance2;
+    }
+  }
+  [nearest, second].forEach((car, i) => {
+    const light = nightFx.trafficHeadLights[i];
+    light.position.set(car.mesh.position.x + car.dir * 2.5, 0.85, car.mesh.position.z);
+  });
 }
 
 const rays = {
@@ -2189,8 +2239,39 @@ const clock = new THREE.Clock();
 // player still gets the expected pause-on-unlock behaviour.
 let started = false, usedLock = false, paused = false;
 
+function updateAvatarOutfit() {
+  if (!player) return;
+  const { x, z } = ctrl.pos;
+  const isNight = window.__nightMode === true;
+  const isInsideVilla = x > VX0 && x < VX1 && z > VZ0 && z < VZ1;
+  const isPoolSide = x > -42 && x < 42 && z < VZ0 && z > -34;
+
+  if (isPoolSide) {
+    player.setOutfit({
+      hat: false,
+      backpack: false,
+      pants: false,
+      shoes: false,
+      longSleeves: isNight,
+      swim: true,
+    });
+  } else if (isInsideVilla) {
+    player.setOutfit({
+      hat: false,
+      backpack: false,
+      longSleeves: isNight,
+    });
+  } else {
+    player.setOutfit({
+      hat: !isNight,
+      longSleeves: isNight,
+    });
+  }
+}
+
 function updateAvatar(dt) {
   if (!player) return;
+  updateAvatarOutfit();
   player.update({
     dt,
     mode: ctrl.mode,
@@ -2252,8 +2333,12 @@ function animate() {
   const t = clock.elapsedTime;
   drawTv(t);
 
-  // Night only: pulse the downtown aviation beacons
-  if (nightFx) nightFx.beaconMat.opacity = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 2.3));
+  // Night only: pulse the downtown aviation beacons and keep only the local
+  // pool-side or car-side real-light group active.
+  if (nightFx) {
+    nightFx.beaconMat.opacity = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 2.3));
+    updateNightLightBudget();
+  }
 
   waterN.offset.x = t * 0.016;
   waterN.offset.y = -t * 0.01;
@@ -2266,12 +2351,9 @@ function animate() {
     c.mesh.position.x += c.speed * c.dir * dt;
     if (c.dir > 0 && c.mesh.position.x > 200) c.mesh.position.x = -200;
     if (c.dir < 0 && c.mesh.position.x < -200) c.mesh.position.x = 200;
-    // Night mode: track the headlight position with the car
-    if (c.headLight) {
-      c.headLight.position.set(c.mesh.position.x + c.dir * 2.5, 0.85, c.mesh.position.z);
-    }
   }
   rollCars(traffic, dt);
+  updateTrafficHeadlights();
 
   updateAvatar(dt);
   rig.update(dt, input, ctrl);
@@ -2310,4 +2392,6 @@ window.addEventListener('resize', () => {
 });
 
 // Inspection hook: lets tooling (and the console) frame the villa for shots.
-window.__villa = { THREE, scene, camera, renderer, world, ctrl, rig, input, spawnPoint };
+window.__villa = {
+  THREE, scene, camera, renderer, world, ctrl, rig, input, player, spawnPoint, updateAvatarOutfit
+};
