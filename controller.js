@@ -443,6 +443,14 @@ export class Controller {
       this.land(gh);
     }
 
+    // Walking mode pins vel.y at 0, so nothing pulls us back down after stepping
+    // DOWN off a kerb, a coping or a threshold: the old height was held until
+    // the gap outgrew hasSupport's 0.3 m, and the avatar walked on visibly
+    // nothing. Follow the surface instead — anything deeper is a real drop and
+    // still hands over to the air state.
+    if (gh !== null && this.mode === 'ground' && this.pos.y > gh && this.pos.y - gh < 0.3)
+      this.pos.y = gh;
+
     // unbury (ground mode only): feet stuck inside street-level geometry —
     // dropped through a tile seam onto the safety floor with the real street
     // ~1.2 m overhead, or walked into the side of a raised box-less road
@@ -505,7 +513,9 @@ export class Controller {
     for (const idx of ids) {
       const b = this.bw.aabbs[idx];
       if (!b.collide) continue;
-      if (b.y1 - this.pos.y < STEP_H) continue;       // steppable — ground snap raises us
+      // steppable — ground snap raises us. Props are the exception: the ground
+      // ray refuses to stand on them, so nothing would catch the player here.
+      if (!b.prop && b.y1 - this.pos.y < STEP_H) continue;
       if (this.pos.y + BODY_H <= b.y0) continue;
       const inX = this.pos.x > b.x0 - R && this.pos.x < b.x1 + R;
       const inZ = this.pos.z > b.z0 - R && this.pos.z < b.z1 + R;

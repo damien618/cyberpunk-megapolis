@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { Player } from './player.js?v=4';
+import { Player } from './player.js?v=10';
 import { Input } from './input.js';
-import { Controller } from './controller.js?v=3';
+import { Controller } from './controller.js?v=4';
 import { CameraRig } from './cameraRig.js?v=3';
-import { buildCityBoxes } from './cityBoxes.js?v=3';
+import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar, carBounds, rollCars, setCarLightsNight } from './cars.js?v=2';
 
 // ---------------------------------------------------------------------------
@@ -368,7 +368,7 @@ scene.add(world);
 // ---------------------------------------------------------------------------
 // Instancing kit
 // ---------------------------------------------------------------------------
-function addInstancedPrimitive(geometry, material, items) {
+function addInstancedPrimitive(geometry, material, items, propFlags) {
   if (!items.length) return null;
   const im = new THREE.InstancedMesh(geometry, material, items.length);
   const m = new THREE.Matrix4();
@@ -388,6 +388,10 @@ function addInstancedPrimitive(geometry, material, items) {
   im.castShadow = true;
   im.receiveShadow = true;
   im.instanceMatrix.needsUpdate = true;
+  // Per-instance furniture flag, indexed by instanceId — read by groundFn and
+  // by buildCityBoxes. Instances are written in kit order, so the two arrays
+  // line up.
+  if (propFlags?.some(Boolean)) im.userData.prop = propFlags;
   world.add(im);
   return im;
 }
@@ -409,14 +413,15 @@ const G = {
 };
 
 const kits = new Map();
-function kit(geo, mat) {
+function emit(geo, mat, item) {
   const key = `${geo.uuid}|${mat.uuid}`;
   let k = kits.get(key);
-  if (!k) kits.set(key, (k = { geo, mat, items: [] }));
-  return k.items;
+  if (!k) kits.set(key, (k = { geo, mat, items: [], propFlags: [] }));
+  k.items.push(item);
+  k.propFlags.push(PROP);
 }
 function flushKits() {
-  for (const k of kits.values()) addInstancedPrimitive(k.geo, k.mat, k.items);
+  for (const k of kits.values()) addInstancedPrimitive(k.geo, k.mat, k.items, k.propFlags);
   kits.clear();
 }
 
@@ -433,16 +438,30 @@ function frame(x, z, ry, fn) {
   fn();
   FX = px; FZ = pz; FR = pr;
 }
+// Furniture flag: everything the avatar must walk AROUND rather than ON. A
+// lounger, a bench or a coffee table is only 30–45 cm above the floor, well
+// under the controller's 50 cm step-up, so the ground ray used to accept its
+// top as a floor and snap the avatar onto it — left standing in mid-air between
+// two cushions. Carried per instance rather than as a volume: an AABB drawn
+// round a lounger reaches below the deck at its feet, and punching that hole in
+// the terrace would drop the player through it.
+let PROP = false;
+function prop(fn) {
+  const outer = PROP;
+  PROP = true;
+  fn();
+  PROP = outer;
+}
 function box(mat, x, y, z, sx, sy, sz, ry = 0) {
   const c = Math.cos(FR), s = Math.sin(FR);
-  kit(G.box, mat).push({
+  emit(G.box, mat, {
     x: FX + x * c + z * s, y: y + LIFT, z: FZ - x * s + z * c,
     sx, sy, sz, ry: FR + ry
   });
 }
 function shape(geo, mat, x, y, z, sx, sy, sz, rot = {}) {
   const c = Math.cos(FR), s = Math.sin(FR);
-  kit(geo, mat).push({
+  emit(geo, mat, {
     x: FX + x * c + z * s, y: y + LIFT, z: FZ - x * s + z * c,
     sx, sy, sz, ry: FR + (rot.ry || 0), rx: rot.rx || 0, rz: rot.rz || 0
   });
@@ -1124,6 +1143,40 @@ function parkCar(type, color, x, z, ry, ground, opts) {
   frame(x, z, ry, () => box(M.collider, 0, ground + b.height / 2, 0, b.length, b.height, b.width));
 }
 
+// Furniture, as opposed to architecture: what these builders emit is something
+// to bump into, never a floor. Wrapped here rather than at each call site so a
+// piece can't be dropped somewhere new and quietly become walkable again.
+// Deliberately excluded: rugs (flat on the floor), the pergola and the shower
+// tray (you stand under and in them), and every plant — a palm's AABB is mostly
+// crown, and making that solid would hang a wall in the air.
+const asProp = fn => (...args) => prop(() => fn(...args));
+sofa = asProp(sofa);
+armchair = asProp(armchair);
+lowTable = asProp(lowTable);
+diningTable = asProp(diningTable);
+chair = asProp(chair);
+stool = asProp(stool);
+bed = asProp(bed);
+nightstand = asProp(nightstand);
+wardrobe = asProp(wardrobe);
+dresser = asProp(dresser);
+vase = asProp(vase);
+counterRun = asProp(counterRun);
+kitchenIsland = asProp(kitchenIsland);
+fridge = asProp(fridge);
+ovenStack = asProp(ovenStack);
+vanity = asProp(vanity);
+wc = asProp(wc);
+bathtub = asProp(bathtub);
+towelLadder = asProp(towelLadder);
+lounger = asProp(lounger);
+parasol = asProp(parasol);
+outdoorSofa = asProp(outdoorSofa);
+firePit = asProp(firePit);
+bbqCounter = asProp(bbqCounter);
+outdoorDining = asProp(outdoorDining);
+planter = asProp(planter);
+
 // ---------------------------------------------------------------------------
 // Interior — great room (living + dining)
 // ---------------------------------------------------------------------------
@@ -1396,9 +1449,9 @@ slab(M.bronze, TX0, TX1, TZ0 - 0.09, TZ0 + 0.05, FLOOR + 1.1, FLOOR + 1.18);
 for (const [x, z] of [[12.4, -19.6], [12.4, -22.6], [15.2, -19.6], [15.2, -22.6]])
   frame(x, z, -Math.PI / 2, () => lounger());
 frame(13.8, -21.1, 0, () => parasol());
-frame(17.2, -19.6, 0, () => {
-  shape(G.cyl, M.teak, 0, F + 0.22, 0, 0.5, 0.44, 0.5);
-});
+frame(17.2, -19.6, 0, () => prop(() => {
+  shape(G.cyl, M.teak, 0, F + 0.22, 0, 0.5, 0.44, 0.5);   // teak side drum
+}));
 frame(-14.6, -15.6, 0, () => {
   pergola(7.4, 4.4);
   outdoorDining(3.0, 1.2);
@@ -1415,13 +1468,13 @@ frame(-14.2, -22.0, 0, () => {
 });
 frame(10.5, -13.6, Math.PI, () => bbqCounter(4.4));
 for (let i = 0; i < 3; i++) frame(9.4 + i * 1.1, -14.9, Math.PI, () => stool(0.68));
-frame(2.0, -16.2, 0, () => {
+frame(2.0, -16.2, 0, () => prop(() => {
   box(M.teak, 0, F + 0.24, 0, 2.2, 0.12, 0.5);   // towel bench by the pool
   box(M.teak, -0.95, F + 0.11, 0, 0.12, 0.22, 0.45);
   box(M.teak, 0.95, F + 0.11, 0, 0.12, 0.22, 0.45);
   box(M.linen, -0.5, F + 0.36, 0, 0.5, 0.14, 0.4);
   box(M.linen, 0.4, F + 0.36, 0, 0.5, 0.14, 0.4);
-});
+}));
 // Outdoor shower screen against the east end of the terrace
 slab(M.stuccoWarm, 17.3, 17.9, -14.4, -11.9, FLOOR, FLOOR + 2.4);
 slab(M.steel, 17.0, 17.35, -13.4, -13.05, FLOOR + 2.1, FLOOR + 2.2);
@@ -2204,6 +2257,9 @@ function groundFn(x, z, yFrom, feetY) {
   const overPool = x > PLX0 && x < PLX1 && z > PLZ0 && z < PLZ1;
   for (const h of hits) {
     if (overPool && h.object === terrain) continue;
+    // Furniture is scenery, not floor: skipping it here is what keeps the ray
+    // going down to the deck instead of parking the avatar on a lounger.
+    if (h.object.userData.prop?.[h.instanceId]) continue;
     if (h.point.y <= feetY + 0.75) return h.point.y + 0.02;
   }
   // Fall back to the analytic terrain so nobody walks on invisible ground.

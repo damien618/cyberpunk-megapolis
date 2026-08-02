@@ -33,6 +33,10 @@ export function buildCityBoxes(world) {
         x0, y0, z0, x1, y1, z1,
         collide: fp <= 80,            // giant merged districts (slums 400m) only block anchors/LOS
         tall: y1 - y0 > 9,
+        // Furniture: solid at any height. The step-up shortcut assumes a low
+        // box is something the ground snap will lift you onto, which is exactly
+        // what a scene's props must not do.
+        prop: im.userData.prop?.[i] === true,
       });
     }
   }

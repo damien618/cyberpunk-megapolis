@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 
 const RADIAL = 20;
+const TOE_RADIAL = 10;   // a 6 mm toe does not need the leg's ring density
 
 // ---------------------------------------------------------------------------
 // Cross-section tables. Radii are in metres, measured against the reference
@@ -27,7 +28,10 @@ const RADIAL = 20;
 // the sole without creasing the edge where it wraps up into the sides.
 // ---------------------------------------------------------------------------
 
-// Chain parameter: 0 hip, 1 knee, 2 ankle, 3 ball of the foot, 3.5 toe tip.
+// Chain parameter: 0 hip, 1 knee, 2 ankle, 3 ball of the foot. The table stops
+// at the metatarsal heads: carrying one tube on to the toe tip is what made the
+// foot read as a blunt slipper, so the five toes are lofted separately (see
+// TOES / buildToes) and butt into the pad this table closes on.
 const LEG_PROFILE = [
   // u,    lat,    med,    ant,    post,   ex,   enA,  enP
   [0.00, 0.0860, 0.0820, 0.0840, 0.0980, 1.00, 1.00, 1.00],  // gluteal fold
@@ -55,13 +59,41 @@ const LEG_PROFILE = [
   [2.62, 0.0380, 0.0392, 0.0400, 0.0330, 0.72, 1.00, 0.36],  // instep / arch
   [2.80, 0.0410, 0.0432, 0.0350, 0.0302, 0.70, 0.98, 0.34],
   [3.00, 0.0432, 0.0462, 0.0292, 0.0300, 0.70, 0.94, 0.32],  // ball, wider inside
-  [3.15, 0.0430, 0.0458, 0.0258, 0.0296, 0.70, 0.90, 0.32],
-  [3.28, 0.0418, 0.0444, 0.0224, 0.0288, 0.72, 0.88, 0.34],  // toes stay blunt
-  [3.38, 0.0388, 0.0410, 0.0192, 0.0272, 0.74, 0.86, 0.38],
-  [3.45, 0.0322, 0.0338, 0.0154, 0.0236, 0.78, 0.84, 0.46],
-  [3.50, 0.0150, 0.0156, 0.0080, 0.0132, 0.86, 0.86, 0.62],  // tip
+  [3.07, 0.0396, 0.0424, 0.0206, 0.0262, 0.70, 0.92, 0.34],
+  [3.12, 0.0286, 0.0306, 0.0104, 0.0158, 0.78, 0.90, 0.44],  // pad rolls into the toes
 ];
 const LEG_SPAN = 0.8955;   // hip to ankle on the reference rig
+const LEG_END = 3.12;
+
+// One row per toe, hallux first: offset across the forefoot (medial negative),
+// radius, length past the metatarsal head, and splay in radians — the big toe
+// angles in and the little one out, which is what stops the five reading as a
+// comb. Lengths give the usual stepped toe line: the second is the longest,
+// then it falls away sharply to the fifth. All lengths are in units of the
+// ankle-to-ball span, so they follow whatever foot the rig actually has.
+const TOES = [
+  // across, radius, length, splay
+  [-0.222, 0.088, 0.47, -0.045],
+  [-0.082, 0.070, 0.51, -0.008],
+  [0.038, 0.064, 0.45, 0.014],
+  [0.144, 0.058, 0.37, 0.034],
+  [0.234, 0.050, 0.27, 0.060],
+];
+// Toe cross-section, u = 0 at the buried root to 1 at the tip. Radii are
+// fractions of the toe's own radius. `ant` starts at more than twice that: a
+// round tube leaves the toes hanging off the pad like fingers out of a mitten,
+// where a real toe is a tall box at the knuckle that only rounds off near the
+// nail. `ex` below 1 squares the sides so neighbours meet along a cleft instead
+// of touching at one point, and `enP` keeps the pads flat on the ground.
+const TOE_PROFILE = [
+  // u,    lat,  med,  ant,  post,  ex,   enA,  enP
+  [0.00, 1.08, 1.08, 2.55, 1.00, 0.72, 0.95, 0.58],
+  [0.26, 1.04, 1.04, 1.70, 0.99, 0.74, 0.95, 0.58],
+  [0.55, 1.00, 1.00, 1.22, 0.94, 0.78, 0.96, 0.62],  // interphalangeal knuckle
+  [0.78, 0.95, 0.95, 0.98, 0.88, 0.84, 0.98, 0.68],
+  [0.92, 0.82, 0.82, 0.80, 0.74, 0.92, 1.00, 0.80],
+  [1.00, 0.36, 0.36, 0.34, 0.30, 1.00, 1.00, 1.00],  // pulp of the tip
+];
 
 // Chain parameter: 0 shoulder, 1 elbow, 2 wrist. Starts above the shoulder so
 // the opening is buried in the torso, and ends just past the wrist on a cuff.
@@ -144,7 +176,8 @@ function ringParams(from, to, stepAt) {
  * `lateral` mirrors the frame for the right-hand limb, which also reverses the
  * winding — hence the flip on triangle emission rather than a normals fixup.
  */
-function loft({ points, pathU, profile, scale, rings, weights, lateral, floorY, floorFrom, warp }, out) {
+function loft({ points, pathU, profile, scale, rings, weights, lateral, floorY, floorFrom, warp,
+  radial = RADIAL }, out) {
   const path = new THREE.CatmullRomCurve3(points, false, 'centripetal');
   const segs = pathU.length - 1;
   const curveT = u => {
@@ -173,8 +206,8 @@ function loft({ points, pathU, profile, scale, rings, weights, lateral, floorY, 
 
     const [lat, med, ant, post, ex, enA, enP] = sampleProfile(profile, u, prof);
     const w = weights(u);
-    for (let j = 0; j < RADIAL; j++) {
-      const th = (j / RADIAL) * Math.PI * 2;
+    for (let j = 0; j < radial; j++) {
+      const th = (j / radial) * Math.PI * 2;
       const cs = Math.cos(th), sn = Math.sin(th);
       const rl = cs >= 0 ? lat : med;
       const rv = sn >= 0 ? ant : post;
@@ -203,11 +236,11 @@ function loft({ points, pathU, profile, scale, rings, weights, lateral, floorY, 
   const tri = lateral > 0
     ? (a, b, c) => out.tri.push(a, b, c)
     : (a, b, c) => out.tri.push(a, c, b);
-  const last = base + (rings.length - 1) * RADIAL;
-  for (let j = 0; j < RADIAL; j++) {
-    const j2 = (j + 1) % RADIAL;
+  const last = base + (rings.length - 1) * radial;
+  for (let j = 0; j < radial; j++) {
+    const j2 = (j + 1) % radial;
     for (let r = 0; r < rings.length - 1; r++) {
-      const a = base + r * RADIAL, b = a + RADIAL;
+      const a = base + r * radial, b = a + radial;
       tri(a + j, a + j2, b + j);
       tri(a + j2, b + j2, b + j);
     }
@@ -343,22 +376,68 @@ export function buildBareLegs(root, material) {
         along(ankle, 0.10, ankle.y - 0.33 * L),   // rounds the back of the heel
         along(ankle, 0.42, soleY + 0.22 * L),     // arch
         along(flatBall, 0, soleY + 0.22 * L),
-        along(flatBall, 0.30, soleY + 0.20 * L),
-        along(flatBall, 0.50, soleY + 0.17 * L),
+        along(flatBall, 0.05, soleY + 0.175 * L),
+        along(flatBall, 0.10, soleY + 0.128 * L),   // pad stops at the toe roots
       ],
-      pathU: [0, 1, 2, 2.30, 2.62, 3.0, 3.28, 3.5],
+      pathU: [0, 1, 2, 2.30, 2.62, 3.0, 3.07, LEG_END],
       profile: LEG_PROFILE,
       scale: hip.distanceTo(ankle) / LEG_SPAN,
-      rings: ringParams(0, 3.5, u => u < 0.72 ? 0.090
-        : u < 1.30 ? 0.048 : u < 1.78 ? 0.070 : u < 2.10 ? 0.040 : u < 3.05 ? 0.045 : 0.035),
+      rings: ringParams(0, LEG_END, u => u < 0.72 ? 0.090
+        : u < 1.30 ? 0.048 : u < 1.78 ? 0.070 : u < 2.10 ? 0.040 : u < 3.05 ? 0.045 : 0.030),
       weights: legWeights(bone),
       lateral: Math.sign(hip.x) || 1,
       floorY: soleY,
       floorFrom: 2,
       warp: archWarp,
     }, out);
+    buildToes({ out, bone, fwd, hip, flatBall, soleY, L });
   }
   return finish(out, rig, material, 'Wardrobe_BareLegs');
+}
+
+// Five short tubes fanning out of the forefoot pad. Each is skinned to the same
+// ball/foot pair the pad ends on, so they follow the existing clips without any
+// extra joints — a curled-toe clip would need real phalanges, but nothing in
+// the traversal set curls them.
+function buildToes({ out, bone, fwd, hip, flatBall, soleY, L }) {
+  const lateral = Math.sign(hip.x) || 1;
+  // Across the foot, pointing away from the midline, whatever way the rig's
+  // forefoot happens to face.
+  const across = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), fwd).normalize();
+  if (across.x * lateral < 0) across.negate();
+  const dir = new THREE.Vector3();
+  const ss = THREE.MathUtils.smoothstep;
+
+  for (const [offset, radius, length, splay] of TOES) {
+    const r = radius * L;
+    dir.copy(fwd).applyAxisAngle(new THREE.Vector3(0, 1, 0), splay * lateral).normalize();
+    // Root sits back inside the pad so the seam never opens up, and the toe
+    // rides at its own radius above the sole so the soft floor flattens the pad
+    // rather than sinking it.
+    const root = flatBall.clone()
+      .addScaledVector(across, offset * L)
+      .addScaledVector(dir, -0.22 * L)
+      .setY(soleY + r);
+    loft({
+      points: [
+        root,
+        root.clone().addScaledVector(dir, (0.22 + length * 0.55) * L),
+        root.clone().addScaledVector(dir, (0.22 + length) * L),
+      ],
+      pathU: [0, 0.55, 1],
+      profile: TOE_PROFILE,
+      scale: r,
+      rings: ringParams(0, 1, u => u < 0.55 ? 0.18 : 0.07),
+      weights: u => {
+        const t = ss(u, 0, 0.40);
+        return { idx: [bone.ball, bone.foot, 0, 0], wgt: [0.5 + 0.5 * t, 0.5 - 0.5 * t, 0, 0] };
+      },
+      lateral,
+      floorY: soleY,
+      floorFrom: 0,
+      radial: TOE_RADIAL,
+    }, out);
+  }
 }
 
 // ---------------------------------------------------------------------------
