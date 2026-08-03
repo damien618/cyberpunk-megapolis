@@ -9,12 +9,12 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { Player } from './player.js?v=3';
+import { Player } from './player.js?v=4';
 
 // build stamp: shown in the HUD + console so a stale-cache session is
 // recognizable at a glance (a mixed old/new module graph once reproduced the
 // "restart from the sky every few seconds" loop with zero errors)
-const BUILD = '2026-07-15a1';
+const BUILD = '2026-08-02a1';
 console.log(`[build] ${BUILD}`);
 
 // ---------- coordinate convention (verified: case A — Blender FBX->glTF export_yup) ----------
@@ -980,7 +980,7 @@ function charMatFor(name) {
 // ---------- game layer (architecture adapted from the web-slinger reference) ----------
 import { buildCityBoxes } from './cityBoxes.js?v=3';
 import { Controller } from './controller.js?v=3';
-import { CameraRig } from './cameraRig.js?v=3';
+import { CameraRig } from './cameraRig.js?v=4';
 import { Input } from './input.js?v=3';
 
 // ---------- floating-decal cull ----------

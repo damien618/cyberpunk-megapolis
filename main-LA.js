@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { Player } from './player.js?v=10';
+import { Player } from './player.js?v=22';
 import { Input } from './input.js';
-import { Controller } from './controller.js?v=4';
-import { CameraRig } from './cameraRig.js?v=3';
+import { Controller } from './controller.js?v=5';
+import { CameraRig } from './cameraRig.js?v=4';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar, carBounds, rollCars, setCarLightsNight } from './cars.js?v=2';
 
@@ -739,6 +739,26 @@ slab(M.hedge, 8.4, 13.4, VZ1 + 0.4, VZ1 + 1.4, 0.2, 1.05);
 // Furniture kit
 // ---------------------------------------------------------------------------
 const F = FLOOR; // shorthand: everything indoors sits on the finished floor
+const furnitureInteractions = [];
+
+// `restY` is the surface the avatar comes to rest ON, exactly like the floor
+// height a walking avatar stands on — the Player lifts the body clear of it by
+// its own thickness, so the bedding height belongs here with the bedding.
+function furnitureInteraction(type, halfWidth, halfDepth, anchorZ = 0, restY = F + 0.02) {
+  const c = Math.cos(FR), s = Math.sin(FR);
+  furnitureInteractions.push({
+    type,
+    x: FX + anchorZ * s,
+    y: restY,
+    z: FZ + anchorZ * c,
+    centerX: FX,
+    centerZ: FZ,
+    approachY: F + 0.02,
+    yaw: FR,
+    halfWidth,
+    halfDepth,
+  });
+}
 
 function rug(w, d, mat = M.rug) {
   box(mat, 0, F + 0.012, 0, w, 0.024, d);
@@ -758,6 +778,7 @@ function sofa(len, { depth = 0.95, mat = M.fabric, cushion = M.fabricWarm, arms 
   }
 }
 function armchair(mat = M.fabricOlive) {
+  furnitureInteraction('sit', 0.46, 0.45);
   box(mat, 0, F + 0.2, 0, 0.92, 0.4, 0.9);
   box(mat, 0, F + 0.46, 0, 0.84, 0.14, 0.82);
   box(mat, 0, F + 0.64, -0.36, 0.92, 0.62, 0.18);
@@ -777,6 +798,7 @@ function diningTable(w, d, mat = M.walnut) {
   box(mat, w / 2 - 0.45, F + 0.36, 0, 0.12, 0.7, d - 0.2);
 }
 function chair(mat = M.fabric, wood = M.walnut) {
+  furnitureInteraction('sit', 0.25, 0.25);
   box(mat, 0, F + 0.45, 0, 0.5, 0.09, 0.5);
   box(mat, 0, F + 0.72, -0.21, 0.46, 0.48, 0.08);
   for (const [dx, dz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]])
@@ -789,6 +811,7 @@ function stool(h = 0.72) {
   shape(G.cyl, M.bronze, 0, F + 0.24, 0, 0.3, 0.04, 0.3);
 }
 function bed(w, l, { linen = M.linen, throwMat = M.fabricWarm } = {}) {
+  furnitureInteraction('lie', w / 2, l / 2, l / 2 - 0.12, F + 0.66);  // on the duvet
   box(M.walnut, 0, F + 0.16, 0, w, 0.32, l);                         // base
   box(linen, 0, F + 0.46, 0, w - 0.06, 0.3, l - 0.06);               // mattress
   box(linen, 0, F + 0.63, 0.1, w - 0.02, 0.06, l - 0.9);             // duvet
@@ -1342,9 +1365,12 @@ frame(2.6, 10.5, -Math.PI / 2, () => {
 frame(0, 8.4, 0, () => rug(2.6, 1.6, M.rugDark));
 pendant(0, 3.05, 9.8, 0.26);
 
-// Hallway runner + a chair against the living-band partition, clear of the door
+// Hallway runner + a chair against the street wall. It used to stand on the
+// west partition beside the guest-room door, which put its sit trigger right
+// in the doorway — you could not walk into the bedroom without being seated.
+// Same wall-backed pose, now off the foyer-to-bedroom run entirely.
 frame(-6.5, 7.8, 0, () => rug(5.0, 1.2, M.rugDark));
-frame(-9.2, 8.65, Math.PI / 2, () => chair());
+frame(-7.0, 11.4, Math.PI, () => chair());
 // Modern-art canvas on the east partition, facing the front window
 slab(M.walnut, -3.56, -3.5, 10.2, 11.8, FLOOR + 1.0, FLOOR + 2.2);
 slab(M.linen, -3.555, -3.505, 10.3, 11.7, FLOOR + 1.1, FLOOR + 2.1);
@@ -2225,11 +2251,29 @@ const rays = {
   tmpNormal: new THREE.Vector3(),
 };
 const down = new THREE.Vector3(0, -1, 0);
+const _origin = new THREE.Vector3();
+
+// Everything in `world` except the terrain. The site plane is 200x200 segments
+// — 80 000 triangles with no acceleration structure, and three.js walks every
+// one of them on every query: measured on its own it cost ~25 ms per ray,
+// against ~4 ms for the entire rest of the map. At two ground probes a frame
+// that was the whole frame budget. groundFn evaluates the terrain analytically
+// instead (the mesh's vertices are set straight from terrainHeight, so the two
+// agree), and no other caster needs to hit a lawn. Rebuilt whenever something
+// joins the scene — night mode adds its own props.
+let rayTargets = null, rayTargetCount = -1;
+function targets() {
+  if (rayTargetCount !== world.children.length) {
+    rayTargets = world.children.filter(o => o !== terrain);
+    rayTargetCount = world.children.length;
+  }
+  return rayTargets;
+}
 
 function castFn(origin, dir, far) {
   rays.ray.set(origin, dir);
   rays.ray.far = far;
-  const hit = rays.ray.intersectObjects(world.children, true)[0];
+  const hit = rays.ray.intersectObjects(targets(), true)[0];
   if (!hit) return null;
   let normal = null;
   if (hit.face?.normal) {
@@ -2247,24 +2291,38 @@ function castFn(origin, dir, far) {
   return { point: hit.point.clone(), normal, distance: hit.distance };
 }
 
-function groundFn(x, z, yFrom, feetY) {
-  rays.ray.set(new THREE.Vector3(x, yFrom, z), down);
-  rays.ray.far = 160;
-  const hits = rays.ray.intersectObjects(world.children, true);
-  // The site terrain runs flat under the whole property, so it has to be
-  // ignored over the pool — otherwise you walk on an invisible floor at water
-  // level instead of stepping down into the basin.
+const GROUND_REACH = 160;
+
+function groundFn(x, z, yFrom, feetY, prevY = feetY) {
+  // Highest surface we may accept: within step-up of the feet, or anything we
+  // started the frame above — a 60 m/s fall crosses more than a metre between
+  // ticks, and capping on the feet alone hides the very ground it just went
+  // through, leaving the avatar to drop forever.
+  const cap = Math.max(feetY + 0.75, prevY + 0.3);
+  let best = null;
+  // The terrain as a candidate rather than a ray hit — same surface, none of
+  // the cost (see `targets`). It runs flat under the whole property, so it has
+  // to be dropped over the pool: otherwise you walk on an invisible floor at
+  // water level instead of stepping down into the basin.
   const overPool = x > PLX0 && x < PLX1 && z > PLZ0 && z < PLZ1;
-  for (const h of hits) {
-    if (overPool && h.object === terrain) continue;
+  if (!overPool && Math.abs(x) < 440 && Math.abs(z) < 440) {
+    const th = terrainHeight(x, z);
+    if (th <= cap && th <= yFrom && th >= yFrom - GROUND_REACH) best = th;
+  }
+  rays.ray.set(_origin.set(x, yFrom, z), down);
+  rays.ray.far = GROUND_REACH;
+  for (const h of rays.ray.intersectObjects(targets(), true)) {
     // Furniture is scenery, not floor: skipping it here is what keeps the ray
     // going down to the deck instead of parking the avatar on a lounger.
     if (h.object.userData.prop?.[h.instanceId]) continue;
-    if (h.point.y <= feetY + 0.75) return h.point.y + 0.02;
+    // Hits arrive top-down, so the first one under the step-up cap is the
+    // highest real surface we may stand on — nothing below it can win.
+    if (h.point.y <= cap) {
+      if (best === null || h.point.y > best) best = h.point.y;
+      break;
+    }
   }
-  // Fall back to the analytic terrain so nobody walks on invisible ground.
-  if (Math.abs(x) < 440 && Math.abs(z) < 440) return terrainHeight(x, z) + 0.02;
-  return null;
+  return best === null ? null : best + 0.02;
 }
 
 const bw = buildCityBoxes(world);
@@ -2294,6 +2352,93 @@ const clock = new THREE.Clock();
 // lock has actually been used and then dropped (e.g. Escape), so a normal desktop
 // player still gets the expected pause-on-unlock behaviour.
 let started = false, usedLock = false, paused = false;
+let activeFurnitureInteraction = null;
+let furnitureInteractionCooldown = 0;
+// Getting up puts the avatar back exactly where it was grabbed, which is still
+// inside that seat's trigger — on the cooldown alone it simply sat back down a
+// beat later. The piece you stood up from stays off-limits until you have
+// walked clear of it; RELEASE_RADIUS is the hysteresis that decides "clear".
+let releasedSpot = null;
+const RELEASE_RADIUS = 1.1;
+const interactionExitKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyE'];
+
+function interactionInputHeld() {
+  return interactionExitKeys.some(code => input.down(code));
+}
+
+function distanceToFurniture(spot, position) {
+  const dx = position.x - spot.centerX;
+  const dz = position.z - spot.centerZ;
+  const c = Math.cos(spot.yaw), s = Math.sin(spot.yaw);
+  const localX = dx * c - dz * s;
+  const localZ = dx * s + dz * c;
+  const edgeX = Math.max(0, Math.abs(localX) - spot.halfWidth);
+  const edgeZ = Math.max(0, Math.abs(localZ) - spot.halfDepth);
+  return Math.hypot(edgeX, edgeZ);
+}
+
+function enterFurnitureInteraction(spot) {
+  activeFurnitureInteraction = {
+    ...spot,
+    source: spot,
+    returnPosition: ctrl.pos.clone(),
+    readyToExit: false,
+  };
+  ctrl.pos.set(spot.x, spot.y, spot.z);
+  ctrl.prevY = spot.y;
+  ctrl.vel.set(0, 0, 0);
+  ctrl.mode = spot.type;
+  ctrl.webOn = false;
+}
+
+function leaveFurnitureInteraction() {
+  const interaction = activeFurnitureInteraction;
+  if (!interaction) return;
+  ctrl.pos.copy(interaction.returnPosition);
+  ctrl.prevY = ctrl.pos.y;
+  ctrl.vel.set(0, 0, 0);
+  ctrl.mode = 'ground';
+  activeFurnitureInteraction = null;
+  releasedSpot = interaction.source;
+  furnitureInteractionCooldown = 0.65;
+}
+
+function updateFurnitureInteraction(dt) {
+  furnitureInteractionCooldown = Math.max(0, furnitureInteractionCooldown - dt);
+
+  if (activeFurnitureInteraction) {
+    if (input.pressed('KeyR')) {
+      activeFurnitureInteraction = null;
+      furnitureInteractionCooldown = 0.65;
+      ctrl.rescueTo(spawnPoint);
+      return true;
+    }
+
+    const inputHeld = interactionInputHeld();
+    if (!inputHeld) activeFurnitureInteraction.readyToExit = true;
+    if (inputHeld && activeFurnitureInteraction.readyToExit) {
+      leaveFurnitureInteraction();
+      return false;
+    }
+    return true;
+  }
+
+  if (releasedSpot && distanceToFurniture(releasedSpot, ctrl.pos) > RELEASE_RADIUS) releasedSpot = null;
+  if (furnitureInteractionCooldown > 0 || ctrl.mode !== 'ground') return false;
+  let nearest = null;
+  let nearestDistance = Infinity;
+  for (const spot of furnitureInteractions) {
+    if (spot === releasedSpot) continue;
+    if (Math.abs(ctrl.pos.y - spot.approachY) > 0.75) continue;
+    const distance = distanceToFurniture(spot, ctrl.pos);
+    if (distance < 0.54 && distance < nearestDistance) {
+      nearest = spot;
+      nearestDistance = distance;
+    }
+  }
+  if (nearest) enterFurnitureInteraction(nearest);
+  return activeFurnitureInteraction !== null;
+}
 
 function updateAvatarOutfit() {
   if (!player) return;
@@ -2302,7 +2447,9 @@ function updateAvatarOutfit() {
   const isInsideVilla = x > VX0 && x < VX1 && z > VZ0 && z < VZ1;
   const isPoolSide = x > -42 && x < 42 && z < VZ0 && z > -34;
 
-  if (isPoolSide) {
+  if (activeFurnitureInteraction?.type === 'lie') {
+    player.setOutfit({ night: true });   // silk slip, bare legs, bare feet
+  } else if (isPoolSide) {
     player.setOutfit({
       hat: false,
       backpack: false,
@@ -2337,6 +2484,8 @@ function updateAvatar(dt) {
     webHand: ctrl.webHand,
     anchor: ctrl.anchor,
     ropeSlack: ctrl.webOn ? Math.max(0, ctrl.pos.distanceTo(ctrl.anchor) - ctrl.ropeLen) : 0,
+    posture: activeFurnitureInteraction?.type,
+    facingYaw: activeFurnitureInteraction?.yaw,
   });
 }
 
@@ -2382,7 +2531,11 @@ function animate() {
     input.updateLook(dt);
     const cp = Math.cos(input.pitch);
     forward.set(-Math.sin(input.yaw) * cp, Math.sin(input.pitch), -Math.cos(input.yaw) * cp).normalize();
-    ctrl.update(dt, input, input.yaw, forward);
+    const interactionLocked = updateFurnitureInteraction(dt);
+    if (!interactionLocked) {
+      ctrl.update(dt, input, input.yaw, forward);
+      updateFurnitureInteraction(0);
+    }
     if (ctrl.pos.y < -60) ctrl.rescueTo(spawnPoint);
   }
 
@@ -2449,5 +2602,9 @@ window.addEventListener('resize', () => {
 
 // Inspection hook: lets tooling (and the console) frame the villa for shots.
 window.__villa = {
-  THREE, scene, camera, renderer, world, ctrl, rig, input, player, spawnPoint, updateAvatarOutfit
+  THREE, scene, camera, renderer, world, ctrl, rig, input, player, spawnPoint,
+  furnitureInteractions, enterFurnitureInteraction, leaveFurnitureInteraction,
+  updateFurnitureInteraction,
+  get activeFurnitureInteraction() { return activeFurnitureInteraction; },
+  updateAvatarOutfit
 };

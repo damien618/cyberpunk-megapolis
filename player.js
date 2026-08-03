@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { buildBareLegs, buildSleeves } from './limbs.js?v=7';
+import { buildBareLegs, buildSleeves, buildNightSkirt } from './limbs.js?v=11';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
 
@@ -34,6 +34,25 @@ const TRAVERSAL_CLIPS = {
   swingJump: 'BarSwing_ForwardAcross_SwingJump',
 };
 const STRIP_PELVIS_POS = new Set(['swing', 'fall', 'jumpLoop', 'landRoll']);
+
+// Supine pose. The whole leg chain is reset, twist bones included, or the clip
+// keeps shearing the knee it thinks is still bearing weight.
+const LYING_LEG_JOINTS = ['thigh', 'thigh_twist_01', 'calf', 'calf_twist_01', 'foot', 'ball'];
+// The trunk is reset too. A standing idle keeps the pelvis rotating and sliding
+// under a swaying spine, which on a supine body twists the hips out of line —
+// the two sockets end up several centimetres apart front-to-back, and no amount
+// of hip levelling can straighten legs hanging off a crooked pelvis. The arms
+// and head keep their tracks, so the avatar still breathes.
+const LYING_TRUNK_JOINTS = ['pelvis', 'spine_01', 'spine_02', 'spine_03'];
+// Three small offsets off the rest pose then take the legs off attention and
+// into how a body actually settles on its back: ankles relaxed into plantar
+// flexion, heels a little apart, and the legs rolled out so the toes fall
+// outward. Axes measured against this rig — on the thigh, Y abducts, X rolls
+// along the leg and Z is hip flexion.
+const LYING_ANKLE_DROP = THREE.MathUtils.degToRad(-22);
+const LYING_HIP_SPREAD = THREE.MathUtils.degToRad(5);
+const LYING_LEG_ROLL = THREE.MathUtils.degToRad(13);
+const HIP_LEVEL_PROBE = 0.2;   // test swing used to calibrate the hip levelling
 
 const CLOTHING_PARTS = {
   hat: 'hat',
@@ -144,6 +163,8 @@ export class Player {
     this.scene = scene;
     this.group = new THREE.Group();
     scene.add(this.group);
+    this.poseRoot = new THREE.Group();
+    this.group.add(this.poseRoot);
     this.mixer = null;
     this.actions = {};
     this.cur = null;
@@ -201,7 +222,14 @@ export class Player {
       }
       if (o.isBone) this.bones[o.name] = o;
     });
-    this.group.add(this.model);
+    this.poseRoot.add(this.model);
+    // Rest pose, captured before a single clip has touched the rig. The lying
+    // posture has to undo whatever the idle is doing to the legs, and a delta
+    // applied on top of an animated bone would drift with it.
+    this.restRotation = new Map(
+      Object.entries(this.bones).map(([name, bone]) => [name, bone.quaternion.clone()])
+    );
+    this.restPelvis = this.bones.pelvis?.position.clone() ?? null;
     this.createWardrobeAlternates();
     this.setOutfit();
     this.mixer = new THREE.AnimationMixer(this.model);
@@ -274,8 +302,20 @@ export class Player {
       side: THREE.DoubleSide,
     });
 
+    // Washed-silk dusty rose: the L.A. slip nightdress. Low roughness with a
+    // trace of metalness is what reads as satin under the villa's warm bounce
+    // without tipping over into metal. Champagne was the first choice and it
+    // blew out to the same white as the bedding it is lying on.
+    const silkMaterial = new THREE.MeshStandardMaterial({
+      color: 0xc98d86,
+      roughness: 0.44,
+      metalness: 0.03,
+      side: THREE.DoubleSide,
+    });
+
     const sleeves = buildSleeves(this.model, tshirtMaterial);
     const swimLegs = buildBareLegs(this.model, skinMaterial);
+    const nightSkirt = buildNightSkirt(this.model, silkMaterial);
 
     const pants = this.clothing.pants.mesh;
     const swimShorts = pants
@@ -291,7 +331,15 @@ export class Player {
     // The lofted legs are well inside the trouser silhouette, and the scale was
     // riding the hem a centimetre up the thigh.
 
-    this.wardrobe = { sleeves, swimLegs, swimShorts };
+    // Bodice of the nightdress: the t-shirt geometry again, in silk. Cheaper
+    // and better-fitting than lofting a torso, and it covers the shoulders —
+    // which matters, because the skin under the shirt does not exist.
+    const tshirt = this.clothing.tshirt.mesh;
+    const nightTop = tshirt
+      ? this.createSkinnedClone(tshirt, tshirt.geometry, silkMaterial, 'Wardrobe_NightTop')
+      : null;
+
+    this.wardrobe = { sleeves, swimLegs, swimShorts, nightTop, nightSkirt };
   }
 
   setPartVisible(part, visible) {
@@ -307,20 +355,26 @@ export class Player {
       shoes: options.shoes !== false,
       longSleeves: options.longSleeves === true,
       swim: options.swim === true,
+      night: options.night === true,
     };
     const key = JSON.stringify(outfit);
     if (key === this.outfitKey || !this.wardrobe) return;
     this.outfitKey = key;
 
-    this.setPartVisible('hat', outfit.hat);
-    this.setPartVisible('backpack', outfit.backpack);
-    this.setPartVisible('tshirt', outfit.tshirt);
-    this.setPartVisible('pants', outfit.pants && !outfit.swim);
-    this.setPartVisible('shoes', outfit.shoes && !outfit.swim);
-    if (this.wardrobe.sleeves) this.wardrobe.sleeves.visible = outfit.longSleeves;
-    if (this.armsMesh) this.armsMesh.visible = !outfit.longSleeves;
-    if (this.wardrobe.swimLegs) this.wardrobe.swimLegs.visible = outfit.swim;
-    if (this.wardrobe.swimShorts) this.wardrobe.swimShorts.visible = outfit.swim;
+    // The nightdress replaces the whole outfit: silk bodice, silk skirt, bare
+    // legs and bare feet. Nobody sleeps in a backpack.
+    const bare = outfit.swim || outfit.night;
+    this.setPartVisible('hat', outfit.hat && !outfit.night);
+    this.setPartVisible('backpack', outfit.backpack && !outfit.night);
+    this.setPartVisible('tshirt', outfit.tshirt && !outfit.night);
+    this.setPartVisible('pants', outfit.pants && !bare);
+    this.setPartVisible('shoes', outfit.shoes && !bare);
+    if (this.wardrobe.sleeves) this.wardrobe.sleeves.visible = outfit.longSleeves && !outfit.night;
+    if (this.armsMesh) this.armsMesh.visible = !outfit.longSleeves || outfit.night;
+    if (this.wardrobe.swimLegs) this.wardrobe.swimLegs.visible = bare;
+    if (this.wardrobe.swimShorts) this.wardrobe.swimShorts.visible = outfit.swim && !outfit.night;
+    if (this.wardrobe.nightTop) this.wardrobe.nightTop.visible = outfit.night;
+    if (this.wardrobe.nightSkirt) this.wardrobe.nightSkirt.visible = outfit.night;
   }
 
   play(key, fade = 0.25, loop = true) {
@@ -343,14 +397,131 @@ export class Player {
     }
   }
 
+  applySeatedPose() {
+    this.poseRoot.position.y = -0.43;
+    for (const side of ['l', 'r']) {
+      this.bones[`thigh_${side}`]?.rotateZ(THREE.MathUtils.degToRad(80));
+      this.bones[`calf_${side}`]?.rotateZ(THREE.MathUtils.degToRad(-80));
+    }
+  }
+
+  // Lying tips the avatar a quarter turn about X, which maps its local +Z (the
+  // back-to-front axis) onto world +Y — so the body hangs BELOW the pose root
+  // by however far its back reaches, and parking the root on the mattress
+  // buries it.
+  //
+  // Measured off the torso and the legs in the BIND pose, which is what
+  // actually comes to rest on a mattress. The whole silhouette is the wrong
+  // reference: the backpack juts 43 cm out behind, and setOutfit retires it by
+  // hiding its materials while the mesh stays `visible`, so it would float the
+  // avatar a foot and a half over the bed. The posed skin is the wrong moment:
+  // the first lie-down happens straight out of a walk cycle, with one leg
+  // still swung back.
+  backReach() {
+    if (this._backReach === undefined) {
+      const v = new THREE.Vector3();
+      let min = 0;
+      this.poseRoot.updateMatrixWorld(true);
+      for (const part of ['tshirt', 'pants']) {
+        const mesh = this.clothing[part]?.mesh;
+        if (!mesh) continue;
+        const position = mesh.geometry.attributes.position;
+        for (let i = 0; i < position.count; i++) {
+          v.fromBufferAttribute(position, i);
+          mesh.localToWorld(v);
+          this.poseRoot.worldToLocal(v);
+          if (v.z < min) min = v.z;
+        }
+      }
+      this._backReach = -min;
+    }
+    return this._backReach;
+  }
+
+  // Per-side hip swing that brings each leg into the body's own plane, i.e.
+  // straight down. The pack is not bound in a symmetric A-pose — it is bound
+  // mid-stance, with the left leg a good 8 cm ahead of the right — so simply
+  // restoring the rest pose still leaves one leg hanging over the mattress.
+  //
+  // Calibrated rather than tabulated: swing the thigh by a known test angle,
+  // watch how far the toe travels front-to-back, and solve for the angle that
+  // zeroes it. Survives a re-rig, and costs one measurement per session.
+  hipLevelling() {
+    if (!this._hipLevel) {
+      this._hipLevel = {};
+      const hip = new THREE.Vector3(), ankle = new THREE.Vector3();
+      for (const side of ['l', 'r']) {
+        const thigh = this.bones[`thigh_${side}`], foot = this.bones[`foot_${side}`];
+        this._hipLevel[side] = 0;
+        if (!thigh || !foot) continue;
+        const rest = thigh.quaternion.clone();
+        // Front-to-back reach of hip to ANKLE, in the avatar's own frame: the
+        // pose root's local +Z is the direction the body faces. Measured to the
+        // ankle and not the toe — the ball of the foot sits a hand's length
+        // ahead of the shin by construction, and levelling on it swings the
+        // whole leg backwards to compensate.
+        const reach = () => {
+          this.poseRoot.updateMatrixWorld(true);
+          hip.setFromMatrixPosition(thigh.matrixWorld);
+          ankle.setFromMatrixPosition(foot.matrixWorld);
+          this.poseRoot.worldToLocal(hip);
+          this.poseRoot.worldToLocal(ankle);
+          return ankle.z - hip.z;
+        };
+        const before = reach();
+        thigh.rotateZ(HIP_LEVEL_PROBE);
+        const after = reach();
+        thigh.quaternion.copy(rest);
+        if (after !== before) this._hipLevel[side] = -HIP_LEVEL_PROBE * before / (after - before);
+      }
+      this.poseRoot.updateMatrixWorld(true);
+    }
+    return this._hipLevel;
+  }
+
+  applyLyingPose() {
+    this.poseRoot.rotation.x = -Math.PI / 2;
+    this.poseRoot.position.y = this.backReach();
+    // The clip underneath is a STANDING idle: weight on one leg, the other knee
+    // bent with its heel off the floor. Tipped onto its back that reads as a
+    // foot hovering over the mattress, so the leg chain goes back to the rest
+    // pose first, then gets levelled and relaxed.
+    for (const joint of LYING_TRUNK_JOINTS) {
+      const bone = this.bones[joint];
+      const rest = this.restRotation?.get(joint);
+      if (bone && rest) bone.quaternion.copy(rest);
+    }
+    if (this.restPelvis) this.bones.pelvis.position.copy(this.restPelvis);
+    for (const side of ['l', 'r']) {
+      for (const joint of LYING_LEG_JOINTS) {
+        const bone = this.bones[`${joint}_${side}`];
+        const rest = this.restRotation?.get(`${joint}_${side}`);
+        if (bone && rest) bone.quaternion.copy(rest);
+      }
+    }
+    const level = this.hipLevelling();
+    for (const side of ['l', 'r']) {
+      const mirror = side === 'l' ? 1 : -1;
+      const thigh = this.bones[`thigh_${side}`];
+      thigh?.rotateZ(level[side]);
+      thigh?.rotateY(-LYING_HIP_SPREAD * mirror);
+      thigh?.rotateX(LYING_LEG_ROLL * mirror);
+      this.bones[`foot_${side}`]?.rotateZ(LYING_ANKLE_DROP);
+    }
+  }
+
   // ---------- visual update driven by controller ----------
   update(ctx) {
-    const { dt, mode, pos, vel } = ctx;
+    const { dt, mode, pos, vel, posture, facingYaw } = ctx;
     this.group.position.copy(pos);
+    this.poseRoot.position.set(0, 0, 0);
+    this.poseRoot.rotation.set(0, 0, 0);
 
     // facing: along horizontal velocity (smoothed)
     const hsp = Math.hypot(vel.x, vel.z);
-    if (hsp > 1.2) {
+    if (Number.isFinite(facingYaw)) {
+      this.yaw = facingYaw;
+    } else if (hsp > 1.2) {
       const target = Math.atan2(vel.x, vel.z);
       let d = (target - this.yaw) % (Math.PI * 2);
       if (d > Math.PI) d -= Math.PI * 2;
@@ -360,7 +531,10 @@ export class Player {
     this.group.rotation.y = this.yaw;
 
     // animation mapping
-    if (this.landTimer > 0) {
+    if (posture === 'sit' || posture === 'lie') {
+      this.landTimer = 0;
+      this.play('idle', 0.2);
+    } else if (this.landTimer > 0) {
       this.landTimer -= dt;
     } else if (mode === 'ground') {
       this.play(hsp < 0.6 ? 'idle' : hsp < 6 ? 'walk' : hsp < 11 ? 'run' : 'sprint');
@@ -372,6 +546,11 @@ export class Player {
       this.play('fall', 0.3);   // wallrun / zip
     }
     this.mixer.update(dt);
+    if (posture === 'sit') {
+      this.applySeatedPose();
+    } else if (posture === 'lie') {
+      this.applyLyingPose();
+    }
 
     // web rope
     this.updateWeb(ctx);

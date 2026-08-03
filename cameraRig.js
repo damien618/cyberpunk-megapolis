@@ -58,7 +58,7 @@ export class CameraRig {
     }
 
     _look.copy(ctrl.pos);
-    _look.y += 1.35;
+    _look.y += ctrl.mode === 'lie' ? 0.35 : ctrl.mode === 'sit' ? 1.0 : 1.35;
     _lat.copy(ctrl.vel).multiplyScalar(0.16);
     if (_lat.length() > 4.5) _lat.setLength(4.5);
     _look.add(_lat);

@@ -533,15 +533,21 @@ export class Controller {
       else nz = 1;
 
       // verify the face is real: probe INTO the box at two heights; if neither
-      // ray meets geometry within arm's reach, the box is hollow here — pass
-      let real = false;
-      for (const dy of [0.35, 1.35]) {
-        const ry = THREE.MathUtils.clamp(this.pos.y + dy, b.y0 + 0.05, Math.max(b.y0 + 0.05, b.y1 - 0.05));
-        _o.set(this.pos.x, ry, this.pos.z);
-        _rdir.set(-nx, 0, -nz);
-        if (this.castFn(_o, _rdir, R + 0.8)) { real = true; break; }
+      // ray meets geometry within arm's reach, the box is hollow here — pass.
+      // Props skip it: a prop AABB bounds one kit primitive, not a merged
+      // district, so it has no hollow interior to guard against — and a chair
+      // you can stand inside of is worth less than the two full-scene rays per
+      // box per frame that checking would cost in a furnished room.
+      let real = b.prop;
+      if (!real) {
+        for (const dy of [0.35, 1.35]) {
+          const ry = THREE.MathUtils.clamp(this.pos.y + dy, b.y0 + 0.05, Math.max(b.y0 + 0.05, b.y1 - 0.05));
+          _o.set(this.pos.x, ry, this.pos.z);
+          _rdir.set(-nx, 0, -nz);
+          if (this.castFn(_o, _rdir, R + 0.8)) { real = true; break; }
+        }
+        if (!real) continue;
       }
-      if (!real) continue;
 
       if (nx < 0) this.pos.x = b.x0 - R;
       else if (nx > 0) this.pos.x = b.x1 + R;

@@ -499,3 +499,64 @@ export function buildSleeves(root, material) {
   }
   return finish(out, rig, material, 'Wardrobe_Sleeves');
 }
+
+// ---------------------------------------------------------------------------
+// Nightdress skirt
+// ---------------------------------------------------------------------------
+
+// The pack's torso IS the t-shirt — hide it and the body has a hole from the
+// collarbone to the hips — so the nightdress reuses that mesh for its bodice
+// and only the skirt below the hem has to be built. A single tube around both
+// legs, hanging from the pelvis: bias-cut, so it barely flares.
+//
+// Chain parameter: 0 at the t-shirt hem, 1 at the hip, 2 at the hem.
+const SKIRT_PROFILE = [
+  // u,    lat,   med,   ant,   post,  ex,   enA,  enP
+  [0.00, 0.168, 0.168, 0.118, 0.122, 1.00, 1.00, 1.00],  // tucked under the bodice
+  [0.45, 0.182, 0.182, 0.126, 0.134, 1.00, 1.00, 1.00],
+  [1.00, 0.196, 0.196, 0.132, 0.142, 1.00, 1.00, 1.00],  // widest across the hips
+  [1.55, 0.201, 0.201, 0.136, 0.144, 1.00, 1.00, 1.00],
+  [2.00, 0.208, 0.208, 0.142, 0.148, 1.00, 1.00, 1.00],  // hem, above the knee
+];
+// calf_l is in the list only so findRig picks a mesh that reaches past the hip:
+// the t-shirt knows about the pelvis and the thighs but stops there, and the
+// hem is measured off the knee.
+const SKIRT_BONES = ['pelvis', 'thigh_l', 'thigh_r', 'calf_l'];
+
+export function buildNightSkirt(root, material) {
+  const rig = findRig(root, SKIRT_BONES);
+  if (!rig) return null;
+  const { indexOf, pos } = restReader(rig);
+  const pelvis = pos('pelvis');
+  const thighL = pos('thigh_l'), thighR = pos('thigh_r');
+  // The hem is measured down the leg rather than assumed, so it sits at the
+  // same place on any rig the pack ships.
+  const knee = pos('calf_l');
+  const drop = thighL.y - knee.y;
+  const centre = y => new THREE.Vector3((thighL.x + thighR.x) / 2, y, (thighL.z + thighR.z) / 2);
+  const bone = { pelvis: indexOf('pelvis'), l: indexOf('thigh_l'), r: indexOf('thigh_r') };
+  const out = { pos: [], tri: [], idx: [], wgt: [] };
+  const ss = THREE.MathUtils.smoothstep;
+  loft({
+    points: [
+      centre(pelvis.y + 0.09),          // buried under the bodice
+      centre(pelvis.y - 0.02),
+      centre(pelvis.y - 0.62 * drop),   // hem just above the knee
+    ],
+    pathU: [0, 1, 2],
+    profile: SKIRT_PROFILE,
+    scale: 1,
+    rings: ringParams(0, 2, () => 0.16),
+    // Held by the hips at the waist and shared equally by both thighs at the
+    // hem: a skirt tracks the average of the legs, it does not split between
+    // them, and an all-pelvis hem would pass straight through a raised knee.
+    weights: u => {
+      const leg = 0.5 * ss(u, 0.75, 2);
+      return { idx: [bone.pelvis, bone.l, bone.r, 0], wgt: [1 - leg, leg / 2, leg / 2, 0] };
+    },
+    lateral: 1,
+    floorY: null,
+    floorFrom: 0,
+  }, out);
+  return finish(out, rig, material, 'Wardrobe_NightSkirt');
+}
