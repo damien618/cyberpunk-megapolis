@@ -4,8 +4,13 @@
     {
       "name": "cyberpunk-megapolis",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8766"],
-      "port": 8766
+      "runtimeArgs": [
+        "-u",
+        "-c",
+        "import os,http.server as h;h.ThreadingHTTPServer(('127.0.0.1',int(os.environ.get('PORT','8766'))),h.SimpleHTTPRequestHandler).serve_forever()"
+      ],
+      "port": 8766,
+      "autoPort": true
     }
   ]
 }

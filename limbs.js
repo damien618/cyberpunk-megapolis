@@ -523,29 +523,87 @@ export function buildSleeves(root, material) {
 // Authored in the bind pose, where +Z is the body's front: the way she faces,
 // and therefore up once she is on her back.
 
-// What is under the cloth, at the waist and at the hem; every ring lerps between
-// the two. Widths are in units of the rig's own half hip span and depths in
-// units of its hip-to-knee drop — both measured off the pack's own girl, so the
-// skirt follows whatever skeleton ships — and depths are relative to the axis
-// between the thighs. `sep` is how far apart the two supports sit, `rx`/`rz`
-// their section, `cz` its centre, `bed` the sheet she is lying on and `wide`
-// how far the cloth reaches across it.
+// What is under the cloth. Widths are in units of the rig's own half hip span
+// and heights in units of its hip-to-knee drop, so the skirt follows whatever
+// skeleton ships. `sep` is how far apart the two supports sit either side of
+// the ring's centreline, `cx` where that centreline is, `rx` the half-width of
+// one support, `crest` how high it stands off the sheet and `wide` how far the
+// cloth reaches across it.
 //
-// The supports are the legs as they *lie*, not as they are bound. Settling on
-// the bind pose put the cloth straight through them: lying down spreads the
-// thighs about 4 cm further apart than the bind pose does, lifts them a little,
-// and does not do it evenly left to right. So the two mounds are set from the
-// posed legs and are wider than a thigh, which both covers the side-to-side
-// difference and reads as cloth rather than as a cast of her.
-const SKIRT_WAIST =
-  { wide: 1.58, sep: 0.00, rx: 1.58, rz: 0.262, cz: -0.005, bed: -0.266 };
-const SKIRT_HEM =
-  { wide: 2.00, sep: 1.20, rx: 0.85, rz: 0.170, cz: -0.033, bed: -0.316 };
-const SKIRT_SLACK = 0.045;    // how far the silk floats off whatever carries it
-const SKIRT_SAG = 0.0035;     // slack per sample, i.e. how far a span gives up
-const SKIRT_PASSES = 240;     // enough for the drape to settle across a ring
+// The supports are the legs as they *lie*, not as they are bound, and these are
+// read off the posed girl ring by ring rather than guessed. Two stations were
+// never enough for that. Below the hip the body stops being a pelvis and
+// becomes two legs within a single ring — 5 cm of daylight between them one
+// ring down — while everything after that changes slowly and almost linearly
+// all the way to the knee. Lerping one against the other made the transition
+// far too slow: eight rings down the model still had a single pelvis-wide mound
+// crested on the centreline, while the real thighs sat at ±1 half-span either
+// side of it and walked straight out through the flanks of the cloth.
+//
+// `cx` is the one that cannot be symmetric. Lying down she does not only spread
+// her legs, she lets the whole lower half fall to one side: hips 21.4 cm apart
+// centred under the pelvis, knees 25.8 cm apart but centred 4 cm to the left of
+// it. Supports set symmetrically about the pelvis therefore miss BOTH knees by
+// 4 cm — one inboard, one outboard. So the centreline drifts with the legs, in
+// signed half hip spans, and `sep` stays symmetric about that.
+//
+// `under` is how far the leg is off the mattress, and it is not a detail: she
+// is not lying flat. She rests on the sheet at the hips and her legs climb away
+// from it, 3 cm of daylight beneath them at the top of the thigh and 8 cm by
+// the knee. A skirt is a tube, so its back panel has to go up into that gap and
+// pass under each thigh. Left as a flat panel on the mattress the cloth ran 8 cm
+// BELOW the leg it was supposed to be wrapping, and the garment simply stopped
+// where it met the bed instead of continuing round.
+const SKIRT_PELVIS = { wide: 1.58, sep: 0.00, cx: 0.00, rx: 1.80, crest: 0.452, under: 0.000 };
+const SKIRT_THIGH = { wide: 2.00, sep: 1.03, cx: 0.00, rx: 0.94, crest: 0.452, under: 0.060 };
+const SKIRT_KNEE = { wide: 2.00, sep: 1.19, cx: 0.35, rx: 0.70, crest: 0.406, under: 0.179 };
+// The mattress is flat, so the sheet is one number, not a taper: a millimetre
+// over the duvet under her legs. Tapering it drove the hem's underside 2 cm
+// into the mattress, and the cloth's own edge came back out of it as a hard
+// straight line — the flap that hung off her hip.
+const SKIRT_BED = -0.270;
+// `rx` above already carries about 1.6 cm of ease over the measured leg, which
+// is what keeps the drape reading as cloth rather than as a cast of her.
+//
+// A leg is a cylinder lying on a mattress, and that is not the same silhouette
+// as half an ellipse. Its top runs from 2R on the axis down to R at its widest
+// point, and only THEN does it fall away — so the cloth stays high out to the
+// full width of the leg. Taken as `crest·√(1-d²)` the cloth instead dived to
+// 0.7R while the leg surface was still at R, and the thigh came through it
+// along a horizontal line the whole length of the skirt. `crest` is the height
+// on the axis, i.e. 2R, and the profile below rebuilds the cylinder from it.
+//
+// Where the cloth leaves the leg — at its widest point, height R, tangent
+// vertical — it is holding nothing and simply falls. `FOLD` is how far out it
+// lands, as a fraction of that height, and `POOL` how much then lies out flat
+// on the sheet. Without them the cloth ran in one straight facet from the leg
+// to a pinned edge, which is the vertical arc that looked driven into the
+// mattress instead of folded onto it.
+//
+// Both are small on purpose, and this is the difference between a nightdress
+// and a bedsheet. A bias-cut slip is drafted hips/4 + 3/8" at the hip and
+// hips/4 + 1" at the hem: the hem is 1.6% wider than the hips, over the whole
+// garment. There is essentially no flare in one. Everything it does it does by
+// clinging — it takes the shape of what is under it and breaks into a few soft
+// folds — so the cloth has to land beside the thigh, not spread out around her.
+// At 0.85 and 0.30 it reached 11 cm past each leg and lay there, which is
+// several times the entire ease of the real garment, and read as a sheet
+// thrown over her however well the fold itself was shaped.
+const SKIRT_FOLD = 0.40;      // fall-out, in units of the height it falls from
+const SKIRT_POOL = 0.10;      // cloth lying flat past the fold, in half hip spans
+// Cling, again: a slip sits ON the thigh, and the deep sink between the legs is
+// the single thing that reads as two legs under silk instead of one draped
+// mass. The old sag bridged that gap nearly flat.
+const SKIRT_SLACK = 0.024;    // how far the silk floats off whatever carries it
+const SKIRT_SAG = 0.012;      // slack per sample, i.e. how far a span gives up
+const SKIRT_GATHER = 0.013;   // depth of the soft folds, in hip-to-knee drops
+const SKIRT_FOLD_PITCH = 0.9; // and how far apart they run, in half hip spans
+const SKIRT_PASSES = 400;     // enough for the drape to settle across a ring
 const SKIRT_RINGS = 15;
-const SKIRT_RADIAL = 44;      // even: half the loop is the drape, half the sheet
+// Even: half the loop is the drape, half the sheet. The fold is only 6 cm of
+// the span, so at 44 the whole fall got two samples and read as a crease in
+// sheet metal however well it was shaped.
+const SKIRT_RADIAL = 96;
 // calf_l is in the list only so findRig picks a mesh that reaches past the hip:
 // the t-shirt knows about the pelvis and the thighs but stops there, and the
 // hem is measured off the knee.
@@ -576,6 +634,29 @@ function settleDrape(floor, sag) {
   return z;
 }
 
+/**
+ * The same string, read the other way up: the skirt's back panel.
+ *
+ * This one is not lying on anything — it is the underside of a tube. Samples
+ * touching a thigh stay pinned to that underside profile; only the unsupported
+ * spans between and outside the legs relax down towards their neighbours. The
+ * mattress is the lower limit and the two outer ends remain on it. Without the
+ * contact pins the relaxation also lowered the cloth beneath both thighs, so
+ * almost the entire back panel disappeared into the bed.
+ */
+function settleUnder(cap, contact, bed, sag) {
+  const z = cap.slice();
+  for (let pass = 0; pass < SKIRT_PASSES; pass++) {
+    for (let i = 1; i < z.length - 1; i++) {
+      if (contact[i]) continue;
+      const taut = 0.5 * (z[i - 1] + z[i + 1]) - sag;
+      if (taut < z[i]) z[i] = taut;
+      if (z[i] < bed) z[i] = bed;
+    }
+  }
+  return z;
+}
+
 export function buildNightSkirt(root, material) {
   const rig = findRig(root, SKIRT_BONES);
   if (!rig) return null;
@@ -587,69 +668,174 @@ export function buildNightSkirt(root, material) {
   const knee = pos('calf_l');
   const drop = thighL.y - knee.y;
   const hipHalf = Math.abs(thighL.x - thighR.x) / 2;
+  // Signed, so `cx` below drifts towards the left thigh whichever way the rig
+  // happens to lay its X out.
+  const hipSigned = (thighL.x - thighR.x) / 2;
   const axisX = (thighL.x + thighR.x) / 2, axisZ = (thighL.z + thighR.z) / 2;
   const waistY = pelvis.y + 0.09;          // buried under the bodice
-  const hemY = thighL.y - 0.62 * drop;     // just above the knee
-  const bone = { pelvis: indexOf('pelvis'), l: indexOf('thigh_l'), r: indexOf('thigh_r') };
+  // Just above the knee, which is what SKIRT_KNEE describes: its `sep` of 1.19
+  // half-hip-spans is the gap between the legs where the CALVES start, not
+  // where the thighs are. At 0.62 the hem landed 17 cm up the thigh wearing a
+  // section cut for the knee — too wide for where it sat, and cut off square.
+  const hemY = thighL.y - 0.95 * drop;
   const out = { pos: [], tri: [], idx: [], wgt: [] };
   const ss = THREE.MathUtils.smoothstep;
   const mix = (a, b, t) => a + (b - a) * t;
 
-  // The waist stays on the pelvis; farther down each side follows the thigh
-  // under it, and the cloth spanning the gap splits its allegiance between the
-  // two so the bridge stretches instead of picking a leg and creasing.
-  const weights = (k, across) => {
-    const leg = 0.72 * ss(k, 0.22, 0.95);
-    const left = ss(across, -0.55, 0.55);
-    return {
-      idx: [bone.pelvis, bone.l, bone.r, 0],
-      wgt: [1 - leg, leg * left, leg * (1 - left), 0],
-    };
-  };
+  // How far the back of the body reaches behind the rig, in this same
+  // geometry space: the plane backReach() rests on the duvet. The hard-coded
+  // bed depth below is only a guess at that plane, so the sheet is clamped to
+  // never go under it.
+  let backZ = Infinity;
+  const skin = rig.geometry.attributes.position;
+  for (let i = 0; i < skin.count; i++) backZ = Math.min(backZ, skin.getZ(i));
+
+  // Every vertex rides the pelvis alone. The drape is authored over the legs
+  // as they already LIE (see the supports above), so weighting the cloth to
+  // the thighs re-applied the lying leg roll on top of the authored one: the
+  // hem swung with the thighs, stretching the span between the legs into a
+  // torn sheet and dragging the underside through the mattress. The lying
+  // pose never animates the legs, so a skirt rigid on the pelvis keeps the
+  // authored fit exactly.
+  const weights = () => ({
+    idx: [indexOf('pelvis'), 0, 0, 0],
+    wgt: [1, 0, 0, 0],
+  });
 
   const p = new THREE.Vector3();
   const half = SKIRT_RADIAL / 2;
   const base = out.pos.length / 3;
   const floor = new Array(half);
+  const ceil = new Array(half);
+  const underContact = new Array(half);
   let waistMid = 0;
   for (let r = 0; r < SKIRT_RINGS; r++) {
     const k = r / (SKIRT_RINGS - 1);
-    // The shape stays tucked while it is still under the bodice and has opened
-    // into the full drape before the hem, so neither end is caught mid-morph.
-    const e = ss(k, 0.12, 0.86);
-    // A hem is a free edge, so the last few centimetres draw in instead of
-    // ending on a square corner — the corner is what read as a plank.
-    const wide = hipHalf * mix(SKIRT_WAIST.wide, SKIRT_HEM.wide, e)
-      * (1 - 0.17 * ss(k, 0.84, 1));
-    const sep = hipHalf * mix(SKIRT_WAIST.sep, SKIRT_HEM.sep, e);
-    const rx = hipHalf * mix(SKIRT_WAIST.rx, SKIRT_HEM.rx, e);
-    const rz = drop * mix(SKIRT_WAIST.rz, SKIRT_HEM.rz, e);
-    const cz = axisZ + drop * mix(SKIRT_WAIST.cz, SKIRT_HEM.cz, e);
-    const zBed = axisZ + drop * mix(SKIRT_WAIST.bed, SKIRT_HEM.bed, e);
+    // Pelvis handing over to two legs: fast, because it happens inside one
+    // ring, and finished by the first ring clear of the bodice. Then thigh to
+    // knee: slow and linear, which is how the legs themselves taper.
+    const e = ss(k, 0.07, 0.22);
+    const t = THREE.MathUtils.clamp((k - 0.21) / 0.79, 0, 1);
+    const station = key => mix(SKIRT_PELVIS[key], mix(SKIRT_THIGH[key], SKIRT_KNEE[key], t), e);
+
+    const sep = hipHalf * station('sep');
+    const rx = hipHalf * station('rx');
+    // Centreline of this ring: under the pelvis at the waist, following the
+    // legs where they have fallen by the knee.
+    const cx = axisX + hipSigned * station('cx');
+    // The sheet she is lying on, never above the back that rests on it.
+    const zBed = Math.max(axisZ + drop * SKIRT_BED, backZ);
     const slack = drop * SKIRT_SLACK * ss(k, 0, 0.35);
     const y = mix(waistY, hemY, k);
+    // The leg as a section: its underside `lift` off the sheet, its top at
+    // `peak`, so its axis sits midway and its vertical radius is half the
+    // difference. Both surfaces come off the same ellipse, which is what keeps
+    // the tube closed around it.
+    const peak = drop * station('crest');
+    const lift = drop * station('under');
+    const axisH = 0.5 * (peak + lift), ry = 0.5 * (peak - lift);
+    // Where the cloth parts company with the leg: its widest point, tangent
+    // already vertical. Everything outside this is the fold.
+    const shed = sep + rx, shoulder = axisH;
+    const foldOut = SKIRT_FOLD * shoulder;
+    // A hem is a free edge, so the last few centimetres draw in instead of
+    // ending on a square corner. But the cloth has to reach past the fold and
+    // still have something left to lie out on the sheet, whatever the authored
+    // width says — pinning its edge any closer is what stood the fall up into
+    // a wall and drove it into the mattress.
+    const wide = Math.max(
+      hipHalf * station('wide') * (1 - 0.17 * ss(k, 0.84, 1)),
+      shed + foldOut + hipHalf * SKIRT_POOL);
     const xAt = j => wide * (1 - 2 * j / (half - 1));
 
-    // Sample the body and the sheet under this ring, then let the cloth settle.
+    // Sample what is under this ring. Three regions, and only the first is
+    // something the cloth rests ON:
+    //
+    //   over a leg      the cylinder, R·(1 + √(1-d²)) off the sheet
+    //   between them    the sheet, which the settle then bridges into a valley
+    //   outside them    nothing — the fold, which is not settled at all
+    //
+    // The fold has to be built rather than settled because settleDrape pulls
+    // samples UP towards their neighbours. Given a pinned outer edge it drew
+    // the fall as one straight span from the leg to the pin, and a straight
+    // span off a body 20 cm above a mattress is a wall. Cloth with nothing
+    // under it does the opposite: it leaves the leg on the vertical tangent it
+    // was already following, curves out as it loses height, and lands flat.
+    // `(1-u)²` is that in one line — steep where it leaves, tangent to the
+    // sheet where it arrives — and past the fold it simply lies there.
     for (let j = 0; j < half; j++) {
-      const d = Math.abs(Math.abs(xAt(j)) - sep) / rx;
-      floor[j] = d < 1 ? cz + rz * Math.sqrt(1 - d * d) : zBed;
-      if (floor[j] < zBed) floor[j] = zBed;
+      const ax = Math.abs(xAt(j));
+      const d = Math.abs(ax - sep) / rx;
+      const bulge = d < 1 ? ry * Math.sqrt(1 - d * d) : 0;
+      underContact[j] = d < 1;
+      if (underContact[j]) {
+        floor[j] = zBed + axisH + bulge;
+        ceil[j] = zBed + axisH - bulge;
+        continue;
+      }
+      ceil[j] = zBed + peak;                                 // no leg: nothing in the way
+      if (ax < sep) { floor[j] = zBed; continue; }           // the valley between the legs
+      const u = Math.min(1, (ax - shed) / foldOut);
+      floor[j] = zBed + shoulder * (1 - u) ** 2;
     }
     floor[0] = floor[half - 1] = zBed;
+    ceil[0] = ceil[half - 1] = zBed;
+    underContact[0] = underContact[half - 1] = true;
     const cloth = settleDrape(floor, drop * SKIRT_SAG);
+    // The settle is for spans held up at both ends. Outside the outermost leg
+    // nothing holds the cloth up, so the fold stands as built.
+    for (let j = 0; j < half; j++) if (Math.abs(xAt(j)) > shed) cloth[j] = floor[j];
+    // The back panel stays wrapped immediately beneath both thighs while its
+    // three unsupported spans droop towards the sheet. This is the half that
+    // makes it a skirt rather than something laid over her.
+    // The back panel is not draped under gravity like the front — it is a tube
+    // wall trapped between the thighs and the mattress.  Using the full SKIRT_SAG
+    // here caused every free span to sag by 8+ cm on 12 samples, which drove the
+    // entire back panel to zBed and left only the mattress visible from below.
+    // At 3 % of the front sag the catenary between the under-thigh pins forms
+    // correctly: the valley holds at ≈ lift height (2 cm) and the fold outside
+    // each thigh ramps smoothly down to the sheet.
+    const back = settleUnder(ceil, underContact, zBed, drop * SKIRT_SAG * 0.03);
+    // Front and back are one tube and cannot trade places. Keep the underside
+    // behind the front rather than lifting the visible valley to meet it. The
+    // tiny separation avoids coplanar faces while tapering to zero at the side
+    // edges where the two halves join.
+    for (let j = 0; j < half; j++) {
+      const separation = drop * 0.002 * (1 - (Math.abs(xAt(j)) / wide) ** 4);
+      back[j] = Math.max(zBed, Math.min(back[j], cloth[j] - separation));
+    }
     if (r === 0) waistMid = (cloth[half >> 1] + zBed) / 2;
 
     for (let j = 0; j < SKIRT_RADIAL; j++) {
       // First half of the loop draws the drape, from one side across to the
-      // other; the second half comes back along the sheet underneath her.
+      // other; the second half comes back along the panel underneath her, over
+      // the same stations in reverse so the two close on the identical edge.
       const onCloth = j < half;
-      const x = onCloth ? xAt(j) : wide * (2 * (j - half) / half - 1);
+      const jj = onCloth ? j : SKIRT_RADIAL - 1 - j;
+      const x = xAt(jj);
+      // Soft folds. Bias silk never lies as one smooth developable surface —
+      // the whole reason the cut is used is that it takes the shape under it
+      // and breaks whatever is left over into a few gathers — and a skirt
+      // without them reads as sheeting however well its silhouette is shaped.
+      //
+      // They ride on how little the cloth is being carried: none at all along
+      // the crest over a thigh, where it is pulled tight over something, and
+      // deepest in the valley and down the fall, where it is holding its own
+      // weight. Pitch is an absolute length rather than a fraction of the ring,
+      // so the folds run straight down the skirt instead of splaying with it,
+      // and they only ever stand proud — a gather that cut inwards would put
+      // the cloth back inside the leg.
+      const free = onCloth
+        ? 1 - Math.min(1, (cloth[jj] - zBed) / Math.max(peak, 1e-6)) : 0;
+      const gather = drop * SKIRT_GATHER * free
+        * (0.5 - 0.5 * Math.cos(2 * Math.PI * x / (hipHalf * SKIRT_FOLD_PITCH)));
       // The float is held across the whole span and only let go near the edge,
-      // where the hem has to meet the sheet rather than hover over it.
-      p.set(axisX + x, y,
-        onCloth ? cloth[j] + slack * (1 - (Math.abs(x) / wide) ** 3) : zBed);
-      pushVertex(out, p, weights(k, x / wide));
+      // where the hem has to meet the sheet rather than hover over it. The back
+      // panel gets none of it: it is pressed between her and the mattress.
+      p.set(cx + x, y,
+        onCloth ? cloth[jj] + gather + slack * (1 - (Math.abs(x) / wide) ** 3)
+          : back[jj]);
+      pushVertex(out, p, weights());
     }
   }
 
@@ -657,7 +843,7 @@ export function buildNightSkirt(root, material) {
   // is the opening the legs come out of, and a lid there is what made the old
   // skirt read as a bucket.
   const cap = out.pos.length / 3;
-  pushVertex(out, p.set(axisX, waistY, waistMid), weights(0, 0));
+  pushVertex(out, p.set(axisX, waistY, waistMid), weights());
   for (let j = 0; j < SKIRT_RADIAL; j++) {
     const j2 = (j + 1) % SKIRT_RADIAL;
     for (let r = 0; r < SKIRT_RINGS - 1; r++) {
