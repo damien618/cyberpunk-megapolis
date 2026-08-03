@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "cyberpunk-megapolis",
-      "runtimeExecutable": "/usr/bin/python3",
+      "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8766"],
       "port": 8766
     }

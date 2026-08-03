@@ -184,7 +184,11 @@ export class Player {
     this.clothing = Object.fromEntries(
       Object.values(CLOTHING_PARTS).map(part => [part, { materials: [], mesh: null }])
     );
+    this.headMesh = null;
+    this.hairMesh = null;
+    this.hairMaterial = null;
     this.wardrobe = null;
+    this.outfit = null;
     this.outfitKey = '';
 
     // web rope: 6-segment cylinder chain (bezier with slack sag)
@@ -219,7 +223,16 @@ export class Player {
             this.clothing[part].materials.push(materials[index]);
             if (o.isSkinnedMesh && !this.clothing[part].mesh) this.clothing[part].mesh = o;
           }
-          if (material?.name?.toLowerCase().includes('body')) {
+          // Head and hair are kept by hand: hair.js rebuilds the hairstyle for
+          // the hatless outfits and needs both meshes, and neither is a
+          // clothing part that setPartVisible would ever hide.
+          const name = material?.name?.toLowerCase() ?? '';
+          if (o.isSkinnedMesh && name.includes('hair') && !this.hairMesh) {
+            this.hairMesh = o;
+            this.hairMaterial = materials[index];
+          }
+          if (o.isSkinnedMesh && name.includes('head') && !this.headMesh) this.headMesh = o;
+          if (name.includes('body')) {
             if (!this.bodyMaterial) this.bodyMaterial = materials[index];
             // The bare-arm skin, kept apart so long sleeves can retire it: it
             // is weighted to the twist bones the sleeve ignores, so left on it
@@ -351,7 +364,21 @@ export class Player {
       ? this.createSkinnedClone(tshirt, tshirt.geometry, silkMaterial, 'Wardrobe_NightTop')
       : null;
 
-    this.wardrobe = { sleeves, swimLegs, swimShorts, nightTop, nightSkirt };
+    this.wardrobe = { sleeves, swimLegs, swimShorts, nightTop, nightSkirt, hairCrown: null };
+  }
+
+  /**
+   * A wardrobe piece that could not be ready at load time. The hair crown is
+   * cut out of the head albedo's own pixels, and a THREE.Texture hands those
+   * over whenever the image behind it happens to decode — so it arrives late
+   * and has to be given the outfit that is already on.
+   */
+  addWardrobePart(part, mesh) {
+    if (!mesh || !this.wardrobe) return;
+    this.wardrobe[part] = mesh;
+    const outfit = this.outfit;
+    this.outfitKey = '';
+    if (outfit) this.setOutfit(outfit);
   }
 
   setPartVisible(part, visible) {
@@ -372,11 +399,13 @@ export class Player {
     const key = JSON.stringify(outfit);
     if (key === this.outfitKey || !this.wardrobe) return;
     this.outfitKey = key;
+    this.outfit = outfit;
 
     // The nightdress replaces the whole outfit: silk bodice, silk skirt, bare
     // legs and bare feet. Nobody sleeps in a backpack.
     const bare = outfit.swim || outfit.night;
-    this.setPartVisible('hat', outfit.hat && !outfit.night);
+    const hat = outfit.hat && !outfit.night;
+    this.setPartVisible('hat', hat);
     this.setPartVisible('backpack', outfit.backpack && !outfit.night);
     this.setPartVisible('tshirt', outfit.tshirt && !outfit.night);
     this.setPartVisible('pants', outfit.pants && !bare);
@@ -387,6 +416,9 @@ export class Player {
     if (this.wardrobe.swimShorts) this.wardrobe.swimShorts.visible = outfit.swim && !outfit.night;
     if (this.wardrobe.nightTop) this.wardrobe.nightTop.visible = outfit.night;
     if (this.wardrobe.nightSkirt) this.wardrobe.nightSkirt.visible = outfit.night;
+    // Strictly the cap's understudy. The crown stands a centimetre off the
+    // skull, which is inside Hat02 — worn together, it punches through the cap.
+    if (this.wardrobe.hairCrown) this.wardrobe.hairCrown.visible = !hat;
   }
 
   play(key, fade = 0.25, loop = true) {

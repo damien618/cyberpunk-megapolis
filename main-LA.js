@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { Player } from './player.js?v=23';
+import { Player } from './player.js?v=24';
+import { harmoniseHair } from './hair.js?v=1';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=5';
 import { CameraRig } from './cameraRig.js?v=4';
@@ -122,6 +123,22 @@ function charTexture(file, srgb = true) {
     charTexCache[key] = t;
   }
   return charTexCache[key];
+}
+// The decoded bitmap behind a pack texture. hair.js reads pixels, and a
+// THREE.Texture gives no handle on when — or whether — its image has arrived;
+// the browser cache means this costs no second download.
+const charImgCache = {};
+function charImage(file) {
+  const key = charTexFile(file);
+  if (!charImgCache[key]) {
+    charImgCache[key] = new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = './chars/textures/' + encodeURIComponent(key);
+    });
+  }
+  return charImgCache[key];
 }
 function charPackMetalRough(file, onReady) {
   const key = charTexFile(file);
@@ -2349,6 +2366,15 @@ const input = new Input(renderer.domElement);
 
 player = new Player(scene);
 await player.load('girl', girlMatFor);
+
+// The pack's hairstyle only works under the cap, and half the villa's outfits
+// take the cap off. Rebuild the crown and put the two halves of the hair on the
+// same colour — see hair.js.
+player.addWardrobePart('hairCrown', harmoniseHair(player, {
+  scalp: await charImage(CHAR_MATS.MAT_SurvGirl_Head.tex),
+  strands: await charImage(CHAR_MATS.MAT_SurvGirl_Hair.tex),
+  strandsAO: await charImage(CHAR_MATS.MAT_SurvGirl_Hair.aoTex),
+}));
 
 const forward = new THREE.Vector3();
 const clock = new THREE.Clock();
