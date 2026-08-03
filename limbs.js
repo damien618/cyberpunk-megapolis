@@ -205,10 +205,10 @@ function loft({ points, pathU, profile, scale, rings, weights, lateral, floorY, 
     lastCentre = c.clone();
 
     const [lat, med, ant, post, ex, enA, enP] = sampleProfile(profile, u, prof);
-    const w = weights(u);
     for (let j = 0; j < radial; j++) {
       const th = (j / radial) * Math.PI * 2;
       const cs = Math.cos(th), sn = Math.sin(th);
+      const w = weights(u, cs, sn);
       const rl = cs >= 0 ? lat : med;
       const rv = sn >= 0 ? ant : post;
       const en = sn >= 0 ? enA : enP;
@@ -506,8 +506,9 @@ export function buildSleeves(root, material) {
 
 // The pack's torso IS the t-shirt — hide it and the body has a hole from the
 // collarbone to the hips — so the nightdress reuses that mesh for its bodice
-// and only the skirt below the hem has to be built. A single tube around both
-// legs, hanging from the pelvis: bias-cut, so it barely flares.
+// and only the skirt below the hem has to be built. The skirt is one tube around
+// both legs, but its front panel is draped onto each thigh instead of spanning
+// the gap as a rigid convex shell.
 //
 // Chain parameter: 0 at the t-shirt hem, 1 at the hip, 2 at the hem.
 const SKIRT_PROFILE = [
@@ -547,16 +548,30 @@ export function buildNightSkirt(root, material) {
     profile: SKIRT_PROFILE,
     scale: 1,
     rings: ringParams(0, 2, () => 0.16),
-    // Held by the hips at the waist and shared equally by both thighs at the
-    // hem: a skirt tracks the average of the legs, it does not split between
-    // them, and an all-pelvis hem would pass straight through a raised knee.
-    weights: u => {
-      const leg = 0.5 * ss(u, 0.75, 2);
-      return { idx: [bone.pelvis, bone.l, bone.r, 0], wgt: [1 - leg, leg / 2, leg / 2, 0] };
+    // The waist stays on the pelvis; farther down, each side follows the thigh
+    // beneath it. Vertices at the centre keep an even blend, preserving a
+    // continuous panel while allowing the fabric to settle over separated legs.
+    weights: (u, cs = 0) => {
+      const leg = 0.72 * ss(u, 0.65, 2);
+      const left = ss(cs, -0.65, 0.65);
+      return {
+        idx: [bone.pelvis, bone.l, bone.r, 0],
+        wgt: [1 - leg, leg * left, leg * (1 - left), 0],
+      };
     },
     lateral: 1,
     floorY: null,
     floorFrom: 0,
+    radial: 32,
+    // In the lying pose local +Z points upward. Pulling the middle of the front
+    // panel toward -Z therefore gives gravity a visible effect: two soft rises
+    // remain over the thighs and the silk falls naturally into the gap.
+    warp: (u, cs, sn, p) => {
+      const belowWaist = ss(u, 0.55, 1.75);
+      const centreFold = Math.exp(-((cs / 0.33) ** 2));
+      const front = Math.max(sn, 0) ** 1.4;
+      p.z -= 0.076 * belowWaist * centreFold * front;
+    },
   }, out);
   return finish(out, rig, material, 'Wardrobe_NightSkirt');
 }

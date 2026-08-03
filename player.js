@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { buildBareLegs, buildSleeves, buildNightSkirt } from './limbs.js?v=11';
+import { buildBareLegs, buildSleeves, buildNightSkirt } from './limbs.js?v=12';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
 
