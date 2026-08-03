@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Player } from './player.js?v=24';
-import { harmoniseHair } from './hair.js?v=1';
+import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=5';
 import { CameraRig } from './cameraRig.js?v=4';
@@ -1960,17 +1960,46 @@ function enableNightMode() {
   sun.intensity = 0;
   sun.castShadow = false;
   sun.visible = false;
-  hemi.color.set(0x0d1828);
-  hemi.groundColor.set(0x050608);
-  hemi.intensity = 0.07;
-  scene.environmentIntensity = 0.05;
+  // Slightly more ambient than the sky alone. Nothing indoors casts a shadow at
+  // night — the shadow map is off — so the only thing telling a lit surface
+  // from an unlit one is N·L, and on 0.07 of sky the far side of anything
+  // standing under a ceiling light went to black: the girl in the bathroom read
+  // as a silhouette with two blown shoulders. This is the bounce a white room
+  // gives back. It costs no extra lights, and it is small enough that the
+  // garden and the skyline measure the same as before.
+  hemi.color.set(0x121e30);
+  hemi.groundColor.set(0x0a0b0e);
+  hemi.intensity = 0.14;
+  scene.environmentIntensity = 0.11;
 
-  // Interior rooms — warm glow through windows
-  for (const l of interiorLights) l.intensity *= 3.8;
+  // Interior rooms. These ran at 3.8× to make the windows read from the garden,
+  // which works right up until you walk in: a lamp two metres over your head in
+  // a 3 m bathroom clipped every wall to white, and inverse square then dropped
+  // everything past it off a cliff. Pulling the intensity back under the day
+  // value and flattening the falloff keeps the throw — the windows still glow,
+  // the house measures the same from outside — while the near field stops
+  // blowing out and the room gets its tonal range back.
+  for (const l of interiorLights) {
+    l.intensity *= 0.7;
+    l.decay = 1.7;
+    l.distance = 20;
+  }
 
   // Fire pit — more vivid against the dark
   fireLight.color.set(0xff6010);
   fireLight.distance = 22;
+
+  // Chroma. The California palette was picked to hold up in full sun, and the
+  // yellow trousers only ever looked settled indoors because the old interior
+  // lights washed them halfway to white — stop clipping them and they shout.
+  // Colour drains at low light anyway, so the flat accents are graded down
+  // rather than left at noon strength. Day mode never runs this.
+  for (const part of ['hat', 'backpack', 'tshirt', 'pants', 'shoes']) {
+    for (const material of player?.clothing[part]?.materials ?? []) {
+      const hsl = material.color.getHSL({});
+      material.color.setHSL(hsl.h, hsl.s * 0.55, hsl.l * 0.95);
+    }
+  }
 
   // ── Fake-lamp infrastructure ─────────────────────────────────────────────
   // glow heads (small bright spheres) + ground pools (additive gradient

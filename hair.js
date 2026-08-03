@@ -13,31 +13,53 @@
 // below, which is exactly what it looked like.
 //
 // Three passes, in this order because each depends on the last:
-//   1. recolourStrands — bakes the atlas through a brown ramp keyed to the
-//      painted scalp, and bakes in the AO map the material could not use.
+//   1. recolourStrands — runs the atlas through the shared brown ramp, and
+//      bakes in the AO map the material could not use.
 //   2. buildCrown — lifts the painted-hair region of the head mesh off the
-//      skull to give the crown real thickness and a soft edge at the hairline.
+//      skull to give the crown real thickness and a soft edge at the hairline,
+//      wearing its own copy of the head albedo through that same ramp. Both
+//      halves of the hair coming off one ramp is what makes them one colour.
 //   3. tuckToScalp — draws the top band of cards in under that crown, so the
 //      ring of tabs is buried instead of sticking out through it.
 import * as THREE from 'three';
 
-// The ramp the greyscale atlas is run through. The ends are taken off the
-// painted scalp's own range: roots land on its median (#0d0906) and lit strands
-// stop short of its brightest texels, so the ponytail reads a shade lighter
-// than the crown the way real hair does, without drifting back towards grey.
-const STRAND_ROOT = [13, 9, 6];
-const STRAND_TIP = [90, 67, 48];
-const RAMP_LO = 25;        // atlas luminance that maps to ROOT...
-const RAMP_HI = 120;       // ...and to TIP. The atlas spans roughly 25 to 122.
+// One brown ramp, and both halves of the hair are run through it. That is the
+// whole point: the two sheets carry the same hair in wildly different registers
+// — the atlas sits between luminance 37 and 108, the painted scalp between 3
+// and 40, a bit over two stops darker — so anything short of putting both on
+// one ramp leaves the ponytail and the crown a different colour. Matching their
+// working ranges onto shared endpoints is a histogram match; the shading either
+// side of it then comes from the geometry, which is where it belongs.
+const HAIR_ROOT = [13, 9, 6];
+const HAIR_TIP = [96, 72, 52];
 const RAMP_GAMMA = 1.05;
+// The ramp's input register is the strand atlas's own working span, so the
+// atlas feeds it raw. The scalp has to be brought onto that register first, and
+// how matters: simply stretching its 3-to-40 span across the ramp does land the
+// two on the same value, but it also blows its local contrast up threefold and
+// the crown comes out looking brushed. So the alignment is a shift, not a
+// stretch — offset puts the scalp's median (16) on the atlas's (73), and the
+// gain only gives back the contrast the ramp itself takes out at that point
+// (its slope there is 0.72, and 1/0.72 = 1.4), leaving the painted parting and
+// root shadows reading at exactly the strength the artist gave them.
+const RAMP_RANGE = [25, 120];
+const SCALP_ALIGN = { gain: 1.4, offset: 45 };
 const AO_DEPTH = 0.75;     // how much of the hair AO is baked into the albedo
-const STRAND_ROUGHNESS = 0.78;
+const HAIR_ROUGHNESS = 0.78;
 
 // Albedo darker than this is painted hair rather than skin. The scalp sits at
 // least a stop under the darkest skin on the sheet, so the threshold has a lot
 // of room either side; the eyebrows and lashes fall under it too and are thrown
 // out by the flood fill, not by the threshold.
 const SCALP_LUMA = 0.22;
+// ...and the ramp is released back to the painted pixels over this span, so the
+// hairline keeps the gradient into skin the artist painted instead of ending on
+// a hard brown edge across the forehead.
+const SCALP_SKIN = 0.34;
+// An unmasked island smaller than this share of the head is a hole in the hair,
+// not a piece of face. The real gap between the two is enormous — the pinholes
+// run to a few dozen vertices against the face's several thousand.
+const SCALP_HOLE = 0.05;
 
 // Every length below is a fraction of the head's own chin-to-crown height, so
 // they rescale to whatever skeleton the pack ships.
@@ -45,6 +67,7 @@ const SKULL_DROP = 0.29;    // skull centre, measured down from the crown
 const CROWN_LIFT = 0.045;   // hair thickness over the crown
 const CROWN_BAND = 0.113;   // the distance inside the hairline it ramps up over
 const CROWN_RIM = 0.003;    // ...and what is left of it at the hairline itself
+const CROWN_SINK = 0.006;   // how far the ring past the hairline is buried
 const CROWN_RADIAL = 0.45;  // how much skull radial is mixed into the lift
 const TUCK_PULL = 0.098;    // how far the top of the card mass is drawn in
 const TUCK_LIP = 0.023;     // the pull is full this far above the top card...
@@ -52,30 +75,41 @@ const TUCK_BAND = 0.230;    // ...and has faded out this far below it
 const TUCK_REACH = 0.64;    // cards further out than this are the ponytail
 
 /**
- * Repaints the hair atlas as brown and hands back a texture to replace the
- * material's map with. The atlas carries the strand shapes in its alpha and
- * nothing but luminance in its RGB, so the recolour is a lookup on luminance:
- * the shapes, the soft tips and the alpha cutout all survive untouched.
+ * Runs a sheet through the hair ramp and hands back a texture.
  *
- * The AO map is folded in here as well. The pack ships one and the material
- * asks for it, but the pack's meshes have no second UV set, so three drops it
- * on the floor — without it the cards have no root shadow and read flat.
+ * The recolour is a lookup on luminance, which is all either sheet holds worth
+ * keeping: the atlas is literally greyscale, and the scalp's colour is the one
+ * thing that has to go. Every shape survives it — the strand silhouettes and
+ * the soft tips live in the alpha, which is untouched.
+ *
+ * `align` brings a sheet onto the ramp's register before the lookup. `ao` folds
+ * in an occlusion sheet: the pack ships one for the hair and the material asks
+ * for it, but the pack's meshes have no second UV set, so three drops it on the
+ * floor and the cards are left with no root shadow. `keepAbove` releases the
+ * ramp back to the original pixels as they get brighter — measured on the raw
+ * luminance, so it still finds the hairline after an alignment — which is how
+ * the painted hairline is allowed to keep fading into skin.
  */
-function recolourStrands(material, atlas, ao) {
-  const width = atlas.width, height = atlas.height;
+function rampToHair(source, { align = null, ao = null, keepAbove = null } = {}) {
+  const width = source.width, height = source.height;
   const canvas = Object.assign(document.createElement('canvas'), { width, height });
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(atlas, 0, 0);
+  ctx.drawImage(source, 0, 0);
   const image = ctx.getImageData(0, 0, width, height);
   const px = image.data;
   const shade = ao && readPixels(ao, width, height);
+  const [lo, hi] = RAMP_RANGE;
+  const gain = align?.gain ?? 1, offset = align?.offset ?? 0;
 
   for (let i = 0; i < px.length; i += 4) {
     const luma = px[i] * 0.3 + px[i + 1] * 0.59 + px[i + 2] * 0.11;
-    const t = Math.pow(THREE.MathUtils.clamp((luma - RAMP_LO) / (RAMP_HI - RAMP_LO), 0, 1), RAMP_GAMMA);
+    const level = luma * gain + offset;
+    const t = Math.pow(THREE.MathUtils.clamp((level - lo) / (hi - lo), 0, 1), RAMP_GAMMA);
     const lit = shade ? 1 - AO_DEPTH + AO_DEPTH * (shade[i] / 255) : 1;
+    const hair = keepAbove ? 1 - THREE.MathUtils.smoothstep(luma, keepAbove[0], keepAbove[1]) : 1;
     for (let c = 0; c < 3; c++) {
-      px[i + c] = (STRAND_ROOT[c] + (STRAND_TIP[c] - STRAND_ROOT[c]) * t) * lit;
+      const ramped = (HAIR_ROOT[c] + (HAIR_TIP[c] - HAIR_ROOT[c]) * t) * lit;
+      px[i + c] = px[i + c] + (ramped - px[i + c]) * hair;
     }
   }
   ctx.putImageData(image, 0, 0);
@@ -84,6 +118,11 @@ function recolourStrands(material, atlas, ao) {
   texture.flipY = false;
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
+
+function recolourStrands(material, atlas, ao) {
+  const texture = rampToHair(atlas, { ao });
   texture.anisotropy = material.map?.anisotropy ?? 1;
   material.map = texture;
   material.aoMap = null;                 // now baked into the albedo above
@@ -92,7 +131,7 @@ function recolourStrands(material, atlas, ao) {
   // cold sheen on the cards and helped them read as grey satin rather than as
   // hair. Hair is a dielectric; the sheen it does have comes off the roughness.
   material.metalness = 0;
-  material.roughness = STRAND_ROUGHNESS;
+  material.roughness = HAIR_ROUGHNESS;
   material.needsUpdate = true;
 }
 
@@ -133,6 +172,13 @@ function neighbours(geometry) {
  * so the mask is the dark patch *connected to the crown* rather than every dark
  * texel: one flood fill out of the highest dark vertex, which reaches the whole
  * scalp, both sideburns and the nape, and nothing on the face.
+ *
+ * Then the holes in it are closed. A handful of painted strand highlights come
+ * in brighter than the threshold, and each one the fill steps around is a
+ * pinhole in the shell that lets the raw head show through — which is visible,
+ * because the raw head is the two stops of dark this whole file exists to get
+ * rid of. Anything unmasked that cannot be walked to from the chin is enclosed
+ * by hair, and small enough not to be an eye socket, so it is hair.
  */
 function paintedHairMask(geometry, scalp) {
   const uv = geometry.attributes.uv, position = geometry.attributes.position;
@@ -157,6 +203,25 @@ function paintedHairMask(geometry, scalp) {
   mask[seed] = 1;
   while (stack.length) {
     for (const j of adjacent[stack.pop()]) if (dark[j] && !mask[j]) { mask[j] = 1; stack.push(j); }
+  }
+
+  const seen = new Uint8Array(position.count);
+  const limit = position.count * SCALP_HOLE;
+  for (let i = 0; i < position.count; i++) {
+    if (mask[i] || seen[i]) continue;
+    const island = [i];
+    seen[i] = 1;
+    for (let head = 0; head < island.length; head++) {
+      for (const j of adjacent[island[head]]) {
+        if (mask[j] || seen[j]) continue;
+        seen[j] = 1;
+        island.push(j);
+      }
+    }
+    // The face is one such island and dwarfs the cap; the cap keeps it, and any
+    // eye socket or mouth bag that ever came through disconnected, out of the
+    // mask. What is left under it is a highlight the threshold tripped over.
+    if (island.length <= limit) for (const j of island) mask[j] = 1;
   }
   return { mask, adjacent };
 }
@@ -193,8 +258,10 @@ function depthInside(geometry, mask, adjacent) {
  *
  * Copying the head rather than fitting a dome to it means the shell lands on
  * the pack's own hairline, sideburns and nape for free, keeps the head's UVs —
- * so it is shaded by the hair the artist already painted, at the artist's
- * colour — and can reuse the head's skin weights verbatim.
+ * so it wears the hair the artist already painted, parting and all — and can
+ * reuse the head's skin weights verbatim. What it does not keep is the artist's
+ * value: that sheet is painted two stops under the strand atlas, and the crown
+ * gets its own copy run through the ramp so the two agree.
  */
 function buildCrown(head, scalp, headHeight, centre) {
   const geometry = head.geometry;
@@ -205,19 +272,35 @@ function buildCrown(head, scalp, headHeight, centre) {
   const index = geometry.index.array;
 
   const emitted = new Int32Array(source.position.count).fill(-1);
-  const position = [], uv = [], skinIndex = [], skinWeight = [], triangles = [];
+  const position = [], normal = [], uv = [], skinIndex = [], skinWeight = [], triangles = [];
   const p = new THREE.Vector3(), lift = new THREE.Vector3(), radial = new THREE.Vector3();
   const rim = CROWN_RIM * headHeight, reach = CROWN_LIFT * headHeight;
-  const band = CROWN_BAND * headHeight;
+  const band = CROWN_BAND * headHeight, sink = CROWN_SINK * headHeight;
 
+  // The shell is carried one ring of vertices past the mask and that ring is
+  // pushed *into* the head. Stopping on the mask itself cuts the hairline along
+  // whole triangles, and the head is coarse enough there that it came out as a
+  // visible staircase over the temple. Straddling the boundary instead puts the
+  // edge where the offset crosses zero, which is somewhere across a triangle
+  // rather than around it — and leaves the hair growing out of the skin the way
+  // it should, rather than landing on top of it.
   const emit = i => {
     if (emitted[i] >= 0) return emitted[i];
     p.fromBufferAttribute(source.position, i);
     lift.fromBufferAttribute(source.normal, i).normalize();
     radial.copy(p).sub(centre).normalize();
     lift.lerp(radial, CROWN_RADIAL).normalize();
-    p.addScaledVector(lift, rim + reach * THREE.MathUtils.smoothstep(depth[i], 0, band));
+    p.addScaledVector(lift, mask[i]
+      ? rim + reach * THREE.MathUtils.smoothstep(depth[i], 0, band)
+      : -sink);
     position.push(p.x, p.y, p.z);
+    // Shade off the direction the shell was pushed along, not off the shell.
+    // Normals rebuilt from the displaced triangles pick up the thickness ramp
+    // as if it were relief: where the lift climbs away from the hairline the
+    // facets tilt back, turn away from the sun and go black, and two of those
+    // sat right above the forehead. The skull's own smooth field is what a
+    // 12 mm offset of the skull should shade like anyway.
+    normal.push(lift.x, lift.y, lift.z);
     uv.push(source.uv.getX(i), source.uv.getY(i));
     for (let c = 0; c < 4; c++) {
       skinIndex.push(source.skinIndex.getComponent(i, c));
@@ -227,26 +310,33 @@ function buildCrown(head, scalp, headHeight, centre) {
   };
   for (let t = 0; t < index.length; t += 3) {
     const a = index[t], b = index[t + 1], c = index[t + 2];
-    if (mask[a] && mask[b] && mask[c]) triangles.push(emit(a), emit(b), emit(c));
+    if (mask[a] || mask[b] || mask[c]) triangles.push(emit(a), emit(b), emit(c));
   }
   if (!triangles.length) return null;
 
   const shell = new THREE.BufferGeometry();
   shell.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+  shell.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
   shell.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   shell.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skinIndex, 4));
   shell.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skinWeight, 4));
   shell.setIndex(triangles);
-  shell.computeVertexNormals();
   shell.computeBoundingSphere();
 
-  // The head's own material, minus its packed metal/roughness map: that map is
-  // authored for skin and puts a wet highlight across the top of the head.
+  // The head's own material — so the crown keeps its normal map and shades as
+  // one piece with the skin it grows out of — on the ramped albedo, and minus
+  // the packed metal/roughness map, which is authored for skin and lays a wet
+  // highlight across the top of the head.
   const material = head.material.clone();
+  material.map = rampToHair(scalp, {
+    align: SCALP_ALIGN,
+    keepAbove: [SCALP_LUMA * 255, SCALP_SKIN * 255],
+  });
+  material.map.anisotropy = head.material.map?.anisotropy ?? 1;
   material.metalnessMap = null;
   material.roughnessMap = null;
   material.metalness = 0;
-  material.roughness = 0.62;
+  material.roughness = HAIR_ROUGHNESS;
 
   const mesh = new THREE.SkinnedMesh(shell, material);
   mesh.name = 'Wardrobe_HairCrown';
