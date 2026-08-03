@@ -41,9 +41,16 @@ const LYING_LEG_JOINTS = ['thigh', 'thigh_twist_01', 'calf', 'calf_twist_01', 'f
 // The trunk is reset too. A standing idle keeps the pelvis rotating and sliding
 // under a swaying spine, which on a supine body twists the hips out of line —
 // the two sockets end up several centimetres apart front-to-back, and no amount
-// of hip levelling can straighten legs hanging off a crooked pelvis. The arms
-// and head keep their tracks, so the avatar still breathes.
+// of hip levelling can straighten legs hanging off a crooked pelvis.
 const LYING_TRUNK_JOINTS = ['pelvis', 'spine_01', 'spine_02', 'spine_03'];
+const LYING_HEAD_JOINTS = ['neck_01', 'head'];
+const LYING_ARM_RE =
+  /^(clavicle|upperarm(?:_twist_\d+)?|lowerarm(?:_twist_\d+)?|hand|thumb_\d+|index_\d+|middle_\d+|ring_\d+|pinky_\d+)_[lr]$/;
+const LYING_HAND_TARGETS = {
+  l: new THREE.Vector3(0.025, 1.22, 0.14),
+  r: new THREE.Vector3(-0.035, 1.14, 0.15),
+};
+const EYE_BLINK_TARGET = 26;
 // Three small offsets off the rest pose then take the legs off attention and
 // into how a body actually settles on its back: ankles relaxed into plantar
 // flexion, heels a little apart, and the legs rolled out so the toes fall
@@ -170,6 +177,9 @@ export class Player {
     this.cur = null;
     this.yaw = Math.PI;
     this.bones = {};
+    this.faceMeshes = [];
+    this.eyesClosed = null;
+    this.lyingArmPose = null;
     this.landTimer = 0;
     this.clothing = Object.fromEntries(
       Object.values(CLOTHING_PARTS).map(part => [part, { materials: [], mesh: null }])
@@ -199,6 +209,7 @@ export class Player {
     this.model = gltf.scene;
     this.model.traverse(o => {
       if (o.isMesh || o.isSkinnedMesh) {
+        if (o.morphTargetInfluences?.length > EYE_BLINK_TARGET) this.faceMeshes.push(o);
         const sourceMaterials = Array.isArray(o.material) ? o.material : [o.material];
         const materials = sourceMaterials.map(material => matFactory(material?.name));
         o.material = Array.isArray(o.material) ? materials : materials[0];
@@ -229,6 +240,7 @@ export class Player {
     this.restRotation = new Map(
       Object.entries(this.bones).map(([name, bone]) => [name, bone.quaternion.clone()])
     );
+    this.lyingArmJoints = Object.keys(this.bones).filter(name => LYING_ARM_RE.test(name));
     this.restPelvis = this.bones.pelvis?.position.clone() ?? null;
     this.createWardrobeAlternates();
     this.setOutfit();
@@ -405,6 +417,90 @@ export class Player {
     }
   }
 
+  setEyesClosed(closed) {
+    if (this.eyesClosed === closed) return;
+    const weight = closed ? 1 : 0;
+    for (const mesh of this.faceMeshes) mesh.morphTargetInfluences[EYE_BLINK_TARGET] = weight;
+    this.eyesClosed = closed;
+  }
+
+  setBoneWorldQuaternion(bone, worldQuaternion) {
+    const parentWorld = new THREE.Quaternion();
+    bone.parent.getWorldQuaternion(parentWorld);
+    bone.quaternion.copy(parentWorld.invert().multiply(worldQuaternion));
+  }
+
+  solveRestingArm(side, targetLocal) {
+    const upper = this.bones[`upperarm_${side}`];
+    const lower = this.bones[`lowerarm_${side}`];
+    const hand = this.bones[`hand_${side}`];
+    if (!upper || !lower || !hand) return;
+
+    const shoulder = new THREE.Vector3();
+    const elbow = new THREE.Vector3();
+    const wrist = new THREE.Vector3();
+    upper.getWorldPosition(shoulder);
+    lower.getWorldPosition(elbow);
+    hand.getWorldPosition(wrist);
+
+    const upperLength = shoulder.distanceTo(elbow);
+    const lowerLength = elbow.distanceTo(wrist);
+    const target = this.poseRoot.localToWorld(targetLocal.clone());
+    const direction = target.clone().sub(shoulder);
+    const distance = THREE.MathUtils.clamp(
+      direction.length(),
+      Math.abs(upperLength - lowerLength) + 1e-4,
+      upperLength + lowerLength - 1e-4
+    );
+    direction.normalize();
+    target.copy(shoulder).addScaledVector(direction, distance);
+
+    const along = (upperLength ** 2 - lowerLength ** 2 + distance ** 2) / (2 * distance);
+    const outward = Math.sqrt(Math.max(0, upperLength ** 2 - along ** 2));
+    const pole = new THREE.Vector3(side === 'l' ? 1 : -1, 0, 0)
+      .transformDirection(this.poseRoot.matrixWorld);
+    pole.addScaledVector(direction, -pole.dot(direction)).normalize();
+    const desiredElbow = shoulder.clone()
+      .addScaledVector(direction, along)
+      .addScaledVector(pole, outward);
+
+    const upperWorld = new THREE.Quaternion();
+    upper.getWorldQuaternion(upperWorld);
+    const upperDelta = new THREE.Quaternion().setFromUnitVectors(
+      elbow.clone().sub(shoulder).normalize(),
+      desiredElbow.clone().sub(shoulder).normalize()
+    );
+    this.setBoneWorldQuaternion(upper, upperDelta.multiply(upperWorld));
+    this.poseRoot.updateMatrixWorld(true);
+
+    lower.getWorldPosition(elbow);
+    hand.getWorldPosition(wrist);
+    const lowerWorld = new THREE.Quaternion();
+    lower.getWorldQuaternion(lowerWorld);
+    const lowerDelta = new THREE.Quaternion().setFromUnitVectors(
+      wrist.sub(elbow).normalize(),
+      target.sub(elbow).normalize()
+    );
+    this.setBoneWorldQuaternion(lower, lowerDelta.multiply(lowerWorld));
+    this.poseRoot.updateMatrixWorld(true);
+  }
+
+  applyLyingArmPose() {
+    if (!this.lyingArmPose) {
+      for (const joint of this.lyingArmJoints) {
+        this.bones[joint].quaternion.copy(this.restRotation.get(joint));
+      }
+      this.poseRoot.updateMatrixWorld(true);
+      for (const side of ['l', 'r']) this.solveRestingArm(side, LYING_HAND_TARGETS[side]);
+      this.lyingArmPose = new Map(
+        this.lyingArmJoints.map(joint => [joint, this.bones[joint].quaternion.clone()])
+      );
+    }
+    for (const [joint, rotation] of this.lyingArmPose) {
+      this.bones[joint].quaternion.copy(rotation);
+    }
+  }
+
   // Lying tips the avatar a quarter turn about X, which maps its local +Z (the
   // back-to-front axis) onto world +Y — so the body hangs BELOW the pose root
   // by however far its back reaches, and parking the root on the mattress
@@ -491,6 +587,11 @@ export class Player {
       const rest = this.restRotation?.get(joint);
       if (bone && rest) bone.quaternion.copy(rest);
     }
+    for (const joint of LYING_HEAD_JOINTS) {
+      const bone = this.bones[joint];
+      const rest = this.restRotation?.get(joint);
+      if (bone && rest) bone.quaternion.copy(rest);
+    }
     if (this.restPelvis) this.bones.pelvis.position.copy(this.restPelvis);
     for (const side of ['l', 'r']) {
       for (const joint of LYING_LEG_JOINTS) {
@@ -508,6 +609,7 @@ export class Player {
       thigh?.rotateX(LYING_LEG_ROLL * mirror);
       this.bones[`foot_${side}`]?.rotateZ(LYING_ANKLE_DROP);
     }
+    this.applyLyingArmPose();
   }
 
   // ---------- visual update driven by controller ----------
@@ -546,6 +648,7 @@ export class Player {
       this.play('fall', 0.3);   // wallrun / zip
     }
     this.mixer.update(dt);
+    this.setEyesClosed(posture === 'lie');
     if (posture === 'sit') {
       this.applySeatedPose();
     } else if (posture === 'lie') {
