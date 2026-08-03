@@ -1453,7 +1453,12 @@ slab(M.travertine, PLX1, PLX1 + 0.45, PLZ0 - 0.45, PLZ1 + 0.45, FLOOR, FLOOR + 0
 slab(M.travertine, PLX0 - 0.45, PLX1 + 0.45, PLZ1, PLZ1 + 0.45, FLOOR, FLOOR + 0.04);
 // Bench steps at the shallow west end — each riser stays under the 50 cm
 // step-up the controller allows, so you can walk out of the pool.
-const STEPS = [[1.55, 0.02], [1.0, -0.42]];
+//
+// Both treads start at the same wall and grow east, so the LOWER one has to be
+// the WIDER one or it ends up buried inside the higher one: that left a single
+// 85 cm block off the pool floor, and anyone who walked in could only jump back
+// out. Widths therefore descend with the tops.
+const STEPS = [[1.0, 0.02], [1.55, -0.42]];
 for (const [w, top] of STEPS)
   slab(M.poolTile, PLX0 + 0.12, PLX0 + 0.12 + w, PLZ0 + 0.7, PLZ1 - 0.7, POOL_BOTTOM, top);
 // Spa: raised shell that spills into the pool
