@@ -2,15 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "// note": "Attach-only: the preview tool cannot spawn a server here. Its subprocess is denied read access to ~/Documents by macOS privacy protection, so every python variant dies on PermissionError before it can serve a byte. Start the server yourself, then this entry attaches to it: python3 -m http.server 8766 --bind 127.0.0.1",
       "name": "cyberpunk-megapolis",
-      "runtimeExecutable": "python",
-      "runtimeArgs": [
-        "-u",
-        "-c",
-        "import os,http.server as h;h.ThreadingHTTPServer(('127.0.0.1',int(os.environ.get('PORT','8766'))),h.SimpleHTTPRequestHandler).serve_forever()"
-      ],
-      "port": 8766,
-      "autoPort": true
+      "url": "http://127.0.0.1:8766",
+      "port": 8766
     }
   ]
 }
