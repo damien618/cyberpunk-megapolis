@@ -62,13 +62,13 @@ const LEG_PROFILE = [
   [1.36, 0.0505, 0.0538, 0.0425, 0.0660, 1.00, 1.00, 1.00],  // calf, inner head
   [1.45, 0.0487, 0.0530, 0.0412, 0.0635, 1.00, 1.00, 1.00],
   [1.60, 0.0442, 0.0455, 0.0382, 0.0540, 1.00, 1.00, 1.00],
-  [1.75, 0.0380, 0.0384, 0.0340, 0.0432, 1.00, 1.00, 1.00],  // achilles taper
-  [1.88, 0.0320, 0.0326, 0.0300, 0.0350, 1.00, 1.00, 1.00],
-  [1.96, 0.0288, 0.0300, 0.0278, 0.0298, 1.00, 1.00, 1.00],  // malleoli (see MALLEOLUS)
-  [2.00, 0.0284, 0.0296, 0.0276, 0.0310, 1.00, 1.00, 0.98],
-  [2.08, 0.0288, 0.0296, 0.0292, 0.0356, 0.98, 1.00, 0.92],  // achilles
-  [2.18, 0.0296, 0.0300, 0.0330, 0.0540, 0.92, 1.00, 0.74],
-  [2.30, 0.0306, 0.0308, 0.0380, 0.0700, 0.86, 1.00, 0.58],  // heel
+  [1.75, 0.0372, 0.0378, 0.0336, 0.0428, 1.00, 1.00, 1.00],  // achilles taper
+  [1.88, 0.0322, 0.0332, 0.0300, 0.0346, 1.00, 1.00, 1.00],
+  [1.94, 0.0304, 0.0314, 0.0282, 0.0300, 1.00, 1.00, 1.00],  // waist, above the bones
+  [2.00, 0.0308, 0.0320, 0.0278, 0.0304, 1.00, 1.00, 0.98],  // malleoli (see MALLEOLUS)
+  [2.08, 0.0316, 0.0326, 0.0292, 0.0330, 0.98, 1.00, 0.92],
+  [2.18, 0.0322, 0.0330, 0.0330, 0.0510, 0.92, 1.00, 0.74],  // achilles into the heel
+  [2.30, 0.0306, 0.0312, 0.0380, 0.0700, 0.86, 1.00, 0.58],  // heel
   [2.45, 0.0322, 0.0328, 0.0370, 0.0470, 0.80, 1.00, 0.44],
   [2.62, 0.0348, 0.0366, 0.0348, 0.0330, 0.74, 1.00, 0.36],  // waist / instep
   [2.80, 0.0400, 0.0430, 0.0300, 0.0300, 0.72, 0.98, 0.34],
@@ -345,16 +345,22 @@ const LEG_BONES = side => ['pelvis', `thigh_${side}`, `calf_${side}`, `foot_${si
 
 // Influences for a whole cross-section. Deriving them from `u` alone — rather
 // than per vertex — is what makes the knee and the ankle shear evenly all the
-// way round instead of pinching on one side. The ankle blend is over by u = 2,
-// so the heel is pure foot and never drags on the calf. Four slots is enough:
-// the calf is already at zero by the time the toes start bending, so those two
-// share one.
+// way round instead of pinching on one side. Four slots is enough: the calf is
+// already at zero by the time the toes start bending, so those two share one.
+//
+// The ankle blend used to run 1.86 → 2.00, which is a 6 cm band sitting entirely
+// ABOVE the joint it is meant to bend at. Pointing the foot then folded the skin
+// along the top of the shin rather than through the ankle, and put the whole
+// crease above the bones — the fold you can see in the lying pose. It is now
+// centred on the joint (u = 2.04) and a little wider, so the malleoli sit in the
+// shared middle of it and stay with the shin as the foot swings, which is where
+// they actually are: they are the ends of the tibia and fibula, not of the foot.
 function legWeights(bone) {
   const ss = THREE.MathUtils.smoothstep;
   return u => {
     const pelvis = 0.4 * (1 - ss(u, 0, 0.22));   // the crotch stays with the hips
     const knee = ss(u, 0.84, 1.18);
-    const ankle = ss(u, 1.86, 2.00);
+    const ankle = ss(u, 1.90, 2.18);
     const toes = 0.9 * ss(u, 2.80, 3.32);
     const leg = 1 - pelvis;
     const lower = leg * knee * ankle;
@@ -385,13 +391,22 @@ function archWarp(u, cs, sn, p, scale) {
 // there comes out level on both sides. They are placed along the sweep instead,
 // as a gaussian in `u` pushed out along the ring's own lateral axis.
 //
-// `at` is where the bone sits on the chain (u = 2 is the joint itself, and u
-// counts down the leg, so the smaller number is the higher bone), `spread` its
-// reach along it, `out` how far it stands off the shin, and `fwd` how much of it
-// is carried onto the front of the ankle rather than the back.
+// Where they go matters more than how big they are, and the first attempt put
+// them at u = 1.90 and 1.96. Sliced afterwards, that landed both bumps a good
+// 0.07 of a foot length ABOVE the joint — up the shin, with the ankle below them
+// running dead straight at 0.23 of a foot length across from the bones all the
+// way down to the heel. A real ankle does the opposite: it is narrowest ABOVE
+// the malleoli and widest AT them, ~0.29 of a foot length across, before drawing
+// back in to the heel. The bones now straddle u = 2, which is the joint itself,
+// and the table above carries the waist that makes them read.
+//
+// `at` is where the bone sits on the chain (u counts down the leg, so the
+// smaller number is the higher bone), `spread` its reach along it, `out` how far
+// it stands off the shin, and `fwd` how much of it is carried onto the front of
+// the ankle rather than the back.
 const MALLEOLUS = {
-  med: { at: 1.902, spread: 0.052, out: 0.0078, fwd: 0.34 },
-  lat: { at: 1.958, spread: 0.056, out: 0.0090, fwd: -0.30 },
+  med: { at: 2.005, spread: 0.055, out: 0.0072, fwd: 0.34 },
+  lat: { at: 2.075, spread: 0.058, out: 0.0084, fwd: -0.30 },
 };
 
 function malleoliWarp(u, cs, sn, p, scale, side3) {
@@ -405,9 +420,27 @@ function malleoliWarp(u, cs, sn, p, scale, side3) {
   p.addScaledVector(side3, Math.sign(cs) * bone.out * scale * along * round);
 }
 
+// The hollows either side of the Achilles. Above the heel the tendon stands
+// proud as a flat band with a soft pit beside it on each side, and a swept tube
+// has neither — it leaves one convex sweep running from the calf straight into
+// the heel, which is the back view that reads as hose rather than ankle. Pulling
+// the two back quarters of the ring inwards cuts the pits and what is left
+// standing between them is the tendon. Strongest on the diagonal, fading out
+// towards the tendon itself and towards the malleoli in front of it.
+const ACHILLES = { at: 1.98, spread: 0.105, in: 0.0060 };
+
+function achillesWarp(u, cs, sn, p, scale, side3) {
+  if (sn >= 0) return;                                   // back of the ring only
+  const along = Math.exp(-(((u - ACHILLES.at) / ACHILLES.spread) ** 2));
+  if (along < 0.02) return;
+  const round = Math.abs(cs) ** 0.7 * Math.abs(sn) ** 1.5;
+  p.addScaledVector(side3, -Math.sign(cs) * ACHILLES.in * scale * along * round);
+}
+
 function footWarp(u, cs, sn, p, scale, side3) {
   archWarp(u, cs, sn, p, scale);
   malleoliWarp(u, cs, sn, p, scale, side3);
+  achillesWarp(u, cs, sn, p, scale, side3);
 }
 
 export function buildBareLegs(root, material) {
@@ -445,11 +478,11 @@ export function buildBareLegs(root, material) {
       pathU: [0, 1, 2, 2.30, 2.62, 3.0, 3.07, 3.12, 3.18, LEG_END],
       profile: LEG_PROFILE,
       scale: hip.distanceTo(ankle) / LEG_SPAN,
-      // Tight through 1.80–2.10: the two ankle bones are only a couple of
-      // centimetres across, and at the old 4 cm step each one got a ring and a
-      // half and came out as a facet.
+      // Tight through 1.80–2.35: the ankle bones and the hollows beside the
+      // tendon are only a couple of centimetres across, and at the old 4 cm step
+      // each one got a ring and a half and came out as a facet.
       rings: ringParams(0, LEG_END, u => u < 0.72 ? 0.090
-        : u < 1.30 ? 0.048 : u < 1.78 ? 0.070 : u < 2.10 ? 0.026 : u < 3.05 ? 0.045 : 0.030),
+        : u < 1.30 ? 0.048 : u < 1.78 ? 0.070 : u < 2.35 ? 0.026 : u < 3.05 ? 0.045 : 0.030),
       weights: legWeights(bone),
       lateral: Math.sign(hip.x) || 1,
       floorY: soleY,
