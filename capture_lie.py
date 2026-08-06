@@ -1,5 +1,6 @@
-# Headless capture of the lying pose on the master bed, before/after the skirt
-# fix. 'before' intercepts limbs.js and serves the pre-fix version from git.
+# Headless capture of the lying pose on the master bed, before/after a change to
+# what she is wearing on it. 'before' intercepts limbs.js and serves the pre-fix
+# version from git.
 import asyncio, os, sys
 os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '.venv/pw-browsers')
 from playwright.async_api import async_playwright
@@ -36,7 +37,7 @@ async def main():
         print('mode:', await page.evaluate('window.__villa.ctrl.mode'))
         print('skirt visible:', await page.evaluate('''() => {
           let m = null;
-          window.__villa.scene.traverse(o => { if (o.name === 'Wardrobe_NightSkirt') m = o; });
+          window.__villa.scene.traverse(o => { if (o.name === 'Wardrobe_NightShorts') m = o; });
           return m ? m.visible : 'MISSING';
         }'''))
         # freeze the camera rig and frame the bed from the foot-side corner

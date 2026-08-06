@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { buildBareLegs, buildSleeves, buildNightSkirt } from './limbs.js?v=28';
+import { buildBareLegs, buildSleeves } from './limbs.js?v=32';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
 
@@ -56,10 +56,28 @@ const EYE_BLINK_TARGET = 26;
 // flexion, heels a little apart, and the legs rolled out so the toes fall
 // outward. Axes measured against this rig — on the thigh, Y abducts, X rolls
 // along the leg and Z is hip flexion.
-const LYING_ANKLE_DROP = THREE.MathUtils.degToRad(-22);
+const LYING_ANKLE_DROP = THREE.MathUtils.degToRad(-38);
 const LYING_HIP_SPREAD = THREE.MathUtils.degToRad(5);
 const LYING_LEG_ROLL = THREE.MathUtils.degToRad(13);
 const HIP_LEVEL_PROBE = 0.2;   // test swing used to calibrate the hip levelling
+// Hip levelling lays each leg in the body's own plane, which puts the ankle at
+// the same depth as the hip socket. That is still not the bed. backReach()
+// rests the deepest point of the silhouette on the bedding, and on a body lying
+// on its back that point is the buttocks — so everything shallower than the
+// hips is left in the air, the calves by 5 cm and the heels by 8. That is the
+// leg that reads as hovering over the mattress however well the back is placed.
+// A real leg closes the gap by hanging: the hip is a ball joint, and the leg
+// swings down off it until the heel finds the bed. Solved rather than tabulated,
+// exactly like the levelling above — swing by a test angle, watch how far the
+// heel drops, take the angle that lands it.
+const HEEL_DROP_PROBE = 0.05;   // test swing used to calibrate the heel drop
+// The bed it has to find is not the plane the interaction quotes. That one is
+// the duvet her back rests on, and the beds lay a throw across their foot end
+// 2.5 cm proud of it — which is what her heels actually come down on.
+const LYING_FOOT_RISE = 0.025;
+// Hem of the night shorts, in the trousers' own geometry space: the thigh runs
+// from 0.98 at the hip to 0.52 at the knee, so this lands them at mid thigh.
+const NIGHT_SHORTS_HEM = 0.76;
 
 const CLOTHING_PARTS = {
   hat: 'hat',
@@ -327,10 +345,10 @@ export class Player {
       side: THREE.DoubleSide,
     });
 
-    // Washed-silk dusty rose: the L.A. slip nightdress. Low roughness with a
-    // trace of metalness is what reads as satin under the villa's warm bounce
-    // without tipping over into metal. Champagne was the first choice and it
-    // blew out to the same white as the bedding it is lying on.
+    // Washed-silk dusty rose: the L.A. sleep set. Low roughness with a trace of
+    // metalness is what reads as satin under the villa's warm bounce without
+    // tipping over into metal. Champagne was the first choice and it blew out to
+    // the same white as the bedding it is lying on.
     const silkMaterial = new THREE.MeshStandardMaterial({
       color: 0xc98d86,
       roughness: 0.44,
@@ -340,7 +358,6 @@ export class Player {
 
     const sleeves = buildSleeves(this.model, tshirtMaterial);
     const swimLegs = buildBareLegs(this.model, skinMaterial);
-    const nightSkirt = buildNightSkirt(this.model, silkMaterial);
 
     const pants = this.clothing.pants.mesh;
     const swimShorts = pants
@@ -356,15 +373,31 @@ export class Player {
     // The lofted legs are well inside the trouser silhouette, and the scale was
     // riding the hem a centimetre up the thigh.
 
-    // Bodice of the nightdress: the t-shirt geometry again, in silk. Cheaper
-    // and better-fitting than lofting a torso, and it covers the shoulders —
-    // which matters, because the skin under the shirt does not exist.
+    // Top of the sleep set: the t-shirt geometry again, in silk. Cheaper and
+    // better-fitting than lofting a torso, and it covers the shoulders — which
+    // matters, because the skin under the shirt does not exist.
     const tshirt = this.clothing.tshirt.mesh;
     const nightTop = tshirt
       ? this.createSkinnedClone(tshirt, tshirt.geometry, silkMaterial, 'Wardrobe_NightTop')
       : null;
+    // …and the bottom half, the same crop as the swim pair but cut longer, on
+    // the thigh. What used to be here was a skirt: a drape solved once over the
+    // legs as they lie, then pinned to the pelvis so the animation could not
+    // pull it out of shape. Nothing kept it on the body — on the bed it stood
+    // out of her hip as a flat panel, and every correction to the drape moved
+    // the fault somewhere else, because a garment authored in one pose has no
+    // way of knowing about any other. A cropped trouser is skinned to the same
+    // legs it covers, so it fits in every pose the pack has, this one included.
+    const nightShorts = pants
+      ? this.createSkinnedClone(
+        pants,
+        croppedGeometry(pants.geometry, NIGHT_SHORTS_HEM),
+        silkMaterial,
+        'Wardrobe_NightShorts'
+      )
+      : null;
 
-    this.wardrobe = { sleeves, swimLegs, swimShorts, nightTop, nightSkirt, hairCrown: null };
+    this.wardrobe = { sleeves, swimLegs, swimShorts, nightTop, nightShorts, hairCrown: null };
   }
 
   /**
@@ -401,8 +434,8 @@ export class Player {
     this.outfitKey = key;
     this.outfit = outfit;
 
-    // The nightdress replaces the whole outfit: silk bodice, silk skirt, bare
-    // legs and bare feet. Nobody sleeps in a backpack.
+    // The sleep set replaces the whole outfit: silk top, silk shorts, bare legs
+    // and bare feet. Nobody sleeps in a backpack.
     const bare = outfit.swim || outfit.night;
     const hat = outfit.hat && !outfit.night;
     this.setPartVisible('hat', hat);
@@ -415,7 +448,7 @@ export class Player {
     if (this.wardrobe.swimLegs) this.wardrobe.swimLegs.visible = bare;
     if (this.wardrobe.swimShorts) this.wardrobe.swimShorts.visible = outfit.swim && !outfit.night;
     if (this.wardrobe.nightTop) this.wardrobe.nightTop.visible = outfit.night;
-    if (this.wardrobe.nightSkirt) this.wardrobe.nightSkirt.visible = outfit.night;
+    if (this.wardrobe.nightShorts) this.wardrobe.nightShorts.visible = outfit.night;
     // Strictly the cap's understudy. The crown stands a centimetre off the
     // skull, which is inside Hat02 — worn together, it punches through the cap.
     if (this.wardrobe.hairCrown) this.wardrobe.hairCrown.visible = !hat;
@@ -607,6 +640,78 @@ export class Player {
     return this._hipLevel;
   }
 
+  // The vertices of one leg below the knee, on the mesh the night outfit
+  // actually shows. The trousers are the wrong thing to measure the heel
+  // against: they are hidden here, and the lofted legs they used to stand in for
+  // sit a good 3 cm inside them — resting the trouser on the bed still leaves
+  // the leg you can see hanging over it.
+  heelVertices(side) {
+    if (!this._heelVertices) {
+      this._heelVertices = { l: [], r: [] };
+      const mesh = this.wardrobe?.swimLegs;
+      const index = mesh?.geometry.attributes.skinIndex;
+      const weight = mesh?.geometry.attributes.skinWeight;
+      for (let i = 0; index && i < index.count; i++) {
+        let bone = -1, most = 0;
+        for (let c = 0; c < 4; c++) {
+          const w = weight.getComponent(i, c);
+          if (w > most) { most = w; bone = index.getComponent(i, c); }
+        }
+        const below = /^(?:calf|foot|ball)_([lr])$/.exec(mesh.skeleton.bones[bone]?.name ?? '');
+        if (below) this._heelVertices[below[1]].push(i);
+      }
+    }
+    return this._heelVertices[side];
+  }
+
+  // How far the lowest of them is off the bedding, in metres. The group sits on
+  // the rest height the furniture handed over, so its own Y is the bed.
+  heelHeight(side) {
+    const mesh = this.wardrobe.swimLegs;
+    const v = new THREE.Vector3();
+    let min = Infinity;
+    this.group.updateMatrixWorld(true);
+    for (const i of this.heelVertices(side)) {
+      mesh.getVertexPosition(i, v);
+      mesh.localToWorld(v);
+      if (v.y < min) min = v.y;
+    }
+    return min - this.group.position.y - LYING_FOOT_RISE;
+  }
+
+  // Per-side hip extension that hangs the leg until its heel reaches the bed.
+  // See HEEL_DROP_PROBE. Measured against the finished lying pose, so it has to
+  // be solved from inside applyLyingPose and not before it.
+  heelDrop() {
+    if (!this._heelDrop) {
+      this._heelDrop = { l: 0, r: 0 };
+      for (const side of ['l', 'r']) {
+        const thigh = this.bones[`thigh_${side}`];
+        if (!thigh || !this.heelVertices(side).length) continue;
+        const rest = thigh.quaternion.clone();
+        // Re-solved off its own answer a couple of times, which the levelling
+        // does not have to do. The lowest point below the knee is the heel while
+        // the leg is up and the toe once it is down, so the first solve is
+        // reading one landmark and landing another, and on its own it drove the
+        // shin a good 3 cm into the bedding.
+        let angle = 0;
+        for (let pass = 0; pass < 3; pass++) {
+          thigh.quaternion.copy(rest);
+          thigh.rotateZ(angle);
+          const before = this.heelHeight(side);
+          thigh.rotateZ(HEEL_DROP_PROBE);
+          const after = this.heelHeight(side);
+          if (after === before) break;
+          angle -= HEEL_DROP_PROBE * before / (after - before);
+        }
+        thigh.quaternion.copy(rest);
+        this._heelDrop[side] = angle;
+      }
+      this.group.updateMatrixWorld(true);
+    }
+    return this._heelDrop;
+  }
+
   applyLyingPose() {
     this.poseRoot.rotation.x = -Math.PI / 2;
     this.poseRoot.position.y = this.backReach();
@@ -641,6 +746,10 @@ export class Player {
       thigh?.rotateX(LYING_LEG_ROLL * mirror);
       this.bones[`foot_${side}`]?.rotateZ(LYING_ANKLE_DROP);
     }
+    // Last, because it is solved against everything above it: the legs hang off
+    // the hips until the heels are on the bedding instead of over it.
+    const heel = this.heelDrop();
+    for (const side of ['l', 'r']) this.bones[`thigh_${side}`]?.rotateZ(heel[side]);
     this.applyLyingArmPose();
   }
 
