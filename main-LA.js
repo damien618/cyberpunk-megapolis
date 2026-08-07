@@ -28,6 +28,7 @@ const startBtn = document.getElementById('startBtn');
 const hudMode = document.getElementById('mode');
 const hudSpeed = document.getElementById('speed');
 const hudHeight = document.getElementById('height');
+const furniturePrompt = document.getElementById('furniturePrompt');
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
@@ -2480,6 +2481,8 @@ const clock = new THREE.Clock();
 let started = false, usedLock = false, paused = false;
 let activeFurnitureInteraction = null;
 let furnitureInteractionCooldown = 0;
+let promptedFurniture = null;
+let furnitureActionRequested = false;
 // Getting up puts the avatar back exactly where it was grabbed, which is still
 // inside that seat's trigger — on the cooldown alone it simply sat back down a
 // beat later. The piece you stood up from stays off-limits until you have
@@ -2503,7 +2506,22 @@ function distanceToFurniture(spot, position) {
   return Math.hypot(edgeX, edgeZ);
 }
 
+function setFurniturePrompt(spot) {
+  if (promptedFurniture === spot) return;
+  promptedFurniture = spot;
+  furnitureActionRequested = false;
+  furniturePrompt.textContent = spot ? (spot.type === 'lie' ? "S'allonger" : "S'asseoir") : '';
+  furniturePrompt.classList.toggle('show', Boolean(spot));
+  furniturePrompt.setAttribute('aria-hidden', spot ? 'false' : 'true');
+}
+
+furniturePrompt.addEventListener('click', event => {
+  event.stopPropagation();
+  if (promptedFurniture) furnitureActionRequested = true;
+});
+
 function enterFurnitureInteraction(spot) {
+  setFurniturePrompt(null);
   activeFurnitureInteraction = {
     ...spot,
     source: spot,
@@ -2533,6 +2551,7 @@ function updateFurnitureInteraction(dt) {
   furnitureInteractionCooldown = Math.max(0, furnitureInteractionCooldown - dt);
 
   if (activeFurnitureInteraction) {
+    setFurniturePrompt(null);
     if (input.pressed('KeyR')) {
       activeFurnitureInteraction = null;
       furnitureInteractionCooldown = 0.65;
@@ -2550,7 +2569,10 @@ function updateFurnitureInteraction(dt) {
   }
 
   if (releasedSpot && distanceToFurniture(releasedSpot, ctrl.pos) > RELEASE_RADIUS) releasedSpot = null;
-  if (furnitureInteractionCooldown > 0 || ctrl.mode !== 'ground') return false;
+  if (furnitureInteractionCooldown > 0 || ctrl.mode !== 'ground') {
+    setFurniturePrompt(null);
+    return false;
+  }
   let nearest = null;
   let nearestDistance = Infinity;
   for (const spot of furnitureInteractions) {
@@ -2562,7 +2584,14 @@ function updateFurnitureInteraction(dt) {
       nearestDistance = distance;
     }
   }
-  if (nearest) enterFurnitureInteraction(nearest);
+  setFurniturePrompt(nearest);
+  // With pointer lock active the canvas receives every mouse click, even though
+  // the prompt is visually under the cursor. Without pointer lock the button's
+  // own click handler sets furnitureActionRequested instead.
+  if (nearest && (furnitureActionRequested || input.pressed('LMB'))) {
+    furnitureActionRequested = false;
+    enterFurnitureInteraction(nearest);
+  }
   return activeFurnitureInteraction !== null;
 }
 
@@ -2708,6 +2737,7 @@ startBtn.addEventListener('click', () => {
     }
   }
   overlay.style.display = 'none';
+  setFurniturePrompt(null);
   started = true;
   paused = false;
   renderer.domElement.requestPointerLock();
@@ -2717,6 +2747,7 @@ document.addEventListener('pointerlockchange', () => {
   usedLock = usedLock || document.pointerLockElement !== null;
   if (!usedLock) return;
   paused = !input.locked;
+  if (paused) setFurniturePrompt(null);
   overlay.style.display = paused ? 'flex' : 'none';
 });
 

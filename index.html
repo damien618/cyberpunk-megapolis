@@ -218,10 +218,27 @@
   }
   #crosshair::before { left: 6px; top: 0; width: 2px; height: 14px; }
   #crosshair::after { left: 0; top: 6px; width: 14px; height: 2px; }
+  #furniturePrompt {
+    position: fixed; left: 50%; top: calc(50% + 42px); z-index: 9;
+    transform: translate(-50%, 8px); padding: 10px 20px;
+    border: 2px solid #000; border-radius: 2px;
+    background: #fff; color: #000;
+    font-family: var(--mono); font-size: 14px; font-style: italic; font-weight: 600;
+    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.28);
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .14s ease, transform .14s ease, visibility .14s;
+  }
+  #furniturePrompt.show {
+    transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto;
+  }
+  #furniturePrompt:hover, #furniturePrompt:focus-visible {
+    background: #f1f1f1; outline: 2px solid #fff; outline-offset: 2px;
+  }
 
   /* ---------- mode gate: only one engine's DOM is active at a time ---------- */
   html:not([data-mode="la"]) #overlay,
   html:not([data-mode="la"]) #crosshair,
+  html:not([data-mode="la"]) #furniturePrompt,
   html:not([data-mode="la"]) #hud { display: none !important; }
 
   html[data-mode="la"] #loader,
@@ -312,7 +329,7 @@
     <h1>Villa luxueuse — Los Angeles</h1>
     <p>Villa californienne de plain-pied: cour d'entrée et bassin, séjour cathédrale ouvert sur la terrasse, cuisine ouverte avec îlot, suite parentale et chambre d'amis, garage. Côté canyon: piscine à débordement, spa, pergola, cuisine d'été et brasero.</p>
     <p>Vous démarrez sur l'allée d'entrée: la porte est ouverte, la piscine est derrière la maison.</p>
-    <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter / tenir pour tirer la toile, <b>E</b> zip, <b>Shift</b> sprint, <b>R</b> reset. Touchez une chaise ou un lit pour vous y installer; relâchez puis utilisez <b>WASD</b> ou <b>Space</b> pour vous relever.</p>
+    <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter / tenir pour tirer la toile, <b>E</b> zip, <b>Shift</b> sprint, <b>R</b> reset. Approchez-vous d'une chaise ou d'un lit puis cliquez sur le bouton proposé pour vous y installer; utilisez ensuite <b>WASD</b> ou <b>Space</b> pour vous relever.</p>
     <div id="timeToggle">
       <button class="tt-btn active" data-time="day">☀ Day</button>
       <button class="tt-btn" data-time="night">🌙 Night</button>
@@ -320,6 +337,7 @@
     <button id="startBtn">Entrer dans la villa</button>
   </div>
 </div>
+<button id="furniturePrompt" type="button" aria-hidden="true"></button>
 <div id="crosshair"></div>
 <div id="hud">Mode: <b id="mode">air</b> · Vitesse: <b id="speed">0</b> km/h · Hauteur: <b id="height">0</b> m</div>
 <script>
@@ -349,7 +367,7 @@
 </script>
 <script type="module">
   if (document.documentElement.dataset.mode === 'la') {
-    import('./main-LA.js?v=202608071645');
+    import('./main-LA.js?v=202608071730');
   } else {
     import('./main.js?v=19');
   }
