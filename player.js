@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { buildBareLegs, buildSleeves } from './limbs.js?v=33';
+import { buildBareLegs, buildSleeves } from './limbs.js?v=35';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
 
@@ -75,9 +75,24 @@ const HEEL_DROP_PROBE = 0.05;   // test swing used to calibrate the heel drop
 // the duvet her back rests on, and the beds lay a throw across their foot end
 // 2.5 cm proud of it — which is what her heels actually come down on.
 const LYING_FOOT_RISE = 0.025;
-// Hem of the night shorts, in the trousers' own geometry space: the thigh runs
-// from 0.98 at the hip to 0.52 at the knee, so this lands them at mid thigh.
+// Hems, in the trousers' own geometry space: the thigh runs from 0.98 at the
+// hip to 0.52 at the knee, so the night pair lands at mid thigh and the swim
+// pair a third of the way further down.
 const NIGHT_SHORTS_HEM = 0.76;
+const SWIM_SHORTS_HEM = 0.68;
+// A garment sits ON the body, not in it, and this pair was authored as trousers
+// around a leg that no longer exists. With the lofted legs graded up to real
+// circumferences the fabric cleared the thigh by 2.3 mm just above the hem —
+// inside the margin a walk cycle moves things by, so the leg was one stride
+// away from coming through. Pushing the shell out along its own normals gives
+// the standoff back without moving the hem line; a uniform scale, which is what
+// used to be here, rides the hem up the thigh instead, which is why it went.
+//
+// Strongest at the cut and gone a hand above it. That is how a real pair sits —
+// loose where it hangs free, pulled in at the waistband — and leaving the
+// waistband where it is keeps it from lifting through the shirt tucked over it.
+const FABRIC_STANDOFF = 0.0032;
+const FABRIC_FADE = 0.16;
 
 const CLOTHING_PARTS = {
   hat: 'hat',
@@ -179,8 +194,28 @@ function croppedGeometry(geometry, minY) {
     cropped.setAttribute(name, new Attribute(out[name], attribute.itemSize));
   }
   cropped.setIndex(triangles);
-  cropped.computeBoundingSphere();
-  return cropped;
+  return withStandoff(cropped, minY);
+}
+
+// Lifts a cropped garment off the skin along its own normals, fading out with
+// height above the hem. See FABRIC_STANDOFF.
+function withStandoff(geometry, minY) {
+  const position = geometry.attributes.position;
+  const normal = geometry.attributes.normal;
+  if (normal) {
+    for (let i = 0; i < position.count; i++) {
+      const fade = 1 - THREE.MathUtils.smoothstep(position.getY(i), minY, minY + FABRIC_FADE);
+      if (fade <= 0) continue;
+      const lift = FABRIC_STANDOFF * fade;
+      position.setXYZ(i,
+        position.getX(i) + normal.getX(i) * lift,
+        position.getY(i) + normal.getY(i) * lift,
+        position.getZ(i) + normal.getZ(i) * lift);
+    }
+    position.needsUpdate = true;
+  }
+  geometry.computeBoundingSphere();
+  return geometry;
 }
 
 export class Player {
@@ -363,7 +398,7 @@ export class Player {
     const swimShorts = pants
       ? this.createSkinnedClone(
         pants,
-        croppedGeometry(pants.geometry, 0.68),
+        croppedGeometry(pants.geometry, SWIM_SHORTS_HEM),
         swimMaterial,
         'Wardrobe_SwimShorts'
       )

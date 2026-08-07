@@ -46,29 +46,61 @@ const TOE_RADIAL = 10;   // a 6 mm toe does not need the leg's ring density
 // almost as deep as the heel — where a real forefoot is about 0.155. The `ant`
 // column and the path heights in buildBareLegs both come down for that, and the
 // soft floor keeps the sole flat underneath while they do.
+//
+// The leg rows (u < 2) are graded from measured circumferences rather than
+// eyeballed radii, because the eye judges a leg by its silhouette and the
+// silhouette is the circumference. Sliced, the first pass came out as a plain
+// cone: 55 cm at the gluteal fold, then 45 / 37 / 33 / 33.5 / 19 down to the
+// ankle. Only the top of it was right. Three separate things were wrong with
+// the rest, and all three read as "too thin" in shorts:
+//
+//   - The knee measured 33.3 against a 33.5 calf. On a real leg the knee is the
+//     WIDER of the two — the femoral condyles are the broadest bone in the limb
+//     — so the leg had nothing at the joint and the thigh simply ran on into
+//     the shin.
+//   - The calf peaked 0.2 cm above the narrowest point below the knee. That is
+//     not a calf, it is a straight taper with a rumour of one.
+//   - The ankle came out at 18.9 against a 33.5 calf, a ratio of 0.56 where the
+//     figure quoted everywhere for a woman is 0.63 — about 3 cm too narrow, and
+//     the narrowest point of the whole leg is exactly where a stick silhouette
+//     gives itself away.
+//
+// The column is now anchored on four measurements taken from adult female
+// anthropometry, scaled to the slim build this character actually has, and the
+// rows between them interpolate: upper thigh 55.5, mid thigh 47.6, knee 36.0,
+// max calf 35.2, minimum ankle 22.1 — which puts knee/calf at 1.02, ankle/calf
+// at 0.63 and mid-thigh/calf at 1.35, all inside the published ranges.
+//
+// Cross-sections are no longer near-circular either, because legs are not. The
+// upper thigh is deeper than it is wide (glute and hamstring behind it), the
+// knee is markedly wider than deep, the calf is deeper than wide and carries
+// nearly all of that depth behind the bone, and the ankle goes back to deeper
+// than wide because the Achilles stands off the back of it. Below the calf,
+// `enA` squares the front off a little for the flat anteromedial face of the
+// tibia — the one place on the leg where you feel bone straight under skin.
 const LEG_PROFILE = [
   // u,    lat,    med,    ant,    post,   ex,   enA,  enP
-  [0.00, 0.0860, 0.0820, 0.0840, 0.0980, 1.00, 1.00, 1.00],  // gluteal fold
-  [0.12, 0.0838, 0.0806, 0.0820, 0.0895, 1.00, 1.00, 1.00],
-  [0.28, 0.0792, 0.0772, 0.0775, 0.0798, 1.00, 1.00, 1.00],
-  [0.46, 0.0728, 0.0716, 0.0708, 0.0718, 1.00, 1.00, 1.00],  // mid thigh
-  [0.64, 0.0664, 0.0662, 0.0642, 0.0642, 1.00, 1.00, 1.00],
-  [0.80, 0.0602, 0.0612, 0.0580, 0.0570, 1.00, 1.00, 1.00],
-  [0.90, 0.0562, 0.0584, 0.0552, 0.0512, 1.00, 1.00, 1.00],  // vastus medialis
-  [1.00, 0.0540, 0.0552, 0.0562, 0.0462, 1.00, 1.00, 1.00],  // patella / hollow
-  [1.09, 0.0518, 0.0530, 0.0518, 0.0478, 1.00, 1.00, 1.00],
-  [1.20, 0.0505, 0.0510, 0.0455, 0.0555, 1.00, 1.00, 1.00],
-  [1.28, 0.0512, 0.0525, 0.0435, 0.0645, 1.00, 1.00, 1.00],  // calf, outer head
-  [1.36, 0.0505, 0.0538, 0.0425, 0.0660, 1.00, 1.00, 1.00],  // calf, inner head
-  [1.45, 0.0487, 0.0530, 0.0412, 0.0635, 1.00, 1.00, 1.00],
-  [1.60, 0.0442, 0.0455, 0.0382, 0.0540, 1.00, 1.00, 1.00],
-  [1.75, 0.0372, 0.0378, 0.0336, 0.0428, 1.00, 1.00, 1.00],  // achilles taper
-  [1.88, 0.0322, 0.0332, 0.0300, 0.0346, 1.00, 1.00, 1.00],
-  [1.94, 0.0304, 0.0314, 0.0282, 0.0300, 1.00, 1.00, 1.00],  // waist, above the bones
-  [2.00, 0.0308, 0.0320, 0.0278, 0.0304, 1.00, 1.00, 0.98],  // malleoli (see MALLEOLUS)
-  [2.08, 0.0316, 0.0326, 0.0292, 0.0330, 0.98, 1.00, 0.92],
-  [2.18, 0.0322, 0.0330, 0.0330, 0.0510, 0.92, 1.00, 0.74],  // achilles into the heel
-  [2.30, 0.0306, 0.0312, 0.0380, 0.0700, 0.86, 1.00, 0.58],  // heel
+  [0.00, 0.0871, 0.0830, 0.0840, 0.0989, 1.00, 1.00, 1.00],  // gluteal fold, 55.5 cm
+  [0.12, 0.0855, 0.0822, 0.0832, 0.0915, 1.00, 1.00, 1.00],
+  [0.28, 0.0816, 0.0793, 0.0800, 0.0825, 1.00, 1.00, 1.00],
+  [0.46, 0.0773, 0.0750, 0.0750, 0.0758, 1.00, 1.00, 1.00],  // mid thigh, 47.6 cm
+  [0.64, 0.0714, 0.0707, 0.0690, 0.0690, 1.00, 1.00, 1.00],  // where the shorts hem falls
+  [0.80, 0.0652, 0.0665, 0.0633, 0.0621, 1.00, 1.00, 1.00],
+  [0.90, 0.0618, 0.0650, 0.0604, 0.0559, 1.00, 1.00, 1.00],  // vastus medialis (see VASTUS)
+  [1.00, 0.0605, 0.0624, 0.0582, 0.0477, 1.00, 1.00, 1.00],  // knee 36.0: wide, hollow behind
+  [1.09, 0.0564, 0.0582, 0.0541, 0.0501, 1.00, 1.00, 1.00],  // condyles
+  [1.20, 0.0534, 0.0539, 0.0483, 0.0569, 1.00, 1.00, 1.00],  // narrowest below the knee
+  [1.26, 0.0546, 0.0536, 0.0455, 0.0649, 1.00, 1.00, 1.00],  // calf, outer head — sits higher
+  [1.35, 0.0513, 0.0576, 0.0456, 0.0690, 1.00, 1.00, 1.00],  // calf, inner head — lower, fuller
+  [1.45, 0.0501, 0.0557, 0.0438, 0.0664, 1.00, 0.95, 1.00],
+  [1.60, 0.0458, 0.0482, 0.0402, 0.0558, 1.00, 0.93, 1.00],  // flat face of the tibia
+  [1.75, 0.0391, 0.0403, 0.0361, 0.0457, 1.00, 0.95, 1.00],  // achilles taper
+  [1.88, 0.0349, 0.0359, 0.0339, 0.0414, 1.00, 0.98, 1.00],
+  [1.94, 0.0323, 0.0332, 0.0338, 0.0402, 1.00, 1.00, 1.00],  // waist, above the bones: 21.9 cm
+  [2.00, 0.0337, 0.0351, 0.0329, 0.0401, 1.00, 1.00, 0.98],  // malleoli (see MALLEOLUS)
+  [2.08, 0.0335, 0.0345, 0.0339, 0.0423, 0.98, 1.00, 0.92],
+  [2.18, 0.0329, 0.0337, 0.0333, 0.0537, 0.92, 1.00, 0.74],  // achilles into the heel
+  [2.30, 0.0311, 0.0317, 0.0380, 0.0700, 0.86, 1.00, 0.58],  // heel
   [2.45, 0.0322, 0.0328, 0.0370, 0.0470, 0.80, 1.00, 0.44],
   [2.62, 0.0348, 0.0366, 0.0348, 0.0330, 0.74, 1.00, 0.36],  // waist / instep
   [2.80, 0.0400, 0.0430, 0.0300, 0.0300, 0.72, 0.98, 0.34],
@@ -250,7 +282,7 @@ function loft({ points, pathU, profile, scale, rings, weights, lateral, floorY, 
         const d = p.y - floorY;
         p.y = floorY + 0.5 * (d + Math.sqrt(d * d + 2.5e-5));
       }
-      if (warp) warp(u, cs, sn, p, scale, side3, anterior);
+      if (warp) warp(u, cs, sn, p, scale, side3, anterior, c);
       pushVertex(out, p, w);
     }
   }
@@ -437,7 +469,82 @@ function achillesWarp(u, cs, sn, p, scale, side3) {
   p.addScaledVector(side3, -Math.sign(cs) * ACHILLES.in * scale * along * round);
 }
 
-function footWarp(u, cs, sn, p, scale, side3) {
+// The teardrop above the inner knee — the lower head of vastus medialis. On a
+// standing leg it is the widest thing on the bottom third of the thigh, and it
+// is on ONE SIDE, so the profile table can only chase it by inflating the whole
+// ring. That is what used to round the lower thigh off into a cone: the table
+// carried a little extra `med` at u = 0.90 and it came out as a slightly fatter
+// tube rather than a muscle. Here it is a swell on the inner side, carried
+// forward onto the front of the thigh and dying out before the knee, which is
+// where it actually stops.
+const VASTUS = { at: 0.875, spread: 0.105, out: 0.0058, fwd: 0.40 };
+
+function vastusWarp(u, cs, sn, p, scale, side3) {
+  if (cs >= 0) return;                                   // inner side only
+  const along = Math.exp(-(((u - VASTUS.at) / VASTUS.spread) ** 2));
+  if (along < 0.02) return;
+  const round = Math.abs(cs) ** 1.4 * (1 + VASTUS.fwd * sn);
+  p.addScaledVector(side3, -VASTUS.out * scale * along * round);
+}
+
+// The kneecap, the grooves either side of it, and the ridge of the patellar
+// ligament running down from its lower edge. None of the three can come out of
+// the profile table for the same reason the malleoli cannot: every point on a
+// ring shares one `u`, so a bump entered there is a belt round the whole joint.
+//
+// This is the landmark the knee was missing. A tube swept through the joint
+// gives one smooth barrel, and the front of a real knee is the opposite of
+// smooth: a flat pad about 4 cm across standing proud of it, a soft dip down
+// each side where the retinaculum falls away to the condyles, and a narrower
+// ridge carrying on to the tibial tuberosity a hand's width below. Widening the
+// section (above) tells you the knee is there; these are what make it read as a
+// knee rather than as the point where the thigh stopped narrowing.
+const PATELLA = { at: 0.99, spread: 0.088, out: 0.0044, wide: 0.46, groove: 0.0024 };
+const LIGAMENT = { at: 1.14, spread: 0.070, out: 0.0026, wide: 0.30 };
+
+function patellaWarp(u, cs, sn, p, scale, side3, anterior) {
+  if (sn <= 0) return;                                   // front of the ring only
+  let push = 0;
+  const cap = Math.exp(-(((u - PATELLA.at) / PATELLA.spread) ** 2));
+  if (cap > 0.02) {
+    const pad = Math.exp(-((cs / PATELLA.wide) ** 2));
+    const pit = Math.exp(-(((Math.abs(cs) - 0.64) / 0.17) ** 2));
+    push += cap * (PATELLA.out * pad - PATELLA.groove * pit);
+  }
+  const band = Math.exp(-(((u - LIGAMENT.at) / LIGAMENT.spread) ** 2));
+  if (band > 0.02) push += band * LIGAMENT.out * Math.exp(-((cs / LIGAMENT.wide) ** 2));
+  // `sn ** 1.3` keeps all of it on the front and lets it die as the ring turns
+  // towards the condyles, which are already carried by the section.
+  if (push !== 0) p.addScaledVector(anterior, push * scale * sn ** 1.3);
+}
+
+// The very top of the loft is not a measurement, it is a plug. It is inside the
+// shorts in every outfit that shows the legs at all — the night pair's hem sits
+// at u ≈ 0.48, the swim pair's at u ≈ 0.65 — and its only job up there is to
+// stop you seeing into them from below.
+//
+// It was doing that job while standing PROUD of the trousers at the hip. The
+// first ring carries gluteal-fold radii but the loft starts it at the head of
+// the femur, a hand higher, where the body is far narrower front to back; the
+// ring came through the seat of the shorts as two triangles of skin, which is
+// what read as a tear. Raycast outwards against the shorts, ring by ring, the
+// leg cleared the fabric by 14 mm at u = 0.25 and by MINUS 3.6 mm at u = 0.00.
+// Pulling the top in by 9 mm and fading out by u = 0.30 buries it with room to
+// spare, and costs nothing, because nothing above the hem is ever on screen.
+const HIP_TUCK = { in: 0.0090, to: 0.30 };
+
+function hipTuckWarp(u, p, scale, centre) {
+  if (!centre || u >= HIP_TUCK.to) return;
+  const fade = 1 - THREE.MathUtils.smoothstep(u, 0, HIP_TUCK.to);
+  const r = p.distanceTo(centre);
+  if (r < 1e-6) return;
+  p.lerp(centre, Math.min((HIP_TUCK.in * scale * fade) / r, 1));
+}
+
+function legWarp(u, cs, sn, p, scale, side3, anterior, centre) {
+  hipTuckWarp(u, p, scale, centre);
+  vastusWarp(u, cs, sn, p, scale, side3);
+  patellaWarp(u, cs, sn, p, scale, side3, anterior);
   archWarp(u, cs, sn, p, scale);
   malleoliWarp(u, cs, sn, p, scale, side3);
   achillesWarp(u, cs, sn, p, scale, side3);
@@ -480,14 +587,16 @@ export function buildBareLegs(root, material) {
       scale: hip.distanceTo(ankle) / LEG_SPAN,
       // Tight through 1.80–2.35: the ankle bones and the hollows beside the
       // tendon are only a couple of centimetres across, and at the old 4 cm step
-      // each one got a ring and a half and came out as a facet.
-      rings: ringParams(0, LEG_END, u => u < 0.72 ? 0.090
-        : u < 1.30 ? 0.048 : u < 1.78 ? 0.070 : u < 2.35 ? 0.026 : u < 3.05 ? 0.045 : 0.030),
+      // each one got a ring and a half and came out as a facet. The knee band
+      // now starts at 0.80 rather than 0.72 and the calf band runs to 1.50, so
+      // the kneecap and both gastrocnemius heads get rings to sit on.
+      rings: ringParams(0, LEG_END, u => u < 0.80 ? 0.090
+        : u < 1.50 ? 0.048 : u < 1.78 ? 0.070 : u < 2.35 ? 0.026 : u < 3.05 ? 0.045 : 0.030),
       weights: legWeights(bone),
       lateral: Math.sign(hip.x) || 1,
       floorY: soleY,
       floorFrom: 2,
-      warp: footWarp,
+      warp: legWarp,
     }, out);
     buildToes({ out, bone, fwd, hip, flatBall, soleY, L });
   }
