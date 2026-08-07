@@ -589,6 +589,63 @@ function buildWall(mat, axis, fixed, a0, a1, o = {}) {
 const wallX = (mat, z, x0, x1, o) => buildWall(mat, 'x', z, x0, x1, o);
 const wallZ = (mat, x, z0, z1, o) => buildWall(mat, 'z', x, z0, z1, o);
 
+// Open interior doors: teak panels and bronze architraves that project past
+// both faces of the partition, so an entrance is legible from the hall as well
+// as from the room. Leaves rest against a side wall and never occupy the clear
+// part of the opening.
+const DOOR_H = 2.16;
+const DOOR_T = 0.055;
+function doorFrameZ(x, z, width, top = 2.3) {
+  const y1 = FLOOR + top;
+  for (const edge of [z - width / 2, z + width / 2])
+    slab(M.bronze, x - 0.14, x + 0.14, edge - 0.045, edge + 0.045, FLOOR, y1);
+  slab(M.bronze, x - 0.14, x + 0.14, z - width / 2, z + width / 2,
+    y1 - 0.05, y1 + 0.05);
+}
+function doorFrameX(z, x, width, top = 2.3) {
+  const y1 = FLOOR + top;
+  for (const edge of [x - width / 2, x + width / 2])
+    slab(M.bronze, edge - 0.045, edge + 0.045, z - 0.14, z + 0.14, FLOOR, y1);
+  slab(M.bronze, x - width / 2, x + width / 2, z - 0.14, z + 0.14,
+    y1 - 0.05, y1 + 0.05);
+}
+function openDoorZ(x, z, width, { swingX = -1, hinge = 1 } = {}) {
+  doorFrameZ(x, z, width);
+  const leaf = width - 0.1;
+  const hingeZ = z + hinge * (width / 2 - 0.04);
+  const x0 = swingX < 0 ? x - leaf : x;
+  const x1 = swingX < 0 ? x : x + leaf;
+  slab(M.teak, x0, x1, hingeZ - DOOR_T / 2, hingeZ + DOOR_T / 2,
+    FLOOR + 0.035, FLOOR + DOOR_H);
+  const pullX = x + swingX * (leaf - 0.13);
+  slab(M.bronze, pullX - 0.025, pullX + 0.025, hingeZ - 0.07, hingeZ + 0.07,
+    FLOOR + 1.02, FLOOR + 1.12);
+}
+function pocketDoorX(z, x, width, { slideX = -1, faceZ = -1 } = {}) {
+  doorFrameX(z, x, width);
+  const leaf = width - 0.08;
+  const panelX = x + slideX * width;
+  const panelZ = z + faceZ * 0.075;
+  slab(M.teak, panelX - leaf / 2, panelX + leaf / 2,
+    panelZ - DOOR_T / 2, panelZ + DOOR_T / 2,
+    FLOOR + 0.035, FLOOR + DOOR_H);
+  const pullX = panelX - slideX * (leaf / 2 - 0.1);
+  slab(M.bronze, pullX - 0.07, pullX + 0.07,
+    panelZ - 0.025, panelZ + 0.025, FLOOR + 1.02, FLOOR + 1.12);
+}
+function pocketDoorZ(x, z, width, { slideZ = 1, faceX = 1 } = {}) {
+  doorFrameZ(x, z, width);
+  const leaf = width - 0.08;
+  const panelX = x + faceX * 0.075;
+  const panelZ = z + slideZ * width;
+  slab(M.teak, panelX - DOOR_T / 2, panelX + DOOR_T / 2,
+    panelZ - leaf / 2, panelZ + leaf / 2,
+    FLOOR + 0.035, FLOOR + DOOR_H);
+  const pullZ = panelZ - slideZ * (leaf / 2 - 0.1);
+  slab(M.bronze, panelX - 0.025, panelX + 0.025,
+    pullZ - 0.07, pullZ + 0.07, FLOOR + 1.02, FLOOR + 1.12);
+}
+
 // Floor-to-ceiling glazing with bronze mullions; `gaps` stay physically open
 // so the player can walk through (sliders parked open).
 function curtainWall(axis, fixed, a0, a1, y0, y1, gaps = []) {
@@ -688,19 +745,30 @@ wallZ(M.stucco, WX1, WZ0, WZ1, {
 
 // Interior partitions
 wallZ(M.plaster, PX_W, WZ0, 9.0, {
-  t: INT_T, openings: [{ a: -5.5, w: 1.9, top: 2.45, glass: false }, { a: 7.6, w: 1.4, top: 2.3, glass: false }]
+  t: INT_T, openings: [{ a: -2.95, w: 1.4, top: 2.3, glass: false }, { a: 7.6, w: 1.1, top: 2.3, glass: false }]
 });
 wallX(M.plaster, PZ_S, PX_W, PX_F, { t: INT_T });
 wallZ(M.plaster, PX_F, PZ_S, WZ1, { t: INT_T, openings: [{ a: 7.9, w: 2.0, top: 2.45, glass: false }] });
-wallZ(M.plaster, PX_E, PZ_S, WZ1, { t: INT_T, openings: [{ a: 8.6, w: 0.95, top: 2.15, glass: false }] });
+wallZ(M.plaster, PX_E, PZ_S, WZ1, { t: INT_T, openings: [{ a: 8.6, w: 1.1, top: 2.3, glass: false }] });
 wallZ(M.plaster, PX_K, PZ_S, WZ1, { t: INT_T });
 wallX(M.plaster, PZ_S, PX_E, WX1, { t: INT_T, openings: [{ a: 8.8, w: 1.4, top: 2.3, glass: false }] });
 wallZ(M.plasterWarm, PX_K, WZ0, -7.4, { t: INT_T });                  // kitchen anchor fin
 wallX(M.plaster, PZ_MB, WX0, PX_W, {
-  t: INT_T, openings: [{ a: -13.9, w: 0.95, top: 2.15, glass: false }, { a: -10.7, w: 1.3, top: 2.3, glass: false }]
+  t: INT_T, openings: [{ a: -10.25, w: 1.2, top: 2.3, glass: false }]
 });
-wallZ(M.plaster, PX_BATH, PZ_MB, PZ_B2, { t: INT_T });
+wallZ(M.plaster, PX_BATH, PZ_MB, PZ_B2, {
+  t: INT_T, openings: [{ a: 0.2, w: 1.2, top: 2.3, glass: false }]
+});
 wallX(M.plaster, PZ_B2, WX0, PX_W, { t: INT_T });
+
+// Bedroom doors open inward, while the compact ensuite and dressing use
+// pocket doors. The primary entrance sits beyond the end of the media wall;
+// neither the TV backing nor the bedside furniture overlaps these openings.
+pocketDoorZ(PX_W, -2.95, 1.4, { slideZ: 1, faceX: 1 });      // primary bedroom
+openDoorZ(PX_W, 7.6, 1.1, { swingX: -1, hinge: 1 });         // guest bedroom
+openDoorZ(PX_E, 8.6, 1.1, { swingX: 1, hinge: -1 });         // guest bathroom
+pocketDoorX(PZ_MB, -10.25, 1.2, { slideX: -1, faceZ: -1 });  // dressing
+openDoorZ(PX_BATH, 0.2, 1.2, { swingX: -1, hinge: -1 });     // dressing → primary bathroom
 
 // Ceilings: standard height everywhere, raised volume over the great room
 slab(M.ceiling, VX0, PX_W - 0.1, VZ0, VZ1, CEIL, CEIL + 0.32);
@@ -1221,7 +1289,7 @@ planter = asProp(planter);
 // Interior — great room (living + dining)
 // ---------------------------------------------------------------------------
 // Media wall against the private-wing partition, TV faces east into the room
-slab(M.plasterWarm, PX_W + 0.1, PX_W + 0.28, -10.6, -4.4, FLOOR, CEIL);
+slab(M.plasterWarm, PX_W + 0.1, PX_W + 0.28, -10.6, -4.75, FLOOR, CEIL);
 slab(M.marbleDark, PX_W + 0.28, PX_W + 0.42, -9.6, -5.4, FLOOR + 0.35, FLOOR + 0.95);
 frame(PX_W + 0.78, -7.5, 0, () => {
   box(M.walnut, 0, F + 0.28, 0, 0.5, 0.56, 3.2);
@@ -1398,12 +1466,12 @@ slab(M.black, -3.56, -3.5, 10.6, 11.4, FLOOR + 1.15, FLOOR + 1.28);
 // ---------------------------------------------------------------------------
 // Master suite
 // ---------------------------------------------------------------------------
-frame(-12.6, -5.4, 0, () => {
+frame(-12.6, -6.6, 0, () => {
   rug(4.6, 4.0, M.rug);
   frame(0, 0.7, Math.PI, () => bed(2.0, 2.1));
 });
-frame(-14.4, -2.9, 0, () => nightstand());
-frame(-10.8, -2.9, 0, () => nightstand());
+frame(-14.4, -4.1, 0, () => nightstand());
+frame(-11.1, -4.1, 0, () => nightstand());
 frame(-12.6, -8.0, 0, () => {
   box(M.teak, 0, F + 0.24, 0, 1.6, 0.12, 0.45);
   box(M.teak, -0.7, F + 0.11, 0, 0.1, 0.22, 0.4);
@@ -1427,13 +1495,11 @@ frame(-14.3, 2.0, 0, () => {
   shape(G.cyl, M.terracotta, 0, F + 0.24, 0, 0.46, 0.48, 0.46);
   shape(G.blob, M.foliage, 0, F + 0.72, 0, 0.85, 0.75, 0.85);
 });
-// Dressing
-frame(-11.9, -0.3, Math.PI / 2, () => wardrobe(3.8, 0.6));
+// Dressing: two runs leave a real 1.1 m passage to the ensuite between them.
+frame(-11.9, -1.25, Math.PI / 2, () => wardrobe(1.6, 0.6));
+frame(-11.9, 1.65, Math.PI / 2, () => wardrobe(1.5, 0.6));
 frame(-10.0, 1.2, -Math.PI / 2, () => wardrobe(2.0, 0.6));
-frame(-11.1, -1.2, 0, () => {
-  box(M.walnut, 0, F + 0.42, 0, 1.3, 0.84, 0.7);
-  box(M.marble, 0, F + 0.87, 0, 1.4, 0.06, 0.78);
-});
+frame(-10.9, -0.5, 0, () => rug(1.3, 1.6, M.rugDark));
 
 // ---------------------------------------------------------------------------
 // Guest bedroom
