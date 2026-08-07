@@ -35,16 +35,17 @@ const TRAVERSAL_CLIPS = {
 };
 const STRIP_PELVIS_POS = new Set(['swing', 'fall', 'jumpLoop', 'landRoll']);
 
-// Supine pose. The whole leg chain is reset, twist bones included, or the clip
-// keeps shearing the knee it thinks is still bearing weight.
-const LYING_LEG_JOINTS = ['thigh', 'thigh_twist_01', 'calf', 'calf_twist_01', 'foot', 'ball'];
+// Held poses — supine and seated — build off the rest pose rather than off the
+// clip underneath. The whole leg chain is reset, twist bones included, or the
+// clip keeps shearing the knee it thinks is still bearing weight.
+const POSE_LEG_JOINTS = ['thigh', 'thigh_twist_01', 'calf', 'calf_twist_01', 'foot', 'ball'];
 // The trunk is reset too. A standing idle keeps the pelvis rotating and sliding
 // under a swaying spine, which on a supine body twists the hips out of line —
 // the two sockets end up several centimetres apart front-to-back, and no amount
 // of hip levelling can straighten legs hanging off a crooked pelvis.
-const LYING_TRUNK_JOINTS = ['pelvis', 'spine_01', 'spine_02', 'spine_03'];
-const LYING_HEAD_JOINTS = ['neck_01', 'head'];
-const LYING_ARM_RE =
+const POSE_TRUNK_JOINTS = ['pelvis', 'spine_01', 'spine_02', 'spine_03'];
+const POSE_HEAD_JOINTS = ['neck_01', 'head'];
+const ARM_JOINT_RE =
   /^(clavicle|upperarm(?:_twist_\d+)?|lowerarm(?:_twist_\d+)?|hand|thumb_\d+|index_\d+|middle_\d+|ring_\d+|pinky_\d+)_[lr]$/;
 const LYING_HAND_TARGETS = {
   l: new THREE.Vector3(0.025, 1.22, 0.14),
@@ -93,6 +94,42 @@ const SWIM_SHORTS_HEM = 0.68;
 // waistband where it is keeps it from lifting through the shirt tucked over it.
 const FABRIC_STANDOFF = 0.0032;
 const FABRIC_FADE = 0.16;
+
+// Seated. A chair hands over two heights — the seat its cushion carries her on,
+// and the floor its legs stand on — and between them they settle the whole pose:
+// the hips have to end up just over the one and the soles down on the other. The
+// old pose knew about neither. It dropped the body a hard-coded 43 cm and bent
+// the hip and the knee 80° each, which on the armchair buried the thighs 7 cm
+// into the cushion and left them coming out of it — the legs you could see being
+// swallowed. Both angles are solved off the two heights now, so a taller seat
+// simply slopes the thighs down a little more rather than sinking them.
+//
+// Axes as for the supine pose: on the thigh Z is hip flexion and Y abduction.
+const SEAT_HIP_RISE = 0.075;   // hip joint over the seat, i.e. what she sits on
+// Feet a little ahead of the knees rather than tucked under them, which is where
+// they go on any seat that is not exactly the right height — and none of these
+// are, the armchair standing a good 6 cm over her own knee.
+const SEAT_SHIN_LEAN = THREE.MathUtils.degToRad(-12);
+// Knees a hand's width apart. The old pose laid its 80° straight on top of
+// whatever the standing idle was doing to the legs, so the clip's own stance
+// came through underneath it — that is the sprawl you cannot sit out of, and it
+// is what drove the thighs sideways into the arms of the chair.
+const SEAT_KNEE_SPREAD = THREE.MathUtils.degToRad(6);
+const SEAT_LEAN = THREE.MathUtils.degToRad(-5);   // settled back, not at attention
+const SEAT_FALLBACK_HEIGHT = 0.45;   // if a seat forgets to say how high it is
+const SEAT_FLEX_PROBE = 0.05;        // test swing used to correct the hip flexion
+// Wrists, in the avatar's own space: palms down on the thighs. It is the one
+// place a hand can rest that works on a dining chair and an armchair alike, and
+// the arms had no pose at all before — they were left to the standing idle,
+// which hangs them straight down, through the seat of the one and the arms of
+// the other.
+// Placed off the seated thigh rather than guessed: hip at y 0.977, flexed 85°,
+// so mid thigh is at y 0.957 and z 0.217, and the thigh is 72 mm through — put
+// the wrist a hand's thickness over the top of that.
+const SEATED_HAND_TARGETS = {
+  l: new THREE.Vector3(0.127, 1.049, 0.217),
+  r: new THREE.Vector3(-0.127, 1.049, 0.217),
+};
 
 const CLOTHING_PARTS = {
   hat: 'hat',
@@ -232,7 +269,7 @@ export class Player {
     this.bones = {};
     this.faceMeshes = [];
     this.eyesClosed = null;
-    this.lyingArmPose = null;
+    this.heldArmPose = null;
     this.landTimer = 0;
     this.clothing = Object.fromEntries(
       Object.values(CLOTHING_PARTS).map(part => [part, { materials: [], mesh: null }])
@@ -300,14 +337,30 @@ export class Player {
       if (o.isBone) this.bones[o.name] = o;
     });
     this.poseRoot.add(this.model);
-    // Rest pose, captured before a single clip has touched the rig. The lying
+    // Rest pose, captured before a single clip has touched the rig. A held
     // posture has to undo whatever the idle is doing to the legs, and a delta
     // applied on top of an animated bone would drift with it.
     this.restRotation = new Map(
       Object.entries(this.bones).map(([name, bone]) => [name, bone.quaternion.clone()])
     );
-    this.lyingArmJoints = Object.keys(this.bones).filter(name => LYING_ARM_RE.test(name));
+    this.armJoints = Object.keys(this.bones).filter(name => ARM_JOINT_RE.test(name));
     this.restPelvis = this.bones.pelvis?.position.clone() ?? null;
+    // …and, from the same untouched pose, the two segment lengths and the two
+    // heights the seated pose is solved from. Read off the rig rather than
+    // tabulated, so a re-rig carries them.
+    this.poseRoot.updateMatrixWorld(true);
+    const at = name => this.bones[name]
+      ? this.poseRoot.worldToLocal(this.bones[name].getWorldPosition(new THREE.Vector3()))
+      : null;
+    const restHip = at('thigh_l'), restKnee = at('calf_l'), restAnkle = at('foot_l');
+    this.restHipY = restHip ? restHip.y : 0.98;
+    this.restAnkleY = restAnkle ? restAnkle.y : 0.09;    // sole to ankle, standing
+    // How far each segment carries the body DOWN when it hangs, which is not its
+    // length: the pack is bound mid-stance and the knee sits 6 cm outboard of the
+    // hip, so the thigh spans 460 mm but only drops 456. Solving the seated leg
+    // on the lengths left the soles 2 cm over the floor.
+    this.thighDrop = restHip && restKnee ? restHip.y - restKnee.y : 0.456;
+    this.shinDrop = restKnee && restAnkle ? restKnee.y - restAnkle.y : 0.430;
     this.createWardrobeAlternates();
     this.setOutfit();
     this.mixer = new THREE.AnimationMixer(this.model);
@@ -509,11 +562,91 @@ export class Player {
     }
   }
 
-  applySeatedPose() {
-    this.poseRoot.position.y = -0.43;
+  applySeatedPose(floorY) {
+    // How high the seat stands over the floor in front of it. The body is hung
+    // off the seat — the pose root drops until the hip is SEAT_HIP_RISE above
+    // it, which is a constant, because the group is already parked ON the seat —
+    // and the leg then has to span from there down to the floor.
+    const seat = Number.isFinite(floorY)
+      ? this.group.position.y - floorY : SEAT_FALLBACK_HEIGHT;
+    const flex = this.seatFlex(seat);
+    this.resetHeldPose();
+    this.poseSeatedLegs(flex);
+    this.bones.spine_01?.rotateZ(SEAT_LEAN);
+    this.applyHeldArmPose('seated', SEATED_HAND_TARGETS);
+    this.poseRoot.position.y = SEAT_HIP_RISE - this.restHipY;
+  }
+
+  // The shin takes its lean as given and the hip takes `flex`, so the thighs go
+  // level on a seat at her own knee height and slope down on a taller one.
+  poseSeatedLegs(flex) {
+    const level = this.hipLevelling();
     for (const side of ['l', 'r']) {
-      this.bones[`thigh_${side}`]?.rotateZ(THREE.MathUtils.degToRad(80));
-      this.bones[`calf_${side}`]?.rotateZ(THREE.MathUtils.degToRad(-80));
+      const mirror = side === 'l' ? 1 : -1;
+      const hip = level[side] + flex;
+      this.bones[`thigh_${side}`]?.rotateZ(hip);
+      this.bones[`thigh_${side}`]?.rotateY(-SEAT_KNEE_SPREAD * mirror);
+      // The knee takes the thigh back off again and leaves the shin on its lean;
+      // the ankle then takes the lean off too, so the sole finishes flat on the
+      // floor instead of at whatever angle the clip underneath left it.
+      this.bones[`calf_${side}`]?.rotateZ(SEAT_SHIN_LEAN - hip);
+      this.bones[`foot_${side}`]?.rotateZ(-SEAT_SHIN_LEAN);
+    }
+  }
+
+  // Hip flexion that lands the soles on the floor, for a seat standing `seat`
+  // above it.
+  //
+  // The closed form below is only the opening guess. A leg is not the flat
+  // two-link diagram it assumes — the pack is bound mid-stance with the knee 6 cm
+  // outboard of the hip, and the knee spread turns the thigh about an axis the
+  // flexion has already moved — and taken on its own it left the feet a good
+  // 2 cm over the floor. Two corrections off the ankle the pose actually
+  // produces take that out. Cached per seat height; the villa has two.
+  seatFlex(seat) {
+    if (this._seatFlex?.seat === seat) return this._seatFlex.flex;
+    let flex = Math.acos(THREE.MathUtils.clamp(
+      (seat + SEAT_HIP_RISE - this.shinDrop * Math.cos(SEAT_SHIN_LEAN) - this.restAnkleY)
+      / this.thighDrop, -1, 1));
+    const ankle = this.bones.foot_l;
+    if (ankle) {
+      // Soles down means the ankle stands its own standing height over the floor,
+      // and the hip a fixed rise over the seat: that fixes the drop between them.
+      const want = seat + SEAT_HIP_RISE - this.restAnkleY;
+      const scratch = new THREE.Vector3();
+      const dropAt = f => {
+        this.resetHeldPose();
+        this.poseSeatedLegs(f);
+        this.poseRoot.updateMatrixWorld(true);
+        return this.restHipY - this.poseRoot.worldToLocal(ankle.getWorldPosition(scratch)).y;
+      };
+      for (let pass = 0; pass < 2; pass++) {
+        const now = dropAt(flex);
+        const nudged = dropAt(flex + SEAT_FLEX_PROBE);
+        if (nudged === now) break;
+        flex += SEAT_FLEX_PROBE * (want - now) / (nudged - now);
+      }
+    }
+    this._seatFlex = { seat, flex };
+    return flex;
+  }
+
+  // Trunk, head and both legs back to the bind pose, which is what a held pose
+  // is built on top of. Without it the clip still playing underneath sways the
+  // spine and keeps one leg swung out of the stance it was captured in.
+  resetHeldPose() {
+    for (const joint of [...POSE_TRUNK_JOINTS, ...POSE_HEAD_JOINTS]) {
+      const bone = this.bones[joint];
+      const rest = this.restRotation?.get(joint);
+      if (bone && rest) bone.quaternion.copy(rest);
+    }
+    if (this.restPelvis) this.bones.pelvis.position.copy(this.restPelvis);
+    for (const side of ['l', 'r']) {
+      for (const joint of POSE_LEG_JOINTS) {
+        const bone = this.bones[`${joint}_${side}`];
+        const rest = this.restRotation?.get(`${joint}_${side}`);
+        if (bone && rest) bone.quaternion.copy(rest);
+      }
     }
   }
 
@@ -585,18 +718,23 @@ export class Player {
     this.poseRoot.updateMatrixWorld(true);
   }
 
-  applyLyingArmPose() {
-    if (!this.lyingArmPose) {
-      for (const joint of this.lyingArmJoints) {
+  // Both held poses want the same thing from the arms: solve them onto a pair of
+  // hand targets once, keep the answer, and re-apply it over whatever the clip
+  // underneath is doing. `key` is only there so the supine and the seated
+  // answers do not share a cache.
+  applyHeldArmPose(key, targets) {
+    this.heldArmPose ??= {};
+    if (!this.heldArmPose[key]) {
+      for (const joint of this.armJoints) {
         this.bones[joint].quaternion.copy(this.restRotation.get(joint));
       }
       this.poseRoot.updateMatrixWorld(true);
-      for (const side of ['l', 'r']) this.solveRestingArm(side, LYING_HAND_TARGETS[side]);
-      this.lyingArmPose = new Map(
-        this.lyingArmJoints.map(joint => [joint, this.bones[joint].quaternion.clone()])
+      for (const side of ['l', 'r']) this.solveRestingArm(side, targets[side]);
+      this.heldArmPose[key] = new Map(
+        this.armJoints.map(joint => [joint, this.bones[joint].quaternion.clone()])
       );
     }
-    for (const [joint, rotation] of this.lyingArmPose) {
+    for (const [joint, rotation] of this.heldArmPose[key]) {
       this.bones[joint].quaternion.copy(rotation);
     }
   }
@@ -754,24 +892,7 @@ export class Player {
     // bent with its heel off the floor. Tipped onto its back that reads as a
     // foot hovering over the mattress, so the leg chain goes back to the rest
     // pose first, then gets levelled and relaxed.
-    for (const joint of LYING_TRUNK_JOINTS) {
-      const bone = this.bones[joint];
-      const rest = this.restRotation?.get(joint);
-      if (bone && rest) bone.quaternion.copy(rest);
-    }
-    for (const joint of LYING_HEAD_JOINTS) {
-      const bone = this.bones[joint];
-      const rest = this.restRotation?.get(joint);
-      if (bone && rest) bone.quaternion.copy(rest);
-    }
-    if (this.restPelvis) this.bones.pelvis.position.copy(this.restPelvis);
-    for (const side of ['l', 'r']) {
-      for (const joint of LYING_LEG_JOINTS) {
-        const bone = this.bones[`${joint}_${side}`];
-        const rest = this.restRotation?.get(`${joint}_${side}`);
-        if (bone && rest) bone.quaternion.copy(rest);
-      }
-    }
+    this.resetHeldPose();
     const level = this.hipLevelling();
     for (const side of ['l', 'r']) {
       const mirror = side === 'l' ? 1 : -1;
@@ -785,7 +906,7 @@ export class Player {
     // the hips until the heels are on the bedding instead of over it.
     const heel = this.heelDrop();
     for (const side of ['l', 'r']) this.bones[`thigh_${side}`]?.rotateZ(heel[side]);
-    this.applyLyingArmPose();
+    this.applyHeldArmPose('lying', LYING_HAND_TARGETS);
   }
 
   // ---------- visual update driven by controller ----------
@@ -826,7 +947,7 @@ export class Player {
     this.mixer.update(dt);
     this.setEyesClosed(posture === 'lie');
     if (posture === 'sit') {
-      this.applySeatedPose();
+      this.applySeatedPose(ctx.floorY);
     } else if (posture === 'lie') {
       this.applyLyingPose();
     }

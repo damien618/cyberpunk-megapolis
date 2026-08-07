@@ -864,8 +864,14 @@ function sofa(len, { depth = 0.95, mat = M.fabric, cushion = M.fabricWarm, arms 
   }
 }
 function armchair(mat = M.fabricOlive) {
-  furnitureInteraction('sit', 0.46, 0.45);
-  box(mat, 0, F + 0.2, 0, 0.92, 0.4, 0.9);
+  furnitureInteraction('sit', 0.46, 0.45, 0, F + 0.53);   // on the cushion
+  // Plinth, and it has to stand back under the cushion. It used to be a slab as
+  // deep as the whole chair and standing on the floor, with the four feet buried
+  // inside it — so it filled exactly the space a sitter's shins go, and no pose
+  // could keep them out of it. Anyone who sat down lost their legs from the knee
+  // to the shoe. Now the cushion overhangs it by 10 cm and it rides on its feet,
+  // which is how an armchair is built anyway.
+  box(mat, 0, F + 0.30, 0, 0.88, 0.2, 0.7);
   box(mat, 0, F + 0.46, 0, 0.84, 0.14, 0.82);
   box(mat, 0, F + 0.64, -0.36, 0.92, 0.62, 0.18);
   box(mat, -0.4, F + 0.5, 0, 0.14, 0.5, 0.86);
@@ -884,7 +890,7 @@ function diningTable(w, d, mat = M.walnut) {
   box(mat, w / 2 - 0.45, F + 0.36, 0, 0.12, 0.7, d - 0.2);
 }
 function chair(mat = M.fabric, wood = M.walnut) {
-  furnitureInteraction('sit', 0.25, 0.25);
+  furnitureInteraction('sit', 0.25, 0.25, 0, F + 0.495);   // on the seat board
   box(mat, 0, F + 0.45, 0, 0.5, 0.09, 0.5);
   box(mat, 0, F + 0.72, -0.21, 0.46, 0.48, 0.08);
   for (const [dx, dz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]])
@@ -2641,6 +2647,9 @@ function updateAvatar(dt) {
     ropeSlack: ctrl.webOn ? Math.max(0, ctrl.pos.distanceTo(ctrl.anchor) - ctrl.ropeLen) : 0,
     posture: activeFurnitureInteraction?.type,
     facingYaw: activeFurnitureInteraction?.yaw,
+    // A seat is two heights, not one: `pos.y` is the cushion she is carried on
+    // and this is the floor her feet have to find. The seated pose spans them.
+    floorY: activeFurnitureInteraction?.approachY,
   });
 }
 
