@@ -1256,6 +1256,7 @@ function parkCar(type, color, x, z, ry, ground, opts) {
   parkedCars.push(mesh);
   const b = carBounds(type);
   frame(x, z, ry, () => box(M.collider, 0, ground + b.height / 2, 0, b.length, b.height, b.width));
+  return mesh;
 }
 
 // Furniture, as opposed to architecture: what these builders emit is something
@@ -1617,7 +1618,28 @@ for (let i = 0; i < 6; i++) {
   slab(M.stuccoWarm, 24.6, 28.8, 15.9, 16.02, 0.4 + i * 0.44, 0.46 + i * 0.44);
 }
 parkCar('coupe', 0x1b2b4d, 4.5, 26.5, Math.PI / 2, 0.15);
-parkCar('suv', 0xb8bec6, -6.0, 27.5, Math.PI / 2 + 0.25, 0.15, { metallic: false });
+const LA_TRAVEL_CAR = Object.freeze({
+  type: 'suv', x: -6.0, z: 27.5, yaw: Math.PI / 2 + 0.25, ground: 0.15,
+});
+const laTravelCar = parkCar(
+  LA_TRAVEL_CAR.type, 0xb8bec6, LA_TRAVEL_CAR.x, LA_TRAVEL_CAR.z,
+  LA_TRAVEL_CAR.yaw, LA_TRAVEL_CAR.ground, { metallic: false },
+);
+const laTravelBounds = carBounds(LA_TRAVEL_CAR.type);
+const laTravelInteraction = {
+  type: 'travel',
+  label: 'Voyager à Cyberpunk Megapolis',
+  x: LA_TRAVEL_CAR.x,
+  y: LA_TRAVEL_CAR.ground,
+  z: LA_TRAVEL_CAR.z,
+  centerX: LA_TRAVEL_CAR.x,
+  centerZ: LA_TRAVEL_CAR.z,
+  approachY: LA_TRAVEL_CAR.ground + 0.5,
+  yaw: LA_TRAVEL_CAR.yaw,
+  halfWidth: laTravelBounds.length / 2,
+  halfDepth: laTravelBounds.width / 2,
+  triggerDistance: 1.25,
+};
 
 // Entry reflecting pool + stepping stones
 slab(M.marbleDark, 4.2, 7.6, 13.2, 19.2, -0.6, FLOOR - 0.3);
@@ -2460,11 +2482,29 @@ const ctrl = new Controller(bw, groundFn, castFn, {
   },
 });
 // Spawn on the entry walk, facing the front door.
-const spawnPoint = new THREE.Vector3(0, FLOOR + 1.4, 18.5);
+const travelParams = new URLSearchParams(location.search);
+const arrivedFromMegapolis = travelParams.get('arrival') === 'megapolis';
+const arrivalSide = laTravelBounds.width / 2 + 1.1;
+const villaArrivalPoint = new THREE.Vector3(
+  LA_TRAVEL_CAR.x + Math.sin(LA_TRAVEL_CAR.yaw) * arrivalSide,
+  LA_TRAVEL_CAR.ground + 0.2,
+  LA_TRAVEL_CAR.z + Math.cos(LA_TRAVEL_CAR.yaw) * arrivalSide,
+);
+const spawnPoint = arrivedFromMegapolis
+  ? villaArrivalPoint.clone()
+  : new THREE.Vector3(0, FLOOR + 1.4, 18.5);
 ctrl.rescueTo(spawnPoint);
 
 const rig = new CameraRig(camera, bw);
 const input = new Input(renderer.domElement);
+function requestGamePointerLock() {
+  try {
+    const pending = renderer.domElement.requestPointerLock?.();
+    pending?.catch?.(() => {});
+  } catch (_) {
+    // Embedded previews may refuse pointer lock; keyboard play still works.
+  }
+}
 
 player = new Player(scene);
 await player.load('girl', girlMatFor);
@@ -2489,6 +2529,7 @@ let activeFurnitureInteraction = null;
 let furnitureInteractionCooldown = 0;
 let promptedFurniture = null;
 let furnitureActionRequested = false;
+let travelInProgress = false;
 // Getting up puts the avatar back exactly where it was grabbed, which is still
 // inside that seat's trigger — on the cooldown alone it simply sat back down a
 // beat later. The piece you stood up from stays off-limits until you have
@@ -2516,7 +2557,9 @@ function setFurniturePrompt(spot) {
   if (promptedFurniture === spot) return;
   promptedFurniture = spot;
   furnitureActionRequested = false;
-  furniturePrompt.textContent = spot ? (spot.type === 'lie' ? "S'allonger" : "S'asseoir") : '';
+  furniturePrompt.textContent = spot
+    ? (spot.label || (spot.type === 'lie' ? "S'allonger" : "S'asseoir"))
+    : '';
   furniturePrompt.classList.toggle('show', Boolean(spot));
   furniturePrompt.setAttribute('aria-hidden', spot ? 'false' : 'true');
 }
@@ -2554,6 +2597,7 @@ function leaveFurnitureInteraction() {
 }
 
 function updateFurnitureInteraction(dt) {
+  if (travelInProgress) return true;
   furnitureInteractionCooldown = Math.max(0, furnitureInteractionCooldown - dt);
 
   if (activeFurnitureInteraction) {
@@ -2581,11 +2625,11 @@ function updateFurnitureInteraction(dt) {
   }
   let nearest = null;
   let nearestDistance = Infinity;
-  for (const spot of furnitureInteractions) {
+  for (const spot of [laTravelInteraction, ...furnitureInteractions]) {
     if (spot === releasedSpot) continue;
-    if (Math.abs(ctrl.pos.y - spot.approachY) > 0.75) continue;
+    if (Math.abs(ctrl.pos.y - spot.approachY) > (spot.type === 'travel' ? 1.25 : 0.75)) continue;
     const distance = distanceToFurniture(spot, ctrl.pos);
-    if (distance < 0.54 && distance < nearestDistance) {
+    if (distance < (spot.triggerDistance ?? 0.54) && distance < nearestDistance) {
       nearest = spot;
       nearestDistance = distance;
     }
@@ -2596,6 +2640,12 @@ function updateFurnitureInteraction(dt) {
   // own click handler sets furnitureActionRequested instead.
   if (nearest && (furnitureActionRequested || input.pressed('LMB'))) {
     furnitureActionRequested = false;
+    if (nearest.type === 'travel') {
+      travelInProgress = true;
+      setFurniturePrompt(null);
+      location.href = 'index.html?map=megapolis&runner=girl&arrival=la';
+      return true;
+    }
     enterFurnitureInteraction(nearest);
   }
   return activeFurnitureInteraction !== null;
@@ -2736,7 +2786,8 @@ function animate() {
 }
 animate();
 
-startBtn.addEventListener('click', () => {
+function startVilla() {
+  if (started) return;
   if (window.__nightMode) {
     try {
       enableNightMode();
@@ -2749,8 +2800,11 @@ startBtn.addEventListener('click', () => {
   setFurniturePrompt(null);
   started = true;
   paused = false;
-  renderer.domElement.requestPointerLock();
-});
+  requestGamePointerLock();
+}
+
+startBtn.addEventListener('click', startVilla);
+if (arrivedFromMegapolis) startVilla();
 
 document.addEventListener('pointerlockchange', () => {
   usedLock = usedLock || document.pointerLockElement !== null;
@@ -2772,5 +2826,5 @@ window.__villa = {
   furnitureInteractions, enterFurnitureInteraction, leaveFurnitureInteraction,
   updateFurnitureInteraction,
   get activeFurnitureInteraction() { return activeFurnitureInteraction; },
-  updateAvatarOutfit
+  updateAvatarOutfit, laTravelCar, laTravelInteraction, villaArrivalPoint
 };

@@ -238,7 +238,6 @@
   /* ---------- mode gate: only one engine's DOM is active at a time ---------- */
   html:not([data-mode="la"]) #overlay,
   html:not([data-mode="la"]) #crosshair,
-  html:not([data-mode="la"]) #furniturePrompt,
   html:not([data-mode="la"]) #hud { display: none !important; }
 
   html[data-mode="la"] #loader,
@@ -367,9 +366,9 @@
 </script>
 <script type="module">
   if (document.documentElement.dataset.mode === 'la') {
-    import('./main-LA.js?v=202608071730');
+    import('./main-LA.js?v=202608081815');
   } else {
-    import('./main.js?v=19');
+    import('./main.js?v=22');
   }
 </script>
 </body>

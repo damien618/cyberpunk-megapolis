@@ -10,6 +10,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Player } from './player.js?v=20';
+import { buildCar, carBounds } from './cars.js?v=3';
 
 // build stamp: shown in the HUD + console so a stale-cache session is
 // recognizable at a glance (a mixed old/new module graph once reproduced the
@@ -1153,6 +1154,43 @@ import { Input } from './input.js?v=3';
   console.log(`foundation podiums: ${pods.length}`);
 }
 
+// The same silver SUV links this world to the villa. Its transparent instanced
+// proxy enters the city's collision build while the detailed procedural model
+// remains a normal group for rendering.
+const MEGAPOLIS_TRAVEL_CAR = Object.freeze({
+  // This authored sidewalk is at street level (y≈0), well above the fallback
+  // safety slab at -1.24 m. The car origin is the tyre contact plane.
+  type: 'suv', x: -52, z: 2.5, yaw: 0, ground: 0.02,
+});
+const megapolisTravelCar = buildCar(MEGAPOLIS_TRAVEL_CAR.type, 0xb8bec6, { metallic: false });
+megapolisTravelCar.position.set(
+  MEGAPOLIS_TRAVEL_CAR.x, MEGAPOLIS_TRAVEL_CAR.ground, MEGAPOLIS_TRAVEL_CAR.z,
+);
+megapolisTravelCar.rotation.y = MEGAPOLIS_TRAVEL_CAR.yaw;
+world.add(megapolisTravelCar);
+
+const megapolisTravelBounds = carBounds(MEGAPOLIS_TRAVEL_CAR.type);
+const travelCollider = new THREE.InstancedMesh(
+  new THREE.BoxGeometry(1, 1, 1),
+  new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
+  1,
+);
+travelCollider.userData.prefab = '__travel_car';
+travelCollider.userData.prop = [true];
+travelCollider.setMatrixAt(0, new THREE.Matrix4().compose(
+  new THREE.Vector3(
+    MEGAPOLIS_TRAVEL_CAR.x,
+    MEGAPOLIS_TRAVEL_CAR.ground + megapolisTravelBounds.height / 2,
+    MEGAPOLIS_TRAVEL_CAR.z,
+  ),
+  new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), MEGAPOLIS_TRAVEL_CAR.yaw),
+  new THREE.Vector3(
+    megapolisTravelBounds.length, megapolisTravelBounds.height, megapolisTravelBounds.width,
+  ),
+));
+travelCollider.instanceMatrix.needsUpdate = true;
+world.add(travelCollider);
+
 const bw = buildCityBoxes(world);
 console.log(`city boxes: ${bw.aabbs.length} (${bw.aabbs.filter(b => b.collide).length} collidable)`);
 
@@ -1290,10 +1328,65 @@ const ctrl = new Controller(bw, groundAt, castRay, {
 });
 const rig = new CameraRig(camera, bw);
 const input = new Input(renderer.domElement);
+function requestGamePointerLock() {
+  try {
+    const pending = renderer.domElement.requestPointerLock?.();
+    pending?.catch?.(() => {});
+  } catch (_) {
+    // Embedded previews may refuse pointer lock; keyboard play still works.
+  }
+}
 
 let phase = 'menu';          // menu | play | pause
 let chosen = null;
 let selGender = null;
+const travelParams = new URLSearchParams(location.search);
+const arrivedFromVilla = travelParams.get('arrival') === 'la';
+const travelPrompt = $('furniturePrompt');
+let travelPromptShown = false;
+let travelActionRequested = false;
+let travelInProgress = false;
+const megapolisArrivalPoint = new THREE.Vector3(
+  MEGAPOLIS_TRAVEL_CAR.x,
+  MEGAPOLIS_TRAVEL_CAR.ground + 0.2,
+  MEGAPOLIS_TRAVEL_CAR.z + megapolisTravelBounds.width / 2 + 1.1,
+);
+
+function distanceToMegapolisTravelCar(position) {
+  const dx = position.x - MEGAPOLIS_TRAVEL_CAR.x;
+  const dz = position.z - MEGAPOLIS_TRAVEL_CAR.z;
+  const c = Math.cos(MEGAPOLIS_TRAVEL_CAR.yaw), s = Math.sin(MEGAPOLIS_TRAVEL_CAR.yaw);
+  const localX = dx * c - dz * s;
+  const localZ = dx * s + dz * c;
+  const edgeX = Math.max(0, Math.abs(localX) - megapolisTravelBounds.length / 2);
+  const edgeZ = Math.max(0, Math.abs(localZ) - megapolisTravelBounds.width / 2);
+  return Math.hypot(edgeX, edgeZ);
+}
+
+function setTravelPrompt(show) {
+  if (travelPromptShown === show) return;
+  travelPromptShown = show;
+  if (!show) travelActionRequested = false;
+  travelPrompt.textContent = show ? 'Voyager à L.A.' : '';
+  travelPrompt.classList.toggle('show', show);
+  travelPrompt.setAttribute('aria-hidden', show ? 'false' : 'true');
+}
+
+travelPrompt.addEventListener('click', event => {
+  event.stopPropagation();
+  if (travelPromptShown) travelActionRequested = true;
+});
+
+function updateTravelInteraction() {
+  const closeEnough = phase === 'play' && ctrl.mode === 'ground' &&
+    Math.abs(ctrl.pos.y - (MEGAPOLIS_TRAVEL_CAR.ground + 0.5)) < 1.25 &&
+    distanceToMegapolisTravelCar(ctrl.pos) < 1.25;
+  setTravelPrompt(closeEnough && !travelInProgress);
+  if (!closeEnough || travelInProgress || !(travelActionRequested || input.pressed('LMB'))) return;
+  travelInProgress = true;
+  setTravelPrompt(false);
+  location.href = 'index.html?map=la&arrival=megapolis';
+}
 
 // ---------- menu ----------
 const menuEl = $('menu'), enterBtn = $('enterBtn');
@@ -1313,7 +1406,7 @@ addEventListener('keydown', e => {
     if (e.code === 'ArrowDown') selectGender('girl');
     if (e.code === 'Enter' && selGender) startGame();
   } else if (phase === 'pause' && e.code === 'Enter') {
-    renderer.domElement.requestPointerLock?.();
+    requestGamePointerLock();
   }
   if (e.code === 'KeyT' && !e.repeat)
     applyPreset(PRESET_ORDER[(PRESET_ORDER.indexOf(presetName) + 1) % PRESET_ORDER.length]);
@@ -1337,12 +1430,19 @@ function startGame() {
   const other = players[selGender === 'man' ? 'girl' : 'man'];
   scene.remove(other.group);
   window.__player = chosen;
-  doDive(false);
+  if (arrivedFromVilla) {
+    input.yaw = Math.PI;
+    input.pitch = -0.08;
+    ctrl.rescueTo(megapolisArrivalPoint);
+    rig.initialized = false;
+  } else {
+    doDive(false);
+  }
   rig.blendFrom(camera, 1.5);   // carry the aerial menu shot straight into the plunge
   menuEl.classList.add('gone');
   $('stats').classList.add('on');
   phase = 'play';   // game logic must not depend on pointer lock (headless can't lock)
-  renderer.domElement.requestPointerLock?.();
+  requestGamePointerLock();
 }
 
 function doDive(isReset, cause = isReset ? 'manual-R' : 'start') {
@@ -1376,10 +1476,11 @@ document.addEventListener('pointerlockchange', () => {
     $('pause').classList.remove('show');
   } else if (phase === 'play') {
     phase = 'pause';
+    setTravelPrompt(false);
     $('pause').classList.add('show');
   }
 });
-$('pause').addEventListener('click', () => renderer.domElement.requestPointerLock?.());
+$('pause').addEventListener('click', requestGamePointerLock);
 
 // ---------- HUD ----------
 const statsEl = { speed: $('stSpeed'), height: $('stHeight'), state: $('stState') };
@@ -1439,6 +1540,7 @@ function animate() {
     if (phase === 'play') input.updateLook(dt);
     rig.forward(camDir, input);
     if (phase === 'play') ctrl.update(dt, input, input.yaw, camDir);
+    updateTravelInteraction();
     if (chosen) {
       chosen.update({
         dt,
@@ -1522,6 +1624,10 @@ function showMenu() {
   setTimeout(() => { loaderEl.style.display = 'none'; }, 600);
   menuEl.classList.add('show');
   animate();
+  if (arrivedFromVilla) {
+    selectGender('girl');
+    startGame();
+  }
 }
 window.__showMenu = showMenu;
 if (loadDone) showMenu();   // the queue may have drained before showMenu existed
@@ -1533,3 +1639,10 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
   composer.setSize(innerWidth, innerHeight);
 });
+
+window.__megapolisTravel = {
+  car: megapolisTravelCar,
+  carConfig: MEGAPOLIS_TRAVEL_CAR,
+  arrivalPoint: megapolisArrivalPoint,
+  distanceToCar: distanceToMegapolisTravelCar,
+};
