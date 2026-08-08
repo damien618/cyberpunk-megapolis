@@ -17,7 +17,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { cloneSkinned } from './crowd.js?v=4';
+import { cloneSkinned } from './crowd.js?v=7';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
 

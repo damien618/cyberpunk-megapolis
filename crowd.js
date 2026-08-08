@@ -64,10 +64,25 @@ export async function loadVisitorBase(url, matFactory) {
   return gltf.scene;
 }
 
-const PART_NAMES = ['hat', 'backpack', 'tshirt', 'pants', 'shoes', 'hair', 'head'];
+// The two characters do not name their clothing the same way. The girl has a
+// TSHIRT; the man has a JACKET and a VEST, and nothing called a shirt at all —
+// which is why the shopkeeper kept his camouflage top while his trousers went
+// green: the trousers matched PANTS on both models and the shirt matched
+// nothing on his. Both of the man's upper garments map to the same slot.
+const PART_NAMES = ['hat', 'backpack', 'tshirt', 'jacket', 'vest', 'pants', 'shoes',
+  'hair', 'head'];
+const PART_ALIASES = { jacket: 'tshirt', vest: 'tshirt' };
 const partOf = (name = '') => {
-  const n = name.toLowerCase();
-  return PART_NAMES.find(p => n.includes(p)) || null;
+  const hit = PART_NAMES.find(p => name.toLowerCase().includes(p));
+  return hit ? (PART_ALIASES[hit] ?? hit) : null;
+};
+// What the shops' staff wear, so they are picked out of the crowd at a glance.
+export const STAFF_UNIFORM = {
+  shirt: 0xffffff,      // white, so the drawn stripe carries the colour
+  pants: 0x2f5b32,
+  shoes: 0x2a2a2e,
+  stripes: true,
+  hat: false,
 };
 // Day-out colours, deliberately warmer and more varied than the pack's own
 // military palette — a zoo crowd on a sunny morning, not a patrol.
@@ -86,11 +101,79 @@ const HAIR = [0x2a1d15, 0x6b4526, 0xa87a3f, 0xd8b878, 0x8f3f28, 0x9a958f, 0x1410
 // Skin likewise: a gentle multiply either side of the pack's own tone.
 const SKIN = [0xffffff, 0xf0d9c4, 0xd6a882, 0xa9764f, 0xe8c9a8, 0x8a5c3a];
 
+// A shirt with stripes on it, drawn rather than downloaded: eight bands in a
+// tall thin canvas, tiled over whatever UVs the shirt happens to have. It will
+// not line up with a seam, but at two metres it reads as striped, which is the
+// whole job.
+let stripeCache = null;
+function stripeTexture(light = '#cfe3c2', dark = '#2f6b34') {
+  if (stripeCache) return stripeCache;
+  // Wide bands and no tiling. The pack's shirts are UV atlases, so a fine
+  // stripe repeated three times over one lands a few pixels per band on the
+  // torso island and reads as noise — which is what the first pass looked like.
+  const c = Object.assign(document.createElement('canvas'), { width: 4, height: 64 });
+  const ctx = c.getContext('2d');
+  for (let i = 0; i < 8; i++) {
+    ctx.fillStyle = i % 2 ? dark : light;
+    ctx.fillRect(0, i * 8, 4, 8);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(1, 1);
+  t.magFilter = THREE.NearestFilter;
+  t.colorSpace = THREE.SRGBColorSpace;
+  stripeCache = t;
+  return t;
+}
+
+// The seated pose. The pack has no sitting clip, so an idle is played for the
+// arms and spine and the leg chain is overwritten after it every frame — the
+// same division of labour the player's own seated pose uses. Rotations are
+// applied to the BIND pose rather than added to the clip's, or the idle's own
+// stance comes through underneath and the knees drift apart over a few seconds.
+const SEAT = { hip: 1.44, knee: -1.52, ankle: 0.12, spread: 0.09 };
+
+function seatedRig(group) {
+  const legs = [];
+  for (const side of ['l', 'r']) {
+    const thigh = group.getObjectByName(`thigh_${side}`);
+    const calf = group.getObjectByName(`calf_${side}`);
+    const foot = group.getObjectByName(`foot_${side}`);
+    if (!thigh || !calf) continue;
+    legs.push({
+      side: side === 'l' ? 1 : -1, thigh, calf, foot,
+      rest: {
+        thigh: thigh.quaternion.clone(),
+        calf: calf.quaternion.clone(),
+        foot: foot ? foot.quaternion.clone() : null,
+      },
+    });
+  }
+  const e = new THREE.Euler();
+  const q = new THREE.Quaternion();
+  return () => {
+    for (const l of legs) {
+      e.set(0, l.side * SEAT.spread, SEAT.hip, 'YXZ');
+      l.thigh.quaternion.copy(l.rest.thigh).multiply(q.setFromEuler(e));
+      e.set(0, 0, SEAT.knee, 'YXZ');
+      l.calf.quaternion.copy(l.rest.calf).multiply(q.setFromEuler(e));
+      if (l.foot) {
+        e.set(0, 0, SEAT.ankle, 'YXZ');
+        l.foot.quaternion.copy(l.rest.foot).multiply(q.setFromEuler(e));
+      }
+    }
+  };
+}
+
 /**
  * One visitor: a rebound clone with its own materials, mixer and gait.
  * `rng` is passed in so a crowd can be reproducible between reloads.
+ *
+ * `uniform` forces the clothing instead of rolling it — the shops' staff all
+ * wear the same thing, which is what makes them read as staff. `seated` swaps
+ * the walk for an idle plus the pose above.
  */
-export function makeVisitor(base, walkClip, rng) {
+export function makeVisitor(base, walkClip, rng, { uniform = null, seated = false } = {}) {
   const group = cloneSkinned(base);
 
   // The player's own wardrobe alternates hang off the same graph. They came
@@ -111,8 +194,14 @@ export function makeVisitor(base, walkClip, rng) {
   // biggest change of outline available and the commonest thing in a zoo.
   const cut = rng();
   const style = cut < 0.34 ? 'long' : cut < 0.68 ? 'short' : 'cap';
-  const wearsHat = style === 'cap' || rng() < 0.2;
-  const wearsPack = rng() < 0.32;
+  const wearsHat = uniform ? uniform.hat === true : (style === 'cap' || rng() < 0.2);
+  const wearsPack = uniform ? false : rng() < 0.32;
+  if (uniform) {
+    chosen.tshirt = uniform.shirt;
+    chosen.pants = uniform.pants;
+    chosen.shoes = uniform.shoes ?? chosen.shoes;
+    if (uniform.hat !== undefined) chosen.hat = uniform.hatColour ?? chosen.hat;
+  }
 
   group.traverse(o => {
     if (!o.isMesh && !o.isSkinnedMesh) return;
@@ -135,7 +224,8 @@ export function makeVisitor(base, walkClip, rng) {
         c.color.setHex(skinTone);
         c.needsUpdate = true;
       } else if (part && chosen[part] !== undefined) {
-        c.map = null;                       // the pack's albedo is camouflage
+        // Staff shirts get the stripe; everything else is plain.
+        c.map = (uniform?.stripes && part === 'tshirt') ? stripeTexture() : null;
         c.color.setHex(chosen[part]);
         c.roughness = Math.max(c.roughness, 0.82);
         c.metalness = Math.min(c.metalness, 0.04);
@@ -194,13 +284,14 @@ export function makeVisitor(base, walkClip, rng) {
   const clip = walkClip.clone();
   clip.tracks = clip.tracks.filter(t => t.name !== 'pelvis.position');
   const action = mixer.clipAction(clip);
-  action.timeScale = 0.88 + rng() * 0.3;
+  action.timeScale = seated ? 0.0001 : 0.88 + rng() * 0.3;
   action.time = rng() * clip.duration;
   action.play();
+  const pose = seated ? seatedRig(group) : null;
 
   // Stride length scales with leg length, so the tallest visitors cover ground
   // fastest — otherwise the short ones look like they are running on the spot.
-  return { group, mixer, height, speed: 1.05 * height * action.timeScale };
+  return { group, mixer, pose, height, speed: 1.05 * height * action.timeScale };
 }
 
 /** How many distinct looks the variation above can produce, for the record. */

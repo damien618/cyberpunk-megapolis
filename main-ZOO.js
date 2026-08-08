@@ -6,7 +6,7 @@ import { Controller } from './controller.js?v=5';
 import { CameraRig } from './cameraRig.js?v=4';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar } from './cars.js?v=4';
-import { makeVisitor, loadVisitorBase } from './crowd.js?v=4';
+import { makeVisitor, loadVisitorBase, STAFF_UNIFORM } from './crowd.js?v=7';
 import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=1';
 
 // ---------------------------------------------------------------------------
@@ -279,6 +279,18 @@ const M = {
     normalMap: woodN, normalScale: new THREE.Vector2(0.35, 0.35),
     color: 0xa9763f, roughness: 0.82, metalness: 0.02,
   }),
+  // The chalet walls, once they have a door in them. A wall is one box, so
+  // from inside you are looking at its back faces — single-sided, the shop
+  // simply has no interior and you see the park straight through it.
+  timberWall: new THREE.MeshStandardMaterial({
+    normalMap: woodN, normalScale: new THREE.Vector2(0.35, 0.35),
+    color: 0xa9763f, roughness: 0.82, metalness: 0.02, side: THREE.DoubleSide,
+  }),
+  timberWallDark: new THREE.MeshStandardMaterial({
+    color: 0x6f4a2a, roughness: 0.84, side: THREE.DoubleSide,
+  }),
+  plank: new THREE.MeshStandardMaterial({ color: 0x9a7448, roughness: 0.9 }),
+  ceilingIn: new THREE.MeshStandardMaterial({ color: 0x8a6a48, roughness: 0.95 }),
   timberDark: new THREE.MeshStandardMaterial({ color: 0x6f4a2a, roughness: 0.84 }),
   timberPale: new THREE.MeshStandardMaterial({ color: 0xd0a468, roughness: 0.8 }),
   shingle: new THREE.MeshStandardMaterial({ color: 0x584235, roughness: 0.9 }),
@@ -819,23 +831,47 @@ function meshRoof(x0, z0, x1, z1, h) {
 
 // A chalet: stacked-log walls, a deep gable, exposed purlins and a stone base.
 // `front` is the wall the doors and windows go in, on local -Z.
-function chalet(w, d, { h = 3.5, roof = M.shingle, windows = 3, doorW = 1.8 } = {}) {
+// `doorW` is now a real opening, not a panel painted on the wall: the front
+// courses stop either side of it and resume over the head, so you can walk in.
+// That means the walls are seen from inside, hence M.timberWall — and it means
+// the shop needs a ceiling, or you look up through the roof prism's back faces
+// at the sky.
+function chalet(w, d, { h = 3.5, roof = M.shingle, windows = 3, doorW = 1.8,
+  interior = null } = {}) {
   const hw = w / 2, hd = d / 2;
+  const DOOR_H = 2.4;
+  const jamb = doorW / 2;
   box(M.stone, 0, 0.22, 0, w + 0.9, 0.44, d + 0.9);            // plinth
   // Log walls: courses rather than a slab, which is the whole look of a chalet.
   const courses = Math.round(h / 0.34);
   for (let i = 0; i < courses; i++) {
     const y = 0.44 + i * 0.34 + 0.17;
     const inset = (i % 2) * 0.04;
-    box(M.timber, 0, y, -hd + inset, w, 0.33, 0.3);
-    box(M.timber, 0, y, hd - inset, w, 0.33, 0.3);
-    box(M.timberDark, -hw + inset, y, 0, 0.3, 0.33, d);
-    box(M.timberDark, hw - inset, y, 0, 0.3, 0.33, d);
+    if (y - 0.17 >= 0.44 + DOOR_H) {
+      box(M.timberWall, 0, y, -hd + inset, w, 0.33, 0.3);      // over the head
+    } else {
+      const seg = hw - jamb;
+      box(M.timberWall, -(jamb + seg / 2), y, -hd + inset, seg, 0.33, 0.3);
+      box(M.timberWall, jamb + seg / 2, y, -hd + inset, seg, 0.33, 0.3);
+    }
+    box(M.timberWall, 0, y, hd - inset, w, 0.33, 0.3);
+    box(M.timberWallDark, -hw + inset, y, 0, 0.3, 0.33, d);
+    box(M.timberWallDark, hw - inset, y, 0, 0.3, 0.33, d);
   }
   const top = 0.44 + h;
-  // Door and windows punched into the front wall, as timber reveals over glass.
-  box(M.timberDark, 0, 0.44 + 1.1, -hd - 0.06, doorW, 2.2, 0.12);
-  box(M.brass, doorW * 0.32, 0.44 + 1.05, -hd - 0.14, 0.09, 0.09, 0.09);
+  // Ceiling: the roof is a closed prism and its inside faces are backfaces, so
+  // without this you stand in the shop and look at the sky.
+  box(M.ceilingIn, 0, top - 0.08, 0, w, 0.16, d);
+  box(M.plank, 0, 0.47, 0, w - 0.6, 0.06, d - 0.6);            // floorboards
+  // Doorway: jambs, lintel, a threshold and one leaf standing open.
+  for (const sx of [-1, 1]) {
+    box(M.timberDark, sx * (jamb + 0.09), 0.44 + DOOR_H / 2, -hd - 0.02, 0.18, DOOR_H, 0.46);
+  }
+  box(M.timberDark, 0, 0.44 + DOOR_H + 0.11, -hd - 0.02, doorW + 0.4, 0.22, 0.46);
+  box(M.stone, 0, 0.45, -hd - 0.26, doorW + 0.4, 0.1, 0.6);
+  box(M.timber, -(jamb - 0.05), 0.44 + DOOR_H / 2, -hd - 0.5, 0.1, DOOR_H - 0.1, doorW * 0.9);
+  box(M.brass, -(jamb - 0.05), 0.44 + 1.05, -hd - 0.5 - doorW * 0.4, 0.1, 0.1, 0.1);
+  if (interior) interior({ hw, hd, top });
   for (let i = 0; i < windows; i++) {
     const x = -w * 0.32 + (w * 0.64 * i) / Math.max(1, windows - 1);
     if (Math.abs(x) < doorW * 0.7) continue;
@@ -851,6 +887,34 @@ function chalet(w, d, { h = 3.5, roof = M.shingle, windows = 3, doorW = 1.8 } = 
     box(M.timberDark, 0, top + 0.06, i * (d / 4.2), w + 2.9, 0.13, 0.15);
   }
   return top;
+}
+
+// What you see once you are inside. Kept to the back of the room so the doorway
+// stays clear, and flagged as prop so none of it is mistaken for floor.
+function shopInterior({ hw, hd }, kind) {
+  const F = 0.5;
+  prop(() => {
+    box(M.timber, 0, F + 0.5, hd - 1.4, hw * 1.5, 1.0, 0.7);          // counter
+    box(M.timberPale, 0, F + 1.02, hd - 1.4, hw * 1.5 + 0.1, 0.06, 0.8);
+    for (let i = 0; i < 3; i++) {                                     // back shelves
+      box(M.plank, 0, F + 0.6 + i * 0.62, hd - 0.35, hw * 1.7, 0.07, 0.5);
+    }
+    if (kind === 'shop') {
+      const plush = [M.plushPink, M.plushBlue, M.plushYellow];
+      for (let i = 0; i < 12; i++) {
+        const px = -hw * 0.75 + (i % 6) * (hw * 0.3);
+        const py = F + 0.78 + Math.floor(i / 6) * 0.62;
+        shape(G.sphere, plush[i % 3], px, py, hd - 0.35, 0.3, 0.3, 0.26);
+        shape(G.sphere, plush[i % 3], px, py + 0.26, hd - 0.35, 0.22, 0.22, 0.2);
+      }
+    } else {
+      for (let i = 0; i < 8; i++) {                                   // stock
+        box(i % 2 ? M.fabricCream : M.fabricRed,
+          -hw * 0.7 + i * (hw * 0.2), F + 0.76, hd - 0.35, 0.28, 0.26, 0.3);
+      }
+      box(M.steel, hw * 0.55, F + 0.6, hd - 1.4, 0.9, 1.2, 0.6);      // coffee machine
+    }
+  });
 }
 
 // The billetterie. TWO pavilions, flanking the walk rather than one sitting
@@ -993,7 +1057,8 @@ function hubPlaza() {
   // Restaurant chalet, its terrace facing the south spur so you see it on the
   // way in rather than on the way out.
   frame(-12.5, -52, Math.PI, () => {
-    chalet(17, 10.5, { h: 3.6, roof: M.shingleRed, windows: 4, doorW: 2.2 });
+    chalet(17, 10.5, { h: 3.6, roof: M.shingleRed, windows: 4, doorW: 2.6,
+      interior: b => shopInterior(b, 'cafe') });
     box(M.signBoard, 0, 5.3, -5.5, 7.4, 1.0, 0.22);
     box(M.signPale, 0, 5.3, -5.66, 6.6, 0.6, 0.1);
     // Covered terrace: pergola on posts with a canvas top.
@@ -1005,7 +1070,8 @@ function hubPlaza() {
   // Gift shop: plush toys in the window, which is the only way a shop reads as
   // a toy shop from outside.
   frame(13, -50.5, Math.PI - 0.22, () => {
-    chalet(13, 9, { h: 3.4, roof: M.shingle, windows: 3, doorW: 2.0 });
+    chalet(13, 9, { h: 3.4, roof: M.shingle, windows: 3, doorW: 2.4,
+      interior: b => shopInterior(b, 'shop') });
     box(M.signBoard, 0, 5.05, -4.7, 6.2, 0.95, 0.22);
     box(M.signPale, 0, 5.05, -4.86, 5.5, 0.55, 0.1);
     // Window display, on the shelves behind the front glazing.
@@ -1031,20 +1097,35 @@ function hubPlaza() {
   });
   // Kiosk, benches and shade between the two chalets.
   frame(1, -60, Math.PI, () => {
-    box(M.timber, 0, 1.15, 0, 4.4, 2.3, 3.0);
-    gableRoof(4.4, 3.0, 2.3, 1.0, M.shingleRed, 0.6);
-    box(M.timberPale, 0, 1.5, -1.55, 3.2, 1.1, 0.12);
-    box(M.stone, 0, 0.95, -1.75, 3.6, 0.14, 0.5);
+    chalet(6.4, 4.6, { h: 2.6, roof: M.shingleRed, windows: 0, doorW: 1.6,
+      interior: b => shopInterior(b, 'cafe') });
+    // Serving hatch beside the door, which is what a kiosk is for.
+    box(M.timberPale, 2.0, 1.75, -2.35, 2.2, 1.1, 0.12);
+    box(M.stone, 2.0, 1.16, -2.55, 2.6, 0.14, 0.55);
+    box(M.timberDark, 2.0, 2.5, -2.5, 2.6, 0.5, 0.7);
   });
   for (const [bx, bz, br] of [[-3, -41, 0], [5, -41, 0], [-22, -46, 1.3], [21, -60, -1.9]]) {
     bench(bx, bz, br);
   }
+  plainChair(9.6, -45.4, -0.22);        // the gift shop keeper sits outside
   bin(-6.5, -41.5, 0);
   bin(8.5, -41.5, 0);
   for (const [tx, tz] of [[-24, -62], [23, -63], [-25, -38], [24, -40]]) shadeTree(tx, tz, 1.05);
   fingerPost(4.6, -38.5, [0.5, 2.2, 3.8]);
 }
 
+// A chair on its own, for the shopkeeper who sits outside his door.
+function plainChair(x, z, ry) {
+  prop(() => {
+    frame(x, z, ry, () => {
+      box(M.timber, 0, 0.44, 0, 0.5, 0.06, 0.5);
+      box(M.timber, 0, 0.7, -0.22, 0.5, 0.48, 0.06);
+      for (const [lx, lz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) {
+        shape(G.post, M.timberDark, lx, 0, lz, 0.06, 0.44, 0.06);
+      }
+    });
+  });
+}
 function terraceTable(x, z) {
   prop(() => {
     frame(x, z, 0, () => {
@@ -1287,6 +1368,59 @@ const CROWD_PLAN = [
   [8, 1], [17, -1], [24, 1], [95, 1], [107, -1],
   [178, -1], [190, 1], [255, 1], [298, -1], [330, 1],
 ];
+
+// Fixed people: the three shopkeepers and the customers at the terrace. They
+// are the same clones the walkers are, standing still — a shop with nobody in
+// it reads as scenery, and a terrace of empty chairs reads as closed.
+const statics = [];
+// x, z, facing, seated. The facings are the shop fronts' own outward normals,
+// so each keeper is looking out at the plaza rather than at their own wall.
+const STAFF = [
+  [-12.5, -45.6, 0, false],          // restaurant, standing by the door
+  [9.6, -45.4, -0.22, true],         // gift shop, sitting on the chair outside
+  [-1.2, -56.6, 0, false],           // kiosk, at the serving hatch
+];
+// The terrace chairs, taken from the same arithmetic that placed them: tables
+// at local x = i*3.4 in the restaurant's frame, a chair a metre either side.
+const CUSTOMERS = [
+  [-4.7, -43.2, 4.712], [-10.1, -43.2, 1.571],
+  [-14.9, -43.2, 4.712], [-20.3, -43.2, 1.571],
+];
+const SEAT_TOP = 0.47;
+
+function seatOn(v, x, y, z, ry) {
+  v.group.position.set(x, 0, z);
+  v.group.rotation.y = ry;
+  v.group.updateMatrixWorld(true);
+  const pelvis = v.group.getObjectByName('pelvis');
+  if (!pelvis) return;
+  // Drop the whole body until the pelvis lands just over the cushion. The pose
+  // only rotates the legs, so the pelvis sits at its standing height above the
+  // group either way and one measurement does for both.
+  const py = new THREE.Vector3().setFromMatrixPosition(pelvis.matrixWorld).y;
+  v.group.position.y = y + 0.07 - py;
+}
+
+async function populateStaff(bases, walkClip) {
+  if (!walkClip || !bases.length) return;
+  STAFF.forEach(([x, z, ry, seated], i) => {
+    const v = makeVisitor(bases[i % bases.length], walkClip, rngCrowd,
+      { uniform: STAFF_UNIFORM, seated });
+    crowd.add(v.group);
+    if (seated) seatOn(v, x, SEAT_TOP, z, ry);
+    else {
+      v.group.position.set(x, terrainHeight(x, z) + 0.08, z);
+      v.group.rotation.y = ry;
+    }
+    statics.push(v);
+  });
+  CUSTOMERS.forEach(([x, z, ry], i) => {
+    const v = makeVisitor(bases[(i + 1) % bases.length], walkClip, rngCrowd, { seated: true });
+    crowd.add(v.group);
+    seatOn(v, x, SEAT_TOP, z, ry);
+    statics.push(v);
+  });
+}
 
 async function populateCrowd(bases, walkClip) {
   if (!walkClip || !bases.length) return;
@@ -1585,6 +1719,7 @@ player.addWardrobePart('hairCrown', harmoniseHair(player, {
     }
   }
   await populateCrowd(bases, player.actions.walk?.getClip());
+  await populateStaff(bases, player.actions.walk?.getClip());
 }
 await populate(rngCrowd);
 
@@ -1711,6 +1846,13 @@ function tickFauna(dt) {
   for (const a of animals) a.mixer.update(dt);
 }
 
+function tickStatics(dt) {
+  for (const v of statics) {
+    v.mixer.update(dt);
+    v.pose?.();          // after the mixer: the pose overrides what it wrote
+  }
+}
+
 function tickCrowd(dt) {
   for (const w of walkers) {
     w.s += w.speed * w.dir * dt;
@@ -1759,6 +1901,7 @@ function animate() {
 
   tickFauna(dt);
   tickCrowd(dt);
+  tickStatics(dt);
   updateAvatar(dt);
   rig.update(dt, input, ctrl);
   updateHud();
