@@ -5,7 +5,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=5';
 import { CameraRig } from './cameraRig.js?v=4';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
-import { buildCar, carBounds, rollCars, setCarLightsNight } from './cars.js?v=2';
+import { buildCar, carBounds, rollCars, setCarLightsDay, setCarLightsNight } from './cars.js?v=4';
 
 // ---------------------------------------------------------------------------
 // Villa LA — single-storey modern California estate, laid out like the hillside
@@ -29,6 +29,9 @@ const hudMode = document.getElementById('mode');
 const hudSpeed = document.getElementById('speed');
 const hudHeight = document.getElementById('height');
 const furniturePrompt = document.getElementById('furniturePrompt');
+const liePromptGroup = document.getElementById('liePromptGroup');
+const lieDayPrompt = document.getElementById('lieDayPrompt');
+const lieNightPrompt = document.getElementById('lieNightPrompt');
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
@@ -2015,7 +2018,7 @@ for (const c of traffic) {
 }
 
 // ---------------------------------------------------------------------------
-// Night mode — applied on demand when user starts with "Night" selected
+// Reversible day/night mode — selected at launch and changed after sleeping
 // ---------------------------------------------------------------------------
 // Performance: every PointLight is evaluated per fragment by the forward
 // renderer, and the first night version added 44 of them (~53 total) — the
@@ -2025,6 +2028,114 @@ for (const c of traffic) {
 // corners, driveway spine, car headlights). The sun's shadow pass is also
 // switched off. Everything here is night-only; day mode never runs this code.
 let nightFx = null;   // per-frame night animation handles (beacon pulse)
+let dayClothingColors = null;
+const DAY_LIGHT_STATE = {
+  background: new THREE.Color(SKY),
+  fogColor: new THREE.Color(0xc3d8ea),
+  fogNear: 160,
+  fogFar: 780,
+  exposure: 0.96,
+  environmentIntensity: 0.45,
+  sun: { intensity: 2.4, castShadow: true, visible: true },
+  hemi: {
+    color: hemi.color.clone(), groundColor: hemi.groundColor.clone(), intensity: hemi.intensity,
+  },
+  interiorLights: interiorLights.map(l => ({ intensity: l.intensity, decay: l.decay, distance: l.distance })),
+  fire: { color: fireLight.color.clone(), distance: fireLight.distance },
+  towerGlass: {
+    color: M.towerGlassLit.color.clone(), emissive: M.towerGlassLit.emissive.clone(),
+    emissiveIntensity: M.towerGlassLit.emissiveIntensity, fog: M.towerGlassLit.fog,
+  },
+  lobbyGlass: {
+    emissive: M.lobbyGlass.emissive.clone(), emissiveIntensity: M.lobbyGlass.emissiveIntensity,
+  },
+};
+
+function captureDayClothingColors() {
+  if (dayClothingColors || !player) return;
+  dayClothingColors = new Map();
+  for (const part of ['hat', 'backpack', 'tshirt', 'pants', 'shoes'])
+    for (const material of player.clothing[part]?.materials ?? [])
+      dayClothingColors.set(material, material.color.clone());
+}
+
+function applyNightSceneState() {
+  captureDayClothingColors();
+  scene.background = new THREE.Color(0x04070e);
+  scene.fog = new THREE.Fog(0x07101e, 60, 750);
+  renderer.toneMappingExposure = 0.50;
+  renderer.shadowMap.enabled = false;
+  sun.intensity = 0;
+  sun.castShadow = false;
+  sun.visible = false;
+  hemi.color.set(0x121e30);
+  hemi.groundColor.set(0x0a0b0e);
+  hemi.intensity = 0.14;
+  scene.environmentIntensity = 0.11;
+  interiorLights.forEach((light, i) => {
+    light.intensity = DAY_LIGHT_STATE.interiorLights[i].intensity * 0.7;
+    light.decay = 1.7;
+    light.distance = 20;
+  });
+  fireLight.color.set(0xff6010);
+  fireLight.distance = 22;
+  if (dayClothingColors) for (const [material, dayColor] of dayClothingColors) {
+    const hsl = dayColor.getHSL({});
+    material.color.setHSL(hsl.h, hsl.s * 0.55, hsl.l * 0.95);
+  }
+  M.towerGlassLit.emissiveIntensity = 5.2;
+  M.towerGlassLit.emissive.set(0xffe090);
+  M.towerGlassLit.color.set(0xffebcc);
+  M.towerGlassLit.fog = false;
+  M.towerGlassLit.needsUpdate = true;
+  M.lobbyGlass.emissive.set(0xffc98a);
+  M.lobbyGlass.emissiveIntensity = 1.1;
+  setCarLightsNight();
+}
+
+function applyDaySceneState() {
+  scene.background = DAY_LIGHT_STATE.background.clone();
+  scene.fog = new THREE.Fog(
+    DAY_LIGHT_STATE.fogColor, DAY_LIGHT_STATE.fogNear, DAY_LIGHT_STATE.fogFar,
+  );
+  renderer.toneMappingExposure = DAY_LIGHT_STATE.exposure;
+  renderer.shadowMap.enabled = true;
+  Object.assign(sun, DAY_LIGHT_STATE.sun);
+  hemi.color.copy(DAY_LIGHT_STATE.hemi.color);
+  hemi.groundColor.copy(DAY_LIGHT_STATE.hemi.groundColor);
+  hemi.intensity = DAY_LIGHT_STATE.hemi.intensity;
+  scene.environmentIntensity = DAY_LIGHT_STATE.environmentIntensity;
+  interiorLights.forEach((light, i) => Object.assign(light, DAY_LIGHT_STATE.interiorLights[i]));
+  fireLight.color.copy(DAY_LIGHT_STATE.fire.color);
+  fireLight.distance = DAY_LIGHT_STATE.fire.distance;
+  fireLight.visible = true;
+  if (dayClothingColors) for (const [material, color] of dayClothingColors) material.color.copy(color);
+  M.towerGlassLit.color.copy(DAY_LIGHT_STATE.towerGlass.color);
+  M.towerGlassLit.emissive.copy(DAY_LIGHT_STATE.towerGlass.emissive);
+  M.towerGlassLit.emissiveIntensity = DAY_LIGHT_STATE.towerGlass.emissiveIntensity;
+  M.towerGlassLit.fog = DAY_LIGHT_STATE.towerGlass.fog;
+  M.towerGlassLit.needsUpdate = true;
+  M.lobbyGlass.emissive.copy(DAY_LIGHT_STATE.lobbyGlass.emissive);
+  M.lobbyGlass.emissiveIntensity = DAY_LIGHT_STATE.lobbyGlass.emissiveIntensity;
+  setCarLightsDay();
+}
+
+function syncWorldTimeButtons(night) {
+  document.querySelectorAll('.tt-btn').forEach(btn =>
+    btn.classList.toggle('active', night ? btn.dataset.time === 'night' : btn.dataset.time === 'day'));
+}
+
+function setVillaTime(night) {
+  if (night) {
+    enableNightMode();
+  } else {
+    applyDaySceneState();
+    for (const object of nightFx?.nightObjects ?? []) object.visible = false;
+    if (nightFx) nightFx.lightZone = '';
+  }
+  window.__nightMode = night;
+  syncWorldTimeButtons(night);
+}
 
 // soft radial sprite shared by the fake ground light pools and the moon halo
 function makeGlowTexture() {
@@ -2043,58 +2154,15 @@ function makeGlowTexture() {
 }
 
 function enableNightMode() {
-  // Sky & atmosphere — fog reaches past downtown (~400 m from the pool) so
-  // the lit skyline stays visible instead of sinking into black haze
-  scene.background = new THREE.Color(0x04070e);
-  scene.fog = new THREE.Fog(0x07101e, 60, 750);
-  renderer.toneMappingExposure = 0.50;
-  renderer.shadowMap.enabled = false;
-
-  // Sun below horizon, hemisphere → near-black cool ambient. castShadow off:
-  // a dark sun still re-rendered the 2048² shadow map every frame for nothing.
-  sun.intensity = 0;
-  sun.castShadow = false;
-  sun.visible = false;
-  // Slightly more ambient than the sky alone. Nothing indoors casts a shadow at
-  // night — the shadow map is off — so the only thing telling a lit surface
-  // from an unlit one is N·L, and on 0.07 of sky the far side of anything
-  // standing under a ceiling light went to black: the girl in the bathroom read
-  // as a silhouette with two blown shoulders. This is the bounce a white room
-  // gives back. It costs no extra lights, and it is small enough that the
-  // garden and the skyline measure the same as before.
-  hemi.color.set(0x121e30);
-  hemi.groundColor.set(0x0a0b0e);
-  hemi.intensity = 0.14;
-  scene.environmentIntensity = 0.11;
-
-  // Interior rooms. These ran at 3.8× to make the windows read from the garden,
-  // which works right up until you walk in: a lamp two metres over your head in
-  // a 3 m bathroom clipped every wall to white, and inverse square then dropped
-  // everything past it off a cliff. Pulling the intensity back under the day
-  // value and flattening the falloff keeps the throw — the windows still glow,
-  // the house measures the same from outside — while the near field stops
-  // blowing out and the room gets its tonal range back.
-  for (const l of interiorLights) {
-    l.intensity *= 0.7;
-    l.decay = 1.7;
-    l.distance = 20;
+  if (nightFx) {
+    applyNightSceneState();
+    for (const object of nightFx.nightObjects) object.visible = true;
+    nightFx.lightZone = '';
+    updateNightLightBudget();
+    return;
   }
-
-  // Fire pit — more vivid against the dark
-  fireLight.color.set(0xff6010);
-  fireLight.distance = 22;
-
-  // Chroma. The California palette was picked to hold up in full sun, and the
-  // yellow trousers only ever looked settled indoors because the old interior
-  // lights washed them halfway to white — stop clipping them and they shout.
-  // Colour drains at low light anyway, so the flat accents are graded down
-  // rather than left at noon strength. Day mode never runs this.
-  for (const part of ['hat', 'backpack', 'tshirt', 'pants', 'shoes']) {
-    for (const material of player?.clothing[part]?.materials ?? []) {
-      const hsl = material.color.getHSL({});
-      material.color.setHSL(hsl.h, hsl.s * 0.55, hsl.l * 0.95);
-    }
-  }
+  const sceneChildrenBeforeNight = new Set(scene.children);
+  applyNightSceneState();
 
   // ── Fake-lamp infrastructure ─────────────────────────────────────────────
   // glow heads (small bright spheres) + ground pools (additive gradient
@@ -2348,7 +2416,10 @@ function enableNightMode() {
     scene.add(hl);
     trafficHeadLights.push(hl);
   }
-  nightFx = { beaconMat, drivewayLights, poolLights, trafficHeadLights, lightZone: '' };
+  nightFx = {
+    beaconMat, drivewayLights, poolLights, trafficHeadLights, lightZone: '',
+    nightObjects: scene.children.filter(object => !sceneChildrenBeforeNight.has(object)),
+  };
   updateNightLightBudget();
 }
 
@@ -2529,6 +2600,8 @@ let activeFurnitureInteraction = null;
 let furnitureInteractionCooldown = 0;
 let promptedFurniture = null;
 let furnitureActionRequested = false;
+let lieWakeModeRequested = null;
+let choosingLieWakeMode = false;
 let travelInProgress = false;
 // Getting up puts the avatar back exactly where it was grabbed, which is still
 // inside that seat's trigger — on the cooldown alone it simply sat back down a
@@ -2557,11 +2630,17 @@ function setFurniturePrompt(spot) {
   if (promptedFurniture === spot) return;
   promptedFurniture = spot;
   furnitureActionRequested = false;
-  furniturePrompt.textContent = spot
-    ? (spot.label || (spot.type === 'lie' ? "S'allonger" : "S'asseoir"))
-    : '';
-  furniturePrompt.classList.toggle('show', Boolean(spot));
-  furniturePrompt.setAttribute('aria-hidden', spot ? 'false' : 'true');
+  lieWakeModeRequested = null;
+  const showLieChoices = spot?.type === 'lie';
+  const showSinglePrompt = Boolean(spot) && !showLieChoices;
+  furniturePrompt.textContent = showSinglePrompt ? (spot.label || "S'asseoir") : '';
+  furniturePrompt.classList.toggle('show', showSinglePrompt);
+  furniturePrompt.setAttribute('aria-hidden', showSinglePrompt ? 'false' : 'true');
+  liePromptGroup.classList.toggle('show', showLieChoices);
+  liePromptGroup.setAttribute('aria-hidden', showLieChoices ? 'false' : 'true');
+  choosingLieWakeMode = showLieChoices;
+  if (showLieChoices && document.pointerLockElement === renderer.domElement)
+    document.exitPointerLock?.();
 }
 
 furniturePrompt.addEventListener('click', event => {
@@ -2569,13 +2648,24 @@ furniturePrompt.addEventListener('click', event => {
   if (promptedFurniture) furnitureActionRequested = true;
 });
 
-function enterFurnitureInteraction(spot) {
+function requestLieWakeMode(mode, event) {
+  event.stopPropagation();
+  if (promptedFurniture?.type !== 'lie') return;
+  lieWakeModeRequested = mode;
+  choosingLieWakeMode = false;
+  requestGamePointerLock();
+}
+lieDayPrompt.addEventListener('click', event => requestLieWakeMode('day', event));
+lieNightPrompt.addEventListener('click', event => requestLieWakeMode('night', event));
+
+function enterFurnitureInteraction(spot, wakeMode = null) {
   setFurniturePrompt(null);
   activeFurnitureInteraction = {
     ...spot,
     source: spot,
     returnPosition: ctrl.pos.clone(),
     readyToExit: false,
+    wakeMode,
   };
   ctrl.pos.set(spot.x, spot.y, spot.z);
   ctrl.prevY = spot.y;
@@ -2592,6 +2682,8 @@ function leaveFurnitureInteraction() {
   ctrl.vel.set(0, 0, 0);
   ctrl.mode = 'ground';
   activeFurnitureInteraction = null;
+  if (interaction.type === 'lie' && interaction.wakeMode)
+    setVillaTime(interaction.wakeMode === 'night');
   releasedSpot = interaction.source;
   furnitureInteractionCooldown = 0.65;
 }
@@ -2603,6 +2695,8 @@ function updateFurnitureInteraction(dt) {
   if (activeFurnitureInteraction) {
     setFurniturePrompt(null);
     if (input.pressed('KeyR')) {
+      if (activeFurnitureInteraction.type === 'lie' && activeFurnitureInteraction.wakeMode)
+        setVillaTime(activeFurnitureInteraction.wakeMode === 'night');
       activeFurnitureInteraction = null;
       furnitureInteractionCooldown = 0.65;
       ctrl.rescueTo(spawnPoint);
@@ -2638,15 +2732,21 @@ function updateFurnitureInteraction(dt) {
   // With pointer lock active the canvas receives every mouse click, even though
   // the prompt is visually under the cursor. Without pointer lock the button's
   // own click handler sets furnitureActionRequested instead.
-  if (nearest && (furnitureActionRequested || input.pressed('LMB'))) {
+  const actionRequested = nearest?.type === 'lie'
+    ? Boolean(lieWakeModeRequested)
+    : (furnitureActionRequested || input.pressed('LMB'));
+  if (nearest && actionRequested) {
     furnitureActionRequested = false;
     if (nearest.type === 'travel') {
       travelInProgress = true;
       setFurniturePrompt(null);
-      location.href = 'index.html?map=megapolis&runner=girl&arrival=la';
+      const preservedNight = window.__nightMode === true ? '1' : '0';
+      location.href = `index.html?map=megapolis&runner=girl&arrival=la&laNight=${preservedNight}`;
       return true;
     }
-    enterFurnitureInteraction(nearest);
+    const wakeMode = nearest.type === 'lie' ? lieWakeModeRequested : null;
+    lieWakeModeRequested = null;
+    enterFurnitureInteraction(nearest, wakeMode);
   }
   return activeFurnitureInteraction !== null;
 }
@@ -2758,7 +2858,7 @@ function animate() {
 
   // Night only: pulse the downtown aviation beacons and keep only the local
   // pool-side or car-side real-light group active.
-  if (nightFx) {
+  if (nightFx && window.__nightMode === true) {
     nightFx.beaconMat.opacity = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 2.3));
     updateNightLightBudget();
   }
@@ -2788,9 +2888,15 @@ animate();
 
 function startVilla() {
   if (started) return;
+  try {
+    setVillaTime(window.__nightMode === true);
+  } catch (e) {
+    window.__nightModeError = e.stack || e.message;
+    console.error('[time mode]', e);
+  }
   if (window.__nightMode) {
     try {
-      enableNightMode();
+      updateNightLightBudget();
     } catch (e) {
       window.__nightModeError = e.stack || e.message;
       console.error('[night mode]', e);
@@ -2808,6 +2914,11 @@ if (arrivedFromMegapolis) startVilla();
 
 document.addEventListener('pointerlockchange', () => {
   usedLock = usedLock || document.pointerLockElement !== null;
+  if (choosingLieWakeMode && document.pointerLockElement === null) {
+    paused = false;
+    overlay.style.display = 'none';
+    return;
+  }
   if (!usedLock) return;
   paused = !input.locked;
   if (paused) setFurniturePrompt(null);
@@ -2826,5 +2937,5 @@ window.__villa = {
   furnitureInteractions, enterFurnitureInteraction, leaveFurnitureInteraction,
   updateFurnitureInteraction,
   get activeFurnitureInteraction() { return activeFurnitureInteraction; },
-  updateAvatarOutfit, laTravelCar, laTravelInteraction, villaArrivalPoint
+  updateAvatarOutfit, setVillaTime, laTravelCar, laTravelInteraction, villaArrivalPoint
 };

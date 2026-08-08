@@ -1385,7 +1385,8 @@ function updateTravelInteraction() {
   if (!closeEnough || travelInProgress || !(travelActionRequested || input.pressed('LMB'))) return;
   travelInProgress = true;
   setTravelPrompt(false);
-  location.href = 'index.html?map=la&arrival=megapolis';
+  const preservedNight = travelParams.get('laNight') === '1' ? '1' : '0';
+  location.href = `index.html?map=la&arrival=megapolis&night=${preservedNight}`;
 }
 
 // ---------- menu ----------

@@ -665,8 +665,8 @@ export function rollCars(cars, dt) {
 /**
  * Night mode (villa map): make the optics actually shine — headlamps warm and
  * bright, DRL blades up, taillights hot red. Materials are shared across all
- * cars, so one call covers the fleet. One-way: only called when the player
- * starts in night mode, so the day look is untouched.
+ * cars, so one call covers the fleet. The villa may restore the daylight
+ * values after a sleep interaction through setCarLightsDay().
  */
 export function setCarLightsNight() {
   MAT.headlight.emissive.set(0xffe9c4);
@@ -674,4 +674,13 @@ export function setCarLightsNight() {
   MAT.drl.emissiveIntensity = 2.4;
   MAT.taillight.emissive.set(0xff2015);
   MAT.taillight.emissiveIntensity = 3.0;
+}
+
+/** Restore the shared optics used by the daylight scene. */
+export function setCarLightsDay() {
+  MAT.headlight.emissive.set(0x2b3a4a);
+  MAT.headlight.emissiveIntensity = 0.5;
+  MAT.drl.emissiveIntensity = 1.4;
+  MAT.taillight.emissive.set(0xb81810);
+  MAT.taillight.emissiveIntensity = 0.85;
 }
