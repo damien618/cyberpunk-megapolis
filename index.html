@@ -3,10 +3,22 @@
 <head>
 <meta charset="utf-8">
 <script>
-  document.documentElement.dataset.mode =
-    new URLSearchParams(location.search).get('map') === 'la' ? 'la' : 'menu';
-  if (document.documentElement.dataset.mode === 'la')
-    document.title = 'Cyberpunk Megapolis — Villa LA';
+  // Three engines share this document: the cyberpunk city (main.js) behind the
+  // menu, and two standalone worlds (main-LA.js, main-ZOO.js) that reuse the
+  // same overlay/HUD/prompt DOM. `mode` names the map, `engine` says which set
+  // of elements is live — the gate CSS at the end of the stylesheet keys off it
+  // so a third world costs one row in this table rather than a new rule set.
+  {
+    const WORLDS = {
+      la: { engine: 'world', title: 'Cyberpunk Megapolis — Villa LA' },
+      zoo: { engine: 'world', title: 'Cyberpunk Megapolis — A Trip to the Zoo' },
+    };
+    const mode = new URLSearchParams(location.search).get('map');
+    const world = WORLDS[mode];
+    document.documentElement.dataset.mode = world ? mode : 'menu';
+    document.documentElement.dataset.engine = world ? world.engine : 'menu';
+    if (world) document.title = world.title;
+  }
 </script>
 <title>Cyberpunk Megapolis — Web-Swing Edition</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -28,6 +40,7 @@
     --ink: #eef1f8;
     --dim: #8b93a8;
     --la-accent: #5fd7ff;
+    --zoo-accent: #ffbe5c;
     --mono: 'Geist Mono', ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -106,9 +119,10 @@
     font-size: 10.5px; font-weight: 300; letter-spacing: .22em;
     color: #707a92; text-transform: uppercase; text-shadow: 0 1px 8px rgba(0,0,0,.9); }
 
-  /* ---------- menu (right corner, Chilling in L.A.) ---------- */
+  /* ---------- menu (right corner: the standalone worlds, stacked) ---------- */
   #menuColLA { position: absolute; right: clamp(40px, 7vw, 120px); top: 0; bottom: 0;
-    display: flex; flex-direction: column; justify-content: center; align-items: flex-end; }
+    display: flex; flex-direction: column; justify-content: center; align-items: flex-end;
+    gap: 18px; }
   .la-panel { background: rgba(9,14,25,0.55); border: 1px solid rgba(125,165,255,0.3);
     border-radius: 14px; padding: 26px 32px; backdrop-filter: blur(4px);
     display: flex; flex-direction: column; align-items: flex-end; text-align: right;
@@ -122,6 +136,20 @@
   .la-card { margin-top: 26px; display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
   .la-card .m-name { color: var(--la-accent); text-shadow: 0 0 12px rgba(95,215,255,.4); }
   #enterBtnLA { align-self: flex-end; margin-top: 22px; }
+
+  /* The zoo corner is the same panel in a warmer key — savanna amber instead of
+     the villa's pool blue, so the two read as siblings rather than a repeat. */
+  .zoo-panel { border-color: rgba(255,190,92,0.32); }
+  .zoo-panel .kicker { color: #e0b476; }
+  .zoo-panel .accent-zoo { color: var(--zoo-accent); text-shadow: 0 0 24px rgba(255,190,92,.42); }
+  .zoo-panel .m-name { color: var(--zoo-accent); text-shadow: 0 0 12px rgba(255,190,92,.4); }
+  #brandRuleZoo { margin-top: 18px; width: 64px; height: 1px;
+    background: linear-gradient(270deg, var(--zoo-accent), transparent); }
+  #enterBtnZoo { align-self: flex-end; margin-top: 22px;
+    color: #2a1c05; background: linear-gradient(90deg, rgba(255,190,92,.34), rgba(255,190,92,.14));
+    border-color: var(--zoo-accent); text-shadow: 0 0 8px rgba(255,190,92,.9);
+    box-shadow: 0 0 26px rgba(255,190,92,.26); }
+  #enterBtnZoo:hover { background: linear-gradient(90deg, rgba(255,190,92,.55), rgba(255,190,92,.3)); }
 
   /* ---------- pause ---------- */
   #pause { position: fixed; inset: 0; z-index: 19; display: flex;
@@ -250,19 +278,24 @@
   .lie-prompt { width: 100%; }
 
   /* ---------- mode gate: only one engine's DOM is active at a time ---------- */
-  html:not([data-mode="la"]) #overlay,
-  html:not([data-mode="la"]) #crosshair,
-  html:not([data-mode="la"]) #liePromptGroup,
-  html:not([data-mode="la"]) #hud { display: none !important; }
+  html:not([data-engine="world"]) #overlay,
+  html:not([data-engine="world"]) #crosshair,
+  html:not([data-engine="world"]) #furniturePrompt,
+  html:not([data-engine="world"]) #liePromptGroup,
+  html:not([data-engine="world"]) #hud { display: none !important; }
 
-  html[data-mode="la"] #loader,
-  html[data-mode="la"] #menu,
-  html[data-mode="la"] #pause,
-  html[data-mode="la"] #stats,
-  html[data-mode="la"] #fps,
-  html[data-mode="la"] #msg,
-  html[data-mode="la"] #fade,
-  html[data-mode="la"] #errOv { display: none !important; }
+  html[data-engine="world"] #loader,
+  html[data-engine="world"] #menu,
+  html[data-engine="world"] #pause,
+  html[data-engine="world"] #stats,
+  html[data-engine="world"] #fps,
+  html[data-engine="world"] #msg,
+  html[data-engine="world"] #fade,
+  html[data-engine="world"] #errOv { display: none !important; }
+
+  /* …and within the shared overlay, only the briefing for the map being run. */
+  html:not([data-mode="la"]) .brief-la,
+  html:not([data-mode="zoo"]) .brief-zoo { display: none !important; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -314,6 +347,16 @@
       </div>
       <button id="enterBtnLA" class="enter-btn ready">Enter Game</button>
     </div>
+    <div class="la-panel zoo-panel">
+      <div class="kicker">New Map</div>
+      <h2>A TRIP TO<br><span class="accent-zoo">THE ZOO</span></h2>
+      <div id="brandRuleZoo"></div>
+      <div class="la-card">
+        <span class="m-tag">Runner 01</span>
+        <span class="m-name">Zoo Day Girl</span>
+      </div>
+      <button id="enterBtnZoo" class="enter-btn ready">Enter Game</button>
+    </div>
   </div>
 </div>
 <div id="pause">
@@ -339,16 +382,25 @@
 </div>
 <div id="overlay">
   <div id="panel">
-    <span class="tag">Nouvelle map</span>
-    <h1>Villa luxueuse — Los Angeles</h1>
-    <p>Villa californienne de plain-pied: cour d'entrée et bassin, séjour cathédrale ouvert sur la terrasse, cuisine ouverte avec îlot, suite parentale et chambre d'amis, garage. Côté canyon: piscine à débordement, spa, pergola, cuisine d'été et brasero.</p>
-    <p>Vous démarrez sur l'allée d'entrée: la porte est ouverte, la piscine est derrière la maison.</p>
-    <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter / tenir pour tirer la toile, <b>E</b> zip, <b>Shift</b> sprint, <b>R</b> reset. Approchez-vous d'une chaise pour vous asseoir ou d'un lit pour choisir un réveil de jour ou de nuit; utilisez ensuite <b>WASD</b> ou <b>Space</b> pour vous relever.</p>
-    <div id="timeToggle">
-      <button class="tt-btn active" data-time="day">☀ Day</button>
-      <button class="tt-btn" data-time="night">🌙 Night</button>
+    <div class="brief-la">
+      <span class="tag">Nouvelle map</span>
+      <h1>Villa luxueuse — Los Angeles</h1>
+      <p>Villa californienne de plain-pied: cour d'entrée et bassin, séjour cathédrale ouvert sur la terrasse, cuisine ouverte avec îlot, suite parentale et chambre d'amis, garage. Côté canyon: piscine à débordement, spa, pergola, cuisine d'été et brasero.</p>
+      <p>Vous démarrez sur l'allée d'entrée: la porte est ouverte, la piscine est derrière la maison.</p>
+      <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter / tenir pour tirer la toile, <b>E</b> zip, <b>Shift</b> sprint, <b>R</b> reset. Approchez-vous d'une chaise pour vous asseoir ou d'un lit pour choisir un réveil de jour ou de nuit; utilisez ensuite <b>WASD</b> ou <b>Space</b> pour vous relever.</p>
+      <div id="timeToggle">
+        <button class="tt-btn active" data-time="day">☀ Day</button>
+        <button class="tt-btn" data-time="night">🌙 Night</button>
+      </div>
     </div>
-    <button id="startBtn">Entrer dans la villa</button>
+    <div class="brief-zoo">
+      <span class="tag">Nouvelle map</span>
+      <h1>Une journée au zoo</h1>
+      <p>Vous arrivez sur le parking, face à la billetterie. Passé les tourniquets, un chemin de terre fait le tour du parc: les singes sur leur île, les ours et leur bassin, la plaine des lions, le vivarium des serpents et la volière des perroquets.</p>
+      <p>Au centre, la place des chalets: le restaurant, sa terrasse, et la boutique de peluches.</p>
+      <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter, <b>Shift</b> sprint, <b>R</b> reset. Approchez-vous d'un banc ou d'une table de terrasse pour vous asseoir, puis <b>WASD</b> ou <b>Space</b> pour vous relever.</p>
+    </div>
+    <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span></button>
   </div>
 </div>
 <button id="furniturePrompt" type="button" aria-hidden="true"></button>
@@ -372,6 +424,9 @@
   document.getElementById('enterBtnLA').addEventListener('click', () => {
     location.href = 'index.html?map=la';
   });
+  document.getElementById('enterBtnZoo').addEventListener('click', () => {
+    location.href = 'index.html?map=zoo';
+  });
   // Day/Night toggle — capture phase so window.__nightMode is set before the
   // module's bubble-phase handler fires.
   document.querySelectorAll('.tt-btn').forEach(btn => {
@@ -384,11 +439,11 @@
   }, true);
 </script>
 <script type="module">
-  if (document.documentElement.dataset.mode === 'la') {
-    import('./main-LA.js?v=202608082115');
-  } else {
-    import('./main.js?v=23');
-  }
+  const ENGINES = {
+    la: './main-LA.js?v=202608082115',
+    zoo: './main-ZOO.js?v=202608090210',
+  };
+  import(ENGINES[document.documentElement.dataset.mode] ?? './main.js?v=23');
 </script>
 </body>
 </html>

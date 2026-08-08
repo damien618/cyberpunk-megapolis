@@ -258,7 +258,7 @@ function ringParams(from, to, stepAt) {
  * winding — hence the flip on triangle emission rather than a normals fixup.
  */
 function loft({ points, pathU, profile, scale, rings, weights, lateral, floorY, floorFrom, warp,
-  radial = RADIAL }, out) {
+  radial = RADIAL, anterior0 = null }, out) {
   const path = new THREE.CatmullRomCurve3(points, false, 'centripetal');
   const segs = pathU.length - 1;
   const curveT = u => {
@@ -270,7 +270,11 @@ function loft({ points, pathU, profile, scale, rings, weights, lateral, floorY, 
 
   const base = out.pos.length / 3;
   const prof = new Array(7);
-  const anterior = new THREE.Vector3(0, 0, 1);
+  // Seed for the parallel transport below. It only has to be non-parallel to
+  // the first tangent: a limb starts vertical so +Z serves, but the sandal sole
+  // sweeps horizontally along the foot and needs +Y instead, or the very first
+  // reprojection collapses to zero and every ring after it is garbage.
+  const anterior = anterior0 ? anterior0.clone().normalize() : new THREE.Vector3(0, 0, 1);
   const tangent = new THREE.Vector3(), side3 = new THREE.Vector3(), p = new THREE.Vector3();
   let firstCentre = null, lastCentre = null;
 
@@ -818,6 +822,167 @@ function buildToes({ out, bone, fwd, hip, flatBall, soleY, L }) {
       radial: TOE_RADIAL,
     }, out);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Flip-flops
+// ---------------------------------------------------------------------------
+
+// A thong sandal is a plate and a Y of strap, and the plate carries the whole
+// read: get its plan wrong and it looks like a board taped under the foot. The
+// outline below is a sandal LAST rather than the foot's own silhouette —
+// rounded narrow heel, a waist pulled in under the arch, the widest point
+// across the metatarsal heads, and a nose that closes well in front of the toes
+// instead of stopping level with them. It is quoted in fractions of the
+// finished foot length, measured forward from the back of the heel.
+//
+// The rig offers an ankle and a ball and nothing else, so the outline is pinned
+// to the two landmarks every last is dimensioned from: the ankle stands a
+// quarter of a foot length in front of the heel and the ball at 0.72 of it,
+// which makes the rig's ankle-to-ball span 0.47 of a foot. That ratio is the
+// only thing turning two bones into a whole sandal.
+const SANDAL_ANKLE = 0.25;
+const SANDAL_BALL = 0.72;
+const SANDAL_END = 1.02;
+// `lat`/`med` are the outer and inner edges. The sole is swept with its
+// reference pointing DOWN (see `anterior0` below), so `ant` is the half
+// thickness under the mid plane and `post` the half above it — symmetric here,
+// so which is which only matters to the reader. The low exponents are what make
+// the section a rounded rectangle, a plate with an eased edge, instead of the
+// ellipse the leg tables want.
+const SANDAL_PROFILE = [
+  // s,    lat,    med,    ant,    post,   ex,   enA,  enP
+  [0.00, 0.0540, 0.0540, 0.0200, 0.0200, 0.62, 0.45, 0.45],  // back of the heel
+  [0.05, 0.1040, 0.1045, 0.0212, 0.0212, 0.55, 0.42, 0.42],
+  [0.13, 0.1305, 0.1315, 0.0214, 0.0214, 0.50, 0.40, 0.40],  // heel seat
+  [0.30, 0.1400, 0.1428, 0.0212, 0.0212, 0.50, 0.40, 0.40],
+  [0.46, 0.1458, 0.1516, 0.0206, 0.0206, 0.50, 0.40, 0.40],  // waist, under the arch
+  [0.62, 0.1760, 0.1838, 0.0200, 0.0200, 0.50, 0.40, 0.40],
+  [0.74, 0.2018, 0.2082, 0.0192, 0.0192, 0.50, 0.40, 0.40],  // widest, across the ball
+  [0.86, 0.1958, 0.1992, 0.0182, 0.0182, 0.52, 0.42, 0.42],
+  [0.95, 0.1628, 0.1660, 0.0164, 0.0164, 0.58, 0.46, 0.46],
+  [1.02, 0.0975, 0.1000, 0.0132, 0.0132, 0.70, 0.55, 0.55],  // nose, clear of the toes
+];
+// The Y: two bands from the sole edges at the waist, up over the instep, to a
+// post between the big toe and the second. Round-ish in section on purpose — a
+// band this thin reads the same from every angle, where a flat one would need a
+// frame tracking the skin under it to stay flat against it.
+const STRAP_PROFILE = [
+  [0.00, 0.0355, 0.0355, 0.0130, 0.0130, 0.55, 0.55, 0.55],
+  [1.00, 0.0300, 0.0300, 0.0114, 0.0114, 0.55, 0.55, 0.55],
+];
+const STRAP_RADIAL = 9;   // a 15 mm band does not need the sole's ring density
+// Where the Y sits, all in foot lengths: the two sole anchors, the post, how
+// far the post stands off the centreline — the cleft is on the big-toe side,
+// not down the middle — and the instep the bands have to arch over.
+//
+// `apexRise` and `postTop` are the whole thing, and the first pass had both at
+// about a third of what they need: 2.5 cm and 0.8 cm above the sole, against a
+// dorsum that stands 5.5 cm proud at the instep and toes 1.6 cm tall at the
+// cleft. Both bands ran INSIDE the foot for their whole length, so the sandal
+// rendered as a sole with nothing holding it on. They now sit on the skin.
+const STRAP = {
+  anchor: 0.545, post: 0.792, postOff: 0.052, postTop: 0.150,
+  apex: 0.686, apexRise: 0.272, apexIn: 0.62,
+};
+
+export function buildFlipFlops(root, material) {
+  const rig = findRig(root, [...LEG_BONES('l'), ...LEG_BONES('r')]);
+  if (!rig) return null;
+  const { indexOf, pos } = restReader(rig);
+  const out = { pos: [], tri: [], idx: [], wgt: [] };
+  const ss = THREE.MathUtils.smoothstep;
+  const DOWN = new THREE.Vector3(0, -1, 0);
+
+  for (const side of ['l', 'r']) {
+    const hip = pos(`thigh_${side}`);
+    const ankle = pos(`foot_${side}`), ball = pos(`ball_${side}`);
+    const lateral = Math.sign(hip.x) || 1;
+    const stride = new THREE.Vector3(ball.x - ankle.x, 0, ball.z - ankle.z);
+    const fwd = stride.clone().normalize();
+    const L = ankle.distanceTo(ball);
+    const FL = stride.length() / (SANDAL_BALL - SANDAL_ANKLE);
+    const soleY = ball.y - 0.20 * L;
+    // Top face a couple of millimetres inside the sole of the foot: the sandal
+    // reads as taking the weight, and nothing sinks the toes into the plate.
+    const midY = soleY - 0.0028;
+    // Across the foot, away from the midline — the axis buildToes uses, so the
+    // post lands in the same cleft the toes leave for it.
+    const across = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), fwd).normalize();
+    if (across.x * lateral < 0) across.negate();
+    const heel = new THREE.Vector3(ankle.x, 0, ankle.z).addScaledVector(fwd, -SANDAL_ANKLE * FL);
+    const at = (s, rise = 0) => heel.clone()
+      .addScaledVector(fwd, s * FL).setY(midY + rise * FL);
+
+    const bone = { foot: indexOf(`foot_${side}`), ball: indexOf(`ball_${side}`) };
+
+    // ── the sole ──
+    loft({
+      // Toe spring, and a touch at the heel: a flip-flop moulds up at both ends,
+      // and a dead-flat plate is the other half of what reads as a board.
+      points: [at(0, 0.008), at(0.30), at(0.62), at(0.86, 0.004), at(0.95, 0.010),
+        at(1.02, 0.026)],
+      pathU: [0, 0.30, 0.62, 0.86, 0.95, 1.02],
+      profile: SANDAL_PROFILE,
+      scale: FL,
+      rings: ringParams(0, 1.02, s => s < 0.10 ? 0.025 : s < 0.86 ? 0.055 : 0.030),
+      weights: s => {
+        // The plate bends where a real one does, at the ball.
+        const t = ss(s, 0.58, 0.80);
+        return { idx: [bone.foot, bone.ball, 0, 0], wgt: [1 - t, t, 0, 0] };
+      },
+      lateral,
+      floorY: null,
+      floorFrom: 0,
+      radial: 18,
+      anterior0: DOWN,
+    }, out);
+
+    // ── the Y ──
+    const postHead = at(STRAP.post, STRAP.postTop)
+      .addScaledVector(across, -STRAP.postOff * FL);
+    const postFoot = at(STRAP.post, -0.006)
+      .addScaledVector(across, -STRAP.postOff * FL);
+    const strapWeights = u => {
+      const t = ss(u, 0, 0.75);
+      const foot = 0.42 * (1 - t);
+      return { idx: [bone.foot, bone.ball, 0, 0], wgt: [foot, 1 - foot, 0, 0] };
+    };
+    for (const edge of [1, -1]) {
+      const w = (edge > 0 ? SANDAL_PROFILE[4][1] : SANDAL_PROFILE[4][2]) - 0.012;
+      const anchor = at(STRAP.anchor, 0.018).addScaledVector(across, edge * w * FL);
+      const apex = at(STRAP.apex, STRAP.apexRise)
+        .addScaledVector(across, edge * w * STRAP.apexIn * FL);
+      loft({
+        points: [anchor, apex, postHead],
+        pathU: [0, 0.55, 1],
+        profile: STRAP_PROFILE,
+        scale: FL,
+        rings: ringParams(0, 1, () => 0.085),
+        weights: strapWeights,
+        lateral,
+        floorY: null,
+        floorFrom: 0,
+        radial: STRAP_RADIAL,
+        anterior0: fwd,
+      }, out);
+    }
+    // The post, buried in the plate at its foot.
+    loft({
+      points: [postFoot, postHead],
+      pathU: [0, 1],
+      profile: STRAP_PROFILE,
+      scale: FL,
+      rings: ringParams(0, 1, () => 0.25),
+      weights: () => ({ idx: [bone.ball, bone.foot, 0, 0], wgt: [1, 0, 0, 0] }),
+      lateral,
+      floorY: null,
+      floorFrom: 0,
+      radial: STRAP_RADIAL,
+      anterior0: fwd,
+    }, out);
+  }
+  return finish(out, rig, material, 'Wardrobe_FlipFlops');
 }
 
 // ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { buildBareLegs, buildSleeves } from './limbs.js?v=35';
+import { buildBareLegs, buildFlipFlops, buildSleeves } from './limbs.js?v=38';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
 
@@ -81,6 +81,25 @@ const LYING_FOOT_RISE = 0.025;
 // pair a third of the way further down.
 const NIGHT_SHORTS_HEM = 0.76;
 const SWIM_SHORTS_HEM = 0.68;
+// Cut-off denim for the zoo: the shortest of the three, a third of the way down
+// the thigh. Anything higher and the crop runs into the crotch geometry, where
+// the trousers stop being two tubes and there is no hem line left to sew.
+const DENIM_SHORTS_HEM = 0.83;
+// The sleeveless cut, as a fraction of the shirt's own half-width. The pack's
+// tee reaches its widest at the cuff, so a little under three quarters of that
+// lands the cut on the shoulder seam where an armhole belongs.
+const VEST_ARMHOLE = 0.72;
+// The tank is the OUTERMOST layer at the waist: it hangs over the trouser
+// waistband, so it has to clear the trousers' own standoff and not just the
+// t-shirt's surface. At 6 mm it cleared the tee and z-fought the trousers into
+// a ragged red-and-white edge across the hip.
+const VEST_STANDOFF = 0.019;
+// 14 mm, not the shorts' 3 mm. These trousers cover the knee, and the knee is
+// where the leg carries its bony landmarks — the kneecap and the condyles stand
+// proud of the profile table by about 4 mm on their own. It also happens to be
+// right for the garment: the reference pair is loose, and a trouser skin-tight
+// over a patella is not a trouser.
+const TROUSER_STANDOFF = 0.014;
 // A garment sits ON the body, not in it, and this pair was authored as trousers
 // around a leg that no longer exists. With the lofted legs graded up to real
 // circumferences the fabric cleared the thigh by 2.3 mm just above the hem —
@@ -144,11 +163,19 @@ function clothingPart(materialName = '') {
   return Object.keys(CLOTHING_PARTS).find(part => name.includes(part)) || null;
 }
 
-// Clips a geometry to the half-space y >= minY, splitting the triangles that
-// straddle the plane. Keeping or dropping whole triangles on a centroid test is
-// much simpler but leaves the cut in saw teeth, which on the shorts reads as a
-// torn hem rather than a sewn one.
-function croppedGeometry(geometry, minY) {
+// Clips a geometry to a half-space, splitting the triangles that straddle the
+// plane. Keeping or dropping whole triangles on a centroid test is much simpler
+// but leaves the cut in saw teeth, which on the shorts reads as a torn hem
+// rather than a sewn one.
+//
+// `axis`/`keep` generalise what began as a horizontal hem: the shorts cut the
+// trousers at y >= at, and the vest cuts the t-shirt twice on x to take its
+// sleeves off. `standoff` is the hem's own lift off the skin and means nothing
+// on a vertical cut, so it is opt-out.
+function croppedGeometry(geometry, at, { axis = 'y', keep = 1, standoff = true } = {}) {
+  const minY = at;
+  const COMP = { x: 0, y: 1, z: 2 }[axis];
+  const compOf = i => geometry.attributes.position.getComponent(i, COMP);
   const attributes = Object.entries(geometry.attributes);
   const position = geometry.attributes.position;
   const skinIndex = geometry.attributes.skinIndex;
@@ -177,7 +204,7 @@ function croppedGeometry(geometry, minY) {
   const emitCut = (a, b) => {
     const key = a < b ? `c${a},${b}` : `c${b},${a}`;
     if (emitted.has(key)) return emitted.get(key);
-    const t = (minY - position.getY(a)) / (position.getY(b) - position.getY(a));
+    const t = (at - compOf(a)) / (compOf(b) - compOf(a) || 1e-9);
     for (const [name, attribute] of attributes) {
       if (attribute === skinIndex || attribute === skinWeight) continue;
       for (let c = 0; c < attribute.itemSize; c++) {
@@ -210,7 +237,7 @@ function croppedGeometry(geometry, minY) {
 
   for (let i = 0; i < source.length; i += 3) {
     const v = [source[i], source[i + 1], source[i + 2]];
-    const inside = v.map(k => position.getY(k) >= minY);
+    const inside = v.map(k => (compOf(k) - at) * keep >= 0);
     const kept = inside.filter(Boolean).length;
     if (kept === 0) continue;
     if (kept === 3) { triangles.push(...v.map(emit)); continue; }
@@ -231,7 +258,26 @@ function croppedGeometry(geometry, minY) {
     cropped.setAttribute(name, new Attribute(out[name], attribute.itemSize));
   }
   cropped.setIndex(triangles);
-  return withStandoff(cropped, minY);
+  return standoff ? withStandoff(cropped, minY) : cropped;
+}
+
+// Pushes a whole shell out along its own normals — the layered-garment version
+// of withStandoff, which fades with height and is meant for a hem. A vest worn
+// over a t-shirt needs the same clearance everywhere or the shirt beneath it
+// pokes through wherever the two happen to agree.
+function inflatedGeometry(geometry, amount) {
+  const position = geometry.attributes.position;
+  const normal = geometry.attributes.normal;
+  if (!normal) return geometry;
+  for (let i = 0; i < position.count; i++) {
+    position.setXYZ(i,
+      position.getX(i) + normal.getX(i) * amount,
+      position.getY(i) + normal.getY(i) * amount,
+      position.getZ(i) + normal.getZ(i) * amount);
+  }
+  position.needsUpdate = true;
+  geometry.computeBoundingSphere();
+  return geometry;
 }
 
 // Lifts a cropped garment off the skin along its own normals, fading out with
@@ -444,8 +490,41 @@ export class Player {
       side: THREE.DoubleSide,
     });
 
+    // Cut-off denim. Indigo twill is rough and almost matte — the swim pair's
+    // 0.76 already reads as tech fabric, and denim wants to be flatter still.
+    // Single-sided, unlike the other two: this crop is short enough that the
+    // open hem faces the thigh filling it rather than the camera.
+    const denimMaterial = new THREE.MeshStandardMaterial({
+      color: 0x3f5f86,
+      roughness: 0.93,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+    });
+    // Moulded rubber: dark, matte, a little sheen off the top of the sole.
+    // Fine-gauge knit: matte, and a shade deeper than a printed red so it does
+    // not flare out under the sun next to the pale trousers.
+    // Loose off-white cotton — not paper white, which under a midday sun reads
+    // as a blown-out hole rather than as cloth.
+    const cottonMaterial = new THREE.MeshStandardMaterial({
+      color: 0xefeae0,
+      roughness: 0.94,
+      metalness: 0.0,
+    });
+    const knitMaterial = new THREE.MeshStandardMaterial({
+      color: 0xb0231f,
+      roughness: 0.88,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+    });
+    const rubberMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1a1a1e,
+      roughness: 0.62,
+      metalness: 0.02,
+    });
+
     const sleeves = buildSleeves(this.model, tshirtMaterial);
     const swimLegs = buildBareLegs(this.model, skinMaterial);
+    const flipFlops = buildFlipFlops(this.model, rubberMaterial);
 
     const pants = this.clothing.pants.mesh;
     const swimShorts = pants
@@ -468,6 +547,37 @@ export class Player {
     const nightTop = tshirt
       ? this.createSkinnedClone(tshirt, tshirt.geometry, silkMaterial, 'Wardrobe_NightTop')
       : null;
+    // Red knit tank worn OVER the tee: the t-shirt shell again with its sleeves
+    // cut off on two vertical planes, then inflated so the tee reads underneath
+    // it at the shoulder and the armhole instead of fighting it for the same
+    // surface. The armhole is taken from the shirt's own width rather than
+    // guessed, because the pack's shirt is the only thing that knows how far
+    // out its sleeves go.
+    // The trousers are the pack's own mesh and the lofted legs live inside them,
+    // but only just: graded for shorts, the calves clear the fabric by a couple
+    // of millimetres and come through at the shin. The zoo therefore wears its
+    // own copy, pushed out along its normals like the cropped garments are. The
+    // original stays untouched for the villa, which has no legs under it.
+    const zooTrousers = pants
+      ? this.createSkinnedClone(
+        pants,
+        inflatedGeometry(pants.geometry.clone(), TROUSER_STANDOFF),
+        cottonMaterial,
+        'Wardrobe_ZooTrousers'
+      )
+      : null;
+
+    let vest = null;
+    if (tshirt) {
+      tshirt.geometry.computeBoundingBox();
+      const bb = tshirt.geometry.boundingBox;
+      const armhole = Math.max(Math.abs(bb.min.x), Math.abs(bb.max.x)) * VEST_ARMHOLE;
+      const shell = croppedGeometry(
+        croppedGeometry(tshirt.geometry, armhole, { axis: 'x', keep: -1, standoff: false }),
+        -armhole, { axis: 'x', keep: 1, standoff: false });
+      vest = this.createSkinnedClone(
+        tshirt, inflatedGeometry(shell, VEST_STANDOFF), knitMaterial, 'Wardrobe_Vest');
+    }
     // …and the bottom half, the same crop as the swim pair but cut longer, on
     // the thigh. What used to be here was a skirt: a drape solved once over the
     // legs as they lie, then pinned to the pelvis so the animation could not
@@ -484,8 +594,19 @@ export class Player {
         'Wardrobe_NightShorts'
       )
       : null;
+    const denimShorts = pants
+      ? this.createSkinnedClone(
+        pants,
+        croppedGeometry(pants.geometry, DENIM_SHORTS_HEM),
+        denimMaterial,
+        'Wardrobe_DenimShorts'
+      )
+      : null;
 
-    this.wardrobe = { sleeves, swimLegs, swimShorts, nightTop, nightShorts, hairCrown: null };
+    this.wardrobe = {
+      sleeves, swimLegs, swimShorts, nightTop, nightShorts,
+      denimShorts, flipFlops, vest, zooTrousers, hairCrown: null,
+    };
   }
 
   /**
@@ -516,27 +637,36 @@ export class Player {
       longSleeves: options.longSleeves === true,
       swim: options.swim === true,
       night: options.night === true,
+      zoo: options.zoo === true,
     };
     const key = JSON.stringify(outfit);
     if (key === this.outfitKey || !this.wardrobe) return;
     this.outfitKey = key;
     this.outfit = outfit;
 
-    // The sleep set replaces the whole outfit: silk top, silk shorts, bare legs
-    // and bare feet. Nobody sleeps in a backpack.
-    const bare = outfit.swim || outfit.night;
-    const hat = outfit.hat && !outfit.night;
+    // Three sets put the lofted legs on: the swim pair, the sleep set — which
+    // replaces the whole outfit, silk top and all, because nobody sleeps in a
+    // backpack — and the zoo's, which keeps the trousers and only needs the legs
+    // for the bare feet coming out from under them.
+    const legs = outfit.swim || outfit.night || outfit.zoo;
+    const noTrousers = outfit.swim || outfit.night;
+    const dressed = !outfit.night && !outfit.zoo;
+    const hat = outfit.hat && dressed;
     this.setPartVisible('hat', hat);
-    this.setPartVisible('backpack', outfit.backpack && !outfit.night);
+    this.setPartVisible('backpack', outfit.backpack && dressed);
     this.setPartVisible('tshirt', outfit.tshirt && !outfit.night);
-    this.setPartVisible('pants', outfit.pants && !bare);
-    this.setPartVisible('shoes', outfit.shoes && !bare);
-    if (this.wardrobe.sleeves) this.wardrobe.sleeves.visible = outfit.longSleeves && !outfit.night;
-    if (this.armsMesh) this.armsMesh.visible = !outfit.longSleeves || outfit.night;
-    if (this.wardrobe.swimLegs) this.wardrobe.swimLegs.visible = bare;
-    if (this.wardrobe.swimShorts) this.wardrobe.swimShorts.visible = outfit.swim && !outfit.night;
+    this.setPartVisible('pants', outfit.pants && !noTrousers && !outfit.zoo);
+    this.setPartVisible('shoes', outfit.shoes && !legs);
+    if (this.wardrobe.sleeves) this.wardrobe.sleeves.visible = outfit.longSleeves && dressed;
+    if (this.armsMesh) this.armsMesh.visible = !(outfit.longSleeves && dressed);
+    if (this.wardrobe.swimLegs) this.wardrobe.swimLegs.visible = legs;
+    if (this.wardrobe.swimShorts) this.wardrobe.swimShorts.visible = outfit.swim && dressed;
     if (this.wardrobe.nightTop) this.wardrobe.nightTop.visible = outfit.night;
     if (this.wardrobe.nightShorts) this.wardrobe.nightShorts.visible = outfit.night;
+    if (this.wardrobe.denimShorts) this.wardrobe.denimShorts.visible = false;
+    if (this.wardrobe.zooTrousers) this.wardrobe.zooTrousers.visible = outfit.zoo;
+    if (this.wardrobe.vest) this.wardrobe.vest.visible = outfit.zoo;
+    if (this.wardrobe.flipFlops) this.wardrobe.flipFlops.visible = outfit.zoo;
     // Strictly the cap's understudy. The crown stands a centimetre off the
     // skull, which is inside Hat02 — worn together, it punches through the cap.
     if (this.wardrobe.hairCrown) this.wardrobe.hairCrown.visible = !hat;

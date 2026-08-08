@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Player } from './player.js?v=41';
+import { Player } from './player.js?v=46';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=5';
