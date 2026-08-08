@@ -268,6 +268,7 @@ const M = {
   meadow: new THREE.MeshStandardMaterial({ color: 0xa8a071, roughness: 0.99 }),
   sand: new THREE.MeshStandardMaterial({ color: 0xcbb489, roughness: 0.99 }),
   bark: new THREE.MeshStandardMaterial({ color: 0x7c6448, roughness: 0.95 }),
+  birch: new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.9 }),
   barkDark: new THREE.MeshStandardMaterial({ color: 0x574636, roughness: 0.95 }),
   foliage: new THREE.MeshStandardMaterial({ color: 0x4f7f42, roughness: 0.97 }),
   foliageDark: new THREE.MeshStandardMaterial({ color: 0x39632f, roughness: 0.97 }),
@@ -623,28 +624,39 @@ function pine(x, z, s = 1) {
     }
   });
 }
-function palmClump(x, z, s = 1) {
+// A birch: pale slender trunk that FORKS low, and a light open crown. It is the
+// counterpoint the planting needed — every other tree here is a heavy dark mass,
+// and a park reads as planted rather than grown when everything in it is the
+// same tree at three sizes.
+function birch(x, z, s = 1) {
   prop(() => {
-    const g = groundAt(x, z) - 0.1;
-    shape(G.trunk, M.bark, x, g, z, 0.3 * s, 5.4 * s, 0.3 * s, { rz: 0.05 });
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2 + x;
-      shape(G.frond, M.foliageLight,
-        x + Math.cos(a) * 1.5 * s, g + 5.0 * s, z + Math.sin(a) * 1.5 * s,
-        0.55 * s, 3.4 * s, 0.55 * s, { rx: Math.sin(a) * 1.0, rz: -Math.cos(a) * 1.0 });
+    const g = groundAt(x, z) - 0.12;
+    const j = Math.sin(x * 33.7 + z * 61.1) * 0.5;
+    const h = (8.4 + j * 2.0) * s;
+    shape(G.trunk, M.birch, x, g, z, 0.24 * s, h * 0.5, 0.24 * s, { rz: j * 0.05 });
+    for (const fork of [-1, 1]) {
+      const lean = 0.16 * fork + j * 0.05;
+      shape(G.trunk, M.birch, x + fork * 0.18 * s, g + h * 0.46, z,
+        0.15 * s, h * 0.5, 0.15 * s, { rz: lean });
+      const tx = x + fork * (0.18 + Math.sin(lean) * h * 0.5) * s;
+      for (let i = 0; i < 3; i++) {
+        shape(G.blob, i ? M.foliageLight : M.foliage,
+          tx + (i - 1) * 1.1 * s, g + h * (0.78 + i * 0.07), z + (j + i - 1) * 0.9 * s,
+          (2.4 - i * 0.35) * s, (1.9 - i * 0.3) * s, (2.3 - i * 0.35) * s, { ry: j * 4 + i });
+      }
     }
   });
 }
-function bambooClump(x, z, s = 1) {
+// Understorey. Nothing tall, and it goes where a park actually plants it: at the
+// foot of the trees and along the barrier lines, so the ground between the path
+// and the fence is not bare lawn.
+function shrub(x, z, s = 1, mat = M.hedge) {
   prop(() => {
     const g = groundAt(x, z);
-    for (let i = 0; i < 11; i++) {
-      const a = (i / 11) * Math.PI * 2 + x, r = 0.4 + (i % 4) * 0.28;
-      shape(G.post, M.bamboo, x + Math.cos(a) * r * s, g, z + Math.sin(a) * r * s,
-        0.085 * s, (3.2 + (i % 5) * 0.8) * s, 0.085 * s,
-        { rz: Math.cos(a) * 0.1, rx: Math.sin(a) * 0.1 });
-    }
-    shape(G.blob, M.foliageLight, x, g + 3.6 * s, z, 2.4 * s, 1.5 * s, 2.4 * s);
+    const j = Math.sin(x * 91.3 + z * 17.7) * 0.5;
+    shape(G.blob, mat, x, g, z, (2.1 + j) * s, (1.3 + j * 0.4) * s, (1.9 + j) * s, { ry: j * 6 });
+    shape(G.blob, M.foliageDark, x + 0.7 * s, g, z - 0.5 * s,
+      (1.4 + j * 0.6) * s, (0.9 + j * 0.3) * s, (1.3 + j * 0.6) * s, { ry: -j * 4 });
   });
 }
 function hedgeRun(x0, x1, z0, z1, h = 1.2, skip = null) {
@@ -1153,7 +1165,7 @@ function foxEnclosure() {
       shape(G.blob, M.hedge, sx, 0, sz, 2.6, 1.3, 2.4);
     }
   });
-  for (const [tx, tz] of [[66, -62], [91, -62], [66, -83], [91, -83]]) bambooClump(tx, tz, 1.2);
+  for (const [tx, tz] of [[66, -62], [91, -62], [66, -83], [91, -83]]) shrub(tx, tz, 1.3);
   railRun(x0 - 1.9, z0 + 4, x0 - 1.9, z1 - 4, {});
   exhibitSign(x0 - 3.0, -68, -Math.PI / 2);
   exhibitSign(x0 - 3.0, -78, -Math.PI / 2);
@@ -1185,21 +1197,13 @@ function alpacaPaddock() {
       box(M.signPale, 0, 0.95, -1.5, 2.7, 0.24, 0.6);
     });
   });
-  prop(() => {
-    // Perch trees, and a horizontal perch rail across the viewing face.
-    for (const [tx, tz, ts] of [[72, -33, 1.1], [82, -43, 1.25], [88, -30, 0.95], [70, -47, 1.05]]) {
-      shape(G.trunk, M.bark, tx, 0, tz, 0.5 * ts, 4.6 * ts, 0.5 * ts);
-      shape(G.blob, M.foliageLight, tx, 4.4 * ts, tz, 4.4 * ts, 2.6 * ts, 4.2 * ts);
-      for (let i = 0; i < 3; i++) {
-        shape(G.post, M.barkDark, tx, 2.6 * ts, tz, 0.11, 2.4 * ts, 0.11,
-          { rz: 1.2 - i * 0.3, ry: i * 2.1 });
-      }
-    }
-    for (const y of [2.4, 3.6]) {
-      box(M.barkDark, x0 + 3.2, y, (z0 + z1) / 2, 0.13, 0.13, 22);
-    }
-  });
-  for (const [tx, tz] of [[68, -50], [91, -50], [68, -27], [91, -27]]) palmClump(tx, tz, 1.1);
+  // Pasture: shade trees the herd can stand under, and nothing else. The perch
+  // trees and the rail across the viewing face went with the parrots.
+  for (const [tx, tz, ts] of [[72, -33, 1.1], [82, -44, 1.2], [89, -30, 0.95]]) {
+    shadeTree(tx, tz, ts);
+  }
+  for (const [sx, sz] of [[68, -28], [90, -48], [76, -50]]) shrub(sx, sz, 1.0);
+  for (const [tx, tz] of [[68, -50], [91, -50], [68, -27], [91, -27]]) birch(tx, tz, 1.0);
   railRun(x0 - 1.9, z0 + 3, x0 - 1.9, z1 - 3, {});
   exhibitSign(x0 - 3.0, -33, -Math.PI / 2);
   exhibitSign(x0 - 3.0, -44, -Math.PI / 2);
@@ -1400,6 +1404,21 @@ for (let i = 0; i < 190; i++) {
   if (Math.abs(x) > 116 || z > 12 || z < -134 || blocked(x, z)) continue;
   if (rand() < 0.4) pine(x, z, 0.9 + rand() * 0.5);
   else shadeTree(x, z, 0.9 + rand() * 0.5, rand() < 0.5 ? M.foliage : M.foliageDark);
+}
+// Understorey along the routes. Planted from the same seeded generator as the
+// woodland so it is stable between reloads, and kept a clear two metres off the
+// path edge — a shrub you walk into is worse than a lawn you do not.
+for (let i = 0; i < 150; i++) {
+  const a = rand() * Math.PI * 2;
+  const r = 30 + rand() * 62;
+  const x = Math.cos(a) * r;
+  const z = PARK_MID + Math.sin(a) * r * 0.9;
+  if (Math.abs(x) > 112 || z > 6 || z < -130) continue;
+  if (KEEP_OUT.some(([p0, p1, q0, q1]) => x > p0 && x < p1 && z > q0 && z < q1)) continue;
+  if (nearRuns(x, z, 5.6, ROUTES)) continue;              // off the path edge
+  if (!nearRuns(x, z, 16, ROUTES)) continue;              // but still beside it
+  if (rand() < 0.22) birch(x, z, 0.85 + rand() * 0.35);
+  else shrub(x, z, 0.7 + rand() * 0.7, rand() < 0.4 ? M.foliageDark : M.hedge);
 }
 for (let i = 0; i < 30; i++) {
   const a = rand() * Math.PI * 2;
