@@ -8,15 +8,27 @@
 // the elbow — which is exactly what they looked like.
 //
 // Both are now lofted the same way: a closed tube swept along a bone chain,
-// with a cross-section table giving it real anatomy (patella and popliteal
-// hollow at the knee, gastrocnemius sitting lower on the inner side, malleoli,
-// arch, flat sole, tapered toes; deltoid, olecranon, forearm swell and a cuff
-// on the arm). Each is a single SkinnedMesh bound to the character's own
-// skeleton, so it bends with every existing animation clip.
+// with a cross-section table carrying the grading — how thick the limb is at
+// each height — and a set of warps carrying the landmarks the table cannot,
+// because every point on one of its rings shares a single height and so comes
+// out as a belt right round the limb. The landmarks are the kneecap and the
+// grooves beside it, the two femoral condyles staggered high and low, the
+// tibial tuberosity, the popliteal hollow and the hamstring cords above it,
+// vastus medialis, both malleoli, the hollows beside the Achilles and the
+// arch; then deltoid, olecranon, forearm swell and a cuff on the arm.
+//
+// Each is a single SkinnedMesh bound to the character's own skeleton, so it
+// bends with every existing animation clip.
 import * as THREE from 'three';
 
 const RADIAL = 20;
 const TOE_RADIAL = 10;   // a 6 mm toe does not need the leg's ring density
+// The leg carries the finest landmarks on the body: the kneecap is 40 mm across
+// and the grooves beside it 15 mm. At 20 segments a knee ring is 19 mm to a
+// face, so the plate had barely two vertices to exist on and the grooves none —
+// no depth of bump can draw a shape the ring has no room for. 32 brings a face
+// down to 12 mm. The arms keep RADIAL; nothing on them is that small.
+const LEG_RADIAL = 32;
 
 // ---------------------------------------------------------------------------
 // Cross-section tables. Radii are in metres, measured against the reference
@@ -70,6 +82,14 @@ const TOE_RADIAL = 10;   // a 6 mm toe does not need the leg's ring density
 // rows between them interpolate: upper thigh 55.5, mid thigh 47.6, knee 36.0,
 // max calf 35.2, minimum ankle 22.1 — which puts knee/calf at 1.02, ankle/calf
 // at 0.63 and mid-thigh/calf at 1.35, all inside the published ranges.
+//
+// Those are the table's own figures, and the knee is no longer one of them: the
+// bony landmarks added below stand proud of the table and a tape measure catches
+// them, so the FINISHED loft slices at 37.6 cm round the kneecap rather than
+// 36.0. That is the right way round — a tape does go over the condyles — and it
+// leaves knee/calf at 1.06, still inside the range. The sequence down the joint
+// now reads 40.0 across the lower thigh, 36.6 at the waist above the kneecap,
+// 37.6 at the kneecap itself and 33.4 at the narrowest point below it.
 //
 // Cross-sections are no longer near-circular either, because legs are not. The
 // upper thigh is deeper than it is wide (glute and hamstring behind it), the
@@ -487,35 +507,178 @@ function vastusWarp(u, cs, sn, p, scale, side3) {
   p.addScaledVector(side3, -VASTUS.out * scale * along * round);
 }
 
-// The kneecap, the grooves either side of it, and the ridge of the patellar
-// ligament running down from its lower edge. None of the three can come out of
-// the profile table for the same reason the malleoli cannot: every point on a
-// ring shares one `u`, so a bump entered there is a belt round the whole joint.
+// ---------------------------------------------------------------------------
+// The knee
+// ---------------------------------------------------------------------------
 //
-// This is the landmark the knee was missing. A tube swept through the joint
-// gives one smooth barrel, and the front of a real knee is the opposite of
-// smooth: a flat pad about 4 cm across standing proud of it, a soft dip down
-// each side where the retinaculum falls away to the condyles, and a narrower
-// ridge carrying on to the tibial tuberosity a hand's width below. Widening the
-// section (above) tells you the knee is there; these are what make it read as a
-// knee rather than as the point where the thigh stopped narrowing.
-const PATELLA = { at: 0.99, spread: 0.088, out: 0.0044, wide: 0.46, groove: 0.0024 };
-const LIGAMENT = { at: 1.14, spread: 0.070, out: 0.0026, wide: 0.30 };
+// Everything below is quoted in millimetres, because that is the unit the
+// anatomy is published in, and converted on the spot. Radii are already metres,
+// so those are `× MM`. Distances ALONG the leg are not: `u` is a chain
+// parameter, hip to ankle being u = 0..2 across LEG_SPAN, so a millimetre down
+// the leg is `U_MM` of it — a shade over two thousandths.
+const MM = 0.001;
+const U_MM = 2 / (LEG_SPAN * 1000);
+const clamp01 = x => THREE.MathUtils.clamp(x, 0, 1);
 
-function patellaWarp(u, cs, sn, p, scale, side3, anterior) {
+// A bump with a controllable shoulder, falling to 1/e at `half` either way.
+// `hard = 1` is a plain gaussian, which is the right shape for a muscle belly.
+// `hard = 2` squares it off into a plate with a defined edge, which is what a
+// bone directly under skin looks like and what a gaussian can never give you.
+const bump = (d, half, hard = 1) => Math.exp(-(((d / half) ** 2) ** hard));
+
+// The kneecap. None of these landmarks can come out of the profile table, for
+// the same reason the malleoli cannot: every point on a ring shares one `u`, so
+// a bump entered there is a belt right round the joint, and half of what makes a
+// knee is that it is NOT the same all the way round.
+//
+// The first version of this was one 4.4 mm gaussian with a 39 mm sigma. That is
+// a bump 16 cm tall — mid-thigh to mid-shin — standing a third of a centimetre
+// proud, and rendered it did exactly what those numbers say: the front of the
+// joint came out within half a millimetre of the plain taper, so the leg had no
+// knee on it at all. The thigh narrowed, the shin widened, and nothing happened
+// in between.
+//
+// A real patella is a small, hard, flat thing: female series measure it about
+// 40 mm across the base by 31–36 mm base to apex and 20 mm thick, and it is the
+// shape of a rounded triangle standing on its point — widest along the top,
+// narrowing to the apex where the ligament leaves it. So the plate is squared
+// off rather than gaussian, it is sized to those numbers, it tapers downwards,
+// and — the part that actually makes it read — the grooves either side of it are
+// cut deep enough to leave it standing. Without those the front of the knee is
+// convex all the way round and the eye has nothing to catch on.
+const PATELLA = {
+  at: 1.0 - 6 * U_MM,   // the centre rides a little above the joint pivot
+  half: 17 * U_MM,      // 34 mm base to apex
+  out: 7.6 * MM,
+  wide: 0.33,           // 20 mm of arc on a 60 mm knee radius
+  taper: 0.40,          // the apex ends up 60 % of the base's width
+};
+
+// The hollows flanking it, where the retinaculum falls away to the condyles.
+// `at` is a position round the ring, not along the leg: just outside the plate's
+// own edge. Depth matters more than the plate's height — 12 mm of step between
+// the two is what draws the outline of the kneecap, and either half of it on its
+// own is a smudge.
+const PARAPATELLAR = { at: 0.55, half: 0.15, depth: 4.4 * MM };
+
+// Above the joint the quadriceps bellies have finished and only tendon crosses
+// it, so the leg pinches in before the condyles flare back out — thigh, waist,
+// joint. That sequence is most of what says "knee" at a distance, before any of
+// the small landmarks are resolvable at all.
+//
+// Sliced, the loft had the waist: 0.9 mm of it, on a leg 130 mm across, which is
+// nothing. Worse, it made the lower thigh the widest part of the whole limb —
+// 134 mm at u = 0.85 against 131 mm at the joint — so the leg was still a cone
+// and the knee was still the place where the cone stopped narrowing. Taking 3 mm
+// a side out of the waist and putting it back on the condyles below inverts that,
+// which is the point. Weakest dead centre front, where the tendon itself stands.
+const SUPRAPATELLAR = { at: 1.0 - 26 * U_MM, half: 21 * U_MM, in: 3.0 * MM, tendon: 0.45 };
+
+// The patellar ligament and the tibial tuberosity it ends on: a 25 mm band
+// running about 45 mm from the apex of the kneecap to the front of the tibia,
+// and then the knob you can find on anybody. On a leg this slim the tuberosity
+// is the last landmark before the shin goes flat, and it is the one that fixes
+// where the knee ENDS — without it the joint fades out into the calf.
+const LIGAMENT = { at: 1.0 + 34 * U_MM, half: 22 * U_MM, out: 2.6 * MM, wide: 0.19 };
+const TUBEROSITY = { at: 1.0 + 56 * U_MM, half: 15 * U_MM, out: 4.0 * MM, wide: 0.24 };
+
+// The femoral condyles and the head of the tibia beneath them — the pair of
+// masses the kneecap sits between. The inner one is the larger and sits LOWER,
+// the outer one is smaller and sits HIGHER: the same stagger as the malleoli,
+// the other way up. That asymmetry is what stops a knee reading as a swelling,
+// and it is exactly what a ring-symmetric table cannot produce. Both are carried
+// round onto the BACK of the joint, which is where the condyles are widest.
+const CONDYLE = {
+  med: { at: 1.0 + 14 * U_MM, half: 22 * U_MM, out: 6.6 * MM, back: 0.30 },
+  lat: { at: 1.0 - 2 * U_MM, half: 20 * U_MM, out: 4.6 * MM, back: 0.24 },
+};
+
+// The head of the fibula: outer side only, a good 30 mm below the joint line and
+// set well back from it. Nothing else explains the small hard corner below the
+// outside of the knee, and it is the landmark that tells the two sides apart at
+// a glance from behind.
+const FIBULA_HEAD = { at: 1.0 + 34 * U_MM, half: 13 * U_MM, out: 3.2 * MM, back: 0.55 };
+
+// The back of the knee. The table already pulls `post` in at the joint, but a
+// table can only cut a belt: the popliteal fossa is a diamond, with the
+// hamstring tendons — semitendinosus and gracilis inside, biceps femoris outside
+// — standing proud at its upper corners. The hollow alone reads as a dent; the
+// hollow with two cords above it reads as the back of a knee.
+const POPLITEAL = { at: 1.0 + 4 * U_MM, half: 26 * U_MM, in: 3.4 * MM, wide: 0.42 };
+const HAMSTRING = { at: 1.0 - 26 * U_MM, half: 22 * U_MM, out: 3.0 * MM, atCs: 0.52, csHalf: 0.17 };
+
+function patellaWarp(u, cs, sn, p, scale, anterior) {
   if (sn <= 0) return;                                   // front of the ring only
   let push = 0;
-  const cap = Math.exp(-(((u - PATELLA.at) / PATELLA.spread) ** 2));
+
+  const cap = bump(u - PATELLA.at, PATELLA.half, 2);
   if (cap > 0.02) {
-    const pad = Math.exp(-((cs / PATELLA.wide) ** 2));
-    const pit = Math.exp(-(((Math.abs(cs) - 0.64) / 0.17) ** 2));
-    push += cap * (PATELLA.out * pad - PATELLA.groove * pit);
+    // Triangular: `down` is 0 at the base and 1 at the apex, and narrows the
+    // plate on the way down.
+    const down = clamp01((u - PATELLA.at) / PATELLA.half);
+    push += cap * PATELLA.out * bump(cs, PATELLA.wide * (1 - PATELLA.taper * down), 2);
   }
-  const band = Math.exp(-(((u - LIGAMENT.at) / LIGAMENT.spread) ** 2));
-  if (band > 0.02) push += band * LIGAMENT.out * Math.exp(-((cs / LIGAMENT.wide) ** 2));
+  // The grooves run a little past the plate top and bottom, which is what gives
+  // the kneecap a top edge as well as sides.
+  const flank = bump(u - PATELLA.at, PATELLA.half * 1.25);
+  if (flank > 0.02) {
+    push -= flank * PARAPATELLAR.depth
+      * bump(Math.abs(cs) - PARAPATELLAR.at, PARAPATELLAR.half);
+  }
+
+  const band = bump(u - LIGAMENT.at, LIGAMENT.half);
+  if (band > 0.02) push += band * LIGAMENT.out * bump(cs, LIGAMENT.wide, 2);
+  const knob = bump(u - TUBEROSITY.at, TUBEROSITY.half, 2);
+  if (knob > 0.02) push += knob * TUBEROSITY.out * bump(cs, TUBEROSITY.wide, 2);
+
   // `sn ** 1.3` keeps all of it on the front and lets it die as the ring turns
-  // towards the condyles, which are already carried by the section.
+  // towards the condyles, which have warps of their own below.
   if (push !== 0) p.addScaledVector(anterior, push * scale * sn ** 1.3);
+}
+
+function condyleWarp(u, cs, sn, p, scale, side3) {
+  const bone = cs < 0 ? CONDYLE.med : CONDYLE.lat;       // cs < 0 is the inner side
+  const along = bump(u - bone.at, bone.half);
+  if (along < 0.02) return;
+  const round = Math.abs(cs) ** 1.4 * (1 - bone.back * sn);
+  p.addScaledVector(side3, Math.sign(cs) * bone.out * scale * along * round);
+}
+
+// Pulls the whole ring in, so unlike everything else here it moves the vertex
+// towards the sweep's centre rather than along one axis.
+function suprapatellarWarp(u, sn, p, scale, centre) {
+  if (!centre) return;
+  const along = bump(u - SUPRAPATELLAR.at, SUPRAPATELLAR.half);
+  if (along < 0.02) return;
+  const r = p.distanceTo(centre);
+  if (r < 1e-6) return;
+  const pull = SUPRAPATELLAR.in * scale * along
+    * (1 - SUPRAPATELLAR.tendon * Math.max(sn, 0));
+  p.lerp(centre, Math.min(pull / r, 1));
+}
+
+function fibulaWarp(u, cs, sn, p, scale, side3) {
+  if (cs <= 0) return;                                   // outer side only
+  const along = bump(u - FIBULA_HEAD.at, FIBULA_HEAD.half, 2);
+  if (along < 0.02) return;
+  const round = Math.abs(cs) ** 1.6 * (1 - FIBULA_HEAD.back * sn);
+  p.addScaledVector(side3, FIBULA_HEAD.out * scale * along * round);
+}
+
+function poplitealWarp(u, cs, sn, p, scale, anterior) {
+  if (sn >= 0) return;                                   // back of the ring only
+  const deep = Math.abs(sn) ** 1.2;
+  const fossa = bump(u - POPLITEAL.at, POPLITEAL.half);
+  // Forwards on the back of the ring is inwards, so a positive push digs.
+  if (fossa > 0.02) {
+    p.addScaledVector(anterior,
+      fossa * POPLITEAL.in * scale * bump(cs, POPLITEAL.wide, 2) * deep);
+  }
+  const cord = bump(u - HAMSTRING.at, HAMSTRING.half);
+  if (cord > 0.02) {
+    p.addScaledVector(anterior, -cord * HAMSTRING.out * scale
+      * bump(Math.abs(cs) - HAMSTRING.atCs, HAMSTRING.csHalf) * deep);
+  }
 }
 
 // The very top of the loft is not a measurement, it is a plug. It is inside the
@@ -544,7 +707,11 @@ function hipTuckWarp(u, p, scale, centre) {
 function legWarp(u, cs, sn, p, scale, side3, anterior, centre) {
   hipTuckWarp(u, p, scale, centre);
   vastusWarp(u, cs, sn, p, scale, side3);
-  patellaWarp(u, cs, sn, p, scale, side3, anterior);
+  suprapatellarWarp(u, sn, p, scale, centre);
+  patellaWarp(u, cs, sn, p, scale, anterior);
+  condyleWarp(u, cs, sn, p, scale, side3);
+  fibulaWarp(u, cs, sn, p, scale, side3);
+  poplitealWarp(u, cs, sn, p, scale, anterior);
   archWarp(u, cs, sn, p, scale);
   malleoliWarp(u, cs, sn, p, scale, side3);
   achillesWarp(u, cs, sn, p, scale, side3);
@@ -587,16 +754,21 @@ export function buildBareLegs(root, material) {
       scale: hip.distanceTo(ankle) / LEG_SPAN,
       // Tight through 1.80–2.35: the ankle bones and the hollows beside the
       // tendon are only a couple of centimetres across, and at the old 4 cm step
-      // each one got a ring and a half and came out as a facet. The knee band
-      // now starts at 0.80 rather than 0.72 and the calf band runs to 1.50, so
-      // the kneecap and both gastrocnemius heads get rings to sit on.
+      // each one got a ring and a half and came out as a facet.
+      //
+      // The joint band, 0.88–1.30, is tighter again — 8.5 mm rings. The kneecap
+      // is only 34 mm from base to apex, and the 21 mm rings it used to sit on
+      // gave it two: not enough to carry a plate WITH edges, which is the whole
+      // point of it. The grooves beside it are narrower still.
       rings: ringParams(0, LEG_END, u => u < 0.80 ? 0.090
-        : u < 1.50 ? 0.048 : u < 1.78 ? 0.070 : u < 2.35 ? 0.026 : u < 3.05 ? 0.045 : 0.030),
+        : u < 0.88 ? 0.040 : u < 1.30 ? 0.019 : u < 1.50 ? 0.044
+        : u < 1.78 ? 0.070 : u < 2.35 ? 0.026 : u < 3.05 ? 0.045 : 0.030),
       weights: legWeights(bone),
       lateral: Math.sign(hip.x) || 1,
       floorY: soleY,
       floorFrom: 2,
       warp: legWarp,
+      radial: LEG_RADIAL,
     }, out);
     buildToes({ out, bone, fwd, hip, flatBall, soleY, L });
   }
