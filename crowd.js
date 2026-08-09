@@ -131,6 +131,11 @@ function stripeTexture(light = '#cfe3c2', dark = '#2f6b34') {
 // same division of labour the player's own seated pose uses. Rotations are
 // applied to the BIND pose rather than added to the clip's, or the idle's own
 // stance comes through underneath and the knees drift apart over a few seconds.
+// The knee and the ankle are held in mutable state rather than read from the
+// constants: knee-to-sole on these characters is longer than a chair is high,
+// so a shin left hanging vertically puts the feet through the floor. Whoever
+// places the sitter measures its own seat and fits the leg to it — see
+// `fitSeatedLegs` in main-ZOO.js.
 const SEAT = { hip: 1.44, knee: -1.52, ankle: 0.12, spread: 0.09 };
 
 function seatedRig(group) {
@@ -151,18 +156,23 @@ function seatedRig(group) {
   }
   const e = new THREE.Euler();
   const q = new THREE.Quaternion();
-  return () => {
+  const apply = () => {
     for (const l of legs) {
       e.set(0, l.side * SEAT.spread, SEAT.hip, 'YXZ');
       l.thigh.quaternion.copy(l.rest.thigh).multiply(q.setFromEuler(e));
-      e.set(0, 0, SEAT.knee, 'YXZ');
+      e.set(0, 0, apply.state.knee, 'YXZ');
       l.calf.quaternion.copy(l.rest.calf).multiply(q.setFromEuler(e));
       if (l.foot) {
-        e.set(0, 0, SEAT.ankle, 'YXZ');
+        e.set(0, 0, apply.state.ankle, 'YXZ');
         l.foot.quaternion.copy(l.rest.foot).multiply(q.setFromEuler(e));
       }
     }
   };
+  // Straightening the knee swings the shin forward; the ankle turns back by as
+  // much so the sole stays flat on the floor instead of pointing at it.
+  apply.state = { knee: SEAT.knee, ankle: SEAT.ankle };
+  apply.rest = { knee: SEAT.knee, ankle: SEAT.ankle };
+  return apply;
 }
 
 /**
@@ -171,9 +181,12 @@ function seatedRig(group) {
  *
  * `uniform` forces the clothing instead of rolling it — the shops' staff all
  * wear the same thing, which is what makes them read as staff. `seated` swaps
- * the walk for an idle plus the pose above.
+ * the walk for an idle plus the pose above. `still` is for the people who are
+ * placed rather than routed — the standing shopkeepers — who were playing the
+ * walk on the spot and treading the same square metre for ever.
  */
-export function makeVisitor(base, walkClip, rng, { uniform = null, seated = false } = {}) {
+export function makeVisitor(base, walkClip, rng,
+  { uniform = null, seated = false, still = false, idleClip = null } = {}) {
   const group = cloneSkinned(base);
 
   // The player's own wardrobe alternates hang off the same graph. They came
@@ -281,17 +294,24 @@ export function makeVisitor(base, walkClip, rng, { uniform = null, seated = fals
   // The pack's walk carries its own forward travel on the pelvis. The path
   // decides where a visitor is, so that track goes: left in, they slide away
   // from the position they were placed at.
-  const clip = walkClip.clone();
+  // Someone standing at their door plays the idle if there is one: a walk held
+  // on one frame is a mid-stride pose, and a shopkeeper frozen with one foot
+  // forward reads as a mannequin rather than as a person waiting for custom.
+  const clip = (still && idleClip ? idleClip : walkClip).clone();
   clip.tracks = clip.tracks.filter(t => t.name !== 'pelvis.position');
   const action = mixer.clipAction(clip);
   action.timeScale = seated ? 0.0001 : 0.88 + rng() * 0.3;
-  action.time = rng() * clip.duration;
+  action.time = still ? 0 : rng() * clip.duration;
   action.play();
+  // Paused rather than removed: the mixer still writes the first frame every
+  // update, so the pose holds instead of falling back to the bind stance.
+  if (still) action.paused = true;
   const pose = seated ? seatedRig(group) : null;
 
   // Stride length scales with leg length, so the tallest visitors cover ground
   // fastest — otherwise the short ones look like they are running on the spot.
-  return { group, mixer, pose, height, speed: 1.05 * height * action.timeScale };
+  return { group, mixer, pose, height,
+    speed: still ? 0 : 1.05 * height * action.timeScale };
 }
 
 /** How many distinct looks the variation above can produce, for the record. */

@@ -6,8 +6,8 @@ import { Controller } from './controller.js?v=5';
 import { CameraRig } from './cameraRig.js?v=4';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar } from './cars.js?v=4';
-import { makeVisitor, loadVisitorBase, STAFF_UNIFORM } from './crowd.js?v=7';
-import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=1';
+import { makeVisitor, loadVisitorBase, STAFF_UNIFORM } from './crowd.js?v=9';
+import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=2';
 
 // ---------------------------------------------------------------------------
 // A Trip to the Zoo — a small regional park, laid out the way zoo master plans
@@ -341,9 +341,33 @@ const M = {
   brass: new THREE.MeshStandardMaterial({ color: 0xb08a3c, roughness: 0.38, metalness: 0.7 }),
   fabricRed: new THREE.MeshStandardMaterial({ color: 0xb64a3a, roughness: 0.92 }),
   fabricCream: new THREE.MeshStandardMaterial({ color: 0xe8dcc2, roughness: 0.92 }),
-  plushPink: new THREE.MeshStandardMaterial({ color: 0xd98aa6, roughness: 0.95 }),
-  plushBlue: new THREE.MeshStandardMaterial({ color: 0x6f9fd0, roughness: 0.95 }),
-  plushYellow: new THREE.MeshStandardMaterial({ color: 0xe8c15e, roughness: 0.95 }),
+  // Toy fur. Fully rough and slightly desaturated: a plush toy has no highlight
+  // on it at all, and the first pass read as painted balls partly because it did.
+  plushPink: new THREE.MeshStandardMaterial({ color: 0xc98a94, roughness: 1.0 }),
+  plushBlue: new THREE.MeshStandardMaterial({ color: 0x7898b4, roughness: 1.0 }),
+  plushYellow: new THREE.MeshStandardMaterial({ color: 0xd0a962, roughness: 1.0 }),
+  plushBrown: new THREE.MeshStandardMaterial({ color: 0x9a6f4a, roughness: 1.0 }),
+  // Muzzle, inner ears and paw pads, then the eyes and the nose. The pale patch
+  // is what makes a bear a bear rather than a snowman: it is where the face is.
+  plushCream: new THREE.MeshStandardMaterial({ color: 0xe6d6bb, roughness: 1.0 }),
+  plushDark: new THREE.MeshStandardMaterial({ color: 0x261d18, roughness: 0.55 }),
+  // Shop fittings. The shades and the bulbs carry their own emission so a lamp
+  // still looks lit from outside the one point light's reach — three shops, one
+  // light each, and the pendants either side of it read off these instead.
+  lampShade: new THREE.MeshStandardMaterial({
+    color: 0xe9d7b4, emissive: 0xffcf8e, emissiveIntensity: 0.35, roughness: 0.8,
+    side: THREE.DoubleSide,
+  }),
+  lampGlow: new THREE.MeshStandardMaterial({
+    color: 0xfff2d4, emissive: 0xffdca4, emissiveIntensity: 1.6, roughness: 0.6,
+  }),
+  // Slate, not a hole in the wall: pure black in an unlit corner is the mistake
+  // the vivarium glass made, and a board reads as slate mainly by being paler
+  // than the shadow it hangs in.
+  chalkboard: new THREE.MeshStandardMaterial({ color: 0x37453d, roughness: 0.9 }),
+  ceramic: new THREE.MeshStandardMaterial({ color: 0xece7de, roughness: 0.38 }),
+  rug: new THREE.MeshStandardMaterial({ color: 0x8d4a3c, roughness: 0.96 }),
+  poster: new THREE.MeshStandardMaterial({ color: 0xdfd3b6, roughness: 0.9 }),
   collider: new THREE.MeshBasicMaterial({ visible: false }),
 };
 
@@ -441,6 +465,17 @@ function shape(geo, mat, x, y, z, sx, sy, sz, rot = {}) {
     sx, sy, sz, ry: FR + (rot.ry || 0), rx: rot.rx || 0, rz: rot.rz || 0,
   });
 }
+// A real light, placed in the frame's coordinates like everything else. Only
+// the three shop interiors get one: they are closed boxes the sun cannot reach,
+// and the hemisphere alone leaves them the brown gloom they were.
+function roomLight(x, y, z, intensity, distance) {
+  const c = Math.cos(FR), s = Math.sin(FR);
+  const l = new THREE.PointLight(0xffd9a8, intensity, distance, 2);
+  l.position.set(FX + x * c + z * s, y, FZ - x * s + z * c);
+  world.add(l);
+  return l;
+}
+
 // A pitched roof over a w x d footprint, sitting on eaves at `eaves`. The yaw
 // turns the prism's ridge onto the building's long axis, and the y offset puts
 // the eaves where they were asked for rather than the prism's own centre.
@@ -493,6 +528,8 @@ function slab(mat, x0, x1, z0, z1, y0, y1) {
 // the fence.
 // ---------------------------------------------------------------------------
 const PATH_Y = 0.09;          // the dirt is a shallow slab, not a decal
+const PLAZA_Y = 0.08;         // the hub's paving, likewise
+const CHAIR_SEAT = 0.47;      // top of a chair's seat above whatever it stands on
 const PARK_HALF = 122;        // flat inside this half-extent about PARK_MID
 const PARK_MID = -46;
 const GATE_Z = -3;            // the turnstile line
@@ -688,26 +725,34 @@ function lampPost(x, z, h = 4.6) {
     shape(G.box, M.signPale, x, h + 0.28, z, 0.42, 0.2, 0.42);
   });
 }
-function bin(x, z, ry = 0) {
+function bin(x, z, ry = 0, y0 = PATH_Y) {
   prop(() => {
     frame(x, z, ry, () => {
-      shape(G.cylBase, M.timberDark, 0, 0, 0, 0.62, 0.9, 0.62);
-      shape(G.cylBase, M.steelDark, 0, 0.9, 0, 0.66, 0.09, 0.66);
+      shape(G.cylBase, M.timberDark, 0, y0, 0, 0.62, 0.9, 0.62);
+      shape(G.cylBase, M.steelDark, 0, y0 + 0.9, 0, 0.66, 0.09, 0.66);
     });
   });
 }
 // A park bench you can actually sit on — the seat is registered with the
-// interaction table so it behaves like the villa's armchairs.
-function bench(x, z, ry) {
+// interaction table so it behaves like the villa's armchairs. `y0` is the
+// surface it stands on: the path slab for most of them, the hub's paving for
+// the four on the plaza. Built from the buildings' datum instead, the frame
+// sank 9 cm and took the seat down with it, and a seat that low is what sent
+// the sitter's thighs up — see the floor the interaction is given below.
+function bench(x, z, ry, y0 = PATH_Y) {
   prop(() => {
     frame(x, z, ry, () => {
-      furnitureInteraction('sit', 0.9, 0.42, 0, 0.47);
+      furnitureInteraction('sit', 0.9, 0.42, 0, y0 + 0.47, y0);
       for (const sx of [-0.78, 0.78]) {
-        box(M.steelDark, sx, 0.21, 0.02, 0.09, 0.42, 0.62);
-        box(M.steelDark, sx, 0.62, -0.24, 0.08, 0.5, 0.1);
+        box(M.steelDark, sx, y0 + 0.21, 0.02, 0.09, 0.42, 0.62);
+        box(M.steelDark, sx, y0 + 0.62, -0.24, 0.08, 0.5, 0.1);
       }
-      for (let i = 0; i < 4; i++) box(M.timber, 0, 0.45, -0.24 + i * 0.16, 1.9, 0.06, 0.13);
-      for (let i = 0; i < 3; i++) box(M.timber, 0, 0.62 + i * 0.16, -0.28, 1.9, 0.13, 0.06);
+      for (let i = 0; i < 4; i++) {
+        box(M.timber, 0, y0 + 0.45, -0.24 + i * 0.16, 1.9, 0.06, 0.13);
+      }
+      for (let i = 0; i < 3; i++) {
+        box(M.timber, 0, y0 + 0.62 + i * 0.16, -0.28, 1.9, 0.13, 0.06);
+      }
     });
   });
 }
@@ -738,7 +783,10 @@ function fingerPost(x, z, arms) {
 // ---------------------------------------------------------------------------
 
 // Post-and-rail: the stand-off that keeps visitors a metre back from the real
-// barrier. It is not what holds the animal.
+// barrier. It is not what holds the animal — but it is read as if it were, so
+// each run goes the full length of its viewing face. Stopping three or four
+// metres short of the corner, which is what these did, leaves a rail ending in
+// mid-air beside an enclosure that is perfectly well closed behind it.
 function railRun(x0, z0, x1, z1, { h = 1.1, step = 2.3 } = {}) {
   const dx = x1 - x0, dz = z1 - z0;
   const len = Math.hypot(dx, dz);
@@ -891,28 +939,122 @@ function chalet(w, d, { h = 3.5, roof = M.shingle, windows = 3, doorW = 1.8,
 
 // What you see once you are inside. Kept to the back of the room so the doorway
 // stays clear, and flagged as prop so none of it is mistaken for floor.
-function shopInterior({ hw, hd }, kind) {
-  const F = 0.5;
+//
+// A counter, three bare shelves and nothing else was a stockroom with a till in
+// it — you walk in, there is no light, no floor, nothing on the walls and
+// nothing overhead, and you walk straight back out. What a real shop interior
+// carries, and what is built below: light of its own, something underfoot,
+// something at eye level on the side walls, and greenery in the dead corners.
+function shopInterior({ hw, hd, top }, kind) {
+  const F = 0.5;                    // floorboard top
+  const back = hd - 0.35;           // the shelving wall
+  const T = i => F + 0.635 + i * 0.62;             // top of shelf i
+  const ceiling = (top ?? F + 3.0) - 0.16;
+  // The rug is FLOOR, and it is emitted out here on purpose, where the
+  // floorboards are: a prop AABB is solid at whatever height it sits at,
+  // because the step-up shortcut that lets you walk onto a low box is skipped
+  // for props. Flagged as one, four centimetres of rug is a wall across the
+  // room — which is what shut all three shops.
+  box(M.rug, 0, F + 0.02, -hd * 0.3, hw * 1.1, 0.04, hd * 0.85);
   prop(() => {
     box(M.timber, 0, F + 0.5, hd - 1.4, hw * 1.5, 1.0, 0.7);          // counter
     box(M.timberPale, 0, F + 1.02, hd - 1.4, hw * 1.5 + 0.1, 0.06, 0.8);
     for (let i = 0; i < 3; i++) {                                     // back shelves
-      box(M.plank, 0, F + 0.6 + i * 0.62, hd - 0.35, hw * 1.7, 0.07, 0.5);
+      box(M.plank, 0, F + 0.6 + i * 0.62, back, hw * 1.7, 0.07, 0.5);
     }
+
+    // Pendant lamps on cords, and one point light between them doing the work
+    // of all three. The shades are emissive, so they still read as lit from the
+    // far corner where the light itself has fallen off.
+    const lamps = hw > 4.5 ? 3 : 1;
+    // Clamped to the room: the kiosk's walls are 2.6 m and a pendant hung at
+    // the chalets' height puts its cord through its own ceiling. The rim also
+    // has to stay over head height (floor + 1.7), or the lamp is a prop you
+    // walk into in the middle of your own shop.
+    const shadeY = Math.min(F + 2.1, ceiling - 0.4);
+    const cord = ceiling - shadeY - 0.34;
+    for (let i = 0; i < lamps; i++) {
+      const lx = lamps === 1 ? 0 : (i - 1) * hw * 0.6;
+      if (cord > 0.05) {
+        box(M.steelDark, lx, ceiling - cord / 2, -hd * 0.15, 0.05, cord, 0.05);
+      }
+      shape(G.cone, M.lampShade, lx, shadeY, -hd * 0.15, 0.62, 0.34, 0.62);
+      shape(G.sphere, M.lampGlow, lx, shadeY + 0.1, -hd * 0.15, 0.17, 0.17, 0.17);
+    }
+    roomLight(0, shadeY + 0.25, -hd * 0.1, 7 + hw * 1.2, hw * 3.4);
+
+    // Greenery in the two corners the counter leaves empty — that, and the rug
+    // above, are what stop a room reading as unfinished.
+    for (const sx of [-1, 1]) {
+      const px = sx * (hw - 0.75);
+      shape(G.cylBase, M.rockWarm, px, F, -hd + 1.0, 0.58, 0.52, 0.58);
+      shape(G.blob, M.foliage, px, F + 0.6, -hd + 1.0, 0.95, 1.0, 0.95);
+      shape(G.blob, M.foliageDark, px, F + 1.0, -hd + 1.0, 0.7, 0.66, 0.7);
+    }
+    // Framed prints on the side walls, at the height a picture is actually
+    // hung. The log courses stop 15 cm inside the half-width.
+    for (const sx of [-1, 1]) {
+      for (let i = 0; i < 2; i++) {
+        const pz = -hd * 0.5 + i * hd * 0.72;
+        box(M.timberDark, sx * (hw - 0.19), F + 1.6, pz, 0.05, 0.78, 1.0);
+        box(M.poster, sx * (hw - 0.23), F + 1.6, pz, 0.03, 0.6, 0.82);
+        shape(G.blob, M.foliageDark, sx * (hw - 0.26), F + 1.5, pz, 0.02, 0.34, 0.46);
+      }
+    }
+
     if (kind === 'shop') {
-      const plush = [M.plushPink, M.plushBlue, M.plushYellow];
-      for (let i = 0; i < 12; i++) {
-        const px = -hw * 0.75 + (i % 6) * (hw * 0.3);
-        const py = F + 0.78 + Math.floor(i / 6) * 0.62;
-        shape(G.sphere, plush[i % 3], px, py, hd - 0.35, 0.3, 0.3, 0.26);
-        shape(G.sphere, plush[i % 3], px, py + 0.26, hd - 0.35, 0.22, 0.22, 0.2);
+      // The stock, sitting on all three back shelves and facing the door. Six
+      // spread over eleven metres of shelving read as a shop being emptied.
+      for (let i = 0; i < 24; i++) {
+        const row = Math.floor(i / 8), col = i % 8;
+        plushBear(-hw * 0.77 + col * (hw * 0.22), back, T(row), 0.34,
+          BEAR_FURS[(col + row) % BEAR_FURS.length], ((col % 3) - 1) * 0.2);
+      }
+      // Till, a spinner of postcards by the door, and bunting overhead.
+      box(M.steelDark, -hw * 0.5, F + 1.13, hd - 1.55, 0.42, 0.16, 0.34);
+      box(M.ceramic, -hw * 0.5, F + 1.26, hd - 1.62, 0.36, 0.12, 0.2, 0.4);
+      shape(G.post, M.steelDark, hw * 0.62, F, -hd * 0.55, 0.09, 1.5, 0.09);
+      for (let i = 0; i < 3; i++) {
+        box(M.poster, hw * 0.62, F + 1.15, -hd * 0.55, 0.5, 0.62, 0.04,
+          i * (Math.PI / 3));
+      }
+      // Bunting: a cord across the room with pennants hanging off it. Flat
+      // squares stuck to the ceiling was the first pass, and they read as
+      // sticky notes.
+      const cordY = ceiling - 0.22;
+      box(M.timberDark, 0, cordY, -hd * 0.55, hw * 1.9, 0.03, 0.03);
+      for (let i = 0; i < 11; i++) {
+        shape(G.cone, BEAR_FURS[i % BEAR_FURS.length],
+          -hw * 0.85 + i * (hw * 0.17), cordY, -hd * 0.55, 0.26, 0.3, 0.04,
+          { rx: Math.PI });
       }
     } else {
       for (let i = 0; i < 8; i++) {                                   // stock
         box(i % 2 ? M.fabricCream : M.fabricRed,
-          -hw * 0.7 + i * (hw * 0.2), F + 0.76, hd - 0.35, 0.28, 0.26, 0.3);
+          -hw * 0.7 + i * (hw * 0.2), F + 0.76, back, 0.28, 0.26, 0.3);
       }
       box(M.steel, hw * 0.55, F + 0.6, hd - 1.4, 0.9, 1.2, 0.6);      // coffee machine
+      // Menu board over the shelves, cups and jars on them, and a cake under a
+      // dome on the counter — a cafe is its menu and its crockery. The board
+      // only goes up where there is wall left above the shelving: in the kiosk
+      // there are 50 cm between the top shelf and the ceiling, and it would sit
+      // across both.
+      if (ceiling - T(2) > 0.9) {
+        const boardY = T(2) + 0.55;
+        box(M.chalkboard, -hw * 0.35, boardY, back + 0.12, hw * 0.9, 0.86, 0.06);
+        for (let i = 0; i < 5; i++) {
+          box(M.signPale, -hw * 0.47, boardY + 0.28 - i * 0.15, back + 0.08,
+            hw * 0.4 - i * 0.06, 0.028, 0.02);
+        }
+      }
+      for (let i = 0; i < 9; i++) {
+        const px = -hw * 0.8 + i * (hw * 0.2);
+        shape(G.cyl, M.ceramic, px, T(1) + 0.09, back, 0.17, 0.18, 0.17);
+        if (i % 2) shape(G.cyl, M.brass, px + 0.24, T(2) + 0.13, back, 0.15, 0.26, 0.15);
+      }
+      shape(G.cylBase, M.timberPale, -hw * 0.62, F + 1.05, hd - 1.4, 0.62, 0.06, 0.62);
+      shape(G.sphere, M.vivGlass, -hw * 0.62, F + 1.11, hd - 1.4, 0.6, 0.66, 0.6);
+      shape(G.cyl, M.fabricCream, -hw * 0.62, F + 1.2, hd - 1.4, 0.36, 0.18, 0.36);
     }
   });
 }
@@ -988,7 +1130,7 @@ function entryGates() {
 // vivaria lit behind glass in its front wall — the barrier IS the exhibit here.
 function farmBarn(x, z, ry) {
   frame(x, z, ry, () => {
-    const w = 22, d = 12, H = 4.2;
+    const { w, d } = BARN, H = 4.2;
     const F = -d / 2;               // the front plane, facing the path
     const T = 0.5;                  // wall thickness
     // Openings in the front wall: four vivaria and the door between them. The
@@ -1051,9 +1193,66 @@ function farmBarn(x, z, ry) {
   });
 }
 
+// A teddy bear, sitting. What the shop had before was a big sphere with a small
+// sphere on it and two smaller ones for ears, which reads as a snowman: the
+// things that say BEAR at two metres are the pale muzzle patch, ears standing
+// off the side of the head rather than on top of it, and stubby legs out in
+// front. Sixteen ellipsoids, all off the one instanced sphere.
+//
+// (x, z) is where it sits, `base` the surface under it, `s` its sitting height
+// in metres, and everything below is written in units of `s` with the face
+// looking down local -Z.
+const BEAR_FURS = [M.plushBrown, M.plushPink, M.plushBlue, M.plushYellow];
+function plushBear(x, z, base, s, fur, ry = 0) {
+  frame(x, z, ry, () => {
+    const at = (mat, px, py, pz, dx, dy, dz, rot) =>
+      shape(G.sphere, mat, px * s, base + py * s, pz * s, dx * s, dy * s, dz * s, rot);
+    at(fur, 0, 0.29, 0.02, 0.56, 0.52, 0.50);                     // belly
+    at(fur, 0, 0.52, -0.02, 0.46, 0.38, 0.42);                    // chest
+    at(M.plushCream, 0, 0.33, -0.21, 0.30, 0.30, 0.16);           // tummy patch
+    at(fur, 0, 0.76, 0, 0.46, 0.44, 0.44);                        // head
+    at(M.plushCream, 0, 0.71, -0.18, 0.25, 0.20, 0.20);           // muzzle
+    at(M.plushDark, 0, 0.74, -0.28, 0.09, 0.07, 0.07);            // nose
+    for (const sx of [-1, 1]) {
+      at(M.plushDark, sx * 0.10, 0.82, -0.19, 0.06, 0.06, 0.06);  // eye
+      at(fur, sx * 0.19, 0.94, 0.01, 0.20, 0.20, 0.11);           // ear
+      at(M.plushCream, sx * 0.19, 0.94, -0.04, 0.11, 0.11, 0.07);
+      // Arms off the shoulder, angled out at the wrist: a seam-sewn toy arm
+      // hangs at about 25 degrees, and straight down looks like a doll.
+      at(fur, sx * 0.27, 0.46, -0.06, 0.18, 0.34, 0.20, { rz: sx * 0.42 });
+      at(M.plushCream, sx * 0.31, 0.30, -0.10, 0.15, 0.14, 0.15); // paw
+      at(fur, sx * 0.15, 0.14, -0.20, 0.26, 0.24, 0.44);          // leg
+      at(fur, sx * 0.15, 0.13, -0.40, 0.23, 0.22, 0.17);          // foot
+      at(M.plushCream, sx * 0.15, 0.13, -0.47, 0.15, 0.15, 0.06); // sole pad
+    }
+  });
+}
+
+// The stand they sit on: plinth, two ends, a backboard and two shelves. One
+// either side of the shop door — the row this replaces was spread evenly across
+// the whole shop front, which parked three bears squarely in the doorway.
+function plushStand(x, z, ry, seed = 0) {
+  prop(() => {
+    frame(x, z, ry, () => {
+      const Y = PLAZA_Y;
+      box(M.timberDark, 0, Y + 0.05, 0, 1.7, 0.1, 0.66);          // plinth
+      for (const sx of [-0.81, 0.81]) box(M.timber, sx, Y + 0.62, 0, 0.07, 1.15, 0.6);
+      box(M.timber, 0, Y + 0.62, 0.29, 1.7, 1.15, 0.05);          // backboard
+      for (let sh = 0; sh < 2; sh++) {
+        const top = Y + 0.5 + sh * 0.56;
+        box(M.timberPale, 0, top - 0.03, 0, 1.66, 0.06, 0.6);     // shelf
+        for (let i = 0; i < 3; i++) {
+          plushBear(-0.54 + i * 0.54, -0.04, top, 0.4,
+            BEAR_FURS[(seed + i + sh * 3) % BEAR_FURS.length], (i - 1) * 0.24);
+        }
+      }
+    });
+  });
+}
+
 // The guest-services hub in the middle of the loop: restaurant, terrace, shop.
 function hubPlaza() {
-  slab(M.plaza, -26, 26, -64, -36, 0, 0.08);
+  slab(M.plaza, -26, 26, -64, -36, 0, PLAZA_Y);
   // Restaurant chalet, its terrace facing the south spur so you see it on the
   // way in rather than on the way out.
   frame(-12.5, -52, Math.PI, () => {
@@ -1074,26 +1273,12 @@ function hubPlaza() {
       interior: b => shopInterior(b, 'shop') });
     box(M.signBoard, 0, 5.05, -4.7, 6.2, 0.95, 0.22);
     box(M.signPale, 0, 5.05, -4.86, 5.5, 0.55, 0.1);
-    // Window display, on the shelves behind the front glazing.
-    prop(() => {
-      const plush = [M.plushPink, M.plushBlue, M.plushYellow];
-      for (let i = 0; i < 9; i++) {
-        const px = -4.4 + (i % 3) * 0.55 + Math.floor(i / 3) * 3.6;
-        const mat = plush[i % 3];
-        shape(G.sphere, mat, px, 1.62, -4.62, 0.34, 0.34, 0.3);
-        shape(G.sphere, mat, px, 1.94, -4.62, 0.26, 0.26, 0.24);
-        shape(G.sphere, mat, px - 0.12, 2.08, -4.62, 0.12, 0.12, 0.1);
-        shape(G.sphere, mat, px + 0.12, 2.08, -4.62, 0.12, 0.12, 0.1);
-      }
-    });
-    // A rack of them outside the door, under the eaves.
-    prop(() => {
-      box(M.timber, 3.6, 0.5, -5.6, 2.2, 1.0, 0.7);
-      for (let i = 0; i < 4; i++) {
-        shape(G.sphere, i % 2 ? M.plushYellow : M.plushPink, 2.8 + i * 0.52, 1.2, -5.6,
-          0.36, 0.36, 0.32);
-      }
-    });
+    // Two display stands under the eaves, one either side of the door. Each
+    // stops 1.2 m short of the jamb, which leaves the doorway and its approach
+    // open from the plaza to the threshold — and room beside the right-hand one
+    // for the keeper's chair.
+    plushStand(-3.45, -5.2, 0, 0);
+    plushStand(3.45, -5.2, 0, 2);
   });
   // Kiosk, benches and shade between the two chalets.
   frame(1, -60, Math.PI, () => {
@@ -1105,40 +1290,41 @@ function hubPlaza() {
     box(M.timberDark, 2.0, 2.5, -2.5, 2.6, 0.5, 0.7);
   });
   for (const [bx, bz, br] of [[-3, -41, 0], [5, -41, 0], [-22, -46, 1.3], [21, -60, -1.9]]) {
-    bench(bx, bz, br);
+    bench(bx, bz, br, PLAZA_Y);
   }
   plainChair(9.6, -45.4, -0.22);        // the gift shop keeper sits outside
-  bin(-6.5, -41.5, 0);
-  bin(8.5, -41.5, 0);
+  bin(-6.5, -41.5, 0, PLAZA_Y);
+  bin(8.5, -41.5, 0, PLAZA_Y);
   for (const [tx, tz] of [[-24, -62], [23, -63], [-25, -38], [24, -40]]) shadeTree(tx, tz, 1.05);
   fingerPost(4.6, -38.5, [0.5, 2.2, 3.8]);
+}
+
+// One chair, drawn from the floor it stands on. `y0` is that floor: everything
+// in the hub sits on the paving slab, and a chair built from the buildings'
+// datum instead has its legs 8 cm into the stone.
+function chairBody(y0) {
+  box(M.timber, 0, y0 + CHAIR_SEAT - 0.03, 0, 0.5, 0.06, 0.5);
+  box(M.timber, 0, y0 + 0.7, -0.22, 0.5, 0.48, 0.06);
+  for (const [lx, lz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) {
+    shape(G.post, M.timberDark, lx, y0, lz, 0.06, CHAIR_SEAT - 0.03, 0.06);
+  }
 }
 
 // A chair on its own, for the shopkeeper who sits outside his door.
 function plainChair(x, z, ry) {
   prop(() => {
-    frame(x, z, ry, () => {
-      box(M.timber, 0, 0.44, 0, 0.5, 0.06, 0.5);
-      box(M.timber, 0, 0.7, -0.22, 0.5, 0.48, 0.06);
-      for (const [lx, lz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) {
-        shape(G.post, M.timberDark, lx, 0, lz, 0.06, 0.44, 0.06);
-      }
-    });
+    frame(x, z, ry, () => chairBody(PLAZA_Y));
   });
 }
 function terraceTable(x, z) {
   prop(() => {
     frame(x, z, 0, () => {
-      shape(G.post, M.steelDark, 0, 0, 0, 0.12, 0.72, 0.12);
-      shape(G.cylBase, M.timberPale, 0, 0.72, 0, 1.5, 0.08, 1.5);
+      shape(G.post, M.steelDark, 0, PLAZA_Y, 0, 0.12, 0.72, 0.12);
+      shape(G.cylBase, M.timberPale, 0, PLAZA_Y + 0.72, 0, 1.5, 0.08, 1.5);
       for (const [cx, cz, cr] of [[-1.0, 0, 1.57], [1.0, 0, -1.57]]) {
         frame(cx, cz, cr, () => {
-          furnitureInteraction('sit', 0.4, 0.4, 0, 0.46);
-          box(M.timber, 0, 0.44, 0, 0.5, 0.06, 0.5);
-          box(M.timber, 0, 0.7, -0.22, 0.5, 0.48, 0.06);
-          for (const [lx, lz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) {
-            shape(G.post, M.timberDark, lx, 0, lz, 0.06, 0.44, 0.06);
-          }
+          furnitureInteraction('sit', 0.4, 0.4, 0, PLAZA_Y + CHAIR_SEAT - 0.01, PLAZA_Y);
+          chairBody(PLAZA_Y);
         });
       }
     });
@@ -1161,7 +1347,9 @@ function wolfExhibit() {
   // The loop only runs down the east side, so that is the only edge that gets
   // glass. The other three are back-of-house: a solid wall with nothing to see
   // over it, which is also what stops you looking straight through the park.
-  glassBarrier(x1, z0 + 2, x1, z1 - 2, { plinth: 0.9, glass: 3.2 });
+  // Corner to corner, not inset: two metres short at each end is a two-metre
+  // hole a wolf walks through, and it is the first thing you see from the path.
+  glassBarrier(x1, z0, x1, z1, { plinth: 0.9, glass: 3.2 });
   slab(M.stone, x0, x0 + 0.7, z0, z1, 0, 4.2);
   slab(M.stone, x0, x1, z0, z0 + 0.7, 0, 4.2);
   slab(M.stone, x0, x1, z1 - 0.7, z1, 0, 4.2);
@@ -1176,7 +1364,7 @@ function wolfExhibit() {
     }
   });
   for (let i = 0; i < 5; i++) shadeTree(x0 + 4 + i * 3, z0 + 4 + (i % 3) * 5, 0.8, M.foliageDark);
-  railRun(x1 + 1.8, z0 + 4, x1 + 1.8, z1 - 4, {});
+  railRun(x1 + 1.8, z0, x1 + 1.8, z1, {});
   exhibitSign(x1 + 2.9, -70, Math.PI / 2);
   exhibitSign(x1 + 2.9, -82, Math.PI / 2);
   bench(x1 + 3.9, -76, -Math.PI / 2);
@@ -1187,7 +1375,7 @@ const DEER = { x0: -30, x1: 26, z0: -124, z1: -98 };
 function deerPaddock() {
   const { x0, x1, z0, z1 } = DEER;
   slab(M.lawn, x0, x1, z0, z1, 0, 0.04);
-  stockFence(x0 + 2, z1, x1 - 2, z1, { h: 2.5, rails: 4 });   // deer jump
+  stockFence(x0, z1, x1, z1, { h: 2.5, rails: 4 });   // deer jump
   slab(M.stone, x0, x0 + 0.7, z0, z1, 0, 4.4);
   slab(M.stone, x1 - 0.7, x1, z0, z1, 0, 4.4);
   slab(M.stone, x0, x1, z0, z0 + 0.7, 0, 4.4);
@@ -1209,7 +1397,7 @@ function deerPaddock() {
     shape(G.post, M.barkDark, 11, 0.2, -114, 0.45, 5.2, 0.45, { rz: -0.9, ry: -0.6 });
   });
   for (const [tx, tz] of [[-26, -121], [21, -120], [-25, -104], [22, -105]]) pine(tx, tz, 1.15);
-  railRun(x0 + 4, z1 + 1.9, x1 - 4, z1 + 1.9, {});
+  railRun(x0, z1 + 1.9, x1, z1 + 1.9, {});
   exhibitSign(-9, z1 + 3.0, 0);
   exhibitSign(9, z1 + 3.0, 0);
   bench(-18, z1 + 3.8, Math.PI);
@@ -1247,7 +1435,7 @@ function foxEnclosure() {
     }
   });
   for (const [tx, tz] of [[66, -62], [91, -62], [66, -83], [91, -83]]) shrub(tx, tz, 1.3);
-  railRun(x0 - 1.9, z0 + 4, x0 - 1.9, z1 - 4, {});
+  railRun(x0 - 1.9, z0, x0 - 1.9, z1, {});
   exhibitSign(x0 - 3.0, -68, -Math.PI / 2);
   exhibitSign(x0 - 3.0, -78, -Math.PI / 2);
   bench(x0 - 3.9, -73, Math.PI / 2);
@@ -1257,6 +1445,10 @@ function foxEnclosure() {
 // and hung with perches at eye level so the birds are actually visible.
 const ALPACA = { x0: 64, x1: 94, z0: -52, z1: -24 };
 const FARM = { x0: -74, x1: -62, z0: -46, z1: -22 };
+// The reptile house stands a quarter turn round, so its 22 m front runs along
+// z and forms the farmyard's west side. The footprint is shared with the fence
+// that closes the yard either side of it.
+const BARN = { x: -80, z: -34, w: 22, d: 12 };
 function alpacaPaddock() {
   const { x0, x1, z0, z1 } = ALPACA;
   slab(M.lawn, x0, x1, z0, z1, 0, 0.04);
@@ -1285,7 +1477,7 @@ function alpacaPaddock() {
   }
   for (const [sx, sz] of [[68, -28], [90, -48], [76, -50]]) shrub(sx, sz, 1.0);
   for (const [tx, tz] of [[68, -50], [91, -50], [68, -27], [91, -27]]) birch(tx, tz, 1.0);
-  railRun(x0 - 1.9, z0 + 3, x0 - 1.9, z1 - 3, {});
+  railRun(x0 - 1.9, z0, x0 - 1.9, z1, {});
   exhibitSign(x0 - 3.0, -33, -Math.PI / 2);
   exhibitSign(x0 - 3.0, -44, -Math.PI / 2);
   bench(x0 - 3.9, -38, Math.PI / 2);
@@ -1304,28 +1496,39 @@ function alpacaPaddock() {
 // farmyard.
 const animals = [];
 const HERDS = [
-  // species, enclosure rect, how many, and how tightly they group
-  ['wolf', WOLF, 4, 0.55],
-  ['deer', DEER, 6, 0.62],
-  ['alpaca', ALPACA, 5, 0.5],
-  ['fox', FOX, 4, 0.45],
-  ['shiba', FARM, 3, 0.42],
+  // species, enclosure rect, how many, how tightly they group, and how many of
+  // the count are young. A paddock of identically sized adults is the other
+  // half of why these read wrong beside a person — there is nothing in it to
+  // give the scale away, and one calf at two thirds the height does.
+  ['wolf', WOLF, 4, 0.55, 1],
+  ['deer', DEER, 6, 0.62, 2],
+  ['alpaca', ALPACA, 5, 0.5, 1],
+  ['fox', FOX, 4, 0.45, 1],
+  ['shiba', FARM, 3, 0.42, 0],
 ];
 
 async function populate(rng) {
   const loaded = await loadSpecies(Object.keys(SPECIES));
-  for (const [name, rect, count, spread] of HERDS) {
+  for (const [name, rect, count, spread, young = 0] of HERDS) {
     const species = loaded[name];
     if (!species) continue;
     const cx = (rect.x0 + rect.x1) / 2, cz = (rect.z0 + rect.z1) / 2;
     const rx = (rect.x1 - rect.x0) / 2 - 5, rz = (rect.z1 - rect.z0) / 2 - 5;
+    let last = null;
     for (let i = 0; i < count; i++) {
       // Scattered rather than gridded, and kept off the barrier line so nothing
-      // ever stands with half of itself through the fence.
-      const x = cx + (rng() * 2 - 1) * rx * spread * 2;
-      const z = cz + (rng() * 2 - 1) * rz * spread * 2;
+      // ever stands with half of itself through the fence. The young of the
+      // herd come last and stay within a couple of metres of the adult in
+      // front of them, because that is where a calf is.
+      const calf = i >= count - young;
+      const x = calf && last ? last.x + (rng() * 2 - 1) * 2.2
+        : cx + (rng() * 2 - 1) * rx * spread * 2;
+      const z = calf && last ? last.z + (rng() * 2 - 1) * 2.2
+        : cz + (rng() * 2 - 1) * rz * spread * 2;
+      last = { x, z };
       const a = placeAnimal(species, {
         x, y: terrainHeight(x, z), z, ry: rng() * Math.PI * 2, rng,
+        size: calf ? 0.62 + rng() * 0.1 : 1,
       });
       if (!a) continue;
       fauna.add(a.group);
@@ -1386,11 +1589,90 @@ const CUSTOMERS = [
   [-4.7, -43.2, 4.712], [-10.1, -43.2, 1.571],
   [-14.9, -43.2, 4.712], [-20.3, -43.2, 1.571],
 ];
-const SEAT_TOP = 0.47;
+// Both the chairs and the people on them stand on the paving, not on the datum
+// the buildings are drawn from — the slab is 8 cm proud of it.
+const SEAT_TOP = PLAZA_Y + CHAIR_SEAT;
+// How far a sitter may settle into the cushion when the legs are too SHORT to
+// reach the floor at any knee angle. The pack's two characters are not the same
+// size, so the chair that one pair of feet goes through is one the other pair
+// can dangle over.
+const SIT_SINK = 0.07;
 
-function seatOn(v, x, y, z, ry) {
+const _v3 = new THREE.Vector3();
+const boneY = (g, name) => {
+  const b = g.getObjectByName(name);
+  return b ? _v3.setFromMatrixPosition(b.matrixWorld).y : Infinity;
+};
+const ballY = g => Math.min(boneY(g, 'ball_l'), boneY(g, 'ball_r'));
+// How far the shoe hangs below the ball of the foot, measured on this model
+// rather than assumed: it is 3.8 cm on one of the pack's characters and 8.6 on
+// the other, which is the difference between standing on the floor and standing
+// in it. One skinned bounds pass each, at load.
+function soleDrop(g) {
+  const ball = ballY(g);
+  if (!Number.isFinite(ball)) return null;
+  g.traverse(o => { if (o.isSkinnedMesh) o.boundingBox = null; });
+  return Math.max(0, ball - new THREE.Box3().setFromObject(g).min.y);
+}
+
+// Fit the legs to the seat. The taller of the two characters is 1.85 m and a
+// chair is 0.47 m high, so the knee-to-sole is the longer of the two: held with
+// the shin vertical — which is what the seated pose does on its own — the feet
+// end up 13 cm under the paving, which is where the gift shop's keeper had his.
+// The shin is swung forward until the soles rest on the ground, the way anyone
+// tall actually sits on a low chair. Bisection rather than a formula: the sole
+// travels on an arc, the foot is not a point, and this runs five times at load.
+//
+// If the legs cannot reach even hanging straight down, no angle will do it and
+// the whole body is let into the cushion instead, up to SIT_SINK.
+function fitSeatedLegs(v, groundY) {
+  const st = v.pose?.state, rest = v.pose?.rest;
+  if (!st || !rest) return;
+  const drop = soleDrop(v.group);
+  if (drop === null) return;                             // no feet to stand on
+  const soleAtKnee = knee => {
+    st.knee = knee;
+    st.ankle = rest.ankle - (knee - rest.knee);
+    v.pose();
+    v.group.updateMatrixWorld(true);
+    return ballY(v.group) - drop;
+  };
+  const rested = soleAtKnee(rest.knee);
+  if (rested > groundY + 0.005) {
+    v.group.position.y -= Math.min(rested - groundY, SIT_SINK);
+    v.group.updateMatrixWorld(true);
+    return;
+  }
+  let lo = rest.knee, hi = 0;                            // hi = leg straight out
+  if (soleAtKnee(hi) < groundY) { soleAtKnee(rest.knee); return; }
+  for (let i = 0; i < 16; i++) {
+    const mid = (lo + hi) / 2;
+    if (soleAtKnee(mid) < groundY) lo = mid; else hi = mid;
+  }
+  soleAtKnee(hi);
+}
+
+// Stand someone ON a surface rather than at it: placing the group's origin at
+// ground level buries whatever of the shoe hangs below the model's own root,
+// which is a centimetre or so on both of these characters.
+function standOn(v, x, z, ry, groundY) {
+  v.group.position.set(x, groundY, z);
+  v.group.rotation.y = ry;
+  v.mixer.update(0);
+  v.group.updateMatrixWorld(true);
+  v.group.traverse(o => { if (o.isSkinnedMesh) o.boundingBox = null; });
+  const min = new THREE.Box3().setFromObject(v.group).min.y;
+  if (Number.isFinite(min)) v.group.position.y += groundY - min;
+}
+
+function seatOn(v, x, y, z, ry, groundY = PLAZA_Y) {
   v.group.position.set(x, 0, z);
   v.group.rotation.y = ry;
+  // Evaluate the clip before measuring anything. The mixer has never run at
+  // this point, so the skeleton is still in its bind pose, and every height
+  // read off it is a few centimetres out by the first frame.
+  v.mixer.update(0);
+  v.pose?.();
   v.group.updateMatrixWorld(true);
   const pelvis = v.group.getObjectByName('pelvis');
   if (!pelvis) return;
@@ -1399,19 +1681,21 @@ function seatOn(v, x, y, z, ry) {
   // group either way and one measurement does for both.
   const py = new THREE.Vector3().setFromMatrixPosition(pelvis.matrixWorld).y;
   v.group.position.y = y + 0.07 - py;
+  v.group.updateMatrixWorld(true);
+  fitSeatedLegs(v, groundY);
 }
 
-async function populateStaff(bases, walkClip) {
+async function populateStaff(bases, walkClip, idleClip) {
   if (!walkClip || !bases.length) return;
   STAFF.forEach(([x, z, ry, seated], i) => {
+    // The two who stand — the restaurant's and the kiosk's — are placed on a
+    // spot and never routed anywhere, so they are held still. Left on the walk
+    // they marched on the same paving stone in front of their own door.
     const v = makeVisitor(bases[i % bases.length], walkClip, rngCrowd,
-      { uniform: STAFF_UNIFORM, seated });
+      { uniform: STAFF_UNIFORM, seated, still: !seated, idleClip });
     crowd.add(v.group);
     if (seated) seatOn(v, x, SEAT_TOP, z, ry);
-    else {
-      v.group.position.set(x, terrainHeight(x, z) + 0.08, z);
-      v.group.rotation.y = ry;
-    }
+    else standOn(v, x, z, ry, terrainHeight(x, z) + PLAZA_Y);
     statics.push(v);
   });
   CUSTOMERS.forEach(([x, z, ry], i) => {
@@ -1441,7 +1725,12 @@ async function populateCrowd(bases, walkClip) {
 // Build the park
 // ---------------------------------------------------------------------------
 const furnitureInteractions = [];
-function furnitureInteraction(type, halfWidth, halfDepth, anchorZ = 0, restY = 0.5) {
+// `floorY` is the ground in front of the seat, not a constant: the seated pose
+// spans the gap between the two, so a seat that reports the wrong floor is a
+// seat the legs are solved for at the wrong height. Left at the villa's 0.11
+// for the zoo's paving, every bench read 9 cm lower than it is.
+function furnitureInteraction(type, halfWidth, halfDepth, anchorZ = 0, restY = 0.5,
+  floorY = PATH_Y) {
   const c = Math.cos(FR), s = Math.sin(FR);
   furnitureInteractions.push({
     type,
@@ -1450,7 +1739,7 @@ function furnitureInteraction(type, halfWidth, halfDepth, anchorZ = 0, restY = 0
     z: FZ + anchorZ * c,
     centerX: FX,
     centerZ: FZ,
-    approachY: 0.11,
+    approachY: floorY,
     yaw: FR,
     halfWidth,
     halfDepth,
@@ -1486,13 +1775,21 @@ wolfExhibit();
 deerPaddock();
 foxEnclosure();
 alpacaPaddock();
-farmBarn(-80, -34, -Math.PI / 2);
+farmBarn(BARN.x, BARN.z, -Math.PI / 2);
 // Farmyard paddock between the barn and the path, fenced low so you can lean on
 // it — this is the corner a zoo lets you get close in.
+//
+// The west side is the barn's own front wall, which is why there is no fence
+// along it — but the barn is two metres shorter than the paddock, so the run
+// has to be closed at both ends or the yard is open at the corners. The other
+// three sides go corner to corner for the same reason.
 slab(M.dirtEdge, FARM.x0, FARM.x1, FARM.z0, FARM.z1, 0, 0.05);
-stockFence(FARM.x1, FARM.z0 + 1, FARM.x1, FARM.z1 - 1, { h: 1.15, rails: 3 });
-stockFence(FARM.x0, FARM.z0, FARM.x1, FARM.z0, { h: 1.15, rails: 3, mesh: false });
-stockFence(FARM.x0, FARM.z1, FARM.x1, FARM.z1, { h: 1.15, rails: 3, mesh: false });
+const FARM_YARD = { h: 1.15, rails: 3, mesh: false };
+stockFence(FARM.x1, FARM.z0, FARM.x1, FARM.z1, { h: 1.15, rails: 3 });
+stockFence(FARM.x0, FARM.z0, FARM.x1, FARM.z0, FARM_YARD);
+stockFence(FARM.x0, FARM.z1, FARM.x1, FARM.z1, FARM_YARD);
+stockFence(FARM.x0, FARM.z0, FARM.x0, BARN.z - BARN.w / 2, FARM_YARD);
+stockFence(FARM.x0, BARN.z + BARN.w / 2, FARM.x0, FARM.z1, FARM_YARD);
 prop(() => {
   box(M.timber, -68, 0.42, -30, 2.4, 0.84, 0.8);          // water trough
   box(M.water, -68, 0.72, -30, 2.1, 0.12, 0.55);
@@ -1719,7 +2016,8 @@ player.addWardrobePart('hairCrown', harmoniseHair(player, {
     }
   }
   await populateCrowd(bases, player.actions.walk?.getClip());
-  await populateStaff(bases, player.actions.walk?.getClip());
+  await populateStaff(bases, player.actions.walk?.getClip(),
+    player.actions.idle?.getClip());
 }
 await populate(rngCrowd);
 
@@ -1939,7 +2237,7 @@ window.addEventListener('resize', () => {
 const hook = {
   THREE, scene, camera, renderer, world, fauna, crowd, ctrl, rig, input, player, spawnPoint,
   furnitureInteractions, enterFurnitureInteraction, leaveFurnitureInteraction,
-  updateFurnitureInteraction, animals, walkers, LOOP, loopAt, terrainHeight,
+  updateFurnitureInteraction, animals, walkers, statics, LOOP, loopAt, terrainHeight,
   get activeFurnitureInteraction() { return activeFurnitureInteraction; },
 };
 window.__zoo = hook;
