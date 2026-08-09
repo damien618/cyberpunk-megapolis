@@ -6,8 +6,8 @@ import { Controller } from './controller.js?v=5';
 import { CameraRig } from './cameraRig.js?v=4';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar } from './cars.js?v=4';
-import { makeVisitor, loadVisitorBase, STAFF_UNIFORM } from './crowd.js?v=9';
-import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=13';
+import { makeVisitor, loadVisitorBase, STAFF_UNIFORM } from './crowd.js?v=10';
+import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=15';
 
 // ---------------------------------------------------------------------------
 // A Trip to the Zoo — a small regional park, laid out the way zoo master plans
@@ -1398,8 +1398,10 @@ function zebraPaddock() {
     ]) {
       shape(G.rock, M.rock, rx, 0.1, rz, rs, rh, rs * 0.85, { ry: rs, rz: 0.1 });
     }
-    shape(G.post, M.barkDark, -3, 0.2, -111, 0.5, 6.4, 0.5, { rz: 1.05, ry: 0.4 });
-    shape(G.post, M.barkDark, 11, 0.2, -114, 0.45, 5.2, 0.45, { rz: -0.9, ry: -0.6 });
+    // Dead standing trunks among the rocks: upright — a log leaning at sixty
+    // degrees off the vertical would not stay up on its own.
+    shape(G.post, M.barkDark, -3, 0.2, -111, 0.5, 6.4, 0.5, { ry: 0.4 });
+    shape(G.post, M.barkDark, 11, 0.2, -114, 0.45, 5.2, 0.45, { ry: -0.6 });
   });
   for (const [tx, tz] of [[-26, -121], [21, -120], [-25, -104], [22, -105]]) pine(tx, tz, 1.15);
   railRun(x0, z1 + 1.9, x1, z1 + 1.9, {});

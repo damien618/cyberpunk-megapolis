@@ -22,7 +22,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { cloneSkinned } from './crowd.js?v=9';
+import { cloneSkinned } from './crowd.js?v=10';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
 
@@ -754,8 +754,15 @@ export function placeAnimal(species, {
   // its own enclosure. The gait is driven by distance travelled, not by the
   // clock, so the feet do not skate.
   const canWalk = Boolean(roam && ground && parts.legs.length >= 2);
+  // The auto-rigged lion's geometry reads backwards: meshFrame picks the wrong
+  // end as the head, so `parts.forward` points at the tail and it walks away
+  // from where it faces. Flipping the offset 180° sends it forwards without
+  // touching the genuinely rigged species (zebra, birds), whose forward is
+  // already correct — and the turn-home logic is offset-agnostic, so the
+  // half-turn at each stop still applies to it too.
+  const facingFlip = species.rig === 'quadruped' ? Math.PI : 0;
   const facingOffset = parts.forward
-    ? ry - Math.atan2(parts.forward.x, parts.forward.z) : 0;
+    ? ry - Math.atan2(parts.forward.x, parts.forward.z) + facingFlip : 0;
   const speed = (0.30 + rng() * 0.22) * Math.max(0.55, size);
   // A stride is a leg, not a height: a peacock is as tall as a spaniel and
   // steps a fifth as far. Measured off the animal's own leg so every species
@@ -772,7 +779,16 @@ export function placeAnimal(species, {
   let timer = 2 + rng() * 9;
   let gait = rng() * Math.PI * 2;
   let target = null;
+  let turnBy = 0;
   const inset = 3;
+
+  // Reaching a target (or the water's edge) ends the walk with a turn of
+  // about 180 degrees over the start of the rest: the animal comes away from
+  // whatever it just walked into, and the next leg starts facing open ground
+  // instead of the fence it stopped at.
+  const faceAway = () => {
+    turnBy = Math.PI * (rng() < 0.5 ? -1 : 1) + (rng() - 0.5) * 0.6;
+  };
 
   // The paddock's pool is cut a metre and a quarter into the terrain, and an
   // animal that walks over the rim goes down with it — from the path you see a
@@ -785,6 +801,14 @@ export function placeAnimal(species, {
     let walking = 0;
     if (canWalk) {
       timer -= dt;
+      if (mode === 'rest' && turnBy) {
+        // The turn home: a turn takes at most the first couple of seconds of
+        // the rest, so a long pause is not one slow spin.
+        const step = Math.min(dt * 1.2, Math.abs(turnBy)) * Math.sign(turnBy);
+        group.rotation.y += step;
+        turnBy -= step;
+        if (Math.abs(turnBy) < 1e-3) turnBy = 0;
+      }
       if (mode === 'rest' && timer <= 0) {
         mode = 'walk';
         timer = 6 + rng() * 14;
@@ -802,6 +826,7 @@ export function placeAnimal(species, {
         if (dist < 0.7 || timer <= 0) {
           mode = 'rest';
           timer = 4 + rng() * 12;
+          faceAway();
         } else {
           // Turn onto the bearing first, then walk it: a quadruped that
           // sidesteps to its target reads as a chess piece.
@@ -817,6 +842,7 @@ export function placeAnimal(species, {
           if (inHole(nx, nz)) {
             mode = 'rest';                       // turned up at the water's edge
             timer = 3 + rng() * 8;
+            faceAway();
           } else {
             group.position.x = nx;
             group.position.z = nz;

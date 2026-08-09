@@ -22,6 +22,34 @@ const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
 
 export function cloneSkinned(source) {
   const clone = source.clone(true);
+  // Object3D.clone does not duplicate bones: every clone would share the
+  // template's Bone objects, so one clone's mixer would pose them all. Give
+  // each clone its own skeleton, replacing bones in-place so that parents,
+  // transforms and userData all survive.
+  const replacements = new Map();
+  clone.traverse(o => {
+    if (!o.isBone || replacements.has(o)) return;
+    const b = new THREE.Bone();
+    b.name = o.name;
+    b.position.copy(o.position);
+    b.quaternion.copy(o.quaternion);
+    b.scale.copy(o.scale);
+    b.userData = { ...o.userData };
+    replacements.set(o, b);
+  });
+  for (const [oldBone, newBone] of replacements) {
+    const parent = oldBone.parent;
+    if (!parent) continue;
+    const at = parent.children.indexOf(oldBone);
+    parent.remove(oldBone);
+    if (at >= 0 && at <= parent.children.length) {
+      parent.children.splice(at, 0, newBone);
+      newBone.parent = parent;
+    } else {
+      parent.add(newBone);
+    }
+    for (const child of [...oldBone.children]) newBone.add(child);
+  }
   const bonesByName = new Map();
   clone.traverse(o => { if (o.isBone) bonesByName.set(o.name, o); });
 
