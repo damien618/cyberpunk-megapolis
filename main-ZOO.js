@@ -7,7 +7,7 @@ import { CameraRig } from './cameraRig.js?v=4';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar } from './cars.js?v=4';
 import { makeVisitor, loadVisitorBase, STAFF_UNIFORM } from './crowd.js?v=9';
-import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=2';
+import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=13';
 
 // ---------------------------------------------------------------------------
 // A Trip to the Zoo — a small regional park, laid out the way zoo master plans
@@ -595,15 +595,20 @@ function loopEach(fn) {
 // Car park: bays either side of a central aisle, kerbed planting islands, and
 // the bays angled the way a real one is so the aisle can stay narrow.
 const PARK_Z0 = 16, PARK_Z1 = 56;
+// The bay grid, in one place. The markings are painted from it and the cars are
+// parked on it: when the two were written out separately, the cars ended up in
+// the aisles and across the lines, and nothing in the code said they disagreed.
+// 2.55 x 5.0 m is the standard bay, and the rows are named by their centre.
+const BAY_PITCH = 2.55, BAY_X0 = -33, BAY_COUNT = 26, BAY_DEPTH = 5.0;
+const BAY_ROWS = [23.0, 35.0, 47.0];
 function carPark() {
   slab(M.asphalt, -36, 36, PARK_Z0, PARK_Z1, 0, 0.05);
-  // aisle markings
-  for (const row of [[20.5, 25.5], [32.5, 37.5], [44.5, 49.5]]) {
-    for (let i = 0; i <= 26; i++) {
-      const x = -33 + i * 2.55;
-      box(M.paintLine, x, 0.055, (row[0] + row[1]) / 2, 0.12, 0.012, row[1] - row[0]);
+  // bay markings: a line between every pair of bays, and the head of the row
+  for (const z of BAY_ROWS) {
+    for (let i = 0; i <= BAY_COUNT; i++) {
+      box(M.paintLine, BAY_X0 + i * BAY_PITCH, 0.055, z, 0.12, 0.012, BAY_DEPTH);
     }
-    box(M.paintLine, 0, 0.055, row[1], 66, 0.012, 0.12);
+    box(M.paintLine, 0, 0.055, z + BAY_DEPTH / 2, 66, 0.012, 0.12);
   }
   // kerbed islands with a tree apiece, between the bay rows
   for (const z of [28.6, 40.6, 52.6]) {
@@ -1339,9 +1344,9 @@ function terraceTable(x, z) {
 
 // Lions: a dry savanna paddock behind a glass plinth, with the kopje (rock
 // outcrop) placed where the pride will be seen against the sky from the path.
-const WOLF = { x0: -100, x1: -64, z0: -92, z1: -58 };
-function wolfExhibit() {
-  const { x0, x1, z0, z1 } = WOLF;
+const LION = { x0: -100, x1: -64, z0: -92, z1: -58 };
+function lionExhibit() {
+  const { x0, x1, z0, z1 } = LION;
   slab(M.meadow, x0, x1, z0, z1, 0, 0.04);
   slab(M.sand, -92, -74, -82, -68, 0.04, 0.07);
   // The loop only runs down the east side, so that is the only edge that gets
@@ -1371,9 +1376,9 @@ function wolfExhibit() {
 }
 
 // Bears: rockwork, a real pool cut into the terrain, and the same glass line.
-const DEER = { x0: -30, x1: 26, z0: -124, z1: -98 };
-function deerPaddock() {
-  const { x0, x1, z0, z1 } = DEER;
+const ZEBRA = { x0: -30, x1: 26, z0: -124, z1: -98 };
+function zebraPaddock() {
+  const { x0, x1, z0, z1 } = ZEBRA;
   slab(M.lawn, x0, x1, z0, z1, 0, 0.04);
   stockFence(x0, z1, x1, z1, { h: 2.5, rails: 4 });   // deer jump
   slab(M.stone, x0, x0 + 0.7, z0, z1, 0, 4.4);
@@ -1407,9 +1412,9 @@ function deerPaddock() {
 
 // Monkeys: a full mesh volume. Primates climb anything with a top edge, so a
 // moat and a glass wall are not enough — the roof is the barrier.
-const FOX = { x0: 62, x1: 94, z0: -86, z1: -58 };
-function foxEnclosure() {
-  const { x0, x1, z0, z1 } = FOX;
+const KOMODO = { x0: 62, x1: 94, z0: -86, z1: -58 };
+function komodoEnclosure() {
+  const { x0, x1, z0, z1 } = KOMODO;
   slab(M.lawn, x0, x1, z0, z1, 0, 0.04);
   slab(M.dirtEdge, x0 + 4, x1 - 4, z0 + 4, z1 - 4, 0.04, 0.06);
   // A fox climbs and digs, so the volume stays closed — but at three and a half
@@ -1443,14 +1448,14 @@ function foxEnclosure() {
 
 // Parrots: a walk-past aviary. Same mesh volume as the monkeys, planted denser
 // and hung with perches at eye level so the birds are actually visible.
-const ALPACA = { x0: 64, x1: 94, z0: -52, z1: -24 };
+const PEAFOWL = { x0: 64, x1: 94, z0: -52, z1: -24 };
 const FARM = { x0: -74, x1: -62, z0: -46, z1: -22 };
 // The reptile house stands a quarter turn round, so its 22 m front runs along
 // z and forms the farmyard's west side. The footprint is shared with the fence
 // that closes the yard either side of it.
 const BARN = { x: -80, z: -34, w: 22, d: 12 };
-function alpacaPaddock() {
-  const { x0, x1, z0, z1 } = ALPACA;
+function peafowlPaddock() {
+  const { x0, x1, z0, z1 } = PEAFOWL;
   slab(M.lawn, x0, x1, z0, z1, 0, 0.04);
   // Alpacas need a fence they can see through and a shelter to stand under,
   // not a cage: they neither climb nor jump, and the whole exhibit is that you
@@ -1486,13 +1491,15 @@ function alpacaPaddock() {
 // ---------------------------------------------------------------------------
 // Animals.
 //
-// Real rigged models now — see fauna.js. What used to be here was a bestiary of
-// blobs: correctly proportioned, but a lion built from six ellipsoids is a lion
-// only if you already know that is what you are looking at.
+// Real textured models now — see fauna.js. What used to be here was a bestiary
+// of blobs: correctly proportioned, but a lion built from six ellipsoids is a
+// lion only if you already know that is what you are looking at. After that it
+// was a flat-shaded low-poly pack, which read as toys.
 //
-// The species are the ones the CC0 pack actually ships, so the park is a
-// temperate wildlife park with a farm corner rather than a tropical zoo: wolves
-// behind glass, a deer paddock, alpacas, a fox enclosure and a shiba in the
+// The park is finally the zoo the enclosures were drawn for: the kopje behind
+// glass was always meant to have a pride on it, the big paddock with the pool
+// takes the zebras, and the closed mesh volume — built for something that digs
+// and climbs — holds the komodos. Peafowl have the pasture and the crows the
 // farmyard.
 const animals = [];
 const HERDS = [
@@ -1500,20 +1507,30 @@ const HERDS = [
   // the count are young. A paddock of identically sized adults is the other
   // half of why these read wrong beside a person — there is nothing in it to
   // give the scale away, and one calf at two thirds the height does.
-  ['wolf', WOLF, 4, 0.55, 1],
-  ['deer', DEER, 6, 0.62, 2],
-  ['alpaca', ALPACA, 5, 0.5, 1],
-  ['fox', FOX, 4, 0.45, 1],
-  ['shiba', FARM, 3, 0.42, 0],
+  // The last figure is the floor of the enclosure: every one of them lays its
+  // own grass or dirt over the terrain, and an animal put on the terrain itself
+  // stands four to six centimetres inside it.
+  ['lion', LION, 3, 0.55, 1, 0.04],
+  ['zebra', ZEBRA, 6, 0.62, 2, 0.04],
+  ['peacock', PEAFOWL, 5, 0.5, 0, 0.04],
+  ['komodo', KOMODO, 2, 0.45, 0, 0.06],
+  ['crow', FARM, 4, 0.42, 0, 0.05],
 ];
 
 async function populate(rng) {
   const loaded = await loadSpecies(Object.keys(SPECIES));
-  for (const [name, rect, count, spread, young = 0] of HERDS) {
+  for (const [name, rect, count, spread, young = 0, floor = 0] of HERDS) {
     const species = loaded[name];
     if (!species) continue;
     const cx = (rect.x0 + rect.x1) / 2, cz = (rect.z0 + rect.z1) / 2;
     const rx = (rect.x1 - rect.x0) / 2 - 5, rz = (rect.z1 - rect.z0) / 2 - 5;
+    // A basin inside the enclosure is a hole, not a floor: the zebra paddock
+    // carries the pool, and an animal that wanders in stands a metre down.
+    const avoid = BASINS.find(b => b.x0 > rect.x0 && b.x1 < rect.x1
+      && b.z0 > rect.z0 && b.z1 < rect.z1) ?? null;
+    const inPool = (px, pz) => avoid
+      && px > avoid.x0 - 1.5 && px < avoid.x1 + 1.5
+      && pz > avoid.z0 - 1.5 && pz < avoid.z1 + 1.5;
     let last = null;
     for (let i = 0; i < count; i++) {
       // Scattered rather than gridded, and kept off the barrier line so nothing
@@ -1521,14 +1538,23 @@ async function populate(rng) {
       // herd come last and stay within a couple of metres of the adult in
       // front of them, because that is where a calf is.
       const calf = i >= count - young;
-      const x = calf && last ? last.x + (rng() * 2 - 1) * 2.2
-        : cx + (rng() * 2 - 1) * rx * spread * 2;
-      const z = calf && last ? last.z + (rng() * 2 - 1) * 2.2
-        : cz + (rng() * 2 - 1) * rz * spread * 2;
+      let x = 0, z = 0;
+      for (let tries = 0; tries < 8; tries++) {
+        x = calf && last ? last.x + (rng() * 2 - 1) * 2.2
+          : cx + (rng() * 2 - 1) * rx * spread * 2;
+        z = calf && last ? last.z + (rng() * 2 - 1) * 2.2
+          : cz + (rng() * 2 - 1) * rz * spread * 2;
+        if (!inPool(x, z)) break;
+      }
       last = { x, z };
       const a = placeAnimal(species, {
-        x, y: terrainHeight(x, z), z, ry: rng() * Math.PI * 2, rng,
+        x, y: terrainHeight(x, z) + floor, z, ry: rng() * Math.PI * 2, rng,
         size: calf ? 0.62 + rng() * 0.1 : 1,
+        // Where it may wander, and what it walks on. Inset from the barrier so
+        // nothing ever noses through its own fence.
+        roam: { x0: rect.x0 + 3, x1: rect.x1 - 3, z0: rect.z0 + 3, z1: rect.z1 - 3 },
+        ground: (gx, gz) => terrainHeight(gx, gz) + floor,
+        avoid,
       });
       if (!a) continue;
       fauna.add(a.group);
@@ -1771,10 +1797,10 @@ loopEach((a, b, i) => {
 });
 
 hubPlaza();
-wolfExhibit();
-deerPaddock();
-foxEnclosure();
-alpacaPaddock();
+lionExhibit();
+zebraPaddock();
+komodoEnclosure();
+peafowlPaddock();
 farmBarn(BARN.x, BARN.z, -Math.PI / 2);
 // Farmyard paddock between the barn and the path, fenced low so you can lean on
 // it — this is the corner a zoo lets you get close in.
@@ -1813,10 +1839,10 @@ const rand = (seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647)(2
 // Footprints the scatter must not drop a tree into: the four enclosures and the
 // reptile house all have barriers a trunk would grow straight through.
 const KEEP_OUT = [
-  [WOLF.x0 - 4, WOLF.x1 + 8, WOLF.z0 - 4, WOLF.z1 + 4],
-  [DEER.x0 - 4, DEER.x1 + 4, DEER.z0 - 4, DEER.z1 + 8],
-  [FOX.x0 - 8, FOX.x1 + 4, FOX.z0 - 4, FOX.z1 + 4],
-  [ALPACA.x0 - 8, ALPACA.x1 + 4, ALPACA.z0 - 4, ALPACA.z1 + 4],
+  [LION.x0 - 4, LION.x1 + 8, LION.z0 - 4, LION.z1 + 4],
+  [ZEBRA.x0 - 4, ZEBRA.x1 + 4, ZEBRA.z0 - 4, ZEBRA.z1 + 8],
+  [KOMODO.x0 - 8, KOMODO.x1 + 4, KOMODO.z0 - 4, KOMODO.z1 + 4],
+  [PEAFOWL.x0 - 8, PEAFOWL.x1 + 4, PEAFOWL.z0 - 4, PEAFOWL.z1 + 4],
   [-86, -60, -46, -22],
 ];
 // …and off the routes. A trunk between the visitor and the glass is the one
@@ -1859,21 +1885,55 @@ for (let i = 0; i < 30; i++) {
   shadeTree(x, z, 0.85 + rand() * 0.4);
 }
 
-// A few cars in the car park, as real lofted meshes plus an invisible collider
-// box so the AABB world knows about them.
+// Cars in the car park, as real lofted meshes plus an invisible collider box so
+// the AABB world knows about them.
+//
+// They go in the bays the markings are painted from — the same BAY_* constants,
+// so a car cannot land between two lines. The previous arithmetic scattered
+// them on rows 30.2 and 42.2, which are the driving aisles, and those rows run
+// straight through the kerbed islands at 28.6 and 40.6.
+//
+// The paved route from the car park to the turnstiles is 11 m wide; no bay in
+// front of it gets a car, so you can walk off the asphalt without squeezing
+// between bumpers.
+const WALK_HALF = 6.2;
 const CAR_COLORS = [0xb8483c, 0x2f4f7a, 0xe8e4dc, 0x2b2f33, 0x6b8f5a, 0xc9a23f];
+
+// The model is measured rather than assumed, because assuming is what put every
+// car across three bays: `buildCar` lofts its sedan 5.59 m along X and 2.22 m
+// along Z, so at yaw 0 the car lies ACROSS the markings — it overlapped both
+// neighbours by three metres. The bays are 2.55 m wide and 5 m deep, so the car
+// is turned a quarter and taken down to the size of a car that fits one.
+const carProbe = buildCar('sedan', 0xffffff);
+const carBox = new THREE.Box3().setFromObject(carProbe);
+const carSize = carBox.getSize(new THREE.Vector3());
+const CAR_SCALE = Math.min(1, (BAY_PITCH - 0.55) / carSize.z, (BAY_DEPTH - 0.1) / carSize.x);
+const CAR_L = carSize.x * CAR_SCALE, CAR_W = carSize.z * CAR_SCALE;
+const CAR_H = carSize.y * CAR_SCALE;
+
 const parkedCars = [];
-for (let i = 0; i < 14; i++) {
-  const row = [22.9, 30.2, 34.9, 42.2, 46.9][i % 5];
-  const x = -30 + ((i * 7) % 9) * 6.6 + (i % 3) * 1.4;
-  const facing = row < 26 || (row > 34 && row < 40) ? 0 : Math.PI;
-  const mesh = buildCar('sedan', CAR_COLORS[i % CAR_COLORS.length]);
-  mesh.position.set(x, 0.05, row);
-  mesh.rotation.y = facing;
-  mesh.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-  world.add(mesh);
-  parkedCars.push(mesh);
-  prop(() => box(M.collider, x, 0.8, row, 2.0, 1.5, 4.6, facing));
+let carIndex = 0;
+for (const row of BAY_ROWS) {
+  for (let k = 0; k < BAY_COUNT; k++) {
+    const x = BAY_X0 + (k + 0.5) * BAY_PITCH;
+    if (Math.abs(x) < WALK_HALF) continue;
+    // A car park is never full, and every car here is its own mesh rather than
+    // an instance: filling a third of the bays is what a mid-morning zoo looks
+    // like and keeps the draw calls where they were.
+    if (rand() > 0.30) continue;
+    // Nose to the kerb, which is north of every row here; one in four has
+    // reversed in, which is what a real row of cars looks like. The quarter
+    // turn is what puts the length of the car down the bay instead of across it.
+    const facing = Math.PI / 2 + (rand() < 0.25 ? Math.PI : 0);
+    const mesh = buildCar('sedan', CAR_COLORS[carIndex++ % CAR_COLORS.length]);
+    mesh.scale.setScalar(CAR_SCALE);
+    mesh.position.set(x, 0.05 - carBox.min.y * CAR_SCALE, row);
+    mesh.rotation.y = facing;
+    mesh.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    world.add(mesh);
+    parkedCars.push(mesh);
+    prop(() => box(M.collider, x, 0.05 + CAR_H / 2, row, CAR_L, CAR_H, CAR_W, facing));
+  }
 }
 
 flushKits();
@@ -2140,8 +2200,14 @@ function updateAvatar(dt) {
 // ---------------------------------------------------------------------------
 // Animation
 // ---------------------------------------------------------------------------
-function tickFauna(dt) {
-  for (const a of animals) a.mixer.update(dt);
+// The mixer first, then the motion in fauna.js on top of it: the clips these
+// models ship with move a head by a centimetre over six seconds, so what makes
+// the paddock look alive is written in code and has to have the last word.
+function tickFauna(dt, t) {
+  for (const a of animals) {
+    a.mixer?.update(dt);
+    a.motion?.(t, dt);
+  }
 }
 
 function tickStatics(dt) {
@@ -2197,7 +2263,7 @@ function animate() {
   waterN.offset.y = -t * 0.009;
   M.water.opacity = 0.8 + Math.sin(t * 1.2) * 0.03;
 
-  tickFauna(dt);
+  tickFauna(dt, t);
   tickCrowd(dt);
   tickStatics(dt);
   updateAvatar(dt);
