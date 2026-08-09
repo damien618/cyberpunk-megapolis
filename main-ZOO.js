@@ -2120,6 +2120,9 @@ let furnitureInteractionCooldown = 0;
 let promptedFurniture = null;
 let furnitureActionRequested = false;
 let releasedSpot = null;
+// True while the sit prompt is on screen: we drop pointer lock so the cursor
+// can click the button, and pointerlockchange must not treat that as a pause.
+let choosingFurniturePrompt = false;
 const RELEASE_RADIUS = 1.1;
 const interactionExitKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyE'];
 const interactionInputHeld = () => interactionExitKeys.some(code => input.down(code));
@@ -2143,10 +2146,33 @@ function setFurniturePrompt(spot) {
   furniturePrompt.textContent = show ? (spot.label || "S'asseoir") : '';
   furniturePrompt.classList.toggle('show', show);
   furniturePrompt.setAttribute('aria-hidden', show ? 'false' : 'true');
+  // Same contract as the villa's lie-choice UI: unlock for the clickable
+  // prompt, then re-lock when it goes away — otherwise the mouse only steers
+  // the camera and the button can never be hit.
+  choosingFurniturePrompt = show;
+  if (show) {
+    if (document.pointerLockElement === renderer.domElement)
+      document.exitPointerLock?.();
+  } else if (started && !paused) {
+    requestGamePointerLock();
+  }
 }
 furniturePrompt.addEventListener('click', event => {
   event.stopPropagation();
-  if (promptedFurniture) furnitureActionRequested = true;
+  if (!promptedFurniture) return;
+  furnitureActionRequested = true;
+  // Re-lock from the click itself: browsers reject pointer lock outside a
+  // user gesture, and enterFurnitureInteraction only runs on the next frame.
+  choosingFurniturePrompt = false;
+  requestGamePointerLock();
+});
+renderer.domElement.addEventListener('click', () => {
+  // After walking away from a bench the unlock is not a user gesture, so the
+  // first canvas click reclaims the mouse look.
+  if (started && !paused && !choosingFurniturePrompt
+    && document.pointerLockElement !== renderer.domElement) {
+    requestGamePointerLock();
+  }
 });
 
 function enterFurnitureInteraction(spot) {
@@ -2314,6 +2340,13 @@ startBtn.addEventListener('click', startZoo);
 
 document.addEventListener('pointerlockchange', () => {
   usedLock = usedLock || document.pointerLockElement !== null;
+  // Dropping the lock for the sit button is intentional — keep playing and
+  // leave the overlay closed (mirrors main-LA.js choosingLieWakeMode).
+  if (choosingFurniturePrompt && document.pointerLockElement === null) {
+    paused = false;
+    overlay.style.display = 'none';
+    return;
+  }
   if (!usedLock) return;
   paused = !input.locked;
   if (paused) setFurniturePrompt(null);
