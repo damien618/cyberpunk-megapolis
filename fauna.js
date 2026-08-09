@@ -60,6 +60,9 @@ export const SPECIES = {
   crow: {
     file: 'crow.glb', fit: ['height', 0.44],
     rest: ['rig|rigAction'], window: [4.4, 9.1],
+    // The aviary birds fly between perches instead of wandering the ground:
+    // `fly` is [min height, max height] of a cruise between perches.
+    fly: [1.4, 3.6],
   },
 };
 
@@ -192,7 +195,8 @@ export async function loadSpecies(names) {
       // is measured against — a crow does not take a zebra's step.
       out[name] = {
         root, clips: gltf.animations, resting, fitMetres: spec.fit[1],
-        flex: spec.flex ?? null, rig: spec.rig ?? null, ...spec2,
+        flex: spec.flex ?? null, rig: spec.rig ?? null, fly: spec.fly ?? null,
+        ...spec2,
       };
     } catch (e) {
       console.warn('[zoo] animal model unavailable:', spec.file, e);
@@ -662,7 +666,7 @@ function findParts(group) {
  */
 export function placeAnimal(species, {
   x, y = 0, z, ry = 0, rng = Math.random, size = 1, roam = null, ground = null,
-  avoid = null,
+  avoid = null, perches = null,
 }) {
   if (!species) return null;
   const group = cloneSkinned(species.root);
@@ -796,10 +800,73 @@ export function placeAnimal(species, {
   const inHole = (px, pz) => avoid
     && px > avoid.x0 - 1 && px < avoid.x1 + 1 && pz > avoid.z0 - 1 && pz < avoid.z1 + 1;
 
+  // A bird with a `fly` range does not wander the ground: it holds on a perch,
+  // then flies to another — take-off, a cruise between the perches, and a
+  // landing. The perch tops are handed in from the enclosure that built them.
+  const canFly = Boolean(species.fly && perches && perches.length >= 2);
+  let flight = null;
+  if (canFly) {
+    flight = { mode: 'perch', timer: 2 + rng() * 6, from: null, to: null, u: 0, dur: 1 };
+  }
+
   const motion = (t, dt) => {
     const s = t * rate + phase;
     let walking = 0;
-    if (canWalk) {
+
+    if (canFly) {
+      const f = flight;
+      if (f.mode === 'perch') {
+        f.timer -= dt;
+        // Crouch and look about; the odd wing shuffle keeps it from being a
+        // statue between flights.
+        group.rotation.z = Math.sin(s * 2.2) * 0.03;
+        if (f.timer <= 0) {
+          const here = f.to ?? { x: group.position.x, z: group.position.z };
+          const others = perches.filter(p =>
+            Math.hypot(p.x - here.x, p.z - here.z) > 1.2);
+          const next = others[Math.floor(rng() * others.length)] ?? perches[0];
+          f.from = {
+            x: group.position.x, y: group.position.y, z: group.position.z,
+          };
+          f.to = next;
+          const dy = next.y - f.from.y;
+          const dist = Math.hypot(next.x - f.from.x, next.z - f.from.z);
+          f.dur = Math.max(0.8, dist / (2.2 + rng() * 0.8) + Math.abs(dy) * 0.35);
+          f.u = 0;
+          f.mode = 'fly';
+          group.rotation.z = 0;
+        }
+      } else {
+        // In the air: face the target, climb away then ease down onto it, with
+        // a shallow arc so the flight is not a straight slide on a rail.
+        f.u = Math.min(1, f.u + dt / f.dur);
+        const u = f.u;
+        const ease = u * u * (3 - 2 * u);
+        const nx = f.from.x + (f.to.x - f.from.x) * ease;
+        const nz = f.from.z + (f.to.z - f.from.z) * ease;
+        const baseYf = f.from.y + (f.to.y - f.from.y) * ease;
+        const arc = Math.sin(u * Math.PI) * (0.55 + 0.45 * Math.abs(f.to.y - f.from.y));
+        const yaw = Math.atan2(f.to.x - f.from.x, f.to.z - f.from.z);
+        let d = ((yaw - group.rotation.y + Math.PI) % (Math.PI * 2)) - Math.PI;
+        if (d < -Math.PI) d += Math.PI * 2;
+        group.rotation.y += d * Math.min(1, dt * 4);
+        group.position.set(nx, baseYf + arc, nz);
+        // Bank into the turn and flap: the body pitches on climb, levels in
+        // the cruise, and flares on the way down.
+        group.rotation.x = -Math.cos(u * Math.PI) * 0.22
+          + (u > 0.8 ? (u - 0.8) * 1.4 : 0);
+        walking = 1;                              // wings working, legs tucked
+        gait += dt * 9;
+        if (f.u >= 1) {
+          f.mode = 'perch';
+          f.timer = 3 + rng() * 9;
+          group.rotation.x = 0;
+          group.position.set(f.to.x, f.to.y, f.to.z);
+        }
+      }
+      // Perched, it still breathes and looks about; in the air the wing cycle
+      // below (walking === 1) drives the flap instead of the idle weight-shift.
+    } else if (canWalk) {
       timer -= dt;
       if (mode === 'rest' && turnBy) {
         // The turn home: a turn takes at most the first couple of seconds of

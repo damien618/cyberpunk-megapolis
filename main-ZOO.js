@@ -7,7 +7,7 @@ import { CameraRig } from './cameraRig.js?v=4';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar } from './cars.js?v=4';
 import { makeVisitor, loadVisitorBase, STAFF_UNIFORM } from './crowd.js?v=10';
-import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=15';
+import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=19';
 
 // ---------------------------------------------------------------------------
 // A Trip to the Zoo — a small regional park, laid out the way zoo master plans
@@ -1519,6 +1519,13 @@ const HERDS = [
   ['crow', FARM, 4, 0.42, 0, 0.05],
 ];
 
+// Perch tops in the aviary, handed to the crows so a flight ends on a bar and
+// not in the air beside it. Kept in one place with the aviary itself.
+const CROW_PERCHES = [
+  { x: -66, y: 2.1 + 0.05, z: -26 }, { x: -71, y: 3.0 + 0.05, z: -31 },
+  { x: -66, y: 2.5 + 0.05, z: -37 }, { x: -71, y: 1.6 + 0.05, z: -43 },
+];
+
 async function populate(rng) {
   const loaded = await loadSpecies(Object.keys(SPECIES));
   for (const [name, rect, count, spread, young = 0, floor = 0] of HERDS) {
@@ -1557,6 +1564,8 @@ async function populate(rng) {
         roam: { x0: rect.x0 + 3, x1: rect.x1 - 3, z0: rect.z0 + 3, z1: rect.z1 - 3 },
         ground: (gx, gz) => terrainHeight(gx, gz) + floor,
         avoid,
+        // Only the aviary birds take these; everyone else ignores them.
+        perches: name === 'crow' ? CROW_PERCHES : null,
       });
       if (!a) continue;
       fauna.add(a.group);
@@ -1811,22 +1820,39 @@ farmBarn(BARN.x, BARN.z, -Math.PI / 2);
 // along it — but the barn is two metres shorter than the paddock, so the run
 // has to be closed at both ends or the yard is open at the corners. The other
 // three sides go corner to corner for the same reason.
+// The crows get a real aviary instead of a low stock fence: a walk-past mesh
+// volume, tall enough to fly in, with the barn closing the west side as before.
+// The perches are what they fly between — a bird on the ground in an aviary is
+// a bird that has forgotten the point of it.
+const AVIARY_H = 4.2;
 slab(M.dirtEdge, FARM.x0, FARM.x1, FARM.z0, FARM.z1, 0, 0.05);
-const FARM_YARD = { h: 1.15, rails: 3, mesh: false };
-stockFence(FARM.x1, FARM.z0, FARM.x1, FARM.z1, { h: 1.15, rails: 3 });
-stockFence(FARM.x0, FARM.z0, FARM.x1, FARM.z0, FARM_YARD);
-stockFence(FARM.x0, FARM.z1, FARM.x1, FARM.z1, FARM_YARD);
-stockFence(FARM.x0, FARM.z0, FARM.x0, BARN.z - BARN.w / 2, FARM_YARD);
-stockFence(FARM.x0, BARN.z + BARN.w / 2, FARM.x0, FARM.z1, FARM_YARD);
+meshWall(FARM.x1, FARM.z0, FARM.x1, FARM.z1, AVIARY_H, {});
+meshWall(FARM.x0, FARM.z0, FARM.x1, FARM.z0, AVIARY_H, {});
+meshWall(FARM.x0, FARM.z1, FARM.x1, FARM.z1, AVIARY_H, {});
+meshWall(FARM.x0, FARM.z0, FARM.x0, BARN.z - BARN.w / 2, AVIARY_H, {});
+meshWall(FARM.x0, BARN.z + BARN.w / 2, FARM.x0, FARM.z1, AVIARY_H, {});
+meshRoof(FARM.x0, FARM.z0, FARM.x1, FARM.z1, AVIARY_H);
 prop(() => {
   box(M.timber, -68, 0.42, -30, 2.4, 0.84, 0.8);          // water trough
   box(M.water, -68, 0.72, -30, 2.1, 0.12, 0.55);
   shape(G.blob, M.signPale, -70, 0.05, -40, 2.6, 1.1, 2.2);   // straw bale heap
   shape(G.blob, M.signPale, -71.5, 0.05, -38.6, 2.2, 0.9, 1.9);
+  // Perches: horizontal bars on two uprights, at staggered heights so the
+  // flight from one to the next is a real flight, not a hop.
+  for (const [px, pz, ph, pw] of [
+    [-66, -26, 2.1, 2.6], [-71, -31, 3.0, 2.2], [-66, -37, 2.5, 2.4],
+    [-71, -43, 1.6, 2.6],
+  ]) {
+    shape(G.post, M.barkDark, px - pw / 2, 0.05, pz, 0.09, ph, 0.09);
+    shape(G.post, M.barkDark, px + pw / 2, 0.05, pz, 0.09, ph, 0.09);
+    shape(G.post, M.barkDark, px, ph + 0.02, pz, pw + 0.3, 0.09, 0.09, { rz: Math.PI / 2 });
+  }
 });
 exhibitSign(-63.4, -32, Math.PI / 2);
 exhibitSign(-63.4, -40, Math.PI / 2);
-bench(-62.5, -36, -Math.PI / 2);
+// Outside the mesh, on the path side: the aviary screen is at x = -62, so a
+// bench at -62.5 stood inside the cage.
+bench(-60.8, -36, -Math.PI / 2);
 
 // Wayfinding at the junctions, and the perimeter fence.
 fingerPost(3.9, -16.8, [0.9, 2.4, 4.0]);
