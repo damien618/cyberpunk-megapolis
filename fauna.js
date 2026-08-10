@@ -50,7 +50,7 @@ export const SPECIES = {
   // turn in radians.
   komodo: {
     file: 'komodo.glb', fit: ['length', 2.60],
-    flex: { tail: 0.13, head: 0.26, rate: 0.55 },
+    flex: { tail: 0.30, head: 0.42, rate: 0.95 },
   },
   peacock: { file: 'peacock.glb', fit: ['height', 1.10], rest: ['Idle'] },
   // The crow's one clip is a flight that lands: it hovers for the first two
@@ -259,6 +259,50 @@ function swingAxis(bone, forward) {
   bone.quaternion.copy(rest);
   bone.updateWorldMatrix(false, true);
   return best && best.moved > 1e-5 ? best : null;
+}
+
+// ---------------------------------------------------------------------------
+// Quadruped walk — lateral-sequence gait instead of a toy sine
+//
+// A pure sin() on diagonal pairs is a mechanical trot: every limb mirrors its
+// opposite, the duty cycle is 50/50, and there is no stance. Real cats walk in
+// a lateral sequence (LH → LF → RH → RF) with the foot on the ground ~60% of
+// the cycle. The curves below are the same idea as procedural IK walkers
+// (planted stance, arced swing), adapted to our two-bone swing axes.
+// ---------------------------------------------------------------------------
+const _smooth = t => t * t * (3 - 2 * t);
+
+/** Phase offset in [0, 1) for a lateral-sequence walk. */
+function quadWalkPhase(leg) {
+  if (!leg.front && leg.left) return 0.00;   // LH
+  if (leg.front && leg.left) return 0.25;    // LF
+  if (!leg.front && !leg.left) return 0.50;  // RH
+  return 0.75;                              // RF
+}
+
+/**
+ * Hip pitch through one cycle. Stance retracts the limb slowly; swing returns
+ * it with an ease so the foot does not telegraph like a metronome.
+ */
+function quadHipSwing(u, amp) {
+  const duty = 0.62;
+  if (u < duty) {
+    const t = u / duty;
+    return amp * (1 - 2 * t);
+  }
+  const t = _smooth((u - duty) / (1 - duty));
+  return amp * (-1 + 2 * t);
+}
+
+/** Knee: soft mid-stance give, then a clear lift through the swing. */
+function quadKneeBend(u, amp) {
+  const duty = 0.62;
+  if (u < duty) {
+    const t = u / duty;
+    return amp * 0.18 * Math.sin(t * Math.PI);
+  }
+  const t = (u - duty) / (1 - duty);
+  return amp * (0.55 + 0.45 * Math.sin(t * Math.PI));
 }
 
 /**
@@ -516,19 +560,33 @@ function autoRigQuadruped(group) {
 
   const headPt = at(f.bb.min.getComponent(f.bi) + length * (nose ? HEAD_AT : 1 - HEAD_AT),
     f.mid, height * 0.78);
+  const neckPt = at(f.bb.min.getComponent(f.bi) + length * (nose ? HEAD_AT - 0.08 : 1 - HEAD_AT + 0.08),
+    f.mid, height * 0.72);
+  const neck = new THREE.Bone();
+  neck.name = 'Neck';
+  neck.position.copy(neckPt).sub(centre);
+  root.add(neck);
+  bones.push(neck);
   const head = new THREE.Bone();
   head.name = 'Head';
-  head.position.copy(headPt).sub(centre);
-  root.add(head);
+  head.position.copy(headPt).sub(neckPt);
+  neck.add(head);
   bones.push(head);
 
   const tailPt = at(f.bb.min.getComponent(f.bi) + length * (nose ? TAIL_AT : 1 - TAIL_AT),
     f.mid, height * 0.62);
+  const tailTip = at(f.bb.min.getComponent(f.bi) + length * (nose ? TAIL_AT * 0.35 : 1 - TAIL_AT * 0.35),
+    f.mid, height * 0.58);
   const tail = new THREE.Bone();
   tail.name = 'Tail1';
   tail.position.copy(tailPt).sub(centre);
   root.add(tail);
   bones.push(tail);
+  const tail2 = new THREE.Bone();
+  tail2.name = 'Tail2';
+  tail2.position.copy(tailTip).sub(tailPt);
+  tail.add(tail2);
+  bones.push(tail2);
 
   const legBones = legs.map(leg => {
     const hip = at(leg.b, leg.s, height * LEG_TOP);
@@ -693,6 +751,17 @@ export function placeAnimal(species, {
       c.color?.multiply(tint);
       if (c.roughness !== undefined) c.roughness = Math.max(c.roughness, 0.62);
       if (c.metalness !== undefined) c.metalness = Math.min(c.metalness, 0.05);
+      // Komodos ship with many near-black flat parts; lift dark fragments toward
+      // a dusty olive so they read as lizards, not dark slugs, at exhibit range.
+      // Identified by flex (boneless bend) rather than object identity — the
+      // loaded species record is a fresh object, not SPECIES.komodo itself.
+      if (species.flex && c.color) {
+        const olive = new THREE.Color(0x7a8a6a);
+        const lum = c.color.r * 0.3 + c.color.g * 0.59 + c.color.b * 0.11;
+        c.color.lerp(olive, lum < 0.15 ? 0.72 : 0.32);
+        c.roughness = Math.max(c.roughness ?? 0, 0.84);
+        c.metalness = 0;
+      }
       return c;
     });
     o.material = Array.isArray(o.material) ? made : made[0];
@@ -779,12 +848,21 @@ export function placeAnimal(species, {
     return Math.max(0.12, top.distanceTo(toe) * 2);
   })();
   const stride = Math.max(0.22, legSpan * 1.5);
+  // Auto-rigged cats walk more slowly and with a longer stride feel than a
+  // sine-trotting toy — the gait curves below do the rest of the work.
+  const isQuad = parts.legs.length >= 4
+    && parts.legs.some(l => l.front) && parts.legs.some(l => !l.front);
+  const walkSpeed = isQuad ? speed * 0.72 : speed;
   let mode = 'rest';
   let timer = 2 + rng() * 9;
   let gait = rng() * Math.PI * 2;
+  let walkW = 0;            // smoothed 0..1 so starts/stops ease instead of snap
   let target = null;
   let turnBy = 0;
   const inset = 3;
+  // Rest pose of the whole group, so body pitch/roll can ease back to zero.
+  const restPitch = group.rotation.x;
+  const restRoll = group.rotation.z;
 
   // Reaching a target (or the water's edge) ends the walk with a turn of
   // about 180 degrees over the start of the rest: the animal comes away from
@@ -865,7 +943,8 @@ export function placeAnimal(species, {
         }
       }
       // Perched, it still breathes and looks about; in the air the wing cycle
-      // below (walking === 1) drives the flap instead of the idle weight-shift.
+      // below (walkW) drives the flap instead of the idle weight-shift.
+      walkW += (walking - walkW) * Math.min(1, dt * 6);
     } else if (canWalk) {
       timer -= dt;
       if (mode === 'rest' && turnBy) {
@@ -902,7 +981,7 @@ export function placeAnimal(species, {
           if (d < -Math.PI) d += Math.PI * 2;
           const turn = Math.min(Math.abs(d), dt * 1.1) * Math.sign(d);
           group.rotation.y += turn;
-          const go = Math.abs(d) < 0.5 ? speed * dt : speed * dt * 0.25;
+          const go = Math.abs(d) < 0.5 ? walkSpeed * dt : walkSpeed * dt * 0.22;
           const h = group.rotation.y - facingOffset;
           const nx = group.position.x + Math.sin(h) * go;
           const nz = group.position.z + Math.cos(h) * go;
@@ -913,47 +992,95 @@ export function placeAnimal(species, {
           } else {
             group.position.x = nx;
             group.position.z = nz;
-            gait += (go / stride) * Math.PI * 2;
-            walking = Math.abs(d) < 0.5 ? 1 : 0.25;
+            // Quadrupeds advance the cycle a little slower than distance alone
+            // suggests, so each footfall reads instead of blurring into a buzz.
+            const gaitScale = isQuad ? 0.85 : 1;
+            gait += (go / stride) * Math.PI * 2 * gaitScale;
+            walking = Math.abs(d) < 0.55 ? 1 : 0.35;
           }
         }
       }
+      // Ease the walk weight so a start or stop is not a hard cut on the legs.
+      walkW += (walking - walkW) * Math.min(1, dt * (walking > walkW ? 2.4 : 1.6));
+      const bob = isQuad
+        ? Math.sin(gait * 2) * 0.018 * walkW * walkW
+        : Math.abs(Math.sin(gait)) * 0.012 * walkW;
       group.position.y = ground(group.position.x, group.position.z)
-        - species.foot * scale + Math.abs(Math.sin(gait)) * 0.012 * walking;
+        - species.foot * scale + bob;
+    } else {
+      walkW += (0 - walkW) * Math.min(1, dt * 2);
     }
 
-    // Legs: diagonal pairs on a quadruped, alternating on a bird. Standing, the
-    // same cycle runs at a twentieth of the amplitude, which reads as weight
-    // shifting from one foot to the other.
-    const amp = walking ? 0.34 * walking : 0.03;
-    const cycle = walking ? gait : s * 0.6;
-    for (const leg of parts.legs) {
-      const ph = cycle + (leg.front === leg.left ? 0 : Math.PI);
-      leg.bone.quaternion.copy(leg.rest)
-        .multiply(_q.setFromAxisAngle(leg.swing.axis, leg.swing.sign * Math.sin(ph) * amp));
-      if (leg.lower && leg.lowerSwing) {
-        const bend = Math.max(0, Math.sin(ph + 1.9)) * amp * 0.9;
-        leg.lower.quaternion.copy(leg.restLower)
-          .multiply(_q.setFromAxisAngle(leg.lowerSwing.axis, -leg.lowerSwing.sign * bend));
+    // Legs. Birds keep the old alternating sine; quadrupeds get a lateral-
+    // sequence walk with separate stance and swing so they stop looking like
+    // clockwork toys.
+    if (isQuad) {
+      const amp = THREE.MathUtils.lerp(0.04, 0.42, walkW);
+      const cycle01 = ((gait / (Math.PI * 2)) % 1 + 1) % 1;
+      let support = 0;
+      for (const leg of parts.legs) {
+        const u = (cycle01 + quadWalkPhase(leg)) % 1;
+        // Hind limbs drive more of the push; forelimbs reach a little less.
+        const limbAmp = amp * (leg.front ? 0.88 : 1.05);
+        const hip = quadHipSwing(u, limbAmp);
+        leg.bone.quaternion.copy(leg.rest)
+          .multiply(_q.setFromAxisAngle(leg.swing.axis, leg.swing.sign * hip));
+        if (leg.lower && leg.lowerSwing) {
+          const bend = quadKneeBend(u, limbAmp * 0.95);
+          leg.lower.quaternion.copy(leg.restLower)
+            .multiply(_q.setFromAxisAngle(leg.lowerSwing.axis, -leg.lowerSwing.sign * bend));
+        }
+        // Weight on the ground during stance feeds the body roll below.
+        if (u < 0.62) support += leg.left ? 1 : -1;
       }
+      // Soft body rock: pitch follows the gait, roll follows which side is
+      // carrying weight. Kept small — anything bigger reads as a cartoon.
+      const pitch = Math.sin(gait * 2) * 0.035 * walkW;
+      const roll = THREE.MathUtils.clamp(support * 0.012, -0.04, 0.04) * walkW
+        + Math.sin(gait) * 0.01 * walkW;
+      group.rotation.x = restPitch + pitch;
+      group.rotation.z = restRoll + roll;
+    } else {
+      const amp = walkW ? 0.34 * walkW : 0.03;
+      const cycle = walkW > 0.05 ? gait : s * 0.6;
+      for (const leg of parts.legs) {
+        const ph = cycle + (leg.front === leg.left ? 0 : Math.PI);
+        leg.bone.quaternion.copy(leg.rest)
+          .multiply(_q.setFromAxisAngle(leg.swing.axis, leg.swing.sign * Math.sin(ph) * amp));
+        if (leg.lower && leg.lowerSwing) {
+          const bend = Math.max(0, Math.sin(ph + 1.9)) * amp * 0.9;
+          leg.lower.quaternion.copy(leg.restLower)
+            .multiply(_q.setFromAxisAngle(leg.lowerSwing.axis, -leg.lowerSwing.sign * bend));
+        }
+      }
+      // Do not touch group.rotation.x/z here: flying birds bank and shuffle on
+      // those axes, and a reset would flatten every flap.
     }
 
     // Head, neck and tail. Grazing when it stands, level and steady when it
-    // walks — an animal on the move does not swing its head about.
-    const graze = walking ? 0 : Math.max(0, Math.sin(s * 0.22)) ** 3;
+    // walks — an animal on the move does not swing its head about. The walk
+    // weight eases these too, so a stop does not snap the neck upright.
+    const idle = 1 - walkW;
+    const graze = idle * Math.max(0, Math.sin(s * 0.22)) ** 3;
     if (head) {
       head.rest && parts.head.quaternion.copy(head.rest)
-        .multiply(_q.setFromAxisAngle(head.up, Math.sin(s * 0.7) * 0.30 * (1 - walking)))
-        .multiply(_q.setFromAxisAngle(head.side, graze * 0.55 + Math.sin(s * 1.9) * 0.05));
+        .multiply(_q.setFromAxisAngle(head.up, Math.sin(s * 0.7) * 0.30 * idle))
+        .multiply(_q.setFromAxisAngle(head.side,
+          graze * 0.55 + Math.sin(s * 1.9) * 0.05
+          + Math.sin(gait) * 0.04 * walkW));
     }
     neck.forEach((n, i) => {
       parts.neck[i].quaternion.copy(n.rest)
-        .multiply(_q.setFromAxisAngle(n.up, Math.sin(s * 0.5 + i) * 0.12 * (1 - walking)))
+        .multiply(_q.setFromAxisAngle(n.up, Math.sin(s * 0.5 + i) * 0.12 * idle))
         .multiply(_q.setFromAxisAngle(n.side, graze * 0.42));
     });
     tail.forEach((n, i) => {
+      // Counter-sway with the gait while walking; idle swish when standing.
+      const wag = walkW > 0.1
+        ? Math.sin(gait * 2 - i * 0.7) * (0.22 + 0.06 * walkW)
+        : Math.sin(s * 2.1 - i * 0.6) * 0.16;
       parts.tail[i].quaternion.copy(n.rest)
-        .multiply(_q.setFromAxisAngle(n.up, Math.sin(s * 2.1 - i * 0.6) * 0.16));
+        .multiply(_q.setFromAxisAngle(n.up, wag));
     });
 
     // The rigless pair have nothing to pose, so they breathe instead: the ribs

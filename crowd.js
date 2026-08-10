@@ -98,8 +98,8 @@ export async function loadVisitorBase(url, matFactory) {
 // green: the trousers matched PANTS on both models and the shirt matched
 // nothing on his. Both of the man's upper garments map to the same slot.
 const PART_NAMES = ['hat', 'backpack', 'tshirt', 'jacket', 'vest', 'pants', 'shoes',
-  'hair', 'head'];
-const PART_ALIASES = { jacket: 'tshirt', vest: 'tshirt' };
+  'hair', 'head', 'body'];
+const PART_ALIASES = { jacket: 'tshirt', vest: 'tshirt', body: 'head' };
 const partOf = (name = '') => {
   const hit = PART_NAMES.find(p => name.toLowerCase().includes(p));
   return hit ? (PART_ALIASES[hit] ?? hit) : null;
@@ -255,14 +255,33 @@ export function makeVisitor(base, walkClip, rng,
       // The clones start from whatever state that left, so every part is turned
       // back on here and then dressed deliberately.
       c.visible = true;
+      // The crowd is dressed from flat tints, not from the pack's own finish.
+      // A packed metallic/smoothness map left over from the base model turns
+      // those tints into a black mirror under the sun — it declares the whole
+      // body a metal and kills the diffuse. Every visitor material is therefore
+      // stripped back to a dielectric and given its colour, and only the
+      // clothing maps are kept.
+      c.metalnessMap = null;
+      c.roughnessMap = null;
+      c.metalness = 0;
+      c.roughness = 0.85;
+      c.envMapIntensity = 0.35;
       const part = partOf(m.name);
       if (part === 'hat') c.visible = wearsHat;
       else if (part === 'backpack') c.visible = wearsPack;
       if (part === 'hair') {
         c.color.setHex(hairColour);
+        c.roughness = 0.72;
         c.needsUpdate = true;
       } else if (part === 'head') {
+        // Skin (face, hands, arms): tint and keep matte so it never reads as a
+        // silhouette against the plaza light. A little env lift keeps faces
+        // readable under the terrace roof, where the sun never reaches.
         c.color.setHex(skinTone);
+        c.metalness = 0;
+        c.roughness = 0.88;
+        c.envMapIntensity = 0.85;
+        if (c.normalScale) c.normalScale.setScalar(0.55);
         c.needsUpdate = true;
       } else if (part && chosen[part] !== undefined) {
         // Staff shirts get the stripe; everything else is plain.
@@ -274,6 +293,9 @@ export function makeVisitor(base, walkClip, rng,
         // clone starts out flagged as compiled, so without this it keeps the
         // one that samples the texture that is no longer there — which renders
         // black, whatever colour you just asked for.
+        c.needsUpdate = true;
+      } else {
+        c.metalness = Math.min(c.metalness, 0.2);
         c.needsUpdate = true;
       }
       return c;

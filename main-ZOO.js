@@ -6,8 +6,8 @@ import { Controller } from './controller.js?v=5';
 import { CameraRig } from './cameraRig.js?v=4';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar } from './cars.js?v=4';
-import { makeVisitor, loadVisitorBase, STAFF_UNIFORM } from './crowd.js?v=10';
-import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=19';
+import { makeVisitor, loadVisitorBase, STAFF_UNIFORM } from './crowd.js?v=13';
+import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=24';
 
 // ---------------------------------------------------------------------------
 // A Trip to the Zoo — a small regional park, laid out the way zoo master plans
@@ -216,14 +216,14 @@ function girlMatFor(name) {
     m.normalScale.setScalar(rec.bumpScale ?? 1);
   }
   if (rec.aoTex) m.aoMap = charTexture(rec.aoTex, false);
+  // The crowd recolours skin, hair and clothing with flat tints (see crowd.js).
+  // A packed metallic/smoothness map left in place turns those tints into a
+  // black mirror under the sun: it declares the whole body a metal and kills
+  // the diffuse. The zoo's people are dressed, not glossed, so the map is
+  // dropped and the material's own constants carry the finish.
   if (rec.metalTex) {
-    m.metalness = 1;
-    m.roughness = 1;
-    charPackMetalRough(rec.metalTex, t => {
-      m.metalnessMap = t;
-      m.roughnessMap = t;
-      m.needsUpdate = true;
-    });
+    m.metalness = Math.min(rec.metallic ?? 0, 0.05);
+    m.roughness = THREE.MathUtils.clamp(1 - (rec.smoothness ?? 0.25), 0.6, 1);
   } else {
     m.metalness = Math.min(rec.metallic ?? 0, 0.35);
     m.roughness = THREE.MathUtils.clamp(1 - (rec.smoothness ?? 0.25), 0.28, 1);
@@ -1318,7 +1318,10 @@ function chairBody(y0) {
 // A chair on its own, for the shopkeeper who sits outside his door.
 function plainChair(x, z, ry) {
   prop(() => {
-    frame(x, z, ry, () => chairBody(PLAZA_Y));
+    frame(x, z, ry, () => {
+      furnitureInteraction('sit', 0.4, 0.4, 0, PLAZA_Y + CHAIR_SEAT - 0.01, PLAZA_Y);
+      chairBody(PLAZA_Y);
+    });
   });
 }
 function terraceTable(x, z) {
@@ -1359,9 +1362,11 @@ function lionExhibit() {
   slab(M.stone, x0, x1, z0, z0 + 0.7, 0, 4.2);
   slab(M.stone, x0, x1, z1 - 0.7, z1, 0, 4.2);
   // Kopje, placed so the pride is seen against the sky from the viewing line.
+  // Kept small and tight: the pride wanders the whole paddock, and boulders
+  // this size kept swallowing a lion that walked behind them.
   prop(() => {
-    for (const [rx, rz, rs] of [[-80, -74, 5.2], [-76, -77, 3.8], [-83, -78, 3.0], [-78, -71, 2.4]]) {
-      shape(G.rock, M.rockWarm, rx, 0.2, rz, rs, rs * 0.62, rs * 0.9, { ry: rs, rz: 0.12 });
+    for (const [rx, rz, rs] of [[-80, -74, 2.4], [-76, -77, 1.8], [-83, -78, 1.4], [-78, -71, 1.1]]) {
+      shape(G.rock, M.rockWarm, rx, 0.1, rz, rs, rs * 0.62, rs * 0.9, { ry: rs, rz: 0.12 });
     }
     shape(G.trunk, M.barkDark, -92, 0, -66, 0.7, 3.4, 0.7);      // dead tree
     for (let i = 0; i < 4; i++) {
@@ -1428,20 +1433,22 @@ function komodoEnclosure() {
   meshWall(x0, z0, x1, z0, H, {});
   meshWall(x0, z1, x1, z1, H, {});
   meshRoof(x0, z0, x1, z1, H);
+  // Scrub stays on the edges so the dragons stay visible in the open centre —
+  // a bush in the middle of a 30 m paddock just hid one of them.
   prop(() => {
     for (const [lx, lz, la] of [[70, -76, 0.6], [82, -68, 2.1], [76, -82, 1.2]]) {
       shape(G.post, M.barkDark, lx, 0.35, lz, 0.42, 5.2, 0.42, { rz: 1.52, ry: la });
-      shape(G.blob, M.foliageDark, lx + 2.4, 0.4, lz + 1.2, 2.2, 0.9, 2.0);
+      shape(G.blob, M.foliageDark, lx + 2.4, 0.4, lz + 1.2, 1.6, 0.7, 1.5);
     }
     for (const [bx, bz] of [[88, -76], [67, -66], [80, -80]]) {
-      shape(G.blob, M.dirtEdge, bx, 0, bz, 4.4, 1.5, 3.8);      // earth bank
+      shape(G.blob, M.dirtEdge, bx, 0, bz, 3.4, 1.2, 3.0);      // earth bank
       shape(G.sphere, M.barkDark, bx + 1.2, 0.35, bz - 1.7, 0.9, 0.8, 0.7);  // burrow
     }
-    for (const [sx, sz] of [[72, -63], [86, -63], [70, -84], [90, -70], [78, -73]]) {
-      shape(G.blob, M.hedge, sx, 0, sz, 2.6, 1.3, 2.4);
+    for (const [sx, sz] of [[72, -63], [86, -63], [70, -84], [90, -70]]) {
+      shape(G.blob, M.hedge, sx, 0, sz, 1.8, 0.9, 1.7);
     }
   });
-  for (const [tx, tz] of [[66, -62], [91, -62], [66, -83], [91, -83]]) shrub(tx, tz, 1.3);
+  for (const [tx, tz] of [[66, -62], [91, -62], [66, -83], [91, -83]]) shrub(tx, tz, 1.0);
   railRun(x0 - 1.9, z0, x0 - 1.9, z1, {});
   exhibitSign(x0 - 3.0, -68, -Math.PI / 2);
   exhibitSign(x0 - 3.0, -78, -Math.PI / 2);
@@ -1515,7 +1522,7 @@ const HERDS = [
   ['lion', LION, 3, 0.55, 1, 0.04],
   ['zebra', ZEBRA, 6, 0.62, 2, 0.04],
   ['peacock', PEAFOWL, 5, 0.5, 0, 0.04],
-  ['komodo', KOMODO, 2, 0.45, 0, 0.06],
+  ['komodo', KOMODO, 2, 0.28, 0, 0.06],
   ['crow', FARM, 4, 0.42, 0, 0.05],
 ];
 
@@ -1724,6 +1731,16 @@ function seatOn(v, x, y, z, ry, groundY = PLAZA_Y) {
 
 async function populateStaff(bases, walkClip, idleClip) {
   if (!walkClip || !bases.length) return;
+  // Mark the furniture spot a visitor is sitting on as taken. The player is
+  // then refused it, which is what stops two people ending up in the same seat.
+  const occupySeat = (x, z) => {
+    let best = null, bestD = Infinity;
+    for (const spot of furnitureInteractions) {
+      const d = Math.hypot(spot.x - x, spot.z - z);
+      if (d < bestD) { bestD = d; best = spot; }
+    }
+    if (best && bestD < 0.9) best.occupied = 'visitor';
+  };
   STAFF.forEach(([x, z, ry, seated], i) => {
     // The two who stand — the restaurant's and the kiosk's — are placed on a
     // spot and never routed anywhere, so they are held still. Left on the walk
@@ -1731,14 +1748,19 @@ async function populateStaff(bases, walkClip, idleClip) {
     const v = makeVisitor(bases[i % bases.length], walkClip, rngCrowd,
       { uniform: STAFF_UNIFORM, seated, still: !seated, idleClip });
     crowd.add(v.group);
-    if (seated) seatOn(v, x, SEAT_TOP, z, ry);
-    else standOn(v, x, z, ry, terrainHeight(x, z) + PLAZA_Y);
+    if (seated) {
+      seatOn(v, x, SEAT_TOP, z, ry);
+      occupySeat(x, z);
+    } else {
+      standOn(v, x, z, ry, terrainHeight(x, z) + PLAZA_Y);
+    }
     statics.push(v);
   });
   CUSTOMERS.forEach(([x, z, ry], i) => {
     const v = makeVisitor(bases[(i + 1) % bases.length], walkClip, rngCrowd, { seated: true });
     crowd.add(v.group);
     seatOn(v, x, SEAT_TOP, z, ry);
+    occupySeat(x, z);
     statics.push(v);
   });
 }
@@ -1780,6 +1802,7 @@ function furnitureInteraction(type, halfWidth, halfDepth, anchorZ = 0, restY = 0
     yaw: FR,
     halfWidth,
     halfDepth,
+    occupied: false,
   });
 }
 
@@ -2177,6 +2200,9 @@ renderer.domElement.addEventListener('click', () => {
 
 function enterFurnitureInteraction(spot) {
   setFurniturePrompt(null);
+  // Keep 'visitor' if an NPC already owns the seat; only mark player seats as
+  // taken so leaveFurnitureInteraction can free them without unseating NPCs.
+  if (spot.occupied !== 'visitor') spot.occupied = 'player';
   activeFurnitureInteraction = {
     ...spot, source: spot, returnPosition: ctrl.pos.clone(), readyToExit: false,
   };
@@ -2194,6 +2220,7 @@ function leaveFurnitureInteraction() {
   ctrl.vel.set(0, 0, 0);
   ctrl.mode = 'ground';
   releasedSpot = interaction.source;
+  if (interaction.source.occupied === 'player') interaction.source.occupied = false;
   activeFurnitureInteraction = null;
   furnitureInteractionCooldown = 0.4;
 }
@@ -2217,6 +2244,7 @@ function updateFurnitureInteraction(dt) {
   let nearest = null, nearestDistance = Infinity;
   for (const spot of furnitureInteractions) {
     if (spot === releasedSpot) continue;
+    if (spot.occupied) continue;
     if (Math.abs(ctrl.pos.y - spot.approachY) > 0.75) continue;
     const distance = distanceToFurniture(spot, ctrl.pos);
     if (distance < 0.54 && distance < nearestDistance) {
