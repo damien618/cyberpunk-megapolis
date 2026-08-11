@@ -129,11 +129,15 @@ const SEAT_HIP_RISE = 0.075;   // hip joint over the seat, i.e. what she sits on
 // they go on any seat that is not exactly the right height — and none of these
 // are, the armchair standing a good 6 cm over her own knee.
 const SEAT_SHIN_LEAN = THREE.MathUtils.degToRad(-12);
-// Knees a hand's width apart. The old pose laid its 80° straight on top of
-// whatever the standing idle was doing to the legs, so the clip's own stance
-// came through underneath it — that is the sprawl you cannot sit out of, and it
-// is what drove the thighs sideways into the arms of the chair.
-const SEAT_KNEE_SPREAD = THREE.MathUtils.degToRad(6);
+// Hips a hand's width toward the backrest so the thighs rest on the planks
+// instead of hanging past the front edge (which is what put the calves through
+// the seat). Local −Z is behind the avatar, where the backrest is.
+const SEAT_BACK = -0.16;
+// The bind pose already leaves the seated knees a natural hand's width apart.
+// Adding a mirrored local-Y rotation here looks symmetric on paper, but these
+// two thigh bones do not share mirrored local axes: it lifts and pulls one knee
+// inward while pushing the other outward. Keeping the authored lateral stance
+// gives matching knee and foot heights after the front/back levelling below.
 const SEAT_LEAN = THREE.MathUtils.degToRad(-5);   // settled back, not at attention
 const SEAT_FALLBACK_HEIGHT = 0.45;   // if a seat forgets to say how high it is
 const SEAT_FLEX_PROBE = 0.05;        // test swing used to correct the hip flexion
@@ -705,21 +709,20 @@ export class Player {
     this.bones.spine_01?.rotateZ(SEAT_LEAN);
     this.applyHeldArmPose('seated', SEATED_HAND_TARGETS);
     this.poseRoot.position.y = SEAT_HIP_RISE - this.restHipY;
+    this.poseRoot.position.z = SEAT_BACK;
   }
 
-  // The shin takes its lean as given and the hip takes `flex`, so the thighs go
-  // level on a seat at her own knee height and slope down on a taller one.
+  // Same flexion on both thighs. hipLevelling() is for the supine pose — it
+  // zeroes mid-stance reach so both legs hang in the body's plane — and on a
+  // chair it left one shin twisted out (the foot pointing sideways). The
+  // authored rest stance already carries a natural knee gap; do not add to it.
   poseSeatedLegs(flex) {
-    const level = this.hipLevelling();
     for (const side of ['l', 'r']) {
-      const mirror = side === 'l' ? 1 : -1;
-      const hip = level[side] + flex;
-      this.bones[`thigh_${side}`]?.rotateZ(hip);
-      this.bones[`thigh_${side}`]?.rotateY(-SEAT_KNEE_SPREAD * mirror);
+      this.bones[`thigh_${side}`]?.rotateZ(flex);
       // The knee takes the thigh back off again and leaves the shin on its lean;
       // the ankle then takes the lean off too, so the sole finishes flat on the
       // floor instead of at whatever angle the clip underneath left it.
-      this.bones[`calf_${side}`]?.rotateZ(SEAT_SHIN_LEAN - hip);
+      this.bones[`calf_${side}`]?.rotateZ(SEAT_SHIN_LEAN - flex);
       this.bones[`foot_${side}`]?.rotateZ(-SEAT_SHIN_LEAN);
     }
   }
@@ -728,10 +731,9 @@ export class Player {
   // above it.
   //
   // The closed form below is only the opening guess. A leg is not the flat
-  // two-link diagram it assumes — the pack is bound mid-stance with the knee 6 cm
-  // outboard of the hip, and the knee spread turns the thigh about an axis the
-  // flexion has already moved — and taken on its own it left the feet a good
-  // 2 cm over the floor. Two corrections off the ankle the pose actually
+  // two-link diagram it assumes — the pack is bound mid-stance, with each knee
+  // already a little outboard of the hip — and taken on its own it left the feet
+  // a good 2 cm over the floor. Two corrections off the ankle the pose actually
   // produces take that out. Cached per seat height; the villa has two.
   seatFlex(seat) {
     if (this._seatFlex?.seat === seat) return this._seatFlex.flex;
