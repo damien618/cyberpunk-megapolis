@@ -9,7 +9,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { Player } from './player.js?v=21';
+import { Player } from './player.js?v=22';
 import { buildCar, carBounds } from './cars.js?v=3';
 
 // build stamp: shown in the HUD + console so a stale-cache session is
