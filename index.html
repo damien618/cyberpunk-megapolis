@@ -278,23 +278,28 @@
   .lie-prompt:hover, .lie-prompt:focus-visible {
     background: #f1f1f1; outline: 2px solid #fff; outline-offset: 2px;
   }
-  #liePromptGroup {
+  #liePromptGroup, #travelPromptGroup {
     position: fixed; left: 50%; top: calc(50% + 42px); z-index: 9;
     transform: translate(-50%, 8px); display: flex; flex-direction: column; gap: 9px;
     width: min(470px, calc(100vw - 32px));
     opacity: 0; visibility: hidden; pointer-events: none;
     transition: opacity .14s ease, transform .14s ease, visibility .14s;
   }
-  #liePromptGroup.show {
+  #liePromptGroup.show, #travelPromptGroup.show {
     transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto;
   }
   .lie-prompt { width: 100%; }
 
   /* ---------- mode gate: only one engine's DOM is active at a time ---------- */
+  /* #furniturePrompt is excluded here: the cyberpunk city (main.js) reuses it
+     for its own return-to-L.A. prompt but never gets engine="world" (that tag
+     is only for the LA/zoo worlds), so gating it here would always hide it
+     there. Its own opacity/visibility rule above already keeps it hidden
+     until JS adds .show, so it doesn't need this !important gate too. */
   html:not([data-engine="world"]) #overlay,
   html:not([data-engine="world"]) #crosshair,
-  html:not([data-engine="world"]) #furniturePrompt,
   html:not([data-engine="world"]) #liePromptGroup,
+  html:not([data-engine="world"]) #travelPromptGroup,
   html:not([data-engine="world"]) #hud { display: none !important; }
 
   html[data-engine="world"] #loader,
@@ -423,6 +428,10 @@
   <button id="lieDayPrompt" class="lie-prompt" type="button">S'allonger et se réveiller le jour</button>
   <button id="lieNightPrompt" class="lie-prompt" type="button">S'allonger et se réveiller la nuit</button>
 </div>
+<div id="travelPromptGroup" role="group" aria-label="Choisir une destination" aria-hidden="true">
+  <button id="travelCyberpunkPrompt" class="lie-prompt" type="button">Voyager à Cyberpunk Megapolis</button>
+  <button id="travelZooPrompt" class="lie-prompt" type="button">Voyager au zoo</button>
+</div>
 <div id="crosshair"></div>
 <div id="hud">Mode: <b id="mode">air</b> · Vitesse: <b id="speed">0</b> km/h · Hauteur: <b id="height">0</b> m</div>
 <script>
@@ -455,8 +464,8 @@
 </script>
 <script type="module">
   const ENGINES = {
-    la: './main-LA.js?v=202608112045',
-    zoo: './main-ZOO.js?v=202608112045',
+    la: './main-LA.js?v=202608112200',
+    zoo: './main-ZOO.js?v=202608120115',
   };
   import(ENGINES[document.documentElement.dataset.mode] ?? './main.js?v=23');
 </script>

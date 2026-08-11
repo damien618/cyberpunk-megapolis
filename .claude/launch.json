@@ -6,6 +6,14 @@
       "name": "cyberpunk-megapolis",
       "url": "http://127.0.0.1:8766",
       "port": 8766
+    },
+    {
+      "// note": "Windows: no ~/Documents privacy gate, so the preview tool can spawn python itself on a separate port.",
+      "name": "cyberpunk-megapolis-win",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8767", "--bind", "127.0.0.1"],
+      "url": "http://127.0.0.1:8767",
+      "port": 8767
     }
   ]
 }

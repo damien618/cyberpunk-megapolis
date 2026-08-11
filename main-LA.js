@@ -32,6 +32,9 @@ const furniturePrompt = document.getElementById('furniturePrompt');
 const liePromptGroup = document.getElementById('liePromptGroup');
 const lieDayPrompt = document.getElementById('lieDayPrompt');
 const lieNightPrompt = document.getElementById('lieNightPrompt');
+const travelPromptGroup = document.getElementById('travelPromptGroup');
+const travelCyberpunkPrompt = document.getElementById('travelCyberpunkPrompt');
+const travelZooPrompt = document.getElementById('travelZooPrompt');
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
@@ -1631,7 +1634,6 @@ const laTravelCar = parkCar(
 const laTravelBounds = carBounds(LA_TRAVEL_CAR.type);
 const laTravelInteraction = {
   type: 'travel',
-  label: 'Voyager à Cyberpunk Megapolis',
   x: LA_TRAVEL_CAR.x,
   y: LA_TRAVEL_CAR.ground,
   z: LA_TRAVEL_CAR.z,
@@ -2554,14 +2556,17 @@ const ctrl = new Controller(bw, groundFn, castFn, {
 });
 // Spawn on the entry walk, facing the front door.
 const travelParams = new URLSearchParams(location.search);
-const arrivedFromMegapolis = travelParams.get('arrival') === 'megapolis';
+// The same car takes you to either Cyberpunk Megapolis or the zoo, so either
+// return trip lands the player back at its side.
+const arrivedFromTravel = travelParams.get('arrival') === 'megapolis'
+  || travelParams.get('arrival') === 'zoo';
 const arrivalSide = laTravelBounds.width / 2 + 1.1;
 const villaArrivalPoint = new THREE.Vector3(
   LA_TRAVEL_CAR.x + Math.sin(LA_TRAVEL_CAR.yaw) * arrivalSide,
   LA_TRAVEL_CAR.ground + 0.2,
   LA_TRAVEL_CAR.z + Math.cos(LA_TRAVEL_CAR.yaw) * arrivalSide,
 );
-const spawnPoint = arrivedFromMegapolis
+const spawnPoint = arrivedFromTravel
   ? villaArrivalPoint.clone()
   : new THREE.Vector3(0, FLOOR + 1.4, 18.5);
 ctrl.rescueTo(spawnPoint);
@@ -2602,6 +2607,8 @@ let promptedFurniture = null;
 let furnitureActionRequested = false;
 let lieWakeModeRequested = null;
 let choosingLieWakeMode = false;
+let travelDestinationRequested = null;
+let choosingTravelDestination = false;
 let travelInProgress = false;
 // Getting up puts the avatar back exactly where it was grabbed, which is still
 // inside that seat's trigger — on the cooldown alone it simply sat back down a
@@ -2631,15 +2638,20 @@ function setFurniturePrompt(spot) {
   promptedFurniture = spot;
   furnitureActionRequested = false;
   lieWakeModeRequested = null;
+  travelDestinationRequested = null;
   const showLieChoices = spot?.type === 'lie';
-  const showSinglePrompt = Boolean(spot) && !showLieChoices;
+  const showTravelChoices = spot?.type === 'travel';
+  const showSinglePrompt = Boolean(spot) && !showLieChoices && !showTravelChoices;
   furniturePrompt.textContent = showSinglePrompt ? (spot.label || "S'asseoir") : '';
   furniturePrompt.classList.toggle('show', showSinglePrompt);
   furniturePrompt.setAttribute('aria-hidden', showSinglePrompt ? 'false' : 'true');
   liePromptGroup.classList.toggle('show', showLieChoices);
   liePromptGroup.setAttribute('aria-hidden', showLieChoices ? 'false' : 'true');
+  travelPromptGroup.classList.toggle('show', showTravelChoices);
+  travelPromptGroup.setAttribute('aria-hidden', showTravelChoices ? 'false' : 'true');
   choosingLieWakeMode = showLieChoices;
-  if (showLieChoices && document.pointerLockElement === renderer.domElement)
+  choosingTravelDestination = showTravelChoices;
+  if ((showLieChoices || showTravelChoices) && document.pointerLockElement === renderer.domElement)
     document.exitPointerLock?.();
 }
 
@@ -2657,6 +2669,16 @@ function requestLieWakeMode(mode, event) {
 }
 lieDayPrompt.addEventListener('click', event => requestLieWakeMode('day', event));
 lieNightPrompt.addEventListener('click', event => requestLieWakeMode('night', event));
+
+function requestTravelDestination(destination, event) {
+  event.stopPropagation();
+  if (promptedFurniture?.type !== 'travel') return;
+  travelDestinationRequested = destination;
+  choosingTravelDestination = false;
+  requestGamePointerLock();
+}
+travelCyberpunkPrompt.addEventListener('click', event => requestTravelDestination('megapolis', event));
+travelZooPrompt.addEventListener('click', event => requestTravelDestination('zoo', event));
 
 function enterFurnitureInteraction(spot, wakeMode = null) {
   setFurniturePrompt(null);
@@ -2734,14 +2756,20 @@ function updateFurnitureInteraction(dt) {
   // own click handler sets furnitureActionRequested instead.
   const actionRequested = nearest?.type === 'lie'
     ? Boolean(lieWakeModeRequested)
-    : (furnitureActionRequested || input.pressed('LMB'));
+    : nearest?.type === 'travel'
+      ? Boolean(travelDestinationRequested)
+      : (furnitureActionRequested || input.pressed('LMB'));
   if (nearest && actionRequested) {
     furnitureActionRequested = false;
     if (nearest.type === 'travel') {
+      const destination = travelDestinationRequested;
+      travelDestinationRequested = null;
       travelInProgress = true;
       setFurniturePrompt(null);
       const preservedNight = window.__nightMode === true ? '1' : '0';
-      location.href = `index.html?map=megapolis&runner=girl&arrival=la&laNight=${preservedNight}`;
+      location.href = destination === 'zoo'
+        ? `index.html?map=zoo&arrival=la&laNight=${preservedNight}`
+        : `index.html?map=megapolis&runner=girl&arrival=la&laNight=${preservedNight}`;
       return true;
     }
     const wakeMode = nearest.type === 'lie' ? lieWakeModeRequested : null;
@@ -2910,11 +2938,11 @@ function startVilla() {
 }
 
 startBtn.addEventListener('click', startVilla);
-if (arrivedFromMegapolis) startVilla();
+if (arrivedFromTravel) startVilla();
 
 document.addEventListener('pointerlockchange', () => {
   usedLock = usedLock || document.pointerLockElement !== null;
-  if (choosingLieWakeMode && document.pointerLockElement === null) {
+  if ((choosingLieWakeMode || choosingTravelDestination) && document.pointerLockElement === null) {
     paused = false;
     overlay.style.display = 'none';
     return;

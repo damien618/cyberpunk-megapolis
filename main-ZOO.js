@@ -529,11 +529,20 @@ function slab(mat, x0, x1, z0, z1, y0, y1) {
 // ---------------------------------------------------------------------------
 const PATH_Y = 0.09;          // the dirt is a shallow slab, not a decal
 const PLAZA_Y = 0.08;         // the hub's paving, likewise
+// A chalet stands on a plinth, so its floorboards are half a metre up — anyone
+// placed INSIDE one stands on this, not on the paving outside. Written once and
+// used both to lay the boards and to stand the staff on them, because the two
+// were separately authored and disagreed: the ticket clerks were put at plaza
+// height and stood buried to the knee in their own floor.
+const CHALET_FLOOR_Y = 0.5;
 const CHAIR_SEAT = 0.47;      // top of a chair's seat above whatever it stands on
 const PARK_HALF = 122;        // flat inside this half-extent about PARK_MID
 const PARK_MID = -46;
 const GATE_Z = -3;            // the turnstile line
 const KIOSK_Z = 9;            // ticket pavilion centre
+// The guichet each pavilion actually staffs: the one nearer the car park, so
+// you meet a clerk on the way in rather than after walking past the building.
+const TICKET_DESK_Z = KIOSK_Z + 4.2;
 
 // The bears keep a real pool, so the terrain carries one basin. The mesh takes
 // its vertices from terrainHeight, and groundFn evaluates the same function, so
@@ -890,22 +899,39 @@ function meshRoof(x0, z0, x1, z1, h) {
 // the shop needs a ceiling, or you look up through the roof prism's back faces
 // at the sky.
 function chalet(w, d, { h = 3.5, roof = M.shingle, windows = 3, doorW = 1.8,
-  interior = null } = {}) {
+  interior = null, openings = [], doorOpen = true } = {}) {
   const hw = w / 2, hd = d / 2;
   const DOOR_H = 2.4;
   const jamb = doorW / 2;
   box(M.stone, 0, 0.22, 0, w + 0.9, 0.44, d + 0.9);            // plinth
   // Log walls: courses rather than a slab, which is the whole look of a chalet.
+  //
+  // The front wall is CUT rather than drawn whole: the doorway, plus any
+  // `openings` the caller asks for as [centreX, halfWidth, y0, y1]. Each course
+  // is emitted as whatever spans survive subtracting the openings it runs
+  // through, so an opening is a hole you can see through. The ticket windows
+  // were glass hung on an unbroken wall before this, which is a painted-on
+  // window: lighting the room behind them changed nothing, because there was
+  // no room behind them.
   const courses = Math.round(h / 0.34);
   for (let i = 0; i < courses; i++) {
     const y = 0.44 + i * 0.34 + 0.17;
     const inset = (i % 2) * 0.04;
-    if (y - 0.17 >= 0.44 + DOOR_H) {
-      box(M.timberWall, 0, y, -hd + inset, w, 0.33, 0.3);      // over the head
-    } else {
-      const seg = hw - jamb;
-      box(M.timberWall, -(jamb + seg / 2), y, -hd + inset, seg, 0.33, 0.3);
-      box(M.timberWall, jamb + seg / 2, y, -hd + inset, seg, 0.33, 0.3);
+    let spans = [[-hw, hw]];
+    const cut = (a, b) => {
+      const kept = [];
+      for (const [s, e] of spans) {
+        if (a > s) kept.push([s, Math.min(a, e)]);
+        if (b < e) kept.push([Math.max(b, s), e]);
+      }
+      spans = kept.filter(([s, e]) => e - s > 0.02);
+    };
+    if (y - 0.17 < 0.44 + DOOR_H) cut(-jamb, jamb);
+    for (const [cx, chw, y0, y1] of openings) {
+      if (y + 0.17 > y0 && y - 0.17 < y1) cut(cx - chw, cx + chw);
+    }
+    for (const [s, e] of spans) {
+      box(M.timberWall, (s + e) / 2, y, -hd + inset, e - s, 0.33, 0.3);
     }
     box(M.timberWall, 0, y, hd - inset, w, 0.33, 0.3);
     box(M.timberWallDark, -hw + inset, y, 0, 0.3, 0.33, d);
@@ -915,15 +941,24 @@ function chalet(w, d, { h = 3.5, roof = M.shingle, windows = 3, doorW = 1.8,
   // Ceiling: the roof is a closed prism and its inside faces are backfaces, so
   // without this you stand in the shop and look at the sky.
   box(M.ceilingIn, 0, top - 0.08, 0, w, 0.16, d);
-  box(M.plank, 0, 0.47, 0, w - 0.6, 0.06, d - 0.6);            // floorboards
-  // Doorway: jambs, lintel, a threshold and one leaf standing open.
+  box(M.plank, 0, CHALET_FLOOR_Y - 0.03, 0, w - 0.6, 0.06, d - 0.6);   // floorboards
+  // Doorway: jambs, lintel, a threshold and the leaf.
   for (const sx of [-1, 1]) {
     box(M.timberDark, sx * (jamb + 0.09), 0.44 + DOOR_H / 2, -hd - 0.02, 0.18, DOOR_H, 0.46);
   }
   box(M.timberDark, 0, 0.44 + DOOR_H + 0.11, -hd - 0.02, doorW + 0.4, 0.22, 0.46);
   box(M.stone, 0, 0.45, -hd - 0.26, doorW + 0.4, 0.1, 0.6);
-  box(M.timber, -(jamb - 0.05), 0.44 + DOOR_H / 2, -hd - 0.5, 0.1, DOOR_H - 0.1, doorW * 0.9);
-  box(M.brass, -(jamb - 0.05), 0.44 + 1.05, -hd - 0.5 - doorW * 0.4, 0.1, 0.1, 0.1);
+  if (doorOpen) {
+    // Standing open against its own jamb, which is what says "come in".
+    box(M.timber, -(jamb - 0.05), 0.44 + DOOR_H / 2, -hd - 0.5, 0.1, DOOR_H - 0.1, doorW * 0.9);
+    box(M.brass, -(jamb - 0.05), 0.44 + 1.05, -hd - 0.5 - doorW * 0.4, 0.1, 0.1, 0.1);
+  } else {
+    // Shut, filling the opening in the wall plane. The leaf is a solid box like
+    // any other, so this closes the doorway to the player as well as to the eye
+    // — which is the point for a staff-only booth.
+    box(M.timber, 0, 0.44 + DOOR_H / 2, -hd - 0.05, doorW * 0.98, DOOR_H - 0.06, 0.1);
+    box(M.brass, jamb - 0.16, 0.44 + 1.05, -hd - 0.13, 0.1, 0.1, 0.1);
+  }
   if (interior) interior({ hw, hd, top });
   for (let i = 0; i < windows; i++) {
     const x = -w * 0.32 + (w * 0.64 * i) / Math.max(1, windows - 1);
@@ -1074,13 +1109,40 @@ function ticketPavilion(side) {
   // heading (-sin ry, -cos ry), so a yaw of side*90 deg is what turns each
   // pavilion's counter onto the centre line rather than out to the field.
   frame(side * 15, KIOSK_Z, side * Math.PI / 2, () => {
-    const top = chalet(14, 7, { h: 3.3, roof: M.shingleRed, windows: 0, doorW: 1.4 });
-    for (const x of [-4.2, 0, 4.2]) {
-      box(M.timberPale, x, 1.9, -3.6, 2.4, 1.5, 0.14);
-      box(M.vivGlass, x, 1.95, -3.67, 2.15, 1.2, 0.06);
+    // TWO guichets, one either side of the door — not three. The middle one was
+    // drawn straight over the doorway, so the pavilion wore a window frame round
+    // its own entrance and the clerk stood in the door rather than at a counter.
+    // GY0/GY1 are picked to land on whole log courses, so the wall breaks
+    // cleanly at the frame instead of leaving a course-height sliver.
+    const GY0 = 1.465, GY1 = 2.475, GHW = 1.07, GMID = (GY0 + GY1) / 2;
+    const guichets = [-4.2, 4.2];
+    const top = chalet(14, 7, {
+      h: 3.3, roof: M.shingleRed, windows: 0, doorW: 1.4,
+      openings: guichets.map(x => [x, GHW, GY0 + 0.04, GY1 - 0.04]),
+      // Staff door, kept shut: a visitor buys a ticket AT the guichet, and an
+      // open leaf both invited them inside and swung across the queue's path.
+      doorOpen: false,
+    });
+    for (const x of guichets) {
+      // A cased opening: head, sill and jambs lapping the hole the courses left,
+      // with the glass set into it. This used to be a solid pale-timber panel
+      // behind the glass, which is what made every guichet read as shuttered.
+      box(M.timberPale, x, GY1, -3.6, (GHW + 0.09) * 2, 0.18, 0.14);   // head
+      box(M.timberPale, x, GY0, -3.6, (GHW + 0.09) * 2, 0.18, 0.14);   // sill
+      box(M.timberPale, x - (GHW + 0.05), GMID, -3.6, 0.1, GY1 - GY0, 0.14);
+      box(M.timberPale, x + (GHW + 0.05), GMID, -3.6, 0.1, GY1 - GY0, 0.14);
+      box(M.vivGlass, x, GMID, -3.67, GHW * 2, GY1 - GY0 - 0.06, 0.06);
       box(M.stone, x, 1.05, -3.8, 2.6, 0.16, 0.5);              // counter shelf
       box(M.signBoard, x, 2.9, -3.67, 2.5, 0.4, 0.1);           // CAISSE plate
     }
+    // Two lamps, and neither where the first pass put its single one: that sat
+    // BEHIND the clerk's head, so the face was backlit, fell to ambient alone
+    // and read as a dark silhouette through the glass — worst on the darker
+    // skin tones the crowd picks from. The key hangs just inside the staffed
+    // window, above and in front of the clerk; the fill keeps the back of the
+    // room off black so the other guichet is not a hole.
+    roomLight(-side * 4.2, 2.9, -3.2, 9, 14);   // key, over the staffed counter
+    roomLight(0, 3.1, 0.4, 5, 18);              // fill, mid-room
     // Canopy on posts: shade for the queue, and the depth that makes this read
     // as a pavilion rather than a shed.
     box(M.timberDark, 0, 3.4, -5.8, 15, 0.22, 4.6);
@@ -1620,12 +1682,18 @@ const CROWD_PLAN = [
 // are the same clones the walkers are, standing still — a shop with nobody in
 // it reads as scenery, and a terrace of empty chairs reads as closed.
 const statics = [];
-// x, z, facing, seated. The facings are the shop fronts' own outward normals,
-// so each keeper is looking out at the plaza rather than at their own wall.
+// x, z, facing, seated, floorY. The facings are the shop fronts' own outward
+// normals, so each keeper is looking out at the plaza rather than at their own
+// wall. `floorY` is what they STAND on and defaults to the paving: only the two
+// ticket clerks are indoors, and a chalet's floor is half a metre above it.
 const STAFF = [
   [-12.5, -45.6, 0, false],          // restaurant, standing by the door
   [9.6, -45.4, -0.22, true],         // gift shop, sitting on the chair outside
   [-1.2, -56.6, 0, false],           // kiosk, at the serving hatch
+  // Behind the staffed guichet of each pavilion, a pace back from the counter so
+  // the glass is between them and the queue rather than through their chest.
+  [-12.2, TICKET_DESK_Z, Math.PI / 2, false, CHALET_FLOOR_Y],   // west ticket booth
+  [12.2, TICKET_DESK_Z, -Math.PI / 2, false, CHALET_FLOOR_Y],   // east ticket booth
 ];
 // The terrace chairs, taken from the same arithmetic that placed them: tables
 // at local x = i*3.4 in the restaurant's frame, a chair a metre either side.
@@ -1741,7 +1809,7 @@ async function populateStaff(bases, walkClip, idleClip) {
     }
     if (best && bestD < 0.9) best.occupied = 'visitor';
   };
-  STAFF.forEach(([x, z, ry, seated], i) => {
+  STAFF.forEach(([x, z, ry, seated, floorY], i) => {
     // The two who stand — the restaurant's and the kiosk's — are placed on a
     // spot and never routed anywhere, so they are held still. Left on the walk
     // they marched on the same paving stone in front of their own door.
@@ -1752,7 +1820,7 @@ async function populateStaff(bases, walkClip, idleClip) {
       seatOn(v, x, SEAT_TOP, z, ry);
       occupySeat(x, z);
     } else {
-      standOn(v, x, z, ry, terrainHeight(x, z) + PLAZA_Y);
+      standOn(v, x, z, ry, floorY ?? terrainHeight(x, z) + PLAZA_Y);
     }
     statics.push(v);
   });
@@ -1962,12 +2030,33 @@ const CAR_SCALE = Math.min(1, (BAY_PITCH - 0.55) / carSize.z, (BAY_DEPTH - 0.1) 
 const CAR_L = carSize.x * CAR_SCALE, CAR_W = carSize.z * CAR_SCALE;
 const CAR_H = carSize.y * CAR_SCALE;
 
+// The crossover car: the same SUV parked outside the L.A. villa's garage,
+// reused here so a player recognises it on both sides of the trip. It gets a
+// bay of its own, held out of the random population below so nothing else is
+// ever parked over it — a bay close to the entrance, on the aisle nearest the
+// plaza, so arriving from L.A. drops you somewhere you'd naturally walk past.
+const ZOO_TRAVEL_ROW = BAY_ROWS[0];
+const ZOO_TRAVEL_BAY_K = 15;
+const laCarProbe = buildCar('suv', 0xb8bec6, { metallic: false });
+const laCarBox = new THREE.Box3().setFromObject(laCarProbe);
+const laCarSize = laCarBox.getSize(new THREE.Vector3());
+const LA_CAR_SCALE = Math.min(1, (BAY_PITCH - 0.55) / laCarSize.z, (BAY_DEPTH - 0.1) / laCarSize.x);
+const ZOO_TRAVEL_L = laCarSize.x * LA_CAR_SCALE, ZOO_TRAVEL_W = laCarSize.z * LA_CAR_SCALE;
+const ZOO_TRAVEL_H = laCarSize.y * LA_CAR_SCALE;
+const ZOO_TRAVEL_CAR = Object.freeze({
+  x: BAY_X0 + (ZOO_TRAVEL_BAY_K + 0.5) * BAY_PITCH,
+  z: ZOO_TRAVEL_ROW,
+  yaw: Math.PI / 2,
+  ground: 0.05 - laCarBox.min.y * LA_CAR_SCALE,
+});
+
 const parkedCars = [];
 let carIndex = 0;
 for (const row of BAY_ROWS) {
   for (let k = 0; k < BAY_COUNT; k++) {
     const x = BAY_X0 + (k + 0.5) * BAY_PITCH;
     if (Math.abs(x) < WALK_HALF) continue;
+    if (row === ZOO_TRAVEL_ROW && k === ZOO_TRAVEL_BAY_K) continue;
     // A car park is never full, and every car here is its own mesh rather than
     // an instance: filling a third of the bays is what a mid-morning zoo looks
     // like and keeps the draw calls where they were.
@@ -1986,6 +2075,32 @@ for (const row of BAY_ROWS) {
     prop(() => box(M.collider, x, 0.05 + CAR_H / 2, row, CAR_L, CAR_H, CAR_W, facing));
   }
 }
+
+const zooTravelCar = buildCar('suv', 0xb8bec6, { metallic: false });
+zooTravelCar.scale.setScalar(LA_CAR_SCALE);
+zooTravelCar.position.set(ZOO_TRAVEL_CAR.x, ZOO_TRAVEL_CAR.ground, ZOO_TRAVEL_CAR.z);
+zooTravelCar.rotation.y = ZOO_TRAVEL_CAR.yaw;
+zooTravelCar.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+world.add(zooTravelCar);
+parkedCars.push(zooTravelCar);
+prop(() => box(M.collider, ZOO_TRAVEL_CAR.x, 0.05 + ZOO_TRAVEL_H / 2, ZOO_TRAVEL_CAR.z,
+  ZOO_TRAVEL_L, ZOO_TRAVEL_H, ZOO_TRAVEL_W, ZOO_TRAVEL_CAR.yaw));
+
+const zooTravelInteraction = {
+  type: 'travel',
+  label: 'Voyager à la villa L.A.',
+  x: ZOO_TRAVEL_CAR.x,
+  y: ZOO_TRAVEL_CAR.ground,
+  z: ZOO_TRAVEL_CAR.z,
+  centerX: ZOO_TRAVEL_CAR.x,
+  centerZ: ZOO_TRAVEL_CAR.z,
+  approachY: ZOO_TRAVEL_CAR.ground + 0.5,
+  yaw: ZOO_TRAVEL_CAR.yaw,
+  halfWidth: ZOO_TRAVEL_L / 2,
+  halfDepth: ZOO_TRAVEL_W / 2,
+  triggerDistance: 1.25,
+  occupied: false,
+};
 
 flushKits();
 
@@ -2088,8 +2203,20 @@ const ctrl = new Controller(bw, groundFn, castFn, {
   onReset: () => ctrl.rescueTo(spawnPoint),
   onLand: impact => { if (player) player.onLand(impact); },
 });
-// On the car park, a couple of bays back from the entrance and facing it.
-const spawnPoint = new THREE.Vector3(2.5, 1.4, 19);
+const zooParams = new URLSearchParams(location.search);
+const arrivedFromLA = zooParams.get('arrival') === 'la';
+// The zoo has no day/night cycle of its own; it only carries the villa's
+// choice through the trip so the return leg can hand it back unchanged.
+const preservedLaNight = zooParams.get('laNight') === '1' ? '1' : '0';
+const zooArrivalSide = ZOO_TRAVEL_W / 2 + 1.1;
+const zooArrivalPoint = new THREE.Vector3(
+  ZOO_TRAVEL_CAR.x + Math.sin(ZOO_TRAVEL_CAR.yaw) * zooArrivalSide,
+  ZOO_TRAVEL_CAR.ground + 0.2,
+  ZOO_TRAVEL_CAR.z + Math.cos(ZOO_TRAVEL_CAR.yaw) * zooArrivalSide,
+);
+// On the car park, a couple of bays back from the entrance and facing it —
+// unless the trip started at the L.A. villa, in which case spawn by the car.
+const spawnPoint = arrivedFromLA ? zooArrivalPoint.clone() : new THREE.Vector3(2.5, 1.4, 19);
 ctrl.rescueTo(spawnPoint);
 
 const rig = new CameraRig(camera, bw);
@@ -2142,6 +2269,7 @@ let activeFurnitureInteraction = null;
 let furnitureInteractionCooldown = 0;
 let promptedFurniture = null;
 let furnitureActionRequested = false;
+let travelInProgress = false;
 let releasedSpot = null;
 // True while the sit prompt is on screen: we drop pointer lock so the cursor
 // can click the button, and pointerlockchange must not treat that as a pause.
@@ -2226,6 +2354,7 @@ function leaveFurnitureInteraction() {
 }
 
 function updateFurnitureInteraction(dt) {
+  if (travelInProgress) return true;
   if (furnitureInteractionCooldown > 0) furnitureInteractionCooldown -= dt;
   if (activeFurnitureInteraction) {
     const held = interactionInputHeld();
@@ -2242,12 +2371,12 @@ function updateFurnitureInteraction(dt) {
     return false;
   }
   let nearest = null, nearestDistance = Infinity;
-  for (const spot of furnitureInteractions) {
+  for (const spot of [zooTravelInteraction, ...furnitureInteractions]) {
     if (spot === releasedSpot) continue;
     if (spot.occupied) continue;
-    if (Math.abs(ctrl.pos.y - spot.approachY) > 0.75) continue;
+    if (Math.abs(ctrl.pos.y - spot.approachY) > (spot.type === 'travel' ? 1.25 : 0.75)) continue;
     const distance = distanceToFurniture(spot, ctrl.pos);
-    if (distance < 0.54 && distance < nearestDistance) {
+    if (distance < (spot.triggerDistance ?? 0.54) && distance < nearestDistance) {
       nearest = spot;
       nearestDistance = distance;
     }
@@ -2255,6 +2384,12 @@ function updateFurnitureInteraction(dt) {
   setFurniturePrompt(nearest);
   if (nearest && (furnitureActionRequested || input.pressed('LMB'))) {
     furnitureActionRequested = false;
+    if (nearest.type === 'travel') {
+      travelInProgress = true;
+      setFurniturePrompt(null);
+      location.href = `index.html?map=la&arrival=zoo&night=${preservedLaNight}`;
+      return true;
+    }
     enterFurnitureInteraction(nearest);
   }
   return activeFurnitureInteraction !== null;
@@ -2365,6 +2500,7 @@ function startZoo() {
   requestGamePointerLock();
 }
 startBtn.addEventListener('click', startZoo);
+if (arrivedFromLA) startZoo();
 
 document.addEventListener('pointerlockchange', () => {
   usedLock = usedLock || document.pointerLockElement !== null;
@@ -2394,6 +2530,7 @@ const hook = {
   furnitureInteractions, enterFurnitureInteraction, leaveFurnitureInteraction,
   updateFurnitureInteraction, animals, walkers, statics, LOOP, loopAt, terrainHeight,
   get activeFurnitureInteraction() { return activeFurnitureInteraction; },
+  zooTravelCar, zooTravelInteraction, zooArrivalPoint,
 };
 window.__zoo = hook;
 window.__villa = hook;
