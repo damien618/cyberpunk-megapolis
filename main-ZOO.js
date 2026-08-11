@@ -7,7 +7,7 @@ import { CameraRig } from './cameraRig.js?v=4';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar } from './cars.js?v=4';
 import { makeVisitor, loadVisitorBase, STAFF_UNIFORM } from './crowd.js?v=13';
-import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=24';
+import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=30';
 
 // ---------------------------------------------------------------------------
 // A Trip to the Zoo — a small regional park, laid out the way zoo master plans

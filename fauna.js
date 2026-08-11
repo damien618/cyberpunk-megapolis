@@ -4,11 +4,8 @@
 // pack that was here before, and they do not come from one source, so nothing
 // below may assume a shared rig, a shared clip name or even a skeleton:
 //
-//   lion, komodo   no skeleton at all. Their animation was baked as one full
-//                  copy of the mesh per frame — 371 and 190 morph targets, 84 %
-//                  and 97 % of the download — and was stripped out, which took
-//                  the pair from 147 MB to 8. They stand still and breathe, and
-//                  a resting animal in a zoo is the commonest thing there is.
+//   lion           skinned WildMesh demo: Idle / Walk / WalkSlow clips (in-place).
+//   komodo         no skeleton — morph anim stripped; bent in the vertex shader.
 //   zebra          skinned, 32 bones, one Idle clip.
 //   peacock, crow  skinned, Rigify rigs, their own Idle clips.
 //
@@ -22,9 +19,45 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { cloneSkinned } from './crowd.js?v=10';
+import { cloneSkinned } from './crowd.js?v=13';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
+
+/**
+ * The lion albedo is a flat mid-brown that reads almost black under the
+ * paddock glass.  Lift the midtones, warm the shadows a little, and leave the
+ * highlights alone so the coat still has shape.
+ */
+function enhanceLionAlbedo(tex) {
+  if (!tex?.image || tex.userData.lionWarmed) return tex;
+  const img = tex.image;
+  const w = img.width || img.videoWidth, h = img.height || img.videoHeight;
+  if (!w || !h) return tex;
+  const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, w, h);
+  const px = d.data;
+  for (let i = 0; i < px.length; i += 4) {
+    let r = px[i], g = px[i + 1], b = px[i + 2];
+    // Skip the mouth island (saturated red) so gums stay gums.
+    if (r > 140 && g < 90 && b < 90) continue;
+    const lum = 0.3 * r + 0.59 * g + 0.11 * b;
+    const lift = lum < 40 ? 1.55 : lum < 110 ? 1.35 : 1.12;
+    r = Math.min(255, r * lift * 1.08 + 18);
+    g = Math.min(255, g * lift * 0.98 + 10);
+    b = Math.min(255, b * lift * 0.72 + 4);
+    px[i] = r; px[i + 1] = g; px[i + 2] = b;
+  }
+  ctx.putImageData(d, 0, 0);
+  const warmed = new THREE.CanvasTexture(c);
+  warmed.flipY = tex.flipY;
+  warmed.colorSpace = THREE.SRGBColorSpace;
+  warmed.wrapS = tex.wrapS;
+  warmed.wrapT = tex.wrapT;
+  warmed.userData.lionWarmed = true;
+  return warmed;
+}
 
 /**
  * `fit` is [what to measure, how big it is in metres]:
@@ -36,13 +69,29 @@ const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
  *   length   the longest horizontal extent, for an animal that is mostly
  *            horizontal and whose shoulder means nothing — the komodo.
  *
- * lion withers 1.0-1.2 · plains zebra withers 1.3-1.4 · komodo dragon length
- * 2.5-3.0 · Indian peafowl height 1.0-1.2 · carrion crow height 0.4-0.5
+ * lion standing height ~1.4 (mane) · plains zebra withers 1.3-1.4 · komodo
+ * length 2.5-3.0 · Indian peafowl height 1.0-1.2 · carrion crow height 0.4-0.5
  */
 export const SPECIES = {
-  // `rig` asks for a skeleton to be cut out of the geometry at load — see
-  // autoRigQuadruped. It is what lets a model with no bones left walk.
-  lion: { file: 'lion.glb', fit: ['withers', 1.10], rig: 'quadruped' },
+  // Prefer *-IP clips: in-place, so locomotion comes from our roam code and
+  // the feet do not skate against a root-motion track.
+  // Fit by overall standing height (mane included): a withers-only 1.1 m read
+  // as a large dog beside the ~1.7 m visitors. 1.42 m to the top of the mane
+  // matches a big male next to a person at the glass.
+  lion: {
+    file: 'lion.glb', fit: ['height', 1.42],
+    rest: ['Idle_00-IP', 'A_Idle_00', 'Idle_01-IP', 'A_Idle_01', 'Idle_02-IP'],
+    walk: ['WalkSlow-IP', 'Walk-IP', 'WalkSlow', 'Walk'],
+    // Lions do not pivot on a point when a new destination falls behind them.
+    // They keep stepping, shed speed and describe an arc.  These values keep
+    // that turn broad enough to read at exhibit distance while preserving the
+    // unhurried walk of a cat that is not hunting.
+    locomotion: {
+      steering: 'curved', speed: [0.62, 0.88], turnRate: 0.48,
+      turnAccel: 1.05, accel: 0.55, brake: 0.85,
+      rest: [6, 16], bout: [10, 22], stop: 0.7,
+    },
+  },
   zebra: { file: 'zebra.glb', fit: ['withers', 1.35], rest: ['Idle_Armature'] },
   // No skeleton survived the de-baking, so the komodo is bent in the vertex
   // shader instead: a wave down the tail and a slow turn of the head. `tail`
@@ -71,6 +120,30 @@ function findClip(clips, name) {
   return clips.find(c => c.name === name)
     || clips.find(c => c.name.endsWith(`|${name}`))
     || null;
+}
+
+/** First matching clip name that exists in the pack. */
+function pickClip(clips, names) {
+  for (const n of names ?? []) {
+    const c = findClip(clips, n);
+    if (c) return c;
+  }
+  return null;
+}
+
+/**
+ * Drop translation tracks on the armature root only so roam position is ours.
+ * Keep pelvis / hip bounce — that is part of the authored gait.
+ */
+function stripRootMotion(clip) {
+  const out = clip.clone();
+  out.tracks = out.tracks.filter(t => {
+    if (!/\.position$/.test(t.name)) return true;
+    const bone = t.name.split('.')[0].split('|').pop();
+    return !/^(_?root(joint)?|rigroot|armature|rootnode)$/i.test(bone);
+  });
+  out.resetDuration();
+  return out;
 }
 
 // Exporters suffix bone names with their index — `Shoulders_23`, `FrontLeg.R_3`
@@ -110,7 +183,11 @@ function eachVertex(root, fn) {
 // The shoulder joint is found by name and the withers is the highest skin in a
 // slice of body around it.
 function withersHeight(root, box) {
-  const shoulder = findBone(root, 'shoulder');
+  const shoulder = findBone(root, 'shoulder')
+    || findBone(root, 'chest')
+    || findBone(root, 'collarbone')
+    || findBone(root, 'spine3')
+    || findBone(root, 'spine2');
   if (!shoulder) return null;
   const at = new THREE.Vector3().setFromMatrixPosition(shoulder.matrixWorld);
   // The body runs along whichever horizontal axis is longer; the slice is a
@@ -157,10 +234,19 @@ export async function loadSpecies(names) {
     const spec = SPECIES[name];
     if (!spec) continue;
     try {
-      const gltf = await loader.loadAsync(`./glb/animals/${spec.file}`);
+      const gltf = await loader.loadAsync(`./glb/animals/${spec.file}?v=30`);
       const root = gltf.scene;
       let resting = (spec.rest ?? [])
         .map(n => findClip(gltf.animations, n)).filter(Boolean);
+      // One walk clip is enough; prefer the first name that resolves.
+      let walking = [];
+      const walkClip = pickClip(gltf.animations, spec.walk);
+      if (walkClip) walking = [stripRootMotion(walkClip)];
+      // Idle clips used for roam also drop root translation so a rest pose
+      // cannot drift the animal across the paddock.
+      if (walking.length && resting.length) {
+        resting = resting.map(stripRootMotion);
+      }
       if (spec.window) {
         const [t0, t1] = spec.window;
         resting = resting.map(c => {
@@ -194,8 +280,9 @@ export async function loadSpecies(names) {
       // `fitMetres` is the species' own size in metres, which is what a stride
       // is measured against — a crow does not take a zebra's step.
       out[name] = {
-        root, clips: gltf.animations, resting, fitMetres: spec.fit[1],
+        root, clips: gltf.animations, resting, walking, fitMetres: spec.fit[1],
         flex: spec.flex ?? null, rig: spec.rig ?? null, fly: spec.fly ?? null,
+        locomotion: spec.locomotion ?? null,
         ...spec2,
       };
     } catch (e) {
@@ -262,47 +349,91 @@ function swingAxis(bone, forward) {
 }
 
 // ---------------------------------------------------------------------------
-// Quadruped walk — lateral-sequence gait instead of a toy sine
+// Quadruped walk — feline lateral-sequence gait
 //
-// A pure sin() on diagonal pairs is a mechanical trot: every limb mirrors its
-// opposite, the duty cycle is 50/50, and there is no stance. Real cats walk in
-// a lateral sequence (LH → LF → RH → RF) with the foot on the ground ~60% of
-// the cycle. The curves below are the same idea as procedural IK walkers
-// (planted stance, arced swing), adapted to our two-bone swing axes.
+// The lion mesh is frozen mid-stride (its animation was stripped), so a large
+// hip swing on top of that bind pose reads as a stick-figure toy.  Cats also
+// walk with a high duty factor and a short, quiet step.  These curves stay
+// modest, ease both ends of the swing, and leave room for a per-leg stance
+// bias that cancels the mid-stride asymmetry of the auto-rig.
 // ---------------------------------------------------------------------------
 const _smooth = t => t * t * (3 - 2 * t);
+const QUAD_DUTY = 0.70;
 
 /** Phase offset in [0, 1) for a lateral-sequence walk. */
 function quadWalkPhase(leg) {
   if (!leg.front && leg.left) return 0.00;   // LH
-  if (leg.front && leg.left) return 0.25;    // LF
+  if (leg.front && leg.left) return 0.22;    // LF — slight couplet lag, feline
   if (!leg.front && !leg.left) return 0.50;  // RH
-  return 0.75;                              // RF
+  return 0.72;                              // RF
 }
 
 /**
- * Hip pitch through one cycle. Stance retracts the limb slowly; swing returns
- * it with an ease so the foot does not telegraph like a metronome.
+ * Hip pitch through one cycle. Stance retracts slowly; swing returns with a
+ * soft ease so neither toe-off nor touchdown snaps.
  */
 function quadHipSwing(u, amp) {
-  const duty = 0.62;
-  if (u < duty) {
-    const t = u / duty;
-    return amp * (1 - 2 * t);
+  if (u < QUAD_DUTY) {
+    const t = u / QUAD_DUTY;
+    // Slight ease at both ends of stance — a paw that plants does not reverse
+    // direction instantly.
+    const e = _smooth(t);
+    return amp * (1 - 2 * e);
   }
-  const t = _smooth((u - duty) / (1 - duty));
+  const t = _smooth((u - QUAD_DUTY) / (1 - QUAD_DUTY));
   return amp * (-1 + 2 * t);
 }
 
-/** Knee: soft mid-stance give, then a clear lift through the swing. */
+/** Knee: tiny mid-stance give, then a rounded mid-swing lift. */
 function quadKneeBend(u, amp) {
-  const duty = 0.62;
-  if (u < duty) {
-    const t = u / duty;
-    return amp * 0.18 * Math.sin(t * Math.PI);
+  if (u < QUAD_DUTY) {
+    const t = u / QUAD_DUTY;
+    return amp * 0.06 * Math.sin(t * Math.PI);
   }
-  const t = (u - duty) / (1 - duty);
-  return amp * (0.55 + 0.45 * Math.sin(t * Math.PI));
+  const t = (u - QUAD_DUTY) / (1 - QUAD_DUTY);
+  const lift = Math.sin(t * Math.PI);
+  return amp * lift * lift * (0.55 + 0.25 * lift);
+}
+
+/** Smooth contribution of one planted paw to lateral body support. */
+function quadSupport(u) {
+  if (u >= QUAD_DUTY) return 0;
+  const blend = 0.10;
+  const touch = _smooth(Math.min(1, u / blend));
+  const lift = _smooth(Math.min(1, (QUAD_DUTY - u) / blend));
+  return touch * lift;
+}
+
+/**
+ * The auto-rigged lion is bound in a mid-stride pose: one foreleg reaches, the
+ * opposite trails.  Measuring how far each foot sits ahead of its hip along
+ * the body and biasing that reach toward the pair average cancels the worst of
+ * the asymmetry before the walk cycle is applied.
+ */
+function neutralizeStrideBias(legs, forward) {
+  if (!forward || legs.length < 2) return;
+  const byPair = [
+    legs.filter(l => l.front),
+    legs.filter(l => !l.front),
+  ];
+  for (const pair of byPair) {
+    if (pair.length !== 2) continue;
+    const reaches = pair.map(leg => {
+      const hip = _v.setFromMatrixPosition(leg.bone.matrixWorld).clone();
+      const toeBone = leg.lower ?? leg.bone;
+      const toe = _v2.setFromMatrixPosition(toeBone.matrixWorld).clone();
+      const len = Math.max(0.08, hip.distanceTo(toe));
+      return { leg, reach: toe.sub(hip).dot(forward) / len };
+    });
+    const avg = (reaches[0].reach + reaches[1].reach) * 0.5;
+    for (const { leg, reach } of reaches) {
+      // Small-angle correction about the swing axis toward the pair mean.
+      leg.stanceBias = THREE.MathUtils.clamp((avg - reach) * 0.55, -0.22, 0.22);
+    }
+  }
+  for (const leg of legs) {
+    if (leg.stanceBias === undefined) leg.stanceBias = 0;
+  }
 }
 
 /**
@@ -700,11 +831,12 @@ function findParts(group) {
 
   for (const b of bones) {
     const n = b.name.toLowerCase();
-    if (!/(upleg|upperleg|thigh)/.test(n)) continue;
-    const lower = b.children.find(c => c.isBone && /(low|shin|calf)/i.test(c.name))
+    // WildMesh lions use RigLFLeg1 / RigRBLeg1; older packs use thigh / upleg.
+    if (!/(upleg|upperleg|thigh|[lr][fb]leg1)/.test(n)) continue;
+    const lower = b.children.find(c => c.isBone && /(leg2|leg3|low|shin|calf)/i.test(c.name))
       ?? b.children.find(c => c.isBone);
-    const left = /[._-]l(\b|_|\d)|left/.test(n);
-    const front = /(front|fore)/.test(n);
+    const left = /(lb|lf|left)/.test(n) && !/(rb|rf|right)/.test(n);
+    const front = /(front|fore|lf|rf)/.test(n);
     const swing = swingAxis(b, forward);
     if (!swing) continue;
     parts.legs.push({
@@ -742,6 +874,10 @@ export function placeAnimal(species, {
   // materials. Textured coats need far less of it than the old flat ones did.
   const tint = new THREE.Color(
     1 + (rng() - 0.5) * 0.07, 1 + (rng() - 0.5) * 0.05, 1 + (rng() - 0.5) * 0.06);
+  // Auto-rigged lions used to need a tawny lift; the skinned WildMesh coat
+  // already reads under the paddock glass, so leave its maps alone.
+  const lionCoat = species.rig === 'quadruped'
+    ? new THREE.Color(1.45, 1.22, 0.88) : null;
   group.traverse(o => {
     if (!o.isMesh && !o.isSkinnedMesh) return;
     const list = Array.isArray(o.material) ? o.material : [o.material];
@@ -751,6 +887,21 @@ export function placeAnimal(species, {
       c.color?.multiply(tint);
       if (c.roughness !== undefined) c.roughness = Math.max(c.roughness, 0.62);
       if (c.metalness !== undefined) c.metalness = Math.min(c.metalness, 0.05);
+      if (lionCoat && c.color) {
+        c.color.multiply(lionCoat);
+        c.metalness = 0;
+        c.roughness = Math.max(c.roughness ?? 0.7, 0.82);
+        c.envMapIntensity = 0.95;
+        if (c.map) {
+          c.map = enhanceLionAlbedo(c.map);
+          c.map.colorSpace = THREE.SRGBColorSpace;
+        }
+        if (c.emissive) {
+          c.emissive.setHex(0x4a3218);
+          c.emissiveIntensity = 0.12;
+        }
+        c.needsUpdate = true;
+      }
       // Komodos ship with many near-black flat parts; lift dark fragments toward
       // a dusty olive so they read as lizards, not dark slugs, at exhibit range.
       // Identified by flex (boneless bend) rather than object identity — the
@@ -770,18 +921,35 @@ export function placeAnimal(species, {
     o.frustumCulled = false;
   });
 
-  const clip = species.resting.length
+  const useAnimGait = Boolean(species.walking?.length && species.resting?.length);
+  const idleClip = species.resting.length
     ? species.resting[Math.floor(rng() * species.resting.length)] : null;
+  const walkClip = useAnimGait ? species.walking[0] : null;
   let mixer = null;
-  if (clip) {
+  let idleAction = null;
+  let walkAction = null;
+  if (useAnimGait && idleClip && walkClip) {
     mixer = new THREE.AnimationMixer(group);
-    const action = mixer.clipAction(clip);
-    action.timeScale = 0.8 + rng() * 0.4;
-    action.time = rng() * clip.duration;   // nothing in a paddock is in step
-    action.play();
+    idleAction = mixer.clipAction(idleClip);
+    walkAction = mixer.clipAction(walkClip);
+    idleAction.setEffectiveWeight(1);
+    walkAction.setEffectiveWeight(0);
+    idleAction.play();
+    walkAction.play();
+    idleAction.time = rng() * idleClip.duration;
+    walkAction.time = rng() * walkClip.duration;
+    idleAction.timeScale = 0.85 + rng() * 0.3;
+  } else if (idleClip) {
+    mixer = new THREE.AnimationMixer(group);
+    idleAction = mixer.clipAction(idleClip);
+    idleAction.timeScale = 0.8 + rng() * 0.4;
+    idleAction.time = rng() * idleClip.duration;
+    idleAction.play();
   }
 
   const parts = findParts(group);
+  group.updateWorldMatrix(true, true);
+  if (species.rig === 'quadruped') neutralizeStrideBias(parts.legs, parts.forward);
   const phase = rng() * Math.PI * 2;
   const rate = 0.5 + rng() * 0.25;
   const baseY = y - species.foot * scale;
@@ -824,9 +992,10 @@ export function placeAnimal(species, {
 
   // Wandering. An animal that never leaves its spot is a statue with a pulse,
   // so each one alternates between standing about and walking somewhere else in
-  // its own enclosure. The gait is driven by distance travelled, not by the
-  // clock, so the feet do not skate.
-  const canWalk = Boolean(roam && ground && parts.legs.length >= 2);
+  // its own enclosure. Clip-driven species bring their own walk cycle; others
+  // get a procedural gait driven by distance travelled so the feet do not skate.
+  const canWalk = Boolean(roam && ground && (useAnimGait || parts.legs.length >= 2));
+  const naturalSteering = species.locomotion?.steering === 'curved';
   // The auto-rigged lion's geometry reads backwards: meshFrame picks the wrong
   // end as the head, so `parts.forward` points at the tail and it walks away
   // from where it faces. Flipping the offset 180° sends it forwards without
@@ -836,7 +1005,9 @@ export function placeAnimal(species, {
   const facingFlip = species.rig === 'quadruped' ? Math.PI : 0;
   const facingOffset = parts.forward
     ? ry - Math.atan2(parts.forward.x, parts.forward.z) + facingFlip : 0;
-  const speed = (0.30 + rng() * 0.22) * Math.max(0.55, size);
+  const speedRange = species.locomotion?.speed ?? [0.30, 0.52];
+  const speed = (speedRange[0] + rng() * (speedRange[1] - speedRange[0]))
+    * (naturalSteering ? Math.max(0.72, Math.sqrt(size)) : Math.max(0.55, size));
   // A stride is a leg, not a height: a peacock is as tall as a spaniel and
   // steps a fifth as far. Measured off the animal's own leg so every species
   // gets it right without a table.
@@ -847,18 +1018,22 @@ export function placeAnimal(species, {
     const toe = _v2.setFromMatrixPosition((leg.lower ?? leg.bone).matrixWorld);
     return Math.max(0.12, top.distanceTo(toe) * 2);
   })();
-  const stride = Math.max(0.22, legSpan * 1.5);
-  // Auto-rigged cats walk more slowly and with a longer stride feel than a
-  // sine-trotting toy — the gait curves below do the rest of the work.
+  const stride = Math.max(0.22, legSpan * (species.rig === 'quadruped' ? 1.15 : 1.5));
+  // Auto-rigged cats walk more slowly and with a shorter, quieter step — large
+  // swings on a mid-stride bind pose are what made them look like toys.
   const isQuad = parts.legs.length >= 4
     && parts.legs.some(l => l.front) && parts.legs.some(l => !l.front);
-  const walkSpeed = isQuad ? speed * 0.72 : speed;
+  const walkSpeed = naturalSteering ? speed * 0.92 : (isQuad ? speed * 0.65 : speed);
   let mode = 'rest';
-  let timer = 2 + rng() * 9;
+  const randomRange = (range, fallback) => range
+    ? range[0] + rng() * (range[1] - range[0]) : fallback();
+  let timer = randomRange(species.locomotion?.rest, () => 2 + rng() * 9);
   let gait = rng() * Math.PI * 2;
   let walkW = 0;            // smoothed 0..1 so starts/stops ease instead of snap
   let target = null;
   let turnBy = 0;
+  let moveSpeed = 0;
+  let yawRate = 0;
   const inset = 3;
   // Rest pose of the whole group, so body pitch/roll can ease back to zero.
   const restPitch = group.rotation.x;
@@ -869,6 +1044,7 @@ export function placeAnimal(species, {
   // whatever it just walked into, and the next leg starts facing open ground
   // instead of the fence it stopped at.
   const faceAway = () => {
+    if (naturalSteering) return;
     turnBy = Math.PI * (rng() < 0.5 ? -1 : 1) + (rng() - 0.5) * 0.6;
   };
 
@@ -877,6 +1053,38 @@ export function placeAnimal(species, {
   // zebra lying in an empty basin. The hole is simply not somewhere to walk.
   const inHole = (px, pz) => avoid
     && px > avoid.x0 - 1 && px < avoid.x1 + 1 && pz > avoid.z0 - 1 && pz < avoid.z1 + 1;
+
+  const wrapAngle = a => {
+    let d = (a + Math.PI) % (Math.PI * 2) - Math.PI;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  };
+  const approach = (value, wanted, amount) => value
+    + THREE.MathUtils.clamp(wanted - value, -amount, amount);
+
+  // A destination chosen anywhere in the rectangle is very often behind the
+  // animal.  Biasing candidates toward its current heading creates connected
+  // walking arcs; inward points still win near a boundary, where a turn is
+  // necessary.  The slight distance preference prevents nervous short pacing.
+  const chooseCurvedTarget = () => {
+    const minX = roam.x0 + inset, maxX = roam.x1 - inset;
+    const minZ = roam.z0 + inset, maxZ = roam.z1 - inset;
+    const heading = group.rotation.y - facingOffset;
+    const preferred = Math.min(11, Math.hypot(maxX - minX, maxZ - minZ) * 0.38);
+    let best = null;
+    for (let i = 0; i < 18; i++) {
+      const px = minX + rng() * Math.max(0.1, maxX - minX);
+      const pz = minZ + rng() * Math.max(0.1, maxZ - minZ);
+      if (inHole(px, pz)) continue;
+      const dx = px - group.position.x, dz = pz - group.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 3.5) continue;
+      const turn = Math.abs(wrapAngle(Math.atan2(dx, dz) - heading));
+      const score = turn * 1.35 + Math.abs(dist - preferred) * 0.075 + rng() * 0.18;
+      if (!best || score < best.score) best = { x: px, z: pz, score };
+    }
+    return best ?? { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 };
+  };
 
   // A bird with a `fly` range does not wander the ground: it holds on a perch,
   // then flies to another — take-off, a cruise between the perches, and a
@@ -947,7 +1155,13 @@ export function placeAnimal(species, {
       walkW += (walking - walkW) * Math.min(1, dt * 6);
     } else if (canWalk) {
       timer -= dt;
-      if (mode === 'rest' && turnBy) {
+      if (mode === 'rest' && naturalSteering) {
+        // Finish the last trace of angular/linear momentum without changing
+        // heading.  A resting lion looks around with its neck, not its whole
+        // body rotating like a display figurine.
+        yawRate = approach(yawRate, 0, (species.locomotion.turnAccel ?? 1) * dt);
+        moveSpeed = approach(moveSpeed, 0, (species.locomotion.brake ?? 1) * dt);
+      } else if (mode === 'rest' && turnBy) {
         // The turn home: a turn takes at most the first couple of seconds of
         // the rest, so a long pause is not one slow spin.
         const step = Math.min(dt * 1.2, Math.abs(turnBy)) * Math.sign(turnBy);
@@ -957,19 +1171,67 @@ export function placeAnimal(species, {
       }
       if (mode === 'rest' && timer <= 0) {
         mode = 'walk';
-        timer = 6 + rng() * 14;
-        for (let tries = 0; tries < 8; tries++) {
-          target = {
-            x: roam.x0 + inset + rng() * Math.max(0.1, roam.x1 - roam.x0 - inset * 2),
-            z: roam.z0 + inset + rng() * Math.max(0.1, roam.z1 - roam.z0 - inset * 2),
-          };
-          if (!inHole(target.x, target.z)) break;
+        timer = randomRange(species.locomotion?.bout, () => 6 + rng() * 14);
+        if (naturalSteering) {
+          target = chooseCurvedTarget();
+        } else {
+          for (let tries = 0; tries < 8; tries++) {
+            target = {
+              x: roam.x0 + inset + rng() * Math.max(0.1, roam.x1 - roam.x0 - inset * 2),
+              z: roam.z0 + inset + rng() * Math.max(0.1, roam.z1 - roam.z0 - inset * 2),
+            };
+            if (!inHole(target.x, target.z)) break;
+          }
         }
       }
       if (mode === 'walk') {
         const dx = target.x - group.position.x, dz = target.z - group.position.z;
         const dist = Math.hypot(dx, dz);
-        if (dist < 0.7 || timer <= 0) {
+        if (naturalSteering) {
+          const cfg = species.locomotion;
+          const stop = cfg.stop ?? 0.65;
+          const wantsStop = dist < stop || timer <= 0;
+          if (wantsStop && moveSpeed < 0.055) {
+            mode = 'rest';
+            timer = randomRange(cfg.rest, () => 4 + rng() * 12);
+            target = null;
+            moveSpeed = 0;
+          } else {
+            // Steering has angular inertia and forward motion.  Even a target
+            // directly behind becomes a compact walking arc, never a pivot.
+            const heading = group.rotation.y - facingOffset;
+            const bearing = Math.atan2(dx, dz);
+            const d = wrapAngle(bearing - heading);
+            const maxTurn = cfg.turnRate ?? 0.52;
+            const wantedYawRate = THREE.MathUtils.clamp(d * 0.9, -maxTurn, maxTurn);
+            yawRate = approach(yawRate, wantedYawRate, (cfg.turnAccel ?? 1.15) * dt);
+            group.rotation.y += yawRate * dt;
+
+            const curve = Math.min(1, Math.abs(yawRate) / Math.max(maxTurn, 1e-4));
+            const arrival = wantsStop ? 0 : THREE.MathUtils.smoothstep(dist, stop, stop + 2.4);
+            let wantedSpeed = walkSpeed * (1 - curve * 0.38) * arrival;
+            if (Math.abs(d) > 1.35) wantedSpeed *= 0.58;
+            const change = wantedSpeed > moveSpeed ? (cfg.accel ?? 0.72) : (cfg.brake ?? 0.95);
+            moveSpeed = approach(moveSpeed, wantedSpeed, change * dt);
+
+            const h = group.rotation.y - facingOffset;
+            const go = moveSpeed * dt;
+            const nx = group.position.x + Math.sin(h) * go;
+            const nz = group.position.z + Math.cos(h) * go;
+            const outside = nx < roam.x0 + inset || nx > roam.x1 - inset
+              || nz < roam.z0 + inset || nz > roam.z1 - inset;
+            if (inHole(nx, nz) || outside) {
+              // Redirect inward and keep the paws stepping during the turn.
+              target = chooseCurvedTarget();
+              moveSpeed *= 0.72;
+            } else {
+              group.position.x = nx;
+              group.position.z = nz;
+              gait += (go / stride) * Math.PI * 2 * 0.85;
+            }
+            walking = THREE.MathUtils.clamp(moveSpeed / Math.max(walkSpeed * 0.42, 1e-4), 0, 1);
+          }
+        } else if (dist < 0.7 || timer <= 0) {
           mode = 'rest';
           timer = 4 + rng() * 12;
           faceAway();
@@ -1002,45 +1264,61 @@ export function placeAnimal(species, {
       }
       // Ease the walk weight so a start or stop is not a hard cut on the legs.
       walkW += (walking - walkW) * Math.min(1, dt * (walking > walkW ? 2.4 : 1.6));
-      const bob = isQuad
-        ? Math.sin(gait * 2) * 0.018 * walkW * walkW
-        : Math.abs(Math.sin(gait)) * 0.012 * walkW;
+      const bob = useAnimGait
+        ? 0
+        : isQuad
+          ? Math.sin(gait * 2) * (naturalSteering ? 0.006 : 0.012) * walkW * walkW
+          : Math.abs(Math.sin(gait)) * 0.012 * walkW;
       group.position.y = ground(group.position.x, group.position.z)
         - species.foot * scale + bob;
     } else {
       walkW += (0 - walkW) * Math.min(1, dt * 2);
     }
 
-    // Legs. Birds keep the old alternating sine; quadrupeds get a lateral-
-    // sequence walk with separate stance and swing so they stop looking like
-    // clockwork toys.
-    if (isQuad) {
-      const amp = THREE.MathUtils.lerp(0.04, 0.42, walkW);
+    // Clip-driven gait: crossfade idle ↔ walk and let the mixer own the bones.
+    if (useAnimGait && idleAction && walkAction) {
+      const w = _smooth(walkW);
+      idleAction.setEffectiveWeight(1 - w);
+      walkAction.setEffectiveWeight(w);
+      // Match footfall rate to roam speed so steps do not skate.
+      const pace = walkSpeed > 1e-4 ? moveSpeed / walkSpeed : 0;
+      walkAction.timeScale = THREE.MathUtils.clamp(0.55 + pace * 0.65, 0.45, 1.25);
+    }
+
+    // Legs. Birds keep the old alternating sine; quadrupeds without a walk clip
+    // get a lateral-sequence walk with separate stance and swing.
+    if (!useAnimGait && isQuad) {
+      // Keep the hip arc small: the mesh is already mid-stride, and cats take
+      // quiet steps.  naturalSteering (lions) is the softer of the two.
+      const amp = (naturalSteering ? 0.16 : 0.22) * _smooth(walkW);
       const cycle01 = ((gait / (Math.PI * 2)) % 1 + 1) % 1;
       let support = 0;
       for (const leg of parts.legs) {
-        const u = (cycle01 + quadWalkPhase(leg)) % 1;
+        // Subtracting the touchdown offset gives the declared lateral order:
+        // LH, LF, RH, RF. Adding it silently reverses that sequence.
+        const u = (cycle01 - quadWalkPhase(leg) + 1) % 1;
         // Hind limbs drive more of the push; forelimbs reach a little less.
-        const limbAmp = amp * (leg.front ? 0.88 : 1.05);
-        const hip = quadHipSwing(u, limbAmp);
+        const limbAmp = amp * (leg.front ? 0.82 : 1.0);
+        const hip = quadHipSwing(u, limbAmp) + (leg.stanceBias ?? 0) * (0.35 + 0.65 * (1 - walkW));
         leg.bone.quaternion.copy(leg.rest)
           .multiply(_q.setFromAxisAngle(leg.swing.axis, leg.swing.sign * hip));
         if (leg.lower && leg.lowerSwing) {
-          const bend = quadKneeBend(u, limbAmp * 0.95);
+          const bend = quadKneeBend(u, limbAmp * 0.85);
           leg.lower.quaternion.copy(leg.restLower)
             .multiply(_q.setFromAxisAngle(leg.lowerSwing.axis, -leg.lowerSwing.sign * bend));
         }
         // Weight on the ground during stance feeds the body roll below.
-        if (u < 0.62) support += leg.left ? 1 : -1;
+        support += (leg.left ? 1 : -1) * quadSupport(u);
       }
       // Soft body rock: pitch follows the gait, roll follows which side is
       // carrying weight. Kept small — anything bigger reads as a cartoon.
-      const pitch = Math.sin(gait * 2) * 0.035 * walkW;
-      const roll = THREE.MathUtils.clamp(support * 0.012, -0.04, 0.04) * walkW
-        + Math.sin(gait) * 0.01 * walkW;
+      const pitch = Math.sin(gait * 2) * (naturalSteering ? 0.018 : 0.028) * walkW;
+      const roll = THREE.MathUtils.clamp(support * 0.008, -0.025, 0.025) * walkW
+        + Math.sin(gait) * 0.006 * walkW
+        - (naturalSteering ? yawRate * 0.03 * walkW : 0);
       group.rotation.x = restPitch + pitch;
       group.rotation.z = restRoll + roll;
-    } else {
+    } else if (!useAnimGait) {
       const amp = walkW ? 0.34 * walkW : 0.03;
       const cycle = walkW > 0.05 ? gait : s * 0.6;
       for (const leg of parts.legs) {
@@ -1057,14 +1335,21 @@ export function placeAnimal(species, {
       // those axes, and a reset would flatten every flap.
     }
 
+    // Head / neck / tail overlays fight the authored clips — skip them when
+    // the mixer is driving the skeleton.
+    if (!useAnimGait) {
     // Head, neck and tail. Grazing when it stands, level and steady when it
     // walks — an animal on the move does not swing its head about. The walk
     // weight eases these too, so a stop does not snap the neck upright.
     const idle = 1 - walkW;
     const graze = idle * Math.max(0, Math.sin(s * 0.22)) ** 3;
+    const turnLook = naturalSteering
+      ? THREE.MathUtils.clamp(yawRate / Math.max(species.locomotion.turnRate, 1e-4), -1, 1)
+        * 0.14 * walkW
+      : 0;
     if (head) {
       head.rest && parts.head.quaternion.copy(head.rest)
-        .multiply(_q.setFromAxisAngle(head.up, Math.sin(s * 0.7) * 0.30 * idle))
+        .multiply(_q.setFromAxisAngle(head.up, Math.sin(s * 0.7) * 0.30 * idle + turnLook))
         .multiply(_q.setFromAxisAngle(head.side,
           graze * 0.55 + Math.sin(s * 1.9) * 0.05
           + Math.sin(gait) * 0.04 * walkW));
@@ -1076,12 +1361,18 @@ export function placeAnimal(species, {
     });
     tail.forEach((n, i) => {
       // Counter-sway with the gait while walking; idle swish when standing.
-      const wag = walkW > 0.1
-        ? Math.sin(gait * 2 - i * 0.7) * (0.22 + 0.06 * walkW)
+      const wag = naturalSteering && walkW > 0.1
+        ? Math.sin(s * 0.7 - i * 0.55) * 0.075
+          + Math.sin(gait - i * 0.7) * 0.035
+          - THREE.MathUtils.clamp(yawRate / Math.max(species.locomotion.turnRate, 1e-4), -1, 1)
+            * (0.08 + i * 0.025)
+        : walkW > 0.1
+          ? Math.sin(gait * 2 - i * 0.7) * (0.22 + 0.06 * walkW)
         : Math.sin(s * 2.1 - i * 0.6) * 0.16;
       parts.tail[i].quaternion.copy(n.rest)
         .multiply(_q.setFromAxisAngle(n.up, wag));
     });
+    }
 
     // The rigless pair have nothing to pose, so they breathe instead: the ribs
     // swell, and the whole animal drifts a couple of degrees. It is the only

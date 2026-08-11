@@ -70,8 +70,17 @@
   #loadPct { position: absolute; bottom: 88px; font-size: 10px; font-weight: 300;
     letter-spacing: .34em; color: #444; text-transform: uppercase;
     opacity: 0; animation: pfade 1.4s 1.2s ease forwards; }
+  #loaderCredit {
+    position: absolute; bottom: 16px; left: 50%;
+    width: min(520px, 92vw); text-align: center;
+    font-size: 9px; font-weight: 300; line-height: 1.55;
+    letter-spacing: .14em; color: #3a3a3a; text-transform: uppercase;
+    opacity: 0; animation: pfadeCredit 1.4s 1.55s ease forwards;
+  }
   @keyframes pfade { from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: none; } }
+  @keyframes pfadeCredit { from { opacity: 0; transform: translate(-50%, 8px); }
+    to { opacity: 1; transform: translate(-50%, 0); } }
 
   /* ---------- menu (left editorial column, web-slinger style) ---------- */
   #menu { position: fixed; inset: 0; z-index: 20;
@@ -211,6 +220,10 @@
   }
   #panel h1 { font-size: clamp(24px, 4vw, 42px); letter-spacing: 0.02em; margin-bottom: 12px; }
   #panel p { color: var(--dim); line-height: 1.7; margin-bottom: 14px; }
+  #panel p.credit {
+    margin-top: 8px; margin-bottom: 0; font-size: 11px; letter-spacing: 0.04em;
+    color: rgba(139, 147, 168, 0.72);
+  }
   #panel .tag {
     display: inline-block; font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase;
     color: var(--la-accent); margin-bottom: 14px;
@@ -313,6 +326,7 @@
   <div id="loadPct">0%</div>
   <div id="bar"><div id="barFill"></div></div>
   <p id="loadMsg">loading data…</p>
+  <p id="loaderCredit">Zoo lion — WildMesh 3D · Creative Commons Attribution (CC BY)</p>
 </div>
 <div id="menu">
   <div id="menuCol">
@@ -399,6 +413,7 @@
       <p>Vous arrivez sur le parking, face à la billetterie. Passé les tourniquets, un chemin de terre fait le tour du parc: la plaine des lions derrière sa vitre, le grand paddock des zèbres et son bassin, l'enclos grillagé des dragons de Komodo, la pelouse des paons et la basse-cour.</p>
       <p>Au centre, la place des chalets: le restaurant, sa terrasse, et la boutique de peluches.</p>
       <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter, <b>Shift</b> sprint, <b>R</b> reset. Approchez-vous d'un banc ou d'une table de terrasse pour vous asseoir, puis <b>WASD</b> ou <b>Space</b> pour vous relever.</p>
+      <p class="credit">Lion 3D — WildMesh 3D · CC BY</p>
     </div>
     <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span></button>
   </div>
@@ -441,7 +456,7 @@
 <script type="module">
   const ENGINES = {
     la: './main-LA.js?v=202608082115',
-    zoo: './main-ZOO.js?v=202608102400',
+    zoo: './main-ZOO.js?v=202608111910',
   };
   import(ENGINES[document.documentElement.dataset.mode] ?? './main.js?v=23');
 </script>
