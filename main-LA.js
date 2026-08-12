@@ -103,6 +103,102 @@ function ntex(url, repeatX = 1, repeatY = 1) {
   t.anisotropy = maxAniso;
   return t;
 }
+// Bedroom kilim: cream wool, pastel diamonds, a woven pile. Flat beige read as
+// a painted slab; this is a textile, so the pattern is unique (clamp, not tile)
+// and the normal comes off the weft so the pile catches the sun.
+function makeCalRugMaps() {
+  const size = 1024;
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = c.getContext('2d');
+  const ivory = '#f3eadc';
+  const sage = '#9fbfa8';
+  const blush = '#e8b4b8';
+  const pastels = ['#f0b48a', '#e8b4b8', '#a8c4b0', '#b4cce0', '#ead888', '#cbb8d4', '#f4d4c4'];
+  ctx.fillStyle = sage;
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = ivory;
+  ctx.fillRect(28, 28, size - 56, size - 56);
+  ctx.fillStyle = blush;
+  ctx.fillRect(44, 44, size - 88, 14);
+  ctx.fillRect(44, size - 58, size - 88, 14);
+  ctx.fillRect(44, 44, 14, size - 88);
+  ctx.fillRect(size - 58, 44, 14, size - 88);
+  ctx.fillStyle = ivory;
+  ctx.fillRect(62, 62, size - 124, size - 124);
+
+  const diamond = (cx, cy, hx, hy, color) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - hy);
+    ctx.lineTo(cx + hx, cy);
+    ctx.lineTo(cx, cy + hy);
+    ctx.lineTo(cx - hx, cy);
+    ctx.closePath();
+    ctx.fill();
+  };
+  const pad = 92, cols = 5, rows = 5;
+  const gw = (size - pad * 2) / cols, gh = (size - pad * 2) / rows;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const cx = pad + (col + 0.5) * gw, cy = pad + (row + 0.5) * gh;
+      diamond(cx, cy, gw * 0.44, gh * 0.44, pastels[(row * 3 + col * 2) % pastels.length]);
+      diamond(cx, cy, gw * 0.2, gh * 0.2, (row + col) % 2 === 0 ? ivory : pastels[(row + col + 3) % pastels.length]);
+    }
+  }
+  diamond(size / 2, size / 2, gw * 0.72, gh * 0.72, '#f0b48a');
+  diamond(size / 2, size / 2, gw * 0.42, gh * 0.42, '#b4cce0');
+  diamond(size / 2, size / 2, gw * 0.18, gh * 0.18, ivory);
+
+  const img = ctx.getImageData(0, 0, size, size);
+  const px = img.data;
+  const height = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const weft = ((x + y * 0.12) % 3 < 1.15) ? 0.045 : 0;
+      const warp = ((y + x * 0.08) % 4 < 1.4) ? 0.03 : 0;
+      const wool = (Math.sin(x * 0.41 + y * 0.17) * Math.sin(y * 0.33) + Math.sin(x * 1.9 + y * 0.8) * 0.35) * 0.018;
+      const h = weft + warp + wool;
+      height[y * size + x] = h;
+      const i = (y * size + x) * 4;
+      const k = 1 + h * 1.7 - 0.035;
+      px[i] = Math.min(255, px[i] * k);
+      px[i + 1] = Math.min(255, px[i + 1] * k);
+      px[i + 2] = Math.min(255, px[i + 2] * k);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const nc = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const nctx = nc.getContext('2d');
+  const nd = nctx.createImageData(size, size);
+  const np = nd.data;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const xm = height[y * size + (x === 0 ? size - 1 : x - 1)];
+      const xp = height[y * size + (x === size - 1 ? 0 : x + 1)];
+      const ym = height[(y === 0 ? size - 1 : y - 1) * size + x];
+      const yp = height[(y === size - 1 ? 0 : y + 1) * size + x];
+      let nx = (xm - xp) * 20, ny = (ym - yp) * 20, nz = 1;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      nx /= len; ny /= len; nz /= len;
+      const i = (y * size + x) * 4;
+      np[i] = (nx * 0.5 + 0.5) * 255;
+      np[i + 1] = (ny * 0.5 + 0.5) * 255;
+      np[i + 2] = (nz * 0.5 + 0.5) * 255;
+      np[i + 3] = 255;
+    }
+  }
+  nctx.putImageData(nd, 0, 0);
+
+  const albedo = new THREE.CanvasTexture(c);
+  albedo.colorSpace = THREE.SRGBColorSpace;
+  albedo.anisotropy = maxAniso;
+  albedo.needsUpdate = true;
+  const normal = new THREE.CanvasTexture(nc);
+  normal.anisotropy = maxAniso;
+  normal.needsUpdate = true;
+  return { albedo, normal };
+}
 function withUV2(geometry) {
   if (!geometry.getAttribute('uv2') && geometry.getAttribute('uv')) {
     const uv = geometry.getAttribute('uv');
@@ -266,6 +362,7 @@ const canopyN = ntex('./textures/nature/foliage_n.jpg', 2.2, 2.2);
 const leafCardTex = loader.load('./textures/nature/foliage_card.png');
 leafCardTex.colorSpace = THREE.SRGBColorSpace;
 leafCardTex.anisotropy = maxAniso;
+const calRug = makeCalRugMaps();
 
 // The cyberpunk texture pack is dark and full of coloured trim strips, so the
 // villa keeps the normal maps for relief and drives colour itself — that is
@@ -333,6 +430,10 @@ const M = {
   fabricOlive: new THREE.MeshStandardMaterial({ color: 0x87907a, roughness: 0.93, metalness: 0.01 }),
   rug: new THREE.MeshStandardMaterial({ color: 0xb9a689, roughness: 0.98, metalness: 0.0 }),
   rugDark: new THREE.MeshStandardMaterial({ color: 0x6f6558, roughness: 0.98, metalness: 0.0 }),
+  rugCal: new THREE.MeshStandardMaterial({
+    map: calRug.albedo, normalMap: calRug.normal, normalScale: new THREE.Vector2(0.55, 0.55),
+    color: 0xffffff, roughness: 0.96, metalness: 0.0,
+  }),
   // Plain alpha glass rather than transmission: the villa has a lot of glazing
   // and a refraction pass on every pane is not worth the frame time here.
   glass: new THREE.MeshPhysicalMaterial({
@@ -935,6 +1036,17 @@ function furnitureInteraction(type, halfWidth, halfDepth, anchorZ = 0, restY = F
 function rug(w, d, mat = M.rug) {
   box(mat, 0, F + 0.012, 0, w, 0.024, d);
 }
+function bedroomRug(w, d) {
+  box(M.rugCal, 0, F + 0.016, 0, w, 0.032, d);
+  const n = Math.max(10, Math.round(w / 0.028));
+  for (let i = 0; i < n; i++) {
+    const x = -w / 2 + w * (i + 0.5) / n;
+    const wobble = Math.sin(i * 7.13) * 0.02;
+    for (const s of [-1, 1]) {
+      box(M.linen, x + wobble * 0.15, F + 0.006, s * (d / 2 + 0.08), 0.012, 0.005, 0.16 + wobble);
+    }
+  }
+}
 function sofa(len, { depth = 0.95, mat = M.fabric, cushion = M.fabricWarm, arms = true } = {}) {
   box(mat, 0, F + 0.18, 0, len, 0.36, depth);                        // base
   box(mat, 0, F + 0.46, 0, len - 0.1, 0.2, depth - 0.1);             // seat
@@ -1004,6 +1116,15 @@ function nightstand() {
   box(M.marble, 0, F + 0.54, 0, 0.6, 0.04, 0.5);
   shape(G.cylBase, M.bronze, 0, F + 0.56, 0, 0.05, 0.3, 0.05);
   shape(G.cyl, M.lampShade, 0, F + 0.95, 0, 0.28, 0.3, 0.28);
+}
+// Authored in the bed's own frame: back of the stand lines up with the
+// headboard, front sits by the pillows. Placing them in world Z independently
+// is what left them stranded against the wall behind the bed.
+function bedsidePair(w, l) {
+  const z = -l / 2 + 0.06;
+  const x = w / 2 + 0.55;
+  frame(-x, z, 0, () => nightstand());
+  frame(x, z, 0, () => nightstand());
 }
 // Panelled wardrobe: real carcass (top/back/kick/dividers), slab doors with
 // vertical bronze pulls, cornice on top. Bays listed in `open` have no door and
@@ -1564,11 +1685,12 @@ slab(M.black, -3.56, -3.5, 10.6, 11.4, FLOOR + 1.15, FLOOR + 1.28);
 // Master suite
 // ---------------------------------------------------------------------------
 frame(-12.6, -6.6, 0, () => {
-  rug(4.6, 4.0, M.rug);
-  frame(0, 0.7, Math.PI, () => bed(2.0, 2.1));
+  bedroomRug(4.6, 4.0);
+  frame(0, 0.7, Math.PI, () => {
+    bed(2.0, 2.1);
+    bedsidePair(2.0, 2.1);
+  });
 });
-frame(-14.4, -4.1, 0, () => nightstand());
-frame(-11.1, -4.1, 0, () => nightstand());
 frame(-12.6, -8.0, 0, () => {
   box(M.teak, 0, F + 0.24, 0, 1.6, 0.12, 0.45);
   box(M.teak, -0.7, F + 0.11, 0, 0.1, 0.22, 0.4);
@@ -1602,11 +1724,12 @@ frame(-10.9, -0.5, 0, () => rug(1.3, 1.6, M.rugDark));
 // Guest bedroom
 // ---------------------------------------------------------------------------
 frame(-12.6, 8.4, 0, () => {
-  rug(4.2, 3.6, M.rug);
-  frame(0, 1.2, Math.PI, () => bed(1.7, 2.0, { throwMat: M.fabricOlive }));
+  bedroomRug(4.2, 3.6);
+  frame(0, 1.2, Math.PI, () => {
+    bed(1.7, 2.0, { throwMat: M.fabricOlive });
+    bedsidePair(1.7, 2.0);
+  });
 });
-frame(-14.3, 6.0, 0, () => nightstand());
-frame(-10.9, 6.0, 0, () => nightstand());
 frame(-10.3, 10.2, -Math.PI / 2, () => wardrobe(2.6));
 frame(-13.9, 4.0, Math.PI / 2, () => {
   box(M.walnut, 0, F + 0.74, 0, 1.5, 0.07, 0.6);

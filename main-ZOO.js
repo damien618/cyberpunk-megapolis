@@ -113,6 +113,78 @@ function ntex(url, rx = 1, ry = 1) {
   t.anisotropy = maxAniso;
   return t;
 }
+// Packed straw, painted rather than photographed: there is no hay map in the
+// nature set, and tinting the lawn yellow still reads as grass. Strokes wrap
+// across the canvas edges so the tile does not flash a seam on a 2 m heap.
+function makeHayAlbedo() {
+  const size = 512;
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#b89248';
+  ctx.fillRect(0, 0, size, size);
+  const wash = ctx.createLinearGradient(0, 0, size, size * 0.35);
+  wash.addColorStop(0, 'rgba(232, 196, 110, 0.28)');
+  wash.addColorStop(1, 'rgba(120, 88, 36, 0.22)');
+  ctx.fillStyle = wash;
+  ctx.fillRect(0, 0, size, size);
+  const cols = ['#e8c878', '#d4b05c', '#c49a48', '#a87c38', '#8c6428', '#f0d490', '#b8863c', '#9a7030'];
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 2400; i++) {
+    const x = Math.random() * size, y = Math.random() * size;
+    const ang = (Math.random() - 0.5) * 0.9 + (i % 5 === 0 ? 1.15 : 0.12);
+    const len = 14 + Math.random() * 40;
+    const x1 = x + Math.cos(ang) * len, y1 = y + Math.sin(ang) * len;
+    ctx.strokeStyle = cols[i % cols.length];
+    ctx.globalAlpha = 0.28 + Math.random() * 0.5;
+    ctx.lineWidth = 0.55 + Math.random() * 1.4;
+    for (const ox of [0, -size, size]) for (const oy of [0, -size, size]) {
+      ctx.beginPath();
+      ctx.moveTo(x + ox, y + oy);
+      ctx.lineTo(x1 + ox, y1 + oy);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(2.4, 2.4);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  t.needsUpdate = true;
+  return t;
+}
+// A tuft of loose stalks, used as crossed cards so a hay pile has a ragged
+// silhouette instead of a smooth baked potato.
+function makeHayTuft() {
+  const w = 256, h = 256;
+  const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const ctx = c.getContext('2d');
+  const cols = ['#e8c878', '#d4b05c', '#c49a48', '#f0d490', '#a87c38', '#8c6428'];
+  const cx = w * 0.5, base = h * 0.94;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 46; i++) {
+    const spread = (Math.random() - 0.5) * 1.2;
+    const len = h * (0.42 + Math.random() * 0.5);
+    ctx.strokeStyle = cols[i % cols.length];
+    ctx.globalAlpha = 0.5 + Math.random() * 0.45;
+    ctx.lineWidth = 1.1 + Math.random() * 2.3;
+    ctx.beginPath();
+    ctx.moveTo(cx + (Math.random() - 0.5) * 30, base);
+    ctx.quadraticCurveTo(
+      cx + spread * w * 0.16 + (Math.random() - 0.5) * 18,
+      base - len * 0.46,
+      cx + spread * w * 0.4,
+      base - len,
+    );
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  t.needsUpdate = true;
+  return t;
+}
 function withUV2(geometry) {
   if (!geometry.getAttribute('uv2') && geometry.getAttribute('uv')) {
     const uv = geometry.getAttribute('uv');
@@ -304,6 +376,8 @@ const canopyA = tex('./textures/nature/canopy_leaf.jpg', 3.0, 3.0);
 const canopyN = ntex('./textures/nature/foliage_n.jpg', 3.0, 3.0);
 const hedgeA = tex('./textures/nature/canopy_leaf.jpg', 4.4, 4.4);
 const hedgeN = ntex('./textures/nature/foliage_n.jpg', 4.4, 4.4);
+const hayA = makeHayAlbedo();
+const hayTuftA = makeHayTuft();
 
 const M = {
   // Compacted earth: the visitor path. Warm, matte, and slightly redder than
@@ -326,6 +400,13 @@ const M = {
   lawn: new THREE.MeshStandardMaterial({ map: lawnA, color: 0x93a86c, roughness: 0.99 }),
   meadow: new THREE.MeshStandardMaterial({
     map: meadowA, color: 0xc4b888, roughness: 0.99,
+  }),
+  hay: new THREE.MeshStandardMaterial({
+    map: hayA, color: 0xf2e0a8, roughness: 1.0, metalness: 0.0,
+  }),
+  hayTuft: new THREE.MeshStandardMaterial({
+    map: hayTuftA, color: 0xf0dc9c, roughness: 1.0, metalness: 0.0,
+    alphaTest: 0.28, alphaToCoverage: true, side: THREE.DoubleSide,
   }),
   sand: new THREE.MeshStandardMaterial({ color: 0xcbb489, roughness: 0.99 }),
   sandFloor: worldXZUv(new THREE.MeshStandardMaterial({
@@ -527,6 +608,34 @@ function lumpyCrown(seed, flatten = 0.12, lump = 0.14) {
   g.computeVertexNormals();
   return withUV2(g);
 }
+// A hay pile, not a bush: lumpy, sitting on the dirt, unit-sized so sx/sy/sz
+// are the world extents. Two seeds so the aviary's pair are not twins.
+function hayHeapGeom(seed) {
+  const g = new THREE.IcosahedronGeometry(0.5, 3);
+  const pos = g.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const n = 1
+      + 0.17 * Math.sin(v.x * 7.1 + seed * 2.1)
+      + 0.14 * Math.sin(v.z * 6.0 + seed * 1.4)
+      + 0.10 * Math.sin(v.y * 8.4 + v.x * 3.6 + seed)
+      + 0.07 * Math.sin(v.x * 14.8 + v.z * 11.2 + seed * 2.7);
+    v.multiplyScalar(n);
+    if (v.y < 0) v.y *= 0.16;
+    else v.y *= 0.95;
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeBoundingBox();
+  g.translate(0, -g.boundingBox.min.y, 0);
+  g.computeBoundingBox();
+  const { min, max } = g.boundingBox;
+  g.scale(1 / Math.max(max.x - min.x, 1e-3), 1 / Math.max(max.y, 1e-3), 1 / Math.max(max.z - min.z, 1e-3));
+  g.computeVertexNormals();
+  g.computeBoundingBox();
+  g.computeBoundingSphere();
+  return withUV2(g);
+}
 function pineCrownGeom() {
   const pts = [
     new THREE.Vector2(0.04, 0.00),
@@ -558,6 +667,9 @@ const G = {
   canopyC: lumpyCrown(4.61),
   pineCrown: pineCrownGeom(),
   bush: lumpyCrown(3.37, 0.58, 0.18),
+  hayHeapA: hayHeapGeom(1.15),
+  hayHeapB: hayHeapGeom(2.84),
+  card: withUV2(new THREE.PlaneGeometry(1, 1)),
   rock: withUV2(new THREE.DodecahedronGeometry(0.5, 0)),
   cone: withUV2(new THREE.ConeGeometry(0.5, 1, 12).translate(0, 0.5, 0)),
   frond: withUV2(new THREE.ConeGeometry(0.5, 1, 4).translate(0, 0.5, 0)),
@@ -854,6 +966,33 @@ function birch(x, z, s = 1) {
     shape(pickCanopy(x, z), M.foliageLight, x, g + h * 0.74, z,
       3.6 * s, 4.2 * s, 3.4 * s, { ry: j * 3, rz: j * 0.02 });
   });
+}
+function hayHeap(x, y, z, sx, sy, sz, seed) {
+  shape(seed < 2 ? G.hayHeapA : G.hayHeapB, M.hay, x, y, z, sx, sy, sz, { ry: seed * 0.7 });
+  const was = PROP;
+  PROP = false;
+  const n = 12;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + seed;
+    const r = 0.26 + (i % 3) * 0.09;
+    const tx = x + Math.cos(a) * sx * r;
+    const tz = z + Math.sin(a) * sz * r;
+    const ty = y + sy * (0.18 + (i % 4) * 0.14);
+    const hs = 0.36 + (i % 3) * 0.12;
+    const ws = 0.30 + (i % 2) * 0.1;
+    shape(G.card, M.hayTuft, tx, ty, tz, ws, hs, 1, { ry: a });
+    shape(G.card, M.hayTuft, tx, ty, tz, ws * 0.9, hs * 0.95, 1, { ry: a + Math.PI / 2 });
+  }
+  for (let i = 0; i < 7; i++) {
+    const a = seed * 3.1 + i * 0.93;
+    shape(G.box, M.hay,
+      x + Math.cos(a) * sx * 0.16,
+      y + sy * (0.52 + (i % 3) * 0.1),
+      z + Math.sin(a) * sz * 0.16,
+      0.016, 0.38 + (i % 3) * 0.1, 0.016,
+      { ry: a, rx: 0.55 + (i % 4) * 0.28, rz: (i % 2) * 0.35 - 0.18 });
+  }
+  PROP = was;
 }
 function shrub(x, z, s = 1, mat = M.hedge) {
   prop(() => {
@@ -2125,8 +2264,16 @@ meshRoof(FARM.x0, FARM.z0, FARM.x1, FARM.z1, AVIARY_H);
 prop(() => {
   box(M.timber, -68, 0.42, -30, 2.4, 0.84, 0.8);          // water trough
   box(M.water, -68, 0.72, -30, 2.1, 0.12, 0.55);
-  shape(G.blob, M.signPale, -70, 0.05, -40, 2.6, 1.1, 2.2);   // straw bale heap
-  shape(G.blob, M.signPale, -71.5, 0.05, -38.6, 2.2, 0.9, 1.9);
+  hayHeap(-70, 0.05, -40, 2.6, 1.05, 2.2, 1.15);
+  hayHeap(-71.5, 0.05, -38.6, 2.2, 0.88, 1.9, 2.84);
+  // Tied bales at the near edge — a yellow mound alone still reads as a rock;
+  // a couple of rectangular bales are what a farmyard actually leaves there.
+  box(M.hay, -68.7, 0.20, -39.4, 0.95, 0.38, 0.48, 0.18);
+  box(M.hay, -68.5, 0.20, -38.7, 0.90, 0.36, 0.46, -0.12);
+  box(M.hay, -68.6, 0.56, -39.05, 0.92, 0.36, 0.45, 0.06);
+  box(M.timberDark, -68.7, 0.20, -39.4, 0.97, 0.025, 0.05, 0.18);
+  box(M.timberDark, -68.5, 0.20, -38.7, 0.92, 0.025, 0.05, -0.12);
+  box(M.timberDark, -68.6, 0.56, -39.05, 0.94, 0.025, 0.05, 0.06);
   // Perches: horizontal bars on two uprights, at staggered heights so the
   // flight from one to the next is a real flight, not a hop.
   for (const [px, pz, ph, pw] of [
