@@ -5,7 +5,8 @@
 // below may assume a shared rig, a shared clip name or even a skeleton:
 //
 //   lion           skinned WildMesh demo: Idle / Walk / WalkSlow clips (in-place).
-//   komodo         no skeleton — morph anim stripped; bent in the vertex shader.
+//   fox            Khronos sample: Survey / Walk / Run, orange coat that reads
+//                  at the glass (the komodo it replaced was a dark silhouette).
 //   zebra          skinned, 32 bones, one Idle clip.
 //   peacock, crow  skinned, Rigify rigs, their own Idle clips.
 //
@@ -69,8 +70,8 @@ function enhanceLionAlbedo(tex) {
  *   length   the longest horizontal extent, for an animal that is mostly
  *            horizontal and whose shoulder means nothing — the komodo.
  *
- * lion standing height ~1.4 (mane) · plains zebra withers 1.3-1.4 · komodo
- * length 2.5-3.0 · Indian peafowl height 1.0-1.2 · carrion crow height 0.4-0.5
+ * lion standing height ~1.4 (mane) · plains zebra withers 1.3-1.4 · red fox
+ * ~0.7 to the ears · Indian peafowl 1.0-1.2 · carrion crow 0.4-0.5
  */
 export const SPECIES = {
   // Prefer *-IP clips: in-place, so locomotion comes from our roam code and
@@ -93,13 +94,16 @@ export const SPECIES = {
     },
   },
   zebra: { file: 'zebra.glb', fit: ['withers', 1.35], rest: ['Idle_Armature'] },
-  // No skeleton survived the de-baking, so the komodo is bent in the vertex
-  // shader instead: a wave down the tail and a slow turn of the head. `tail`
-  // is the sideways swing of the tip as a fraction of body length, `head` the
-  // turn in radians.
-  komodo: {
-    file: 'komodo.glb', fit: ['length', 2.60],
-    flex: { tail: 0.30, head: 0.42, rate: 0.95 },
+  // Red fox: Survey is the looking-around idle, Walk is the gait. Sized a
+  // little over a wild fox so five of them fill a 30 m paddock at the glass.
+  fox: {
+    file: 'fox.glb', fit: ['height', 0.72],
+    rest: ['Survey'], walk: ['Walk'],
+    locomotion: {
+      steering: 'curved', speed: [0.78, 1.15], turnRate: 1.35,
+      turnAccel: 2.1, accel: 1.35, brake: 1.7,
+      rest: [3, 9], bout: [7, 16], stop: 0.5,
+    },
   },
   peacock: { file: 'peacock.glb', fit: ['height', 1.10], rest: ['Idle'] },
   // The crow's one clip is a flight that lands: it hovers for the first two

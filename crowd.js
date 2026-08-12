@@ -98,7 +98,7 @@ export async function loadVisitorBase(url, matFactory) {
 // green: the trousers matched PANTS on both models and the shirt matched
 // nothing on his. Both of the man's upper garments map to the same slot.
 const PART_NAMES = ['hat', 'backpack', 'tshirt', 'jacket', 'vest', 'pants', 'shoes',
-  'hair', 'head', 'body'];
+  'hair', 'eyeshadow', 'cornea', 'lashes', 'eyes', 'head', 'body'];
 const PART_ALIASES = { jacket: 'tshirt', vest: 'tshirt', body: 'head' };
 const partOf = (name = '') => {
   const hit = PART_NAMES.find(p => name.toLowerCase().includes(p));
@@ -125,9 +125,12 @@ const PALETTE = {
 // Hair is tinted rather than recoloured: the pack's texture carries the strand
 // detail and the parting, and dropping it for a flat colour turns the head into
 // a helmet. Multiplied over the map instead, which is what a hair dye does.
-const HAIR = [0x2a1d15, 0x6b4526, 0xa87a3f, 0xd8b878, 0x8f3f28, 0x9a958f, 0x14100d];
-// Skin likewise: a gentle multiply either side of the pack's own tone.
-const SKIN = [0xffffff, 0xf0d9c4, 0xd6a882, 0xa9764f, 0xe8c9a8, 0x8a5c3a];
+const HAIR = [0x2a1d15, 0x6b4526, 0xa87a3f, 0xd8b878, 0x8f3f28, 0x9a958f, 0x14100d,
+  0xc45a2a, 0x3a2a48];
+// Never the pack's un-tinted white: that is the player's own face, and a
+// visitor wearing it is her twin. Stay either side of that tone instead.
+const SKIN = [0xf0d9c4, 0xd6a882, 0xa9764f, 0xe8c9a8, 0x8a5c3a, 0xc48a6a, 0xdeb89a];
+const EYES = [0x6b4a28, 0x3d5a34, 0x4a4540, 0x8a6a38, 0x2c1810, 0x5a6a78, 0x3a2a1c];
 
 // A shirt with stripes on it, drawn rather than downloaded: eight bands in a
 // tall thin canvas, tiled over whatever UVs the shirt happens to have. It will
@@ -165,6 +168,48 @@ function stripeTexture(light = '#cfe3c2', dark = '#2f6b34') {
 // places the sitter measures its own seat and fits the leg to it — see
 // `fitSeatedLegs` in main-ZOO.js.
 const SEAT = { hip: 1.44, knee: -1.52, ankle: 0.12, spread: 0.09 };
+
+// The girl mesh is the player's. Recolouring a t-shirt is not enough: from
+// the front she is still the same face. Push the bind-pose vertices around
+// so the jaw, cheeks, nose and brow are a different person, then the skin
+// tint and the eyes do the rest.
+function morphVisitorFace(mesh, rng) {
+  const g = mesh.geometry.clone();
+  const p = g.attributes.position;
+  if (!p) return;
+  g.computeBoundingBox();
+  const bb = g.boundingBox;
+  const cx = (bb.min.x + bb.max.x) * 0.5;
+  const spanY = Math.max(1e-4, bb.max.y - bb.min.y);
+  const spanX = Math.max(1e-4, bb.max.x - bb.min.x);
+  const jaw = (rng() - 0.5) * 0.22;
+  const cheek = (rng() - 0.5) * 0.18;
+  const nose = (rng() - 0.5) * 0.16;
+  const brow = (rng() - 0.5) * 0.12;
+  const chin = (rng() - 0.5) * 0.10;
+  for (let i = 0; i < p.count; i++) {
+    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const ny = (y - bb.min.y) / spanY;
+    const nx = (x - cx) / spanX;
+    if (ny < 0.48) {
+      x += nx * spanX * jaw * (0.48 - ny);
+      y += chin * 0.012 * (0.48 - ny);
+    }
+    if (ny > 0.32 && ny < 0.72) {
+      const w = Math.sin((ny - 0.32) / 0.4 * Math.PI);
+      x += nx * spanX * cheek * w;
+    }
+    if (Math.abs(nx) < 0.18 && ny > 0.42 && ny < 0.68) {
+      z += nose * 0.035 * (1 - Math.abs(nx) / 0.18);
+    }
+    if (ny > 0.62 && ny < 0.84) y += brow * 0.018;
+    p.setXYZ(i, x, y, z);
+  }
+  p.needsUpdate = true;
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  mesh.geometry = g;
+}
 
 function seatedRig(group) {
   const legs = [];
@@ -229,12 +274,20 @@ export function makeVisitor(base, walkClip, rng,
     Object.entries(PALETTE).map(([part, list]) => [part, pick(list)]));
   const hairColour = pick(HAIR);
   const skinTone = pick(SKIN);
+  const eyeColour = pick(EYES);
+  let isGirl = false;
+  group.traverse(o => {
+    const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    if (mats.some(m => /survgirl/i.test(m?.name ?? ''))) isGirl = true;
+  });
   // Three silhouettes off one head. The pack's hair is a single mesh — scalp and
   // ponytail together — so hiding it leaves a bald visitor; the cut is changed
   // by reshaping its geometry instead. 'cap' also puts a hat on, which is the
   // biggest change of outline available and the commonest thing in a zoo.
+  // The player wears the long ponytail: visitors built from her mesh never do.
   const cut = rng();
-  const style = cut < 0.34 ? 'long' : cut < 0.68 ? 'short' : 'cap';
+  const style = isGirl ? (cut < 0.55 ? 'short' : 'cap')
+    : (cut < 0.34 ? 'long' : cut < 0.68 ? 'short' : 'cap');
   const wearsHat = uniform ? uniform.hat === true : (style === 'cap' || rng() < 0.2);
   const wearsPack = uniform ? false : rng() < 0.32;
   if (uniform) {
@@ -273,6 +326,9 @@ export function makeVisitor(base, walkClip, rng,
         c.color.setHex(hairColour);
         c.roughness = 0.72;
         c.needsUpdate = true;
+      } else if (part === 'eyes') {
+        c.color.setHex(eyeColour);
+        c.needsUpdate = true;
       } else if (part === 'head') {
         // Skin (face, hands, arms): tint and keep matte so it never reads as a
         // silhouette against the plaza light. A little env lift keeps faces
@@ -301,6 +357,12 @@ export function makeVisitor(base, walkClip, rng,
       return c;
     });
     o.material = Array.isArray(o.material) ? made : made[0];
+    if (isGirl && list.length > 0 && list.every(m => {
+      const n = (m?.name ?? '').toLowerCase();
+      return n.includes('head') && !n.includes('body');
+    })) {
+      morphVisitorFace(o, rng);
+    }
     // The cut. Everything hanging below the nape is pulled back up towards it,
     // which turns the pack's ponytail into a bob or a crop without touching the
     // scalp — the only part of the mesh whose shape has to stay put.
@@ -339,6 +401,11 @@ export function makeVisitor(base, walkClip, rng,
   const height = 0.88 + rng() * 0.26;
   const build = 0.94 + rng() * 0.12;
   group.scale.set(height * build, height, height * build);
+  const headBone = group.getObjectByName('head');
+  if (headBone && isGirl) {
+    const hs = 0.92 + rng() * 0.14;
+    headBone.scale.multiplyScalar(hs);
+  }
 
   const mixer = new THREE.AnimationMixer(group);
   // The pack's walk carries its own forward travel on the pelvis. The path

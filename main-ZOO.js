@@ -6,8 +6,8 @@ import { Controller } from './controller.js?v=5';
 import { CameraRig } from './cameraRig.js?v=4';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar } from './cars.js?v=4';
-import { makeVisitor, loadVisitorBase, STAFF_UNIFORM } from './crowd.js?v=13';
-import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=30';
+import { makeVisitor, loadVisitorBase, STAFF_UNIFORM } from './crowd.js?v=14';
+import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=31';
 
 // ---------------------------------------------------------------------------
 // A Trip to the Zoo — a small regional park, laid out the way zoo master plans
@@ -119,6 +119,37 @@ function withUV2(geometry) {
     geometry.setAttribute('uv2', new THREE.BufferAttribute(new Float32Array(uv.array), 2));
   }
   return geometry;
+}
+// Path slabs are stretched boxes; mesh UVs would smear the dirt along the
+// length. Map albedo/normal/roughness from world XZ so every metre of path
+// gets the same grain, regardless of how long the segment is.
+function worldXZUv(mat, metersPerTile = 2.4) {
+  const s = 1 / metersPerTile;
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <worldpos_vertex>',
+      `#include <worldpos_vertex>
+      {
+        vec4 wp = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          wp = instanceMatrix * wp;
+        #endif
+        wp = modelMatrix * wp;
+        vec2 gUV = wp.xz * ${s.toFixed(4)};
+        #ifdef USE_MAP
+          vMapUv = gUV;
+        #endif
+        #ifdef USE_NORMALMAP
+          vNormalMapUv = gUV;
+        #endif
+        #ifdef USE_ROUGHNESSMAP
+          vRoughnessMapUv = gUV;
+        #endif
+      }`,
+    );
+  };
+  mat.customProgramCacheKey = () => 'wxz-' + metersPerTile;
+  return mat;
 }
 
 // ---------------------------------------------------------------------------
@@ -242,62 +273,132 @@ function girlMatFor(name) {
 
 // ---------------------------------------------------------------------------
 // Material palette — timber, compacted earth, stone, mesh, glass, foliage.
+// Wood / bark / roof / canopy maps: Poly Haven CC0 (wooden_planks, pine_bark,
+// roof_slates_02, roof_tiles_14) + ambientCG Plaster001 CC0. Leaf cards use a
+// photoscan clump of leafy_grass.
 // ---------------------------------------------------------------------------
-const woodN = ntex('./textures/CP_Trim_Sheet_N.webp', 3, 1);
+const woodN = ntex('./textures/nature/wood_n.jpg', 3, 1);
+const woodA = tex('./textures/nature/wood_diff.jpg', 3, 1);
+const woodR = ntex('./textures/nature/wood_r.jpg', 3, 1);
 const concN = ntex('./textures/CP_Concrete_01_N.webp', 4, 4);
 const stoneN = ntex('./textures/CP_Brick_Wall_N.webp', 5, 3);
+const brickA = tex('./textures/CP_Brick_Wall_A.webp', 5, 3);
 const asphaltA = tex('./textures/CP_Asphalt_A.webp', 24, 24);
 const asphaltN = ntex('./textures/CP_Asphalt_N.webp', 24, 24);
 const lawnA = tex('./textures/la/grass_diffuse.jpg', 120, 120);
 const waterN = ntex('./textures/la/water_normal.jpg', 8, 8);
-const gravelN = ntex('./textures/CP_Concrete_03_N.webp', 8, 8);
+const dirtA = tex('./textures/nature/dirt_diff.jpg');
+const dirtN = ntex('./textures/nature/dirt_n.jpg');
+const dirtR = ntex('./textures/nature/dirt_r.jpg');
+const paverA = tex('./textures/nature/paver_diff.jpg');
+const paverN = ntex('./textures/nature/paver_n.jpg');
+const paverR = ntex('./textures/nature/paver_r.jpg');
+const barkA = tex('./textures/nature/bark_diff.jpg', 1, 2);
+const barkN = ntex('./textures/nature/bark_n.jpg', 1, 2);
+const shingleA = tex('./textures/nature/shingle_diff.jpg', 4, 3);
+const shingleN = ntex('./textures/nature/shingle_n.jpg', 4, 3);
+const shingleRedA = tex('./textures/nature/shingle_red_diff.jpg', 4, 3);
+const shingleRedN = ntex('./textures/nature/shingle_red_n.jpg', 4, 3);
+const meadowA = tex('./textures/nature/foliage_diff.jpg', 18, 18);
+const canopyA = tex('./textures/nature/canopy_leaf.jpg', 3.0, 3.0);
+const canopyN = ntex('./textures/nature/foliage_n.jpg', 3.0, 3.0);
+const hedgeA = tex('./textures/nature/canopy_leaf.jpg', 4.4, 4.4);
+const hedgeN = ntex('./textures/nature/foliage_n.jpg', 4.4, 4.4);
 
 const M = {
   // Compacted earth: the visitor path. Warm, matte, and slightly redder than
   // the surrounding soil so the route reads at a distance from the ground alone.
-  dirt: new THREE.MeshStandardMaterial({
-    normalMap: gravelN, normalScale: new THREE.Vector2(0.5, 0.5),
-    color: 0xa8825a, roughness: 0.99, metalness: 0.0,
-  }),
-  dirtEdge: new THREE.MeshStandardMaterial({ color: 0x8d6a46, roughness: 0.99 }),
-  plaza: new THREE.MeshStandardMaterial({
-    normalMap: concN, normalScale: new THREE.Vector2(0.3, 0.3),
-    color: 0xc6bda9, roughness: 0.93, metalness: 0.01,
-  }),
+  dirt: worldXZUv(new THREE.MeshStandardMaterial({
+    map: dirtA, normalMap: dirtN, roughnessMap: dirtR,
+    normalScale: new THREE.Vector2(1.05, 1.05),
+    color: 0xe8d4b0, roughness: 1.0, metalness: 0.0,
+  })),
+  dirtEdge: worldXZUv(new THREE.MeshStandardMaterial({
+    map: dirtA, normalMap: dirtN, roughnessMap: dirtR,
+    normalScale: new THREE.Vector2(0.9, 0.9),
+    color: 0xc4a078, roughness: 1.0,
+  }), 2.8),
+  plaza: worldXZUv(new THREE.MeshStandardMaterial({
+    map: paverA, normalMap: paverN, roughnessMap: paverR,
+    normalScale: new THREE.Vector2(1.15, 1.15),
+    color: 0xf2eee6, roughness: 1.0, metalness: 0.0,
+  }), 1.6),
   lawn: new THREE.MeshStandardMaterial({ map: lawnA, color: 0x93a86c, roughness: 0.99 }),
-  meadow: new THREE.MeshStandardMaterial({ color: 0xa8a071, roughness: 0.99 }),
+  meadow: new THREE.MeshStandardMaterial({
+    map: meadowA, color: 0xc4b888, roughness: 0.99,
+  }),
   sand: new THREE.MeshStandardMaterial({ color: 0xcbb489, roughness: 0.99 }),
-  bark: new THREE.MeshStandardMaterial({ color: 0x7c6448, roughness: 0.95 }),
-  birch: new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.9 }),
-  barkDark: new THREE.MeshStandardMaterial({ color: 0x574636, roughness: 0.95 }),
-  foliage: new THREE.MeshStandardMaterial({ color: 0x4f7f42, roughness: 0.97 }),
-  foliageDark: new THREE.MeshStandardMaterial({ color: 0x39632f, roughness: 0.97 }),
-  foliageLight: new THREE.MeshStandardMaterial({ color: 0x6d9a52, roughness: 0.97 }),
-  hedge: new THREE.MeshStandardMaterial({ color: 0x41682f, roughness: 0.98 }),
+  sandFloor: worldXZUv(new THREE.MeshStandardMaterial({
+    map: dirtA, normalMap: dirtN, roughnessMap: dirtR,
+    normalScale: new THREE.Vector2(0.7, 0.7),
+    color: 0xffe6b8, roughness: 1.0, metalness: 0.0,
+  }), 2.2),
+  bark: new THREE.MeshStandardMaterial({
+    map: barkA, normalMap: barkN, normalScale: new THREE.Vector2(0.7, 0.7),
+    color: 0xc4a888, roughness: 0.95,
+  }),
+  birch: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0xe8e2d6, roughness: 0.9,
+  }),
+  barkDark: new THREE.MeshStandardMaterial({
+    map: barkA, normalMap: barkN, normalScale: new THREE.Vector2(0.7, 0.7),
+    color: 0x8a7358, roughness: 0.95,
+  }),
+  foliage: new THREE.MeshStandardMaterial({
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(1.05, 1.05),
+    color: 0xeef6dc, roughness: 0.9,
+  }),
+  foliageDark: new THREE.MeshStandardMaterial({
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(1.1, 1.1),
+    color: 0xb4c48c, roughness: 0.92,
+  }),
+  foliageLight: new THREE.MeshStandardMaterial({
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.9, 0.9),
+    color: 0xffffff, roughness: 0.88,
+  }),
+  hedge: new THREE.MeshStandardMaterial({
+    map: hedgeA, normalMap: hedgeN, normalScale: new THREE.Vector2(1.15, 1.15),
+    color: 0xd8e6b0, roughness: 0.93,
+  }),
   bamboo: new THREE.MeshStandardMaterial({ color: 0x8fa350, roughness: 0.9 }),
   timber: new THREE.MeshStandardMaterial({
-    normalMap: woodN, normalScale: new THREE.Vector2(0.35, 0.35),
-    color: 0xa9763f, roughness: 0.82, metalness: 0.02,
+    map: woodA, normalMap: woodN, roughnessMap: woodR,
+    normalScale: new THREE.Vector2(0.55, 0.55),
+    color: 0xd2b07a, roughness: 0.82, metalness: 0.02,
   }),
   // The chalet walls, once they have a door in them. A wall is one box, so
   // from inside you are looking at its back faces — single-sided, the shop
   // simply has no interior and you see the park straight through it.
   timberWall: new THREE.MeshStandardMaterial({
-    normalMap: woodN, normalScale: new THREE.Vector2(0.35, 0.35),
-    color: 0xa9763f, roughness: 0.82, metalness: 0.02, side: THREE.DoubleSide,
+    map: woodA, normalMap: woodN, roughnessMap: woodR,
+    normalScale: new THREE.Vector2(0.55, 0.55),
+    color: 0xd2b07a, roughness: 0.82, metalness: 0.02, side: THREE.DoubleSide,
   }),
   timberWallDark: new THREE.MeshStandardMaterial({
-    color: 0x6f4a2a, roughness: 0.84, side: THREE.DoubleSide,
+    map: woodA, normalMap: woodN, roughnessMap: woodR,
+    color: 0x8a5c38, roughness: 0.84, side: THREE.DoubleSide,
   }),
-  plank: new THREE.MeshStandardMaterial({ color: 0x9a7448, roughness: 0.9 }),
+  plank: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0xc49a68, roughness: 0.9,
+  }),
   ceilingIn: new THREE.MeshStandardMaterial({ color: 0x8a6a48, roughness: 0.95 }),
-  timberDark: new THREE.MeshStandardMaterial({ color: 0x6f4a2a, roughness: 0.84 }),
-  timberPale: new THREE.MeshStandardMaterial({ color: 0xd0a468, roughness: 0.8 }),
-  shingle: new THREE.MeshStandardMaterial({ color: 0x584235, roughness: 0.9 }),
-  shingleRed: new THREE.MeshStandardMaterial({ color: 0x8e4a35, roughness: 0.88 }),
+  timberDark: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0x8a5c38, roughness: 0.84,
+  }),
+  timberPale: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0xe8c888, roughness: 0.8,
+  }),
+  shingle: new THREE.MeshStandardMaterial({
+    map: shingleA, normalMap: shingleN, normalScale: new THREE.Vector2(0.8, 0.8),
+    color: 0xc8c0b4, roughness: 0.9,
+  }),
+  shingleRed: new THREE.MeshStandardMaterial({
+    map: shingleRedA, normalMap: shingleRedN, normalScale: new THREE.Vector2(0.8, 0.8),
+    color: 0xd8c4b0, roughness: 0.88,
+  }),
   stone: new THREE.MeshStandardMaterial({
-    normalMap: stoneN, normalScale: new THREE.Vector2(0.32, 0.32),
-    color: 0xc0b9ab, roughness: 0.93, metalness: 0.01,
+    map: brickA, normalMap: stoneN, normalScale: new THREE.Vector2(0.45, 0.45),
+    color: 0xd8d0c4, roughness: 0.93, metalness: 0.01,
   }),
   rock: new THREE.MeshStandardMaterial({ color: 0x8b8579, roughness: 0.97 }),
   rockWarm: new THREE.MeshStandardMaterial({ color: 0xa08a70, roughness: 0.96 }),
@@ -405,14 +506,58 @@ function addInstancedPrimitive(geometry, material, items, propFlags) {
   return im;
 }
 
+// One organic canopy, not a cluster of spheres. Vertices are displaced so the
+// silhouette is lumpy, and the underside is flattened so the trunk reads as
+// growing *into* the crown instead of a lollipop stick under a ball.
+function lumpyCrown(seed, flatten = 0.12, lump = 0.14) {
+  const g = new THREE.IcosahedronGeometry(0.5, 3);
+  const pos = g.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const n = 1
+      + lump * Math.sin(v.x * 6.8 + seed * 2.1)
+      + lump * 0.75 * Math.sin(v.z * 5.9 + seed * 1.4)
+      + lump * 0.45 * Math.sin(v.y * 7.2 + v.x * 3.3 + seed);
+    v.multiplyScalar(n);
+    if (v.y < 0) v.y *= 1 - flatten;
+    else v.y *= 0.88;
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return withUV2(g);
+}
+function pineCrownGeom() {
+  const pts = [
+    new THREE.Vector2(0.04, 0.00),
+    new THREE.Vector2(0.48, 0.05),
+    new THREE.Vector2(0.44, 0.18),
+    new THREE.Vector2(0.36, 0.38),
+    new THREE.Vector2(0.26, 0.58),
+    new THREE.Vector2(0.16, 0.76),
+    new THREE.Vector2(0.07, 0.92),
+    new THREE.Vector2(0.00, 1.00),
+  ];
+  const g = new THREE.LatheGeometry(pts, 16);
+  g.computeVertexNormals();
+  return withUV2(g);
+}
+
 const G = {
   box: withUV2(new THREE.BoxGeometry(1, 1, 1)),
   cyl: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 14)),
   cylBase: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 14).translate(0, 0.5, 0)),
   post: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 8).translate(0, 0.5, 0)),
   trunk: withUV2(new THREE.CylinderGeometry(0.32, 0.5, 1, 9).translate(0, 0.5, 0)),
+  branch: withUV2(new THREE.CylinderGeometry(0.28, 0.5, 1, 8).translate(0, 0.5, 0)),
   sphere: withUV2(new THREE.SphereGeometry(0.5, 14, 10)),
-  blob: withUV2(new THREE.IcosahedronGeometry(0.5, 1)),
+  blob: withUV2(new THREE.IcosahedronGeometry(0.5, 2)),
+  crown: withUV2(new THREE.SphereGeometry(0.5, 18, 14)),
+  canopyA: lumpyCrown(1.15),
+  canopyB: lumpyCrown(2.84),
+  canopyC: lumpyCrown(4.61),
+  pineCrown: pineCrownGeom(),
+  bush: lumpyCrown(3.37, 0.58, 0.18),
   rock: withUV2(new THREE.DodecahedronGeometry(0.5, 0)),
   cone: withUV2(new THREE.ConeGeometry(0.5, 1, 12).translate(0, 0.5, 0)),
   frond: withUV2(new THREE.ConeGeometry(0.5, 1, 4).translate(0, 0.5, 0)),
@@ -636,8 +781,6 @@ function carPark() {
 function forecourt() {
   // Paved arrival plaza between the car park and the pavilion.
   slab(M.plaza, -26, 26, GATE_Z - 1.2, PARK_Z0 - 1.2, 0, 0.07);
-  // A band of paler paving leading the eye from the car park to the arch.
-  slab(M.signPale, -5.5, 5.5, GATE_Z, PARK_Z0 - 1.4, 0.07, 0.08);
   for (const x of [-19, 19]) for (const z of [1, 8, 15]) planter(x, z, 1.5);
   for (const x of [-23, 23]) { lampPost(x, 2, 5.2); lampPost(x, 13, 5.2); }
 }
@@ -645,9 +788,9 @@ function forecourt() {
 // ---------------------------------------------------------------------------
 // Planting and street furniture
 // ---------------------------------------------------------------------------
-// A broadleaf. The crown starts at two thirds of the height and is barely wider
-// than it is tall: the first pass hung a crown three times the trunk's width at
-// half the trunk's height, which is a lollipop, not a tree.
+// Trees are a trunk, branches that grow out of that trunk, and ONE lumpy
+// crown the branches disappear into. Separate spheres read as balls; a
+// branch whose base is not on the trunk reads as floating wood.
 // Everything planted has to START at the ground under it. These were all
 // authored at y = 0, which is right inside the park because the park is flat —
 // and wrong everywhere else, so on the rising ground outside the fence the
@@ -655,81 +798,92 @@ function forecourt() {
 // the sky with nothing holding them up.
 const groundAt = (x, z) => terrainHeight(x, z);
 
+function pickCanopy(x, z) {
+  const k = Math.abs(Math.sin(x * 12.9898 + z * 78.233));
+  return k < 0.33 ? G.canopyA : k < 0.66 ? G.canopyB : G.canopyC;
+}
+// Cylinder is base-at-origin. Yaw then Z-lean grows the limb along +X, so the
+// attach point is offset on the trunk in that same direction — the join is solid.
+function limb(mat, tx, ty, tz, trunkR, az, lean, len, rad) {
+  shape(G.branch, mat,
+    tx + Math.cos(az) * trunkR, ty, tz - Math.sin(az) * trunkR,
+    rad, len, rad, { ry: az, rz: lean });
+}
+
 function shadeTree(x, z, s = 1, mat = M.foliage) {
   prop(() => {
     const g = groundAt(x, z) - 0.15;
     const h = 7.6 * s;
-    // A little per-tree drift, keyed off the position so it is stable between
-    // reloads: a row of identical trees is its own kind of unreal.
     const j = Math.sin(x * 12.9898 + z * 78.233) * 0.5;
-    const lean = j * 0.06;
-    shape(G.trunk, M.bark, x, g, z, 0.34 * s, h * 0.64, 0.34 * s, { rz: lean });
-    shape(G.blob, mat, x + j * 0.5, g + h * 0.78, z - j * 0.4, 3.5 * s, 3.0 * s, 3.4 * s,
-      { ry: j * 3 });
-    shape(G.blob, mat, x - 1.15 * s, g + h * 0.66, z + 0.85 * s, 2.5 * s, 2.0 * s, 2.4 * s,
-      { ry: j });
-    shape(G.blob, M.foliageDark, x + 1.05 * s, g + h * 0.91, z - 0.7 * s,
-      2.1 * s, 1.7 * s, 2.0 * s, { ry: -j * 2 });
-    shape(G.blob, mat, x + 0.5 * s, g + h * 0.58, z - 1.2 * s, 1.9 * s, 1.5 * s, 1.8 * s);
+    const lean = j * 0.04;
+    const trunkH = h * 0.76;
+    const trunkW = 0.82 * s;
+    shape(G.cylBase, M.bark, x, g, z, 1.1 * s, 0.36 * s, 1.1 * s);
+    // Trunk runs into the heart of the crown — the canopy sits on the bole,
+    // not on a pair of twigs spanning a gap.
+    shape(G.trunk, M.bark, x, g, z, trunkW, trunkH, trunkW, { rz: lean });
+    const az0 = j * 6.1;
+    const tR = 0.28 * s;
+    limb(M.bark, x, g + h * 0.58, z, tR, az0, 0.85, 1.55 * s, 0.46 * s);
+    limb(M.bark, x, g + h * 0.63, z, tR * 0.9, az0 + 2.2, 0.92, 1.35 * s, 0.38 * s);
+    limb(M.bark, x, g + h * 0.55, z, tR, az0 + 4.1, 0.78, 1.45 * s, 0.40 * s);
+    shape(pickCanopy(x, z), mat, x, g + h * 0.72, z,
+      4.6 * s, 3.8 * s, 4.4 * s, { ry: j * 3, rz: lean * 0.25 });
   });
 }
-// A conifer is a tapering STACK, widest low down, with the trunk showing under
-// the first whorl — not two cones balanced on a stick.
 function pine(x, z, s = 1) {
   prop(() => {
     const g = groundAt(x, z) - 0.15;
     const j = Math.sin(x * 45.164 + z * 21.9) * 0.5;
-    shape(G.trunk, M.barkDark, x, g, z, 0.34 * s, 3.0 * s, 0.34 * s);
-    const tiers = [[1.5, 4.6, 3.2], [3.3, 3.7, 2.9], [5.1, 2.8, 2.6], [6.7, 1.8, 2.2]];
-    for (const [y, r, hh] of tiers) {
-      shape(G.cone, M.foliageDark, x, g + (y + j * 0.2) * s, z,
-        r * s, hh * s, r * s, { ry: j * 4 });
-    }
+    shape(G.trunk, M.barkDark, x, g, z, 0.55 * s, 3.4 * s, 0.55 * s, { rz: j * 0.03 });
+    shape(G.pineCrown, M.foliageDark, x, g + 1.35 * s, z,
+      3.3 * s, 5.6 * s, 3.3 * s, { ry: j * 4 });
   });
 }
-// A birch: pale slender trunk that FORKS low, and a light open crown. It is the
-// counterpoint the planting needed — every other tree here is a heavy dark mass,
-// and a park reads as planted rather than grown when everything in it is the
-// same tree at three sizes.
 function birch(x, z, s = 1) {
   prop(() => {
     const g = groundAt(x, z) - 0.12;
     const j = Math.sin(x * 33.7 + z * 61.1) * 0.5;
     const h = (8.4 + j * 2.0) * s;
-    shape(G.trunk, M.birch, x, g, z, 0.24 * s, h * 0.5, 0.24 * s, { rz: j * 0.05 });
-    for (const fork of [-1, 1]) {
-      const lean = 0.16 * fork + j * 0.05;
-      shape(G.trunk, M.birch, x + fork * 0.18 * s, g + h * 0.46, z,
-        0.15 * s, h * 0.5, 0.15 * s, { rz: lean });
-      const tx = x + fork * (0.18 + Math.sin(lean) * h * 0.5) * s;
-      for (let i = 0; i < 3; i++) {
-        shape(G.blob, i ? M.foliageLight : M.foliage,
-          tx + (i - 1) * 1.1 * s, g + h * (0.78 + i * 0.07), z + (j + i - 1) * 0.9 * s,
-          (2.4 - i * 0.35) * s, (1.9 - i * 0.3) * s, (2.3 - i * 0.35) * s, { ry: j * 4 + i });
-      }
-    }
+    const trunkH = h * 0.78;
+    shape(G.trunk, M.birch, x, g, z, 0.40 * s, trunkH, 0.40 * s, { rz: j * 0.04 });
+    const tR = 0.14 * s;
+    const az = j * 2.4;
+    limb(M.birch, x, g + h * 0.58, z, tR, az, 0.72, 1.25 * s, 0.22 * s);
+    limb(M.birch, x, g + h * 0.62, z, tR, az + Math.PI * 0.82, 0.68, 1.15 * s, 0.20 * s);
+    shape(pickCanopy(x, z), M.foliageLight, x, g + h * 0.74, z,
+      3.6 * s, 4.2 * s, 3.4 * s, { ry: j * 3, rz: j * 0.02 });
   });
 }
-// Understorey. Nothing tall, and it goes where a park actually plants it: at the
-// foot of the trees and along the barrier lines, so the ground between the path
-// and the fence is not bare lawn.
 function shrub(x, z, s = 1, mat = M.hedge) {
   prop(() => {
     const g = groundAt(x, z);
     const j = Math.sin(x * 91.3 + z * 17.7) * 0.5;
-    shape(G.blob, mat, x, g, z, (2.1 + j) * s, (1.3 + j * 0.4) * s, (1.9 + j) * s, { ry: j * 6 });
-    shape(G.blob, M.foliageDark, x + 0.7 * s, g, z - 0.5 * s,
-      (1.4 + j * 0.6) * s, (0.9 + j * 0.3) * s, (1.3 + j * 0.6) * s, { ry: -j * 4 });
+    shape(G.bush, mat, x, g + 0.04, z,
+      (2.5 + j * 0.35) * s, (1.7 + j * 0.2) * s, (2.3 + j * 0.35) * s, { ry: j * 6 });
   });
 }
 function hedgeRun(x0, x1, z0, z1, h = 1.2, skip = null) {
-  prop(() => runBoxes(M.hedge, x0, z0, x1, z1, 0.9, 0, h, 2.0, skip));
+  prop(() => {
+    runBoxes(M.collider, x0, z0, x1, z1, 0.7, 0, h * 0.85, 2.0, skip);
+    const dx = x1 - x0, dz = z1 - z0;
+    const len = Math.hypot(dx, dz);
+    if (len < 0.2) return;
+    const n = Math.max(1, Math.round(len / 0.85));
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      const cx = x0 + dx * t, cz = z0 + dz * t;
+      if (skip?.(cx, cz)) continue;
+      const j = Math.sin(cx * 8.1 + cz * 3.7) * 0.5;
+      const hh = h * (0.92 + j * 0.12);
+      shape(G.bush, M.hedge, cx, 0, cz, 1.35 + j * 0.18, hh, 1.25 + j * 0.12, { ry: j * 5 });
+    }
+  });
 }
 function planter(x, z, r = 1.4) {
   prop(() => {
     shape(G.cylBase, M.stone, x, 0, z, r * 2, 0.55, r * 2);
-    shape(G.blob, M.foliageLight, x, 0.62, z, r * 1.7, 0.9, r * 1.7);
-    shape(G.blob, M.foliage, x + r * 0.4, 0.78, z - r * 0.3, r * 1.1, 0.7, r * 1.1);
+    shape(G.bush, M.foliageLight, x, 0.62, z, r * 1.8, 1.05, r * 1.8);
   });
 }
 function lampPost(x, z, h = 4.6) {
@@ -850,6 +1004,37 @@ function stockFence(x0, z0, x1, z1, { h = 2.4, rails = 4, step = 2.6, mesh = tru
   if (mesh) runBoxes(meshMat, x0, z0, x1, z1, 0.05, 0.15, h, 3.0);
 }
 
+// Close-boarded timber palisade: the park boundary. Post-and-rail is a
+// stand-off, not a perimeter — it is what you lean on, and you can walk
+// through it. This is the line you cannot. Only the turnstile gap is open.
+function perimeterFence(x0, z0, x1, z1, { h = 2.55, step = 2.4 } = {}) {
+  const dx = x1 - x0, dz = z1 - z0;
+  const len = Math.hypot(dx, dz);
+  if (len < 0.3) return;
+  const ry = Math.atan2(dx, dz);
+  runBoxes(M.collider, x0, z0, x1, z1, 0.32, 0, h, 2.0);
+  prop(() => {
+    const nPost = Math.max(2, Math.round(len / step));
+    for (let i = 0; i <= nPost; i++) {
+      const t = i / nPost;
+      const x = x0 + dx * t, z = z0 + dz * t;
+      const g = groundAt(x, z);
+      shape(G.post, M.timberDark, x, g, z, 0.24, h + 0.22, 0.24);
+    }
+    const nPale = Math.max(1, Math.round(len / 0.15));
+    const paleZ = (len / nPale) * 0.9;
+    for (let i = 0; i < nPale; i++) {
+      const t = (i + 0.5) / nPale;
+      const x = x0 + dx * t, z = z0 + dz * t;
+      const g = groundAt(x, z);
+      box(i % 4 === 1 ? M.timberDark : M.timber,
+        x, g + 0.1 + (h - 0.22) / 2, z, 0.05, h - 0.22, paleZ, ry);
+    }
+    runBoxes(M.timberDark, x0, z0, x1, z1, 0.14, h - 0.1, h + 0.05, 2.6);
+    runBoxes(M.timberDark, x0, z0, x1, z1, 0.16, 0.0, 0.16, 2.6);
+  });
+}
+
 // Mesh volume: what primates and birds need, because both climb or fly out of
 // anything with an open top. Drawn as a frame plus a translucent screen — a
 // real wire grid would be tens of thousands of instances for no gain at
@@ -966,7 +1151,7 @@ function chalet(w, d, { h = 3.5, roof = M.shingle, windows = 3, doorW = 1.8,
     box(M.timberPale, x, 0.44 + 1.75, -hd - 0.08, 1.35, 1.15, 0.1);
     box(M.vivGlass, x, 0.44 + 1.75, -hd - 0.13, 1.15, 0.95, 0.06);
     box(M.timberDark, x, 0.44 + 1.16, -hd - 0.2, 1.5, 0.1, 0.28);   // sill
-    prop(() => shape(G.blob, M.foliageLight, x, 0.44 + 1.32, -hd - 0.26, 1.1, 0.4, 0.5));
+    prop(() => shape(G.bush, M.foliageLight, x, 0.44 + 1.15, -hd - 0.26, 1.15, 0.7, 0.7));
   }
   // Gable roof with a real overhang and exposed purlin ends.
   gableRoof(w, d, top, Math.max(1.7, d * 0.3), roof, 1.2);
@@ -1028,8 +1213,7 @@ function shopInterior({ hw, hd, top }, kind) {
     for (const sx of [-1, 1]) {
       const px = sx * (hw - 0.75);
       shape(G.cylBase, M.rockWarm, px, F, -hd + 1.0, 0.58, 0.52, 0.58);
-      shape(G.blob, M.foliage, px, F + 0.6, -hd + 1.0, 0.95, 1.0, 0.95);
-      shape(G.blob, M.foliageDark, px, F + 1.0, -hd + 1.0, 0.7, 0.66, 0.7);
+      shape(G.bush, M.foliage, px, F + 0.55, -hd + 1.0, 1.05, 1.35, 1.05);
     }
     // Framed prints on the side walls, at the height a picture is actually
     // hung. The log courses stop 15 cm inside the half-width.
@@ -1238,7 +1422,7 @@ function farmBarn(x, z, ry) {
     for (const [cx, hw] of VIV) {
       box(M.sand, cx, SILL + 0.1, F + 1.2, hw * 2 - 0.1, 0.2, 1.5);
       prop(() => {
-        shape(G.blob, M.foliageDark, cx - 1.0, SILL + 0.42, F + 1.5, 0.9, 0.7, 0.6);
+        shape(G.bush, M.foliageDark, cx - 1.0, SILL + 0.42, F + 1.5, 1.0, 0.85, 0.75);
         shape(G.post, M.barkDark, cx + 0.95, SILL + 0.2, F + 1.5, 0.14, 1.3, 0.14, { rz: 0.4 });
         shape(G.rock, M.rockWarm, cx + 0.15, SILL + 0.3, F + 1.7, 0.7, 0.4, 0.5, { ry: cx });
       });
@@ -1481,33 +1665,33 @@ function zebraPaddock() {
 
 // Monkeys: a full mesh volume. Primates climb anything with a top edge, so a
 // moat and a glass wall are not enough — the roof is the barrier.
-const KOMODO = { x0: 62, x1: 94, z0: -86, z1: -58 };
-function komodoEnclosure() {
-  const { x0, x1, z0, z1 } = KOMODO;
+const FOX = { x0: 62, x1: 94, z0: -86, z1: -58 };
+function foxEnclosure() {
+  const { x0, x1, z0, z1 } = FOX;
   slab(M.lawn, x0, x1, z0, z1, 0, 0.04);
-  slab(M.dirtEdge, x0 + 4, x1 - 4, z0 + 4, z1 - 4, 0.04, 0.06);
+  slab(M.sandFloor, x0 + 1.2, x1 - 1.2, z0 + 1.2, z1 - 1.2, 0.04, 0.07);
   // A fox climbs and digs, so the volume stays closed — but at three and a half
   // metres, not the eight a primate needed. The landscape is what changes: fallen
-  // trunks, earth banks with burrow mouths, and scrub to disappear into.
+  // trunks, pale sand so the orange coats read, and scrub to disappear into.
   const H = 3.4;
   meshWall(x0, z0, x0, z1, H, {});
   meshWall(x1, z0, x1, z1, H, {});
   meshWall(x0, z0, x1, z0, H, {});
   meshWall(x0, z1, x1, z1, H, {});
   meshRoof(x0, z0, x1, z1, H);
-  // Scrub stays on the edges so the dragons stay visible in the open centre —
+  // Scrub stays on the edges so the foxes stay visible in the open centre —
   // a bush in the middle of a 30 m paddock just hid one of them.
   prop(() => {
     for (const [lx, lz, la] of [[70, -76, 0.6], [82, -68, 2.1], [76, -82, 1.2]]) {
       shape(G.post, M.barkDark, lx, 0.35, lz, 0.42, 5.2, 0.42, { rz: 1.52, ry: la });
-      shape(G.blob, M.foliageDark, lx + 2.4, 0.4, lz + 1.2, 1.6, 0.7, 1.5);
+      shape(G.bush, M.foliageDark, lx + 2.4, 0.4, lz + 1.2, 1.8, 0.95, 1.7);
     }
     for (const [bx, bz] of [[88, -76], [67, -66], [80, -80]]) {
-      shape(G.blob, M.dirtEdge, bx, 0, bz, 3.4, 1.2, 3.0);      // earth bank
-      shape(G.sphere, M.barkDark, bx + 1.2, 0.35, bz - 1.7, 0.9, 0.8, 0.7);  // burrow
+      shape(G.blob, M.sandFloor, bx, 0, bz, 3.4, 1.2, 3.0);
+      shape(G.sphere, M.barkDark, bx + 1.2, 0.35, bz - 1.7, 0.9, 0.8, 0.7);
     }
     for (const [sx, sz] of [[72, -63], [86, -63], [70, -84], [90, -70]]) {
-      shape(G.blob, M.hedge, sx, 0, sz, 1.8, 0.9, 1.7);
+      shape(G.bush, M.hedge, sx, 0, sz, 2.0, 1.15, 1.9);
     }
   });
   for (const [tx, tz] of [[66, -62], [91, -62], [66, -83], [91, -83]]) shrub(tx, tz, 1.0);
@@ -1570,7 +1754,7 @@ function peafowlPaddock() {
 // The park is finally the zoo the enclosures were drawn for: the kopje behind
 // glass was always meant to have a pride on it, the big paddock with the pool
 // takes the zebras, and the closed mesh volume — built for something that digs
-// and climbs — holds the komodos. Peafowl have the pasture and the crows the
+// and climbs — holds the foxes. Peafowl have the pasture and the crows the
 // farmyard.
 const animals = [];
 const HERDS = [
@@ -1584,7 +1768,7 @@ const HERDS = [
   ['lion', LION, 3, 0.55, 1, 0.04],
   ['zebra', ZEBRA, 6, 0.62, 2, 0.04],
   ['peacock', PEAFOWL, 5, 0.5, 0, 0.04],
-  ['komodo', KOMODO, 2, 0.28, 0, 0.06],
+  ['fox', FOX, 5, 0.42, 1, 0.07],
   ['crow', FARM, 4, 0.42, 0, 0.05],
 ];
 
@@ -1901,7 +2085,7 @@ loopEach((a, b, i) => {
 hubPlaza();
 lionExhibit();
 zebraPaddock();
-komodoEnclosure();
+foxEnclosure();
 peafowlPaddock();
 farmBarn(BARN.x, BARN.z, -Math.PI / 2);
 // Farmyard paddock between the barn and the path, fenced low so you can lean on
@@ -1945,12 +2129,18 @@ exhibitSign(-63.4, -40, Math.PI / 2);
 // bench at -62.5 stood inside the cage.
 bench(-60.8, -36, -Math.PI / 2);
 
-// Wayfinding at the junctions, and the perimeter fence.
+// Wayfinding at the junctions, and the perimeter fence. Three sides used to
+// be a visitor rail that stopped at the car park, so you could walk around
+// the turnstiles into the park. The palisade closes the rectangle; the only
+// gap is the gate between the flanking walls.
 fingerPost(3.9, -16.8, [0.9, 2.4, 4.0]);
 fingerPost(3.5, -83.5, [0.2, 2.9]);
-railRun(-118, -136, 118, -136, { h: 2.0, step: 3.4 });
-railRun(-118, -136, -118, 58, { h: 2.0, step: 3.4 });
-railRun(118, -136, 118, 58, { h: 2.0, step: 3.4 });
+const PX0 = -118, PX1 = 118, PZ0 = -136, PZ1 = GATE_Z;
+perimeterFence(PX0, PZ0, PX1, PZ0);
+perimeterFence(PX0, PZ0, PX0, PZ1);
+perimeterFence(PX1, PZ0, PX1, PZ1);
+perimeterFence(PX0, PZ1, -30, PZ1);
+perimeterFence(30, PZ1, PX1, PZ1);
 
 // Woodland filling the ground between the loop and the perimeter, and inside
 // the loop behind the hub.
@@ -1960,7 +2150,7 @@ const rand = (seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647)(2
 const KEEP_OUT = [
   [LION.x0 - 4, LION.x1 + 8, LION.z0 - 4, LION.z1 + 4],
   [ZEBRA.x0 - 4, ZEBRA.x1 + 4, ZEBRA.z0 - 4, ZEBRA.z1 + 8],
-  [KOMODO.x0 - 8, KOMODO.x1 + 4, KOMODO.z0 - 4, KOMODO.z1 + 4],
+  [FOX.x0 - 8, FOX.x1 + 4, FOX.z0 - 4, FOX.z1 + 4],
   [PEAFOWL.x0 - 8, PEAFOWL.x1 + 4, PEAFOWL.z0 - 4, PEAFOWL.z1 + 4],
   [-86, -60, -46, -22],
 ];
@@ -2246,7 +2436,7 @@ player.addWardrobePart('hairCrown', harmoniseHair(player, {
   // needs the pack's material NAMES to dress itself, and the player's copies
   // have lost them. Two models is the minimum that reads as a crowd.
   const bases = [];
-  for (const url of ['./chars/glb/girl.glb', './chars/glb/man.glb']) {
+  for (const url of ['./chars/glb/man.glb', './chars/glb/girl.glb']) {
     try {
       bases.push(await loadVisitorBase(url, girlMatFor));
     } catch (e) {
