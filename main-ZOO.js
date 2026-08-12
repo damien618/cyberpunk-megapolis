@@ -6,7 +6,7 @@ import { Controller } from './controller.js?v=5';
 import { CameraRig } from './cameraRig.js?v=4';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar } from './cars.js?v=4';
-import { makeVisitor, loadVisitorBase, STAFF_UNIFORM } from './crowd.js?v=14';
+import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=15';
 import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=31';
 
 // ---------------------------------------------------------------------------
@@ -2017,12 +2017,27 @@ async function populateStaff(bases, walkClip, idleClip) {
   });
 }
 
-async function populateCrowd(bases, walkClip) {
-  if (!walkClip || !bases.length) return;
+async function populateCrowd(bases, walkClip, guests = []) {
+  if ((!walkClip || !bases.length) && !guests.length) return;
+  // Two guest women, spaced on the loop. The rest alternate man / pack girl
+  // from a separate counter — `i % 2` used to pick both "guest vs pack" AND
+  // which pack base, so every leftover slot landed on girl.glb and the men
+  // disappeared.
+  const GUEST_SLOTS = new Set([3, 8]);
+  let packI = 0;
   CROWD_PLAN.forEach(([at, dir], i) => {
-    const base = bases[i % bases.length];
-    const v = makeVisitor(base, walkClip, rngCrowd);
+    const useGuest = guests.length && GUEST_SLOTS.has(i);
+    let v;
+    if (useGuest) {
+      const g = guests[i % guests.length];
+      v = makeVisitor(g.scene, g.walkClip, rngCrowd, { guest: g, idleClip: g.idleClip });
+    } else if (walkClip && bases.length) {
+      v = makeVisitor(bases[packI++ % bases.length], walkClip, rngCrowd);
+    } else {
+      return;
+    }
     crowd.add(v.group);
+    v.mixer.update(0);
     walkers.push({
       ...v,
       s: at,
@@ -2429,12 +2444,9 @@ player.addWardrobePart('hairCrown', harmoniseHair(player, {
 }));
 
 // The crowd is cloned off the loaded characters, so it can only be built now.
-// The second base costs one more GLB; a park where every visitor is the same
-// woman is not a crowd. If it fails to load the park simply gets one base.
+// Pack man/girl share the player's walk clip. The guest woman brings her own
+// walk and idle — a different face, a different skeleton, same height.
 {
-  // Both bases are loaded fresh rather than cloned off the player: the crowd
-  // needs the pack's material NAMES to dress itself, and the player's copies
-  // have lost them. Two models is the minimum that reads as a crowd.
   const bases = [];
   for (const url of ['./chars/glb/man.glb', './chars/glb/girl.glb']) {
     try {
@@ -2443,7 +2455,18 @@ player.addWardrobePart('hairCrown', harmoniseHair(player, {
       console.warn('[zoo] visitor model unavailable:', url, e);
     }
   }
-  await populateCrowd(bases, player.actions.walk?.getClip());
+  const guests = [];
+  try {
+    guests.push(await loadGuestRig({
+      model: './glb/visitors/woman.glb?v=1',
+      walk: './glb/visitors/walk.glb?v=1',
+      idle: './glb/visitors/idle.glb?v=1',
+      height: 1.68,
+    }));
+  } catch (e) {
+    console.warn('[zoo] guest visitor unavailable', e);
+  }
+  await populateCrowd(bases, player.actions.walk?.getClip(), guests);
   await populateStaff(bases, player.actions.walk?.getClip(),
     player.actions.idle?.getClip());
 }

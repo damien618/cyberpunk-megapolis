@@ -1,5 +1,11 @@
-// crowd.js — zoo visitors built from the character pack's own rigged models
-// rather than from primitives.
+// crowd.js — zoo visitors.
+//
+// Two rigs, same idea as the animals: each skeleton plays THE CLIPS THAT WERE
+// AUTHORED FOR IT. The pack (girl.glb / man.glb) walks with the player's
+// `pelvis` / `thigh_l` clip. A second, feminine guest (Ready Player Me armature
+// + animation-library walk/idle) walks with `Hips` / `LeftUpLeg`. Mixing those
+// clips across rigs is what left a T-pose; keeping them apart is what makes a
+// different face actually walk.
 //
 // three.js will clone a SkinnedMesh happily enough, but the copy stays bound to
 // the ORIGINAL skeleton: every clone then renders in whatever pose the first one
@@ -90,6 +96,164 @@ export async function loadVisitorBase(url, matFactory) {
     o.material = Array.isArray(o.material) ? made : made[0];
   });
   return gltf.scene;
+}
+
+const GUEST_ROOT = /^(Hips|pelvis|Armature|RootNode|mixamorigHips|mixamorig:Hips)$/i;
+
+/**
+ * Keep hip bounce, drop authored travel. The guest walk advances 4 m on Z
+ * over one cycle; the path already decides where she is, so that track would
+ * slide her off the dirt.
+ */
+function pinRootXZ(clip) {
+  const out = clip.clone();
+  out.tracks = out.tracks.map(t => {
+    if (!/\.position$/.test(t.name)) return t;
+    const bone = t.name.slice(0, t.name.lastIndexOf('.'));
+    if (!GUEST_ROOT.test(bone.split(/[:|/]/).pop())) return t;
+    const n = t.clone();
+    const x0 = n.values[0], z0 = n.values[2];
+    for (let i = 0; i < n.values.length; i += 3) {
+      n.values[i] = x0;
+      n.values[i + 2] = z0;
+    }
+    return n;
+  });
+  return out;
+}
+
+function rootStride(clip) {
+  let span = 0;
+  for (const t of clip.tracks) {
+    if (!/\.position$/.test(t.name)) continue;
+    const bone = t.name.slice(0, t.name.lastIndexOf('.')).split(/[:|/]/).pop();
+    if (!GUEST_ROOT.test(bone)) continue;
+    let zMin = Infinity, zMax = -Infinity;
+    for (let i = 2; i < t.values.length; i += 3) {
+      const z = t.values[i];
+      if (z < zMin) zMin = z;
+      if (z > zMax) zMax = z;
+    }
+    if (zMax > zMin) span = Math.max(span, zMax - zMin);
+  }
+  return span;
+}
+
+function bindClipTo(clip, root) {
+  const names = new Set();
+  root.traverse(o => { if (o.name) names.add(o.name); });
+  const out = clip.clone();
+  out.tracks = out.tracks.map(t => {
+    const dot = t.name.lastIndexOf('.');
+    if (dot < 0) return t;
+    const bone = t.name.slice(0, dot), prop = t.name.slice(dot + 1);
+    if (names.has(bone)) return t;
+    const short = bone.split(/[:|/]/).pop();
+    if (!names.has(short)) return t;
+    const n = t.clone();
+    n.name = `${short}.${prop}`;
+    return n;
+  });
+  return out;
+}
+
+function skinnedExtents(root) {
+  root.updateMatrixWorld(true);
+  const v = new THREE.Vector3();
+  let minY = Infinity, maxY = -Infinity;
+  root.traverse(o => {
+    if (!o.isMesh && !o.isSkinnedMesh) return;
+    const pos = o.geometry.attributes.position;
+    if (!pos) return;
+    for (let i = 0; i < pos.count; i++) {
+      if (o.isSkinnedMesh && o.getVertexPosition) o.getVertexPosition(i, v);
+      else v.fromBufferAttribute(pos, i);
+      v.applyMatrix4(o.matrixWorld);
+      if (v.y < minY) minY = v.y;
+      if (v.y > maxY) maxY = v.y;
+    }
+  });
+  return { minY, maxY, height: Math.max(maxY - minY, 1e-4) };
+}
+
+/**
+ * The guest ships as one atlas. Bottom-left is the tank: white fabric plus a
+ * "READY PLAYER ME" print that has no business in the park. Lift the ink to
+ * fabric, then dye the shirt so two clones are not wearing the same top.
+ */
+function dressGuestAtlas(map, shirtHex) {
+  const img = map?.image;
+  if (!img) return map;
+  const w = img.width || img.videoWidth, h = img.height || img.videoHeight;
+  if (!w || !h) return map;
+  const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, w, h);
+  const p = data.data;
+  const shirt = new THREE.Color(shirtHex);
+  const x1 = w >> 1, y0 = h >> 1;
+  for (let y = y0; y < h; y++) {
+    for (let x = 0; x < x1; x++) {
+      const i = (y * w + x) * 4;
+      const r = p[i], g = p[i + 1], b = p[i + 2], a = p[i + 3];
+      if (a < 16) continue;
+      const lum = 0.3 * r + 0.59 * g + 0.11 * b;
+      if (lum < 14) continue;
+      const ink = lum < 72 && r < 96;
+      const fabric = lum > 88;
+      if (!ink && !fabric) continue;
+      const k = (ink ? 220 : lum) / 255;
+      p[i]     = Math.min(255, shirt.r * 255 * k);
+      p[i + 1] = Math.min(255, shirt.g * 255 * k);
+      p[i + 2] = Math.min(255, shirt.b * 255 * k);
+    }
+  }
+  ctx.putImageData(data, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.flipY = map.flipY;
+  t.wrapS = map.wrapS;
+  t.wrapT = map.wrapT;
+  t.anisotropy = map.anisotropy || 4;
+  t.needsUpdate = true;
+  return t;
+}
+
+/**
+ * A visitor who is not the pack: her own mesh, her own walk, her own idle,
+ * scaled to a standing height in metres. Clips are loaded separately because
+ * that is how the animation library ships them — same pattern as retargeting
+ * a Mixamo walk onto a mesh that already has the matching bone names.
+ */
+export async function loadGuestRig({ model, walk, idle, height = 1.68 } = {}) {
+  const loader = new GLTFLoader().setDRACOLoader(dracoLoader);
+  const [gltf, walkGltf, idleGltf] = await Promise.all([
+    loader.loadAsync(model),
+    loader.loadAsync(walk),
+    loader.loadAsync(idle),
+  ]);
+  const scene = gltf.scene;
+  scene.traverse(o => {
+    if (!o.isMesh && !o.isSkinnedMesh) return;
+    const list = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    for (const m of list) {
+      if (m.map) m.map.colorSpace = THREE.SRGBColorSpace;
+      m.metalness = Math.min(m.metalness ?? 0, 0.06);
+      m.roughness = Math.max(m.roughness ?? 0.5, 0.58);
+      m.envMapIntensity = 0.7;
+    }
+    o.castShadow = true;
+    o.receiveShadow = true;
+    o.frustumCulled = false;
+  });
+  const rawWalk = walkGltf.animations[0];
+  const rawIdle = idleGltf.animations[0];
+  const stride = rootStride(rawWalk);
+  const walkClip = bindClipTo(pinRootXZ(rawWalk), scene);
+  const idleClip = bindClipTo(pinRootXZ(rawIdle), scene);
+  const { height: measured } = skinnedExtents(scene);
+  return { scene, walkClip, idleClip, kind: 'guest', measured, fitHeight: height, stride };
 }
 
 // The two characters do not name their clothing the same way. The girl has a
@@ -259,8 +423,9 @@ function seatedRig(group) {
  * walk on the spot and treading the same square metre for ever.
  */
 export function makeVisitor(base, walkClip, rng,
-  { uniform = null, seated = false, still = false, idleClip = null } = {}) {
+  { uniform = null, seated = false, still = false, idleClip = null, guest = null } = {}) {
   const group = cloneSkinned(base);
+  const isGuest = Boolean(guest) || Boolean(group.getObjectByName('Hips') && !group.getObjectByName('pelvis'));
 
   // The player's own wardrobe alternates hang off the same graph. They came
   // along with the clone, and two of them are visible in the zoo outfit — left
@@ -303,6 +468,16 @@ export function makeVisitor(base, walkClip, rng,
     const made = list.map(m => {
       if (!m) return m;
       const c = m.clone();
+      if (isGuest) {
+        // Keep the authored atlas — this face is the point — and only recolour
+        // the tank so clones of her are not a matching set.
+        if (c.map) c.map = dressGuestAtlas(c.map, chosen.tshirt);
+        c.metalness = Math.min(c.metalness ?? 0, 0.06);
+        c.roughness = Math.max(c.roughness ?? 0.5, 0.6);
+        c.envMapIntensity = 0.7;
+        c.needsUpdate = true;
+        return c;
+      }
       // setOutfit switches parts by flipping `visible` on the SHARED material,
       // and the zoo has the trousers and trainers switched off for the player.
       // The clones start from whatever state that left, so every part is turned
@@ -357,7 +532,7 @@ export function makeVisitor(base, walkClip, rng,
       return c;
     });
     o.material = Array.isArray(o.material) ? made : made[0];
-    if (isGirl && list.length > 0 && list.every(m => {
+    if (isGirl && !isGuest && list.length > 0 && list.every(m => {
       const n = (m?.name ?? '').toLowerCase();
       return n.includes('head') && !n.includes('body');
     })) {
@@ -369,7 +544,7 @@ export function makeVisitor(base, walkClip, rng,
     // `every`, not `some`: if the pack ever merges the hair into a mesh that
     // also carries the body, reshaping its geometry would deform the visitor,
     // not her haircut. In that case the colour and the cap still vary.
-    if (style !== 'long' && list.length > 0 && list.every(m => partOf(m?.name) === 'hair')) {
+    if (!isGuest && style !== 'long' && list.length > 0 && list.every(m => partOf(m?.name) === 'hair')) {
       const g = o.geometry.clone();
       const p = g.attributes.position;
       g.computeBoundingBox();
@@ -395,16 +570,24 @@ export function makeVisitor(base, walkClip, rng,
     o.frustumCulled = false;
   });
 
-  // Height and build. The build is deliberately small — a group scaled unevenly
-  // shears the limbs as the bones rotate under it, and six per cent is as far as
-  // that goes before a swinging arm starts to wobble.
-  const height = 0.88 + rng() * 0.26;
-  const build = 0.94 + rng() * 0.12;
-  group.scale.set(height * build, height, height * build);
-  const headBone = group.getObjectByName('head');
-  if (headBone && isGirl) {
-    const hs = 0.92 + rng() * 0.14;
-    headBone.scale.multiplyScalar(hs);
+  // Height and build. The pack is scaled as a factor of its authored size; the
+  // guest is measured and fitted to metres so a centimetre-exported GLB cannot
+  // tower over the player. Uneven pack scale is kept small — it shears limbs.
+  let height;
+  if (isGuest) {
+    const metres = (guest?.fitHeight ?? 1.68) + (rng() - 0.5) * 0.10;
+    height = metres / (guest?.measured || 1.7);
+    const build = 0.97 + rng() * 0.06;
+    group.scale.setScalar(height * build);
+  } else {
+    height = 0.88 + rng() * 0.26;
+    const build = 0.94 + rng() * 0.12;
+    group.scale.set(height * build, height, height * build);
+    const headBone = group.getObjectByName('head');
+    if (headBone && isGirl) {
+      const hs = 0.92 + rng() * 0.14;
+      headBone.scale.multiplyScalar(hs);
+    }
   }
 
   const mixer = new THREE.AnimationMixer(group);
@@ -415,7 +598,7 @@ export function makeVisitor(base, walkClip, rng,
   // on one frame is a mid-stride pose, and a shopkeeper frozen with one foot
   // forward reads as a mannequin rather than as a person waiting for custom.
   const clip = (still && idleClip ? idleClip : walkClip).clone();
-  clip.tracks = clip.tracks.filter(t => t.name !== 'pelvis.position');
+  if (!isGuest) clip.tracks = clip.tracks.filter(t => t.name !== 'pelvis.position');
   const action = mixer.clipAction(clip);
   action.timeScale = seated ? 0.0001 : 0.88 + rng() * 0.3;
   action.time = still ? 0 : rng() * clip.duration;
@@ -423,12 +606,20 @@ export function makeVisitor(base, walkClip, rng,
   // Paused rather than removed: the mixer still writes the first frame every
   // update, so the pose holds instead of falling back to the bind stance.
   if (still) action.paused = true;
-  const pose = seated ? seatedRig(group) : null;
+  // The seated pose writes thigh_l / calf_l. The guest does not have those
+  // bones, so she is a walker (and a standing idle), never a sitter.
+  const pose = seated && !isGuest ? seatedRig(group) : null;
 
   // Stride length scales with leg length, so the tallest visitors cover ground
   // fastest — otherwise the short ones look like they are running on the spot.
+  // The guest walk already has a measured stride (metres of authored travel
+  // over one cycle); using that instead of the pack's 1.05 factor keeps her
+  // feet from skating.
+  const pace = isGuest && guest?.stride
+    ? guest.stride / Math.max(clip.duration, 0.01)
+    : 1.05;
   return { group, mixer, pose, height,
-    speed: still ? 0 : 1.05 * height * action.timeScale };
+    speed: still ? 0 : pace * height * action.timeScale };
 }
 
 /** How many distinct looks the variation above can produce, for the record. */
