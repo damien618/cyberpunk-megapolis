@@ -250,23 +250,33 @@ const stuccoN = ntex('./textures/CP_Concrete_03_N.webp', 5, 2);
 const travN = ntex('./textures/CP_Floor_Tiles_N.webp', 6, 6);
 const deckN = ntex('./textures/CP_Sidewalk_N.webp', 8, 8);
 const tileN = ntex('./textures/CP_Ceramic_Tile_N.webp', 6, 4);
-const woodN = ntex('./textures/CP_Trim_Sheet_N.webp', 3, 1);
+const woodN = ntex('./textures/nature/wood_n.jpg', 3, 1);
+const woodA = tex('./textures/nature/wood_diff.jpg', 3, 1);
 const concN = ntex('./textures/CP_Concrete_01_N.webp', 4, 4);
 const asphaltA = tex('./textures/CP_Asphalt_A.webp', 40, 3);
 const asphaltN = ntex('./textures/CP_Asphalt_N.webp', 40, 3);
 const lawnA = tex('./textures/la/grass_diffuse.jpg', 60, 60);
 const waterN = ntex('./textures/la/water_normal.jpg', 6, 3);
+const stuccoA = tex('./textures/nature/stucco_diff.jpg', 5, 2);
+const stuccoPN = ntex('./textures/nature/stucco_n.jpg', 5, 2);
+const barkA = tex('./textures/nature/bark_diff.jpg', 1, 2);
+const barkN = ntex('./textures/nature/bark_n.jpg', 1, 2);
+const canopyA = tex('./textures/nature/canopy_diff.jpg', 2.2, 2.2);
+const canopyN = ntex('./textures/nature/foliage_n.jpg', 2.2, 2.2);
+const leafCardTex = loader.load('./textures/nature/foliage_card.png');
+leafCardTex.colorSpace = THREE.SRGBColorSpace;
+leafCardTex.anisotropy = maxAniso;
 
 // The cyberpunk texture pack is dark and full of coloured trim strips, so the
 // villa keeps the normal maps for relief and drives colour itself — that is
 // what makes white stucco and travertine read as such under the LA sun.
 const M = {
   stucco: new THREE.MeshStandardMaterial({
-    normalMap: stuccoN, normalScale: new THREE.Vector2(0.35, 0.35),
-    color: 0xf7f2e9, roughness: 0.92, metalness: 0.01
+    map: stuccoA, normalMap: stuccoPN, normalScale: new THREE.Vector2(0.55, 0.55),
+    color: 0xf4efe6, roughness: 0.92, metalness: 0.01
   }),
   stuccoWarm: new THREE.MeshStandardMaterial({
-    normalMap: stuccoN, normalScale: new THREE.Vector2(0.35, 0.35),
+    map: stuccoA, normalMap: stuccoPN, normalScale: new THREE.Vector2(0.55, 0.55),
     color: 0xe4d7c2, roughness: 0.93, metalness: 0.01
   }),
   plaster: new THREE.MeshStandardMaterial({ color: 0xf8f5ee, roughness: 0.95, metalness: 0.01 }),
@@ -298,11 +308,15 @@ const M = {
     color: 0x86ccdf, roughness: 0.22, metalness: 0.06
   }),
   oak: new THREE.MeshStandardMaterial({
-    normalMap: woodN, normalScale: new THREE.Vector2(0.3, 0.3),
-    color: 0xbb9a70, roughness: 0.7, metalness: 0.03
+    map: woodA, normalMap: woodN, normalScale: new THREE.Vector2(0.45, 0.45),
+    color: 0xddc08a, roughness: 0.7, metalness: 0.03
   }),
-  teak: new THREE.MeshStandardMaterial({ color: 0xa9784a, roughness: 0.72, metalness: 0.03 }),
-  walnut: new THREE.MeshStandardMaterial({ color: 0x6b4a31, roughness: 0.55, metalness: 0.04 }),
+  teak: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0xc49060, roughness: 0.72, metalness: 0.03
+  }),
+  walnut: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0x7a5640, roughness: 0.55, metalness: 0.04
+  }),
   marble: new THREE.MeshStandardMaterial({ color: 0xf4f2ee, roughness: 0.16, metalness: 0.02 }),
   marbleDark: new THREE.MeshStandardMaterial({ color: 0x3b3f45, roughness: 0.2, metalness: 0.05 }),
   cabinet: new THREE.MeshStandardMaterial({ color: 0xeceae4, roughness: 0.42, metalness: 0.03 }),
@@ -337,12 +351,35 @@ const M = {
     color: 0xb9c8d6, roughness: 0.09, metalness: 0.35, envMapIntensity: 2.4
   }),
   lawn: new THREE.MeshStandardMaterial({ map: lawnA, color: 0x9fb076, roughness: 0.98, metalness: 0.0 }),
-  hedge: new THREE.MeshStandardMaterial({ color: 0x4a6b3c, roughness: 0.97, metalness: 0.0 }),
-  foliage: new THREE.MeshStandardMaterial({ color: 0x5b8a4a, roughness: 0.95, metalness: 0.0 }),
-  foliageOlive: new THREE.MeshStandardMaterial({ color: 0x86976f, roughness: 0.95, metalness: 0.0 }),
-  foliageDark: new THREE.MeshStandardMaterial({ color: 0x3f5f3a, roughness: 0.96, metalness: 0.0 }),
-  bark: new THREE.MeshStandardMaterial({ color: 0x8a7458, roughness: 0.94, metalness: 0.02 }),
-  barkDark: new THREE.MeshStandardMaterial({ color: 0x5f4c3a, roughness: 0.94, metalness: 0.02 }),
+  hedge: new THREE.MeshStandardMaterial({
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.6, 0.6),
+    color: 0x6a8a52, roughness: 0.97, metalness: 0.0
+  }),
+  foliage: new THREE.MeshStandardMaterial({
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.5, 0.5),
+    color: 0x7a9a5c, roughness: 0.95, metalness: 0.0
+  }),
+  foliageOlive: new THREE.MeshStandardMaterial({
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.5, 0.5),
+    color: 0x9aaa72, roughness: 0.95, metalness: 0.0
+  }),
+  foliageDark: new THREE.MeshStandardMaterial({
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.55, 0.55),
+    color: 0x5a7a44, roughness: 0.96, metalness: 0.0
+  }),
+  bark: new THREE.MeshStandardMaterial({
+    map: barkA, normalMap: barkN, normalScale: new THREE.Vector2(0.7, 0.7),
+    color: 0xc4a888, roughness: 0.94, metalness: 0.02
+  }),
+  barkDark: new THREE.MeshStandardMaterial({
+    map: barkA, normalMap: barkN, normalScale: new THREE.Vector2(0.7, 0.7),
+    color: 0x8a7358, roughness: 0.94, metalness: 0.02
+  }),
+  leafCard: new THREE.MeshStandardMaterial({
+    map: leafCardTex, color: 0xc8d8a8, roughness: 0.96, metalness: 0.0,
+    alphaTest: 0.28, alphaToCoverage: true, side: THREE.DoubleSide
+  }),
+  frond: new THREE.MeshStandardMaterial({ color: 0x5b8a4a, roughness: 0.95, metalness: 0.0 }),
   terracotta: new THREE.MeshStandardMaterial({ color: 0xb4643f, roughness: 0.85, metalness: 0.02 }),
   gravel: new THREE.MeshStandardMaterial({
     normalMap: concN, color: 0xd8caae, roughness: 0.99, metalness: 0.0
@@ -352,7 +389,8 @@ const M = {
   }),
   roadLine: new THREE.MeshStandardMaterial({ color: 0xe8dfae, roughness: 0.7, metalness: 0.01 }),
   neighbor: new THREE.MeshStandardMaterial({
-    normalMap: stuccoN, color: 0xe6ddcd, roughness: 0.92, metalness: 0.02
+    map: stuccoA, normalMap: stuccoPN, normalScale: new THREE.Vector2(0.5, 0.5),
+    color: 0xe6ddcd, roughness: 0.92, metalness: 0.02
   }),
   tower: new THREE.MeshStandardMaterial({ color: 0xa9bccb, roughness: 0.52, metalness: 0.24 }),
   towerDark: new THREE.MeshStandardMaterial({ color: 0x5b6b7c, roughness: 0.42, metalness: 0.38 }),
@@ -388,6 +426,8 @@ const M = {
 
 const world = new THREE.Group();
 scene.add(world);
+const foliageFX = new THREE.Group();
+scene.add(foliageFX);
 
 // ---------------------------------------------------------------------------
 // Instancing kit
@@ -426,7 +466,8 @@ const G = {
   cylBase: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 16).translate(0, 0.5, 0)),
   trunk: withUV2(new THREE.CylinderGeometry(0.34, 0.5, 1, 9).translate(0, 0.5, 0)),
   sphere: withUV2(new THREE.SphereGeometry(0.5, 14, 10)),
-  blob: withUV2(new THREE.IcosahedronGeometry(0.5, 1)),
+  blob: withUV2(new THREE.IcosahedronGeometry(0.5, 2)),
+  card: withUV2(new THREE.PlaneGeometry(1, 1)),
   cone: withUV2(new THREE.ConeGeometry(0.5, 1, 12).translate(0, 0.5, 0)),
   frond: withUV2(new THREE.ConeGeometry(0.22, 1, 4).translate(0, 0.5, 0)),
   // Open-top tapered square tube: with a 45° yaw the section is axis-aligned,
@@ -489,6 +530,45 @@ function shape(geo, mat, x, y, z, sx, sy, sz, rot = {}) {
     x: FX + x * c + z * s, y: y + LIFT, z: FZ - x * s + z * c,
     sx, sy, sz, ry: FR + (rot.ry || 0), rx: rot.rx || 0, rz: rot.rz || 0
   });
+}
+const leafCardItems = [];
+function sprinkleLeaves(x, y, z, rx, ry, rz, n = 7) {
+  const c = Math.cos(FR), s = Math.sin(FR);
+  const wx = FX + x * c + z * s;
+  const wz = FZ - x * s + z * c;
+  const wy = y + LIFT;
+  const j = Math.sin(wx * 12.9 + wz * 7.1);
+  for (let i = 0; i < n; i++) {
+    const a = FR + (i / n) * Math.PI + j * 0.2;
+    leafCardItems.push({
+      x: wx + Math.cos(a) * rx * 0.22,
+      y: wy + ry * (0.25 + (i % 3) * 0.22),
+      z: wz + Math.sin(a) * rz * 0.22,
+      sx: rx * (0.85 + (i % 2) * 0.2),
+      sy: ry * (0.9 + (i % 3) * 0.12),
+      ry: a + Math.PI / 2,
+      rx: -0.12 + (i % 4) * 0.07,
+    });
+  }
+}
+function flushLeafCards() {
+  if (!leafCardItems.length) return;
+  const im = new THREE.InstancedMesh(G.card, M.leafCard, leafCardItems.length);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+  const e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3();
+  for (let i = 0; i < leafCardItems.length; i++) {
+    const it = leafCardItems[i];
+    p.set(it.x, it.y, it.z);
+    e.set(it.rx || 0, it.ry || 0, 0, 'YXZ');
+    q.setFromEuler(e);
+    s.set(it.sx ?? 1, it.sy ?? 1, 1);
+    m.compose(p, q, s);
+    im.setMatrixAt(i, m);
+  }
+  im.castShadow = true;
+  im.receiveShadow = true;
+  im.instanceMatrix.needsUpdate = true;
+  foliageFX.add(im);
 }
 // Axis-aligned volume from world bounds — the workhorse for architecture.
 function slab(mat, x0, x1, z0, z1, y0, y1) {
@@ -1211,6 +1291,7 @@ function planter(size, h = 0.7, plant = M.foliage) {
   box(M.concrete, 0, F + h / 2, 0, size, h, size);
   box(M.gravel, 0, F + h + 0.02, 0, size - 0.14, 0.06, size - 0.14);
   shape(G.blob, plant, 0, F + h + 0.42, 0, size * 0.9, size * 0.8, size * 0.9);
+  sprinkleLeaves(0, F + h + 0.15, 0, size * 1.05, size * 0.9, size * 1.05, 6);
 }
 function palm(h = 9) {
   shape(G.trunk, M.bark, 0, 0, 0, 0.44, h, 0.44, { ry: Math.random() * 3 });
@@ -1218,7 +1299,7 @@ function palm(h = 9) {
   for (let i = 0; i < n; i++) {
     const spin = (i / n) * Math.PI * 2 + Math.random() * 0.2;
     const tilt = 1.05 + ((i % 3) * 0.16);
-    shape(G.frond, M.foliage, 0, h - 0.15, 0, 1.5, 3.3 + (i % 2) * 0.5, 1.5, { ry: spin, rx: tilt });
+    shape(G.frond, M.frond, 0, h - 0.15, 0, 1.5, 3.3 + (i % 2) * 0.5, 1.5, { ry: spin, rx: tilt });
   }
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2;
@@ -1229,6 +1310,7 @@ function oliveTree(h = 4.2) {
   shape(G.trunk, M.barkDark, 0, 0, 0, 0.5, h * 0.55, 0.5);
   for (const [dx, dy, dz, s] of [[0, h * 0.72, 0, 3.2], [-1.1, h * 0.6, 0.5, 2.2], [1.0, h * 0.62, -0.6, 2.4], [0.3, h * 0.85, 0.6, 1.9]])
     shape(G.blob, M.foliageOlive, dx, dy, dz, s, s * 0.8, s);
+  sprinkleLeaves(0, h * 0.45, 0, 3.6, 2.8, 3.6, 8);
 }
 function cypress(h = 7) {
   shape(G.cone, M.foliageDark, 0, 0, 0, 1.5, h, 1.5);
@@ -1236,7 +1318,7 @@ function cypress(h = 7) {
 function agave() {
   for (let i = 0; i < 7; i++) {
     const a = (i / 7) * Math.PI * 2;
-    shape(G.cone, M.foliageOlive, 0, 0.05, 0, 0.34, 1.1, 0.34, { ry: a, rx: 0.85 });
+    shape(G.cone, M.frond, 0, 0.05, 0, 0.34, 1.1, 0.34, { ry: a, rx: 0.85 });
   }
 }
 function hedge(x0, x1, z0, z1, h = 1.5) {
@@ -1249,6 +1331,7 @@ function hedge(x0, x1, z0, z1, h = 1.5) {
     const x = along ? x0 + len * t : (x0 + x1) / 2;
     const z = along ? (z0 + z1) / 2 : z0 + len * t;
     shape(G.blob, M.hedge, x, h - 0.05, z, 1.35, 0.55, Math.abs(along ? z1 - z0 : x1 - x0) * 0.95);
+    sprinkleLeaves(x, h * 0.25, z, 1.4, h * 0.7, 1.2, 4);
   }
 }
 // A parked car is a real lofted mesh in `world` (so the player can raycast onto
@@ -1747,7 +1830,12 @@ const STREET_NEIGHBORS = [
 for (const [x, z, w, d, h] of STREET_NEIGHBORS) {
   slab(M.neighbor, x - w / 2, x + w / 2, z - d / 2, z + d / 2, 0, h);
   slab(M.stuccoWarm, x - w / 2 - 0.5, x + w / 2 + 0.5, z - d / 2 - 0.5, z + d / 2 + 0.5, h, h + 0.4);
+  slab(M.bronze, x - w / 2 - 0.15, x + w / 2 + 0.15, z - d / 2 - 0.15, z + d / 2 + 0.15, 0, 0.45);
   slab(M.glass, x - w / 2 + 1, x + w / 2 - 1, z - d / 2 - 0.06, z - d / 2 + 0.06, 1.2, h - 1.2);
+  for (let i = 1; i < 4; i++) {
+    const mx = x - w / 2 + (w * i) / 4;
+    slab(M.bronze, mx - 0.06, mx + 0.06, z - d / 2 - 0.08, z - d / 2 + 0.08, 1.15, h - 1.15);
+  }
   hedge(x - w / 2, x + w / 2, z - d / 2 - 5, z - d / 2 - 3.6, 1.6);
 }
 // Hillside estates below the ridge — extra swing anchors
@@ -1902,6 +1990,7 @@ const DOWNTOWN_TOWERS = [
 for (const [x, z, w, d, h, style, dark] of DOWNTOWN_TOWERS) downtownTower(x, z, w, d, h, style, dark);
 
 flushKits();
+flushLeafCards();
 
 // ---------------------------------------------------------------------------
 // Water surfaces (non-colliding, added straight to the scene)

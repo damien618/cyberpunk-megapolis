@@ -15,7 +15,7 @@ import { buildCar, carBounds } from './cars.js?v=3';
 // build stamp: shown in the HUD + console so a stale-cache session is
 // recognizable at a glance (a mixed old/new module graph once reproduced the
 // "restart from the sky every few seconds" loop with zero errors)
-const BUILD = '2026-08-02a1';
+const BUILD = '2026-08-12a1';
 console.log(`[build] ${BUILD}`);
 
 // ---------- coordinate convention (verified: case A — Blender FBX->glTF export_yup) ----------
@@ -304,6 +304,12 @@ function applyPreset(name) {
   scene.background = new THREE.Color(p.bg);
   scene.environmentIntensity = p.envInt;
   for (const c of cloudMeshes) c.material.color.set(p.clouds);
+  const wet = name === 'night' || name === 'dusk';
+  for (const m of asphaltMats) {
+    m.clearcoat = wet ? 0.62 : 0.1;
+    m.clearcoatRoughness = wet ? 0.16 : 0.48;
+    m.envMapIntensity = wet ? 1.45 : 0.95;
+  }
 }
 
 // ---------- data ----------
@@ -398,16 +404,21 @@ function tiledClone(base, repeat) {
   t.repeat.set(repeat[0], repeat[1]);
   return t;
 }
+const asphaltMats = [];
 function matFor(name) {
   if (!name || !MATS[name]) name = 'CP_Base';
   if (matCache[name]) return matCache[name];
-  const i = MATS[name], m = new THREE.MeshStandardMaterial({ name });
+  const i = MATS[name];
+  const isAsphalt = /asphalt/i.test(name);
+  const m = isAsphalt
+    ? new THREE.MeshPhysicalMaterial({ name, clearcoat: 0.62, clearcoatRoughness: 0.16 })
+    : new THREE.MeshStandardMaterial({ name });
   const rep = i.texScale || [1, 1], tiled = rep[0] !== 1 || rep[1] !== 1;
   m.color.setRGB(i.color[0], i.color[1], i.color[2], THREE.SRGBColorSpace);
   if (i.tex) m.map = tiled ? tiledClone(texture(i.tex), rep) : texture(i.tex);
   if (i.normalTex) {
     m.normalMap = tiled ? tiledClone(texture(i.normalTex, false), rep) : texture(i.normalTex, false);
-    m.normalScale.setScalar(i.bumpScale ?? 1);
+    m.normalScale.setScalar((i.bumpScale ?? 1) * 1.4);
   }
   if (i.metalTex) {
     m.metalness = 1; m.roughness = 1;
@@ -418,9 +429,13 @@ function matFor(name) {
     });
   } else {
     m.metalness = Math.min(i.metallic ?? 0, 0.5);
-    m.roughness = THREE.MathUtils.clamp(1 - (i.smoothness ?? 0.3), 0.35, 1);
+    m.roughness = THREE.MathUtils.clamp(1 - (i.smoothness ?? 0.3), 0.28, 1);
   }
-  if (i.aoTex) m.aoMap = texture(i.aoTex, false);
+  if (i.aoTex) {
+    m.aoMap = texture(i.aoTex, false);
+    m.aoMapIntensity = 1.25;
+  }
+  m.envMapIntensity = isAsphalt ? 1.45 : 0.92;
   if (i.emission[0] + i.emission[1] + i.emission[2] > 0.03) {
     m.emissive.setRGB(i.emission[0], i.emission[1], i.emission[2], THREE.SRGBColorSpace);
     m.emissiveMap = i.emisTex ? texture(i.emisTex) : (m.map || null);
@@ -434,7 +449,9 @@ function matFor(name) {
     m.depthWrite = false;
     m.side = THREE.DoubleSide;
     m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -2;
+    m.envMapIntensity = 1.35;
   }
+  if (isAsphalt) asphaltMats.push(m);
   return (matCache[name] = m);
 }
 
