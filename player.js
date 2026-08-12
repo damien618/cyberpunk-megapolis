@@ -123,8 +123,14 @@ const FABRIC_FADE = 0.16;
 // swallowed. Both angles are solved off the two heights now, so a taller seat
 // simply slopes the thighs down a little more rather than sinking them.
 //
+// The datum is the sitting flesh, not the hip joint. The joint lives inside the
+// pelvis; 7.5 cm of rise put the ischium and the thigh mesh in the cushion even
+// when restY matched the seat top. Measured off the skin at load, then checked
+// once on the first sit in case the standing sample missed the contact patch.
+//
 // Axes as for the supine pose: on the thigh Z is hip flexion and Y abduction.
-const SEAT_HIP_RISE = 0.075;   // hip joint over the seat, i.e. what she sits on
+const SEAT_HIP_RISE = 0.16;    // fallback: hip joint over the seat, flesh included
+const SEAT_FLESH_CLEAR = 0.012; // keep the underside on the cushion, not in it
 // Feet a little ahead of the knees rather than tucked under them, which is where
 // they go on any seat that is not exactly the right height — and none of these
 // are, the armchair standing a good 6 cm over her own knee.
@@ -330,6 +336,7 @@ export class Player {
     this.wardrobe = null;
     this.outfit = null;
     this.outfitKey = '';
+    this.seatHipRise = SEAT_HIP_RISE;
 
     // web rope: 6-segment cylinder chain (bezier with slack sag)
     this.webGroup = new THREE.Group();
@@ -413,6 +420,7 @@ export class Player {
     this.shinDrop = restKnee && restAnkle ? restKnee.y - restAnkle.y : 0.430;
     this.createWardrobeAlternates();
     this.setOutfit();
+    this.seatHipRise = this.measureSeatHipRise();
     this.mixer = new THREE.AnimationMixer(this.model);
 
     const clips = {};
@@ -698,18 +706,78 @@ export class Player {
 
   applySeatedPose(floorY) {
     // How high the seat stands over the floor in front of it. The body is hung
-    // off the seat — the pose root drops until the hip is SEAT_HIP_RISE above
-    // it, which is a constant, because the group is already parked ON the seat —
-    // and the leg then has to span from there down to the floor.
+    // off the seat — the pose root drops until the hip is seatHipRise above
+    // it, because the group is already parked ON the seat — and the leg then
+    // has to span from there down to the floor.
     const seat = Number.isFinite(floorY)
       ? this.group.position.y - floorY : SEAT_FALLBACK_HEIGHT;
+    this.placeSeated(seat);
+    if (!this._seatCalibrated) {
+      this.poseRoot.updateMatrixWorld(true);
+      const extra = this.seatContactLift();
+      if (extra > 0.004) {
+        this.seatHipRise += extra;
+        this._seatFlex = null;
+        this.placeSeated(seat);
+      }
+      this._seatCalibrated = true;
+    }
+  }
+
+  placeSeated(seat) {
     const flex = this.seatFlex(seat);
     this.resetHeldPose();
     this.poseSeatedLegs(flex);
     this.bones.spine_01?.rotateZ(SEAT_LEAN);
     this.applyHeldArmPose('seated', SEATED_HAND_TARGETS);
-    this.poseRoot.position.y = SEAT_HIP_RISE - this.restHipY;
+    this.poseRoot.position.y = this.seatHipRise - this.restHipY;
     this.poseRoot.position.z = SEAT_BACK;
+  }
+
+  // Standing bind: how far below the hip joint the sitting contact patch hangs.
+  // That drop is what has to stand over the cushion, or the pose parks the
+  // joint on the seat and the mesh goes through it.
+  measureSeatHipRise() {
+    const v = new THREE.Vector3();
+    let minY = this.restHipY;
+    this.poseRoot.updateMatrixWorld(true);
+    this.model.traverse(mesh => {
+      if (!mesh.isSkinnedMesh) return;
+      const pos = mesh.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        mesh.getVertexPosition(i, v);
+        this.poseRoot.worldToLocal(v);
+        if (v.y > this.restHipY - 0.02 || v.y < this.restHipY - 0.28) continue;
+        if (v.z > 0.06 || Math.abs(v.x) > 0.18) continue;
+        if (v.y < minY) minY = v.y;
+      }
+    });
+    const drop = this.restHipY - minY;
+    return THREE.MathUtils.clamp(drop + SEAT_FLESH_CLEAR, 0.12, 0.22);
+  }
+
+  // After the seated pose is up: how far the underside still sits below the
+  // seat (group.y). Only the contact patch — hips and thighs, not the feet.
+  seatContactLift() {
+    const v = new THREE.Vector3();
+    const local = new THREE.Vector3();
+    let minY = Infinity;
+    this.model.traverse(mesh => {
+      if (!mesh.isSkinnedMesh) return;
+      const pos = mesh.geometry.attributes.position;
+      const step = Math.max(1, (pos.count / 400) | 0);
+      for (let i = 0; i < pos.count; i += step) {
+        mesh.getVertexPosition(i, v);
+        local.copy(v);
+        this.group.worldToLocal(local);
+        if (local.z < -0.06 || local.z > 0.36) continue;
+        if (Math.abs(local.x) > 0.20) continue;
+        if (local.y > 0.20 || local.y < -0.22) continue;
+        if (local.y < minY) minY = local.y;
+      }
+    });
+    if (!Number.isFinite(minY)) return 0;
+    return Math.max(0, SEAT_FLESH_CLEAR - minY);
   }
 
   // Same flexion on both thighs. hipLevelling() is for the supine pose — it
@@ -736,15 +804,16 @@ export class Player {
   // a good 2 cm over the floor. Two corrections off the ankle the pose actually
   // produces take that out. Cached per seat height; the villa has two.
   seatFlex(seat) {
-    if (this._seatFlex?.seat === seat) return this._seatFlex.flex;
+    const rise = this.seatHipRise;
+    if (this._seatFlex?.seat === seat && this._seatFlex.rise === rise) return this._seatFlex.flex;
     let flex = Math.acos(THREE.MathUtils.clamp(
-      (seat + SEAT_HIP_RISE - this.shinDrop * Math.cos(SEAT_SHIN_LEAN) - this.restAnkleY)
+      (seat + rise - this.shinDrop * Math.cos(SEAT_SHIN_LEAN) - this.restAnkleY)
       / this.thighDrop, -1, 1));
     const ankle = this.bones.foot_l;
     if (ankle) {
       // Soles down means the ankle stands its own standing height over the floor,
       // and the hip a fixed rise over the seat: that fixes the drop between them.
-      const want = seat + SEAT_HIP_RISE - this.restAnkleY;
+      const want = seat + rise - this.restAnkleY;
       const scratch = new THREE.Vector3();
       const dropAt = f => {
         this.resetHeldPose();
@@ -759,7 +828,7 @@ export class Player {
         flex += SEAT_FLEX_PROBE * (want - now) / (nudged - now);
       }
     }
-    this._seatFlex = { seat, flex };
+    this._seatFlex = { seat, rise, flex };
     return flex;
   }
 

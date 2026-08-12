@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { Player } from './player.js?v=48';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { Player } from './player.js?v=49';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=5';
@@ -199,6 +200,196 @@ function makeCalRugMaps() {
   normal.needsUpdate = true;
   return { albedo, normal };
 }
+// Hollywood Regency living-room rug: charcoal, ivory and gold, Art Deco
+// geometry. Kept off the bedroom kilim's pastel diamonds on purpose.
+function makeHollywoodRugMaps() {
+  const size = 1024;
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = c.getContext('2d');
+  const ivory = '#efe6d4', charcoal = '#2a2622', gold = '#c4a056', taupe = '#8a7a64';
+  ctx.fillStyle = charcoal;
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = gold;
+  ctx.fillRect(22, 22, size - 44, size - 44);
+  ctx.fillStyle = ivory;
+  ctx.fillRect(36, 36, size - 72, size - 72);
+  ctx.strokeStyle = charcoal;
+  ctx.lineWidth = 10;
+  ctx.strokeRect(52, 52, size - 104, size - 104);
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = 4;
+  ctx.strokeRect(64, 64, size - 128, size - 128);
+
+  const chevH = 54;
+  for (let y = 88, row = 0; y < size - 88; y += chevH, row++) {
+    ctx.fillStyle = row % 2 === 0 ? taupe : charcoal;
+    ctx.globalAlpha = 0.22;
+    ctx.beginPath();
+    ctx.moveTo(88, y);
+    for (let x = 88; x <= size - 88; x += 70) {
+      ctx.lineTo(x + 35, y + chevH * 0.45);
+      ctx.lineTo(x + 70, y);
+    }
+    ctx.lineTo(size - 88, y + chevH);
+    ctx.lineTo(88, y + chevH);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  const cx = size / 2, cy = size / 2;
+  for (let i = 0; i < 12; i++) {
+    const a0 = (i / 12) * Math.PI * 2, a1 = ((i + 1) / 12) * Math.PI * 2;
+    ctx.fillStyle = i % 2 === 0 ? gold : charcoal;
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, 118, a0, a1);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = ivory;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 36, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = gold;
+  ctx.lineWidth = 6;
+  ctx.stroke();
+
+  const img = ctx.getImageData(0, 0, size, size);
+  const px = img.data;
+  const height = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const weft = ((x + y * 0.1) % 3 < 1.1) ? 0.04 : 0;
+      const warp = ((y + x * 0.07) % 4 < 1.3) ? 0.028 : 0;
+      const h = weft + warp + Math.sin(x * 0.4) * Math.sin(y * 0.31) * 0.012;
+      height[y * size + x] = h;
+      const i = (y * size + x) * 4;
+      const k = 1 + h * 1.6 - 0.03;
+      px[i] = Math.min(255, px[i] * k);
+      px[i + 1] = Math.min(255, px[i + 1] * k);
+      px[i + 2] = Math.min(255, px[i + 2] * k);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const nc = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const nctx = nc.getContext('2d');
+  const nd = nctx.createImageData(size, size);
+  const np = nd.data;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const xm = height[y * size + (x === 0 ? size - 1 : x - 1)];
+      const xp = height[y * size + (x === size - 1 ? 0 : x + 1)];
+      const ym = height[(y === 0 ? size - 1 : y - 1) * size + x];
+      const yp = height[(y === size - 1 ? 0 : y + 1) * size + x];
+      let nx = (xm - xp) * 18, ny = (ym - yp) * 18, nz = 1;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      const i = (y * size + x) * 4;
+      np[i] = (nx / len * 0.5 + 0.5) * 255;
+      np[i + 1] = (ny / len * 0.5 + 0.5) * 255;
+      np[i + 2] = (nz / len * 0.5 + 0.5) * 255;
+      np[i + 3] = 255;
+    }
+  }
+  nctx.putImageData(nd, 0, 0);
+  const albedo = new THREE.CanvasTexture(c);
+  albedo.colorSpace = THREE.SRGBColorSpace;
+  albedo.anisotropy = maxAniso;
+  albedo.needsUpdate = true;
+  const normal = new THREE.CanvasTexture(nc);
+  normal.anisotropy = maxAniso;
+  normal.needsUpdate = true;
+  return { albedo, normal };
+}
+// Nubby bouclé: sofas were flat-coloured boxes. The weave is the upholstery;
+// the material colour tints it cream or sage.
+function makeBoucleMaps() {
+  const size = 512;
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#e8e0d2';
+  ctx.fillRect(0, 0, size, size);
+  const height = new Float32Array(size * size);
+  const img = ctx.getImageData(0, 0, size, size);
+  const px = img.data;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const loop = Math.abs(Math.sin(x * 0.55) * Math.sin(y * 0.48));
+      const nubby = ((x * 13 + y * 7) % 9 < 3) ? 0.08 : 0;
+      const h = loop * 0.07 + nubby + Math.sin(x * 1.3 + y * 0.9) * 0.02;
+      height[y * size + x] = h;
+      const i = (y * size + x) * 4;
+      const k = 0.82 + h * 2.4;
+      px[i] = Math.min(255, 210 * k);
+      px[i + 1] = Math.min(255, 200 * k);
+      px[i + 2] = Math.min(255, 186 * k);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const nc = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const nctx = nc.getContext('2d');
+  const nd = nctx.createImageData(size, size);
+  const np = nd.data;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const xm = height[y * size + (x === 0 ? size - 1 : x - 1)];
+      const xp = height[y * size + (x === size - 1 ? 0 : x + 1)];
+      const ym = height[(y === 0 ? size - 1 : y - 1) * size + x];
+      const yp = height[(y === size - 1 ? 0 : y + 1) * size + x];
+      let nx = (xm - xp) * 14, ny = (ym - yp) * 14, nz = 1;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      const i = (y * size + x) * 4;
+      np[i] = (nx / len * 0.5 + 0.5) * 255;
+      np[i + 1] = (ny / len * 0.5 + 0.5) * 255;
+      np[i + 2] = (nz / len * 0.5 + 0.5) * 255;
+      np[i + 3] = 255;
+    }
+  }
+  nctx.putImageData(nd, 0, 0);
+  const albedo = new THREE.CanvasTexture(c);
+  albedo.wrapS = albedo.wrapT = THREE.RepeatWrapping;
+  albedo.repeat.set(3.2, 3.2);
+  albedo.colorSpace = THREE.SRGBColorSpace;
+  albedo.anisotropy = maxAniso;
+  albedo.needsUpdate = true;
+  const normal = new THREE.CanvasTexture(nc);
+  normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
+  normal.repeat.set(3.2, 3.2);
+  normal.anisotropy = maxAniso;
+  normal.needsUpdate = true;
+  return { albedo, normal };
+}
+// Broad indoor leaves, not the forest-floor canopy map that made the living-
+// room shrub look like a mossy rock with lime fuzz.
+function makeHouseplantAlbedo() {
+  const size = 512;
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#2f5a32';
+  ctx.fillRect(0, 0, size, size);
+  const greens = ['#3d7a42', '#2a562e', '#5a9a58', '#1e3f22', '#6aad62'];
+  for (let i = 0; i < 28; i++) {
+    const x = (i * 97) % size, y = (i * 53) % size;
+    ctx.fillStyle = greens[i % greens.length];
+    ctx.beginPath();
+    ctx.ellipse(x, y, 70 + (i % 5) * 12, 28 + (i % 3) * 8, i * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(20, 40, 18, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 50, y);
+    ctx.quadraticCurveTo(x, y - 8, x + 50, y);
+    ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(2.2, 2.2);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  t.needsUpdate = true;
+  return t;
+}
 function withUV2(geometry) {
   if (!geometry.getAttribute('uv2') && geometry.getAttribute('uv')) {
     const uv = geometry.getAttribute('uv');
@@ -363,6 +554,9 @@ const leafCardTex = loader.load('./textures/nature/foliage_card.png');
 leafCardTex.colorSpace = THREE.SRGBColorSpace;
 leafCardTex.anisotropy = maxAniso;
 const calRug = makeCalRugMaps();
+const hollywoodRug = makeHollywoodRugMaps();
+const boucle = makeBoucleMaps();
+const houseplantA = makeHouseplantAlbedo();
 
 // The cyberpunk texture pack is dark and full of coloured trim strips, so the
 // villa keeps the normal maps for relief and drives colour itself — that is
@@ -428,11 +622,26 @@ const M = {
   fabric: new THREE.MeshStandardMaterial({ color: 0xe3dbcc, roughness: 0.92, metalness: 0.01 }),
   fabricWarm: new THREE.MeshStandardMaterial({ color: 0xc07d55, roughness: 0.93, metalness: 0.01 }),
   fabricOlive: new THREE.MeshStandardMaterial({ color: 0x87907a, roughness: 0.93, metalness: 0.01 }),
+  sofaCream: new THREE.MeshStandardMaterial({
+    map: boucle.albedo, normalMap: boucle.normal, normalScale: new THREE.Vector2(0.7, 0.7),
+    color: 0xf0ebe3, roughness: 0.94, metalness: 0.0,
+  }),
+  sofaSage: new THREE.MeshStandardMaterial({
+    map: boucle.albedo, normalMap: boucle.normal, normalScale: new THREE.Vector2(0.7, 0.7),
+    color: 0x8d967c, roughness: 0.94, metalness: 0.0,
+  }),
+  houseplant: new THREE.MeshStandardMaterial({
+    map: houseplantA, color: 0xc8e0b0, roughness: 0.72, metalness: 0.0,
+  }),
   rug: new THREE.MeshStandardMaterial({ color: 0xb9a689, roughness: 0.98, metalness: 0.0 }),
   rugDark: new THREE.MeshStandardMaterial({ color: 0x6f6558, roughness: 0.98, metalness: 0.0 }),
   rugCal: new THREE.MeshStandardMaterial({
     map: calRug.albedo, normalMap: calRug.normal, normalScale: new THREE.Vector2(0.55, 0.55),
     color: 0xffffff, roughness: 0.96, metalness: 0.0,
+  }),
+  rugHollywood: new THREE.MeshStandardMaterial({
+    map: hollywoodRug.albedo, normalMap: hollywoodRug.normal, normalScale: new THREE.Vector2(0.5, 0.5),
+    color: 0xffffff, roughness: 0.95, metalness: 0.0,
   }),
   // Plain alpha glass rather than transmission: the villa has a lot of glazing
   // and a refraction pass on every pane is not worth the frame time here.
@@ -568,6 +777,19 @@ const G = {
   trunk: withUV2(new THREE.CylinderGeometry(0.34, 0.5, 1, 9).translate(0, 0.5, 0)),
   sphere: withUV2(new THREE.SphereGeometry(0.5, 14, 10)),
   blob: withUV2(new THREE.IcosahedronGeometry(0.5, 2)),
+  cushion: (() => {
+    const g = new THREE.SphereGeometry(0.5, 16, 12);
+    const pos = g.attributes.position;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      v.y *= 0.36;
+      if (v.y < 0) v.y *= 0.5;
+      pos.setXYZ(i, v.x, v.y, v.z);
+    }
+    g.computeVertexNormals();
+    return withUV2(g);
+  })(),
   card: withUV2(new THREE.PlaneGeometry(1, 1)),
   cone: withUV2(new THREE.ConeGeometry(0.5, 1, 12).translate(0, 0.5, 0)),
   frond: withUV2(new THREE.ConeGeometry(0.22, 1, 4).translate(0, 0.5, 0)),
@@ -1047,35 +1269,58 @@ function bedroomRug(w, d) {
     }
   }
 }
-function sofa(len, { depth = 0.95, mat = M.fabric, cushion = M.fabricWarm, arms = true } = {}) {
-  box(mat, 0, F + 0.18, 0, len, 0.36, depth);                        // base
-  box(mat, 0, F + 0.46, 0, len - 0.1, 0.2, depth - 0.1);             // seat
-  box(mat, 0, F + 0.66, -depth / 2 + 0.16, len, 0.72, 0.28);         // backrest
-  if (arms) {
-    box(mat, -len / 2 + 0.14, F + 0.5, 0.02, 0.28, 0.64, depth - 0.06);
-    box(mat, len / 2 - 0.14, F + 0.5, 0.02, 0.28, 0.64, depth - 0.06);
-  }
-  const n = Math.max(2, Math.round(len / 1.1));
+function livingRug(w, d) {
+  box(M.rugHollywood, 0, F + 0.016, 0, w, 0.032, d);
+  const n = Math.max(10, Math.round(w / 0.03));
   for (let i = 0; i < n; i++) {
-    const x = -len / 2 + len * (i + 0.5) / n;
-    box(cushion, x, F + 0.72, -depth / 2 + 0.34, 0.44, 0.42, 0.14, 0.12);
+    const x = -w / 2 + w * (i + 0.5) / n;
+    const wobble = Math.sin(i * 5.9) * 0.018;
+    for (const s of [-1, 1]) {
+      box(M.linen, x + wobble * 0.2, F + 0.006, s * (d / 2 + 0.08), 0.012, 0.005, 0.15 + wobble);
+    }
   }
 }
+function sofa(len, { depth = 0.95, mat = M.sofaCream, cushion = M.fabricWarm, arms = true } = {}) {
+  const inset = 0.12;
+  for (const [lx, lz] of [
+    [-len / 2 + inset, -depth / 2 + inset], [len / 2 - inset, -depth / 2 + inset],
+    [-len / 2 + inset, depth / 2 - inset], [len / 2 - inset, depth / 2 - inset],
+  ]) shape(G.cylBase, M.walnut, lx, F, lz, 0.055, 0.14, 0.055);
+  box(mat, 0, F + 0.22, 0, len - 0.04, 0.16, depth - 0.1);
+  const n = Math.max(2, Math.round(len / 0.9));
+  const side = arms ? 0.32 : 0.08;
+  const cw = (len - side * 2) / n - 0.05;
+  const x0 = -len / 2 + side + cw / 2;
+  for (let i = 0; i < n; i++) {
+    const x = x0 + i * (cw + 0.05);
+    shape(G.cushion, mat, x, F + 0.42, 0.05, cw, 0.2, depth - 0.32);
+    shape(G.cushion, mat, x, F + 0.66, -depth / 2 + 0.22, cw * 0.92, 0.34, 0.18, { rx: -0.22 });
+  }
+  box(mat, 0, F + 0.58, -depth / 2 + 0.11, len - 0.06, 0.52, 0.16);
+  if (arms) {
+    for (const sx of [-1, 1]) {
+      box(mat, sx * (len / 2 - 0.13), F + 0.46, 0.02, 0.24, 0.44, depth - 0.14);
+      shape(G.sphere, mat, sx * (len / 2 - 0.13), F + 0.72, 0.02, 0.24, 0.12, depth - 0.22);
+    }
+  }
+  shape(G.blob, cushion, -len * 0.16, F + 0.62, -depth / 2 + 0.34, 0.3, 0.26, 0.14, { ry: 0.45, rz: 0.12 });
+  shape(G.blob, M.linen, len * 0.1, F + 0.6, -depth / 2 + 0.32, 0.26, 0.22, 0.12, { ry: -0.3 });
+}
 function armchair(mat = M.fabricOlive) {
-  furnitureInteraction('sit', 0.46, 0.45, 0, F + 0.53);   // on the cushion
-  // Plinth, and it has to stand back under the cushion. It used to be a slab as
-  // deep as the whole chair and standing on the floor, with the four feet buried
-  // inside it — so it filled exactly the space a sitter's shins go, and no pose
-  // could keep them out of it. Anyone who sat down lost their legs from the knee
-  // to the shoe. Now the cushion overhangs it by 10 cm and it rides on its feet,
-  // which is how an armchair is built anyway.
-  box(mat, 0, F + 0.30, 0, 0.88, 0.2, 0.7);
-  box(mat, 0, F + 0.46, 0, 0.84, 0.14, 0.82);
-  box(mat, 0, F + 0.64, -0.36, 0.92, 0.62, 0.18);
-  box(mat, -0.4, F + 0.5, 0, 0.14, 0.5, 0.86);
-  box(mat, 0.4, F + 0.5, 0, 0.14, 0.5, 0.86);
-  for (const [dx, dz] of [[-0.36, -0.34], [0.36, -0.34], [-0.36, 0.34], [0.36, 0.34]])
-    shape(G.cylBase, M.walnut, dx, F, dz, 0.07, 0.2, 0.07);
+  // restY is the cushion top. The seated pose used to hang the HIP JOINT 7.5 cm
+  // over that, which parked the ischium and the thighs inside the slab — the
+  // joint is inside the pelvis, not on the sitting surface. player.js now
+  // measures the flesh; this chair just has to offer a real seat and leave a
+  // cave for the shins. Sit point toward the backrest so the thighs rest on
+  // the cushion instead of hanging off the front edge.
+  furnitureInteraction('sit', 0.34, 0.38, -0.10, F + 0.50);
+  box(mat, 0, F + 0.26, -0.10, 0.88, 0.18, 0.50);   // plinth, short of the front
+  box(mat, 0, F + 0.43, -0.08, 0.84, 0.14, 0.58);   // cushion: top F+0.50, front +0.21
+  box(mat, 0, F + 0.70, -0.36, 0.92, 0.62, 0.18);
+  box(mat, -0.4, F + 0.52, -0.08, 0.14, 0.48, 0.70);
+  box(mat, 0.4, F + 0.52, -0.08, 0.14, 0.48, 0.70);
+  for (const [dx, dz] of [[-0.36, -0.30], [0.36, -0.30], [-0.36, 0.10], [0.36, 0.10]])
+    shape(G.cylBase, M.walnut, dx, F, dz, 0.07, 0.18, 0.07);
 }
 function lowTable(w, d, mat = M.walnut) {
   box(mat, 0, F + 0.4, 0, w, 0.07, d);
@@ -1408,11 +1653,102 @@ function pergola(w, d, h = 2.9) {
   for (let i = 0; i <= n; i++)
     box(M.teak, -w / 2 + (w * i) / n, F + h + 0.24, 0, 0.09, 0.14, d + 0.5);
 }
-function planter(size, h = 0.7, plant = M.foliage) {
+function planter(size, h = 0.7, plant = M.houseplant) {
   box(M.concrete, 0, F + h / 2, 0, size, h, size);
   box(M.gravel, 0, F + h + 0.02, 0, size - 0.14, 0.06, size - 0.14);
-  shape(G.blob, plant, 0, F + h + 0.42, 0, size * 0.9, size * 0.8, size * 0.9);
-  sprinkleLeaves(0, F + h + 0.15, 0, size * 1.05, size * 0.9, size * 1.05, 6);
+  shape(G.trunk, M.barkDark, 0, F + h, 0, size * 0.14, size * 0.5, size * 0.14);
+  shape(G.blob, plant, 0, F + h + size * 0.58, 0, size * 1.15, size * 0.9, size * 1.15);
+  shape(G.blob, plant, size * 0.28, F + h + size * 0.42, -size * 0.18, size * 0.75, size * 0.58, size * 0.72);
+  shape(G.blob, plant, -size * 0.22, F + h + size * 0.5, size * 0.22, size * 0.7, size * 0.52, size * 0.65);
+}
+// Kenchoo's bicolor cat (CC BY), a rebuild of Guillaume Bolis's Fripouille scan.
+// The clip on the file is a walk with root motion — playing it would skate the
+// cat off the sofa — so we keep the bind pose, fold it into a side-sleep, and
+// breathe on the spine instead.
+function catBone(root, part) {
+  let hit = null;
+  root.traverse(o => { if (!hit && o.isBone && o.name.includes(part)) hit = o; });
+  return hit;
+}
+function posedBox(root) {
+  const box = new THREE.Box3();
+  const v = new THREE.Vector3();
+  root.updateMatrixWorld(true);
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    if (o.isSkinnedMesh) o.skeleton.update();
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      if (o.isSkinnedMesh && o.getVertexPosition) o.getVertexPosition(i, v);
+      else v.fromBufferAttribute(pos, i);
+      box.expandByPoint(v.applyMatrix4(o.matrixWorld));
+    }
+  });
+  return box;
+}
+function poseCatSideSleep(root) {
+  const add = (part, x, y, z) => {
+    const b = catBone(root, part);
+    if (b) b.rotation.set(b.rotation.x + x, b.rotation.y + y, b.rotation.z + z);
+  };
+  add('Neck_01', 0.42, 0.18, 0.22);
+  add('Neck_02', 0.18, 0.06, 0.1);
+  add('Neck_Top', 0.12, 0.08, 0);
+  add('Spine_01', 0.12, 0, 0.18);
+  add('Spine_02', 0.08, 0, 0.1);
+  add('l_FrontLeg_Hip', 0.35, 0.15, 0.2);
+  add('r_FrontLeg_Hip', 0.35, -0.15, -0.2);
+  add('l_FrontLeg_Knee', 0.55, 0, 0);
+  add('r_FrontLeg_Knee', 0.55, 0, 0);
+  add('l_FrontLeg_Ankle', 0.25, 0, 0);
+  add('r_FrontLeg_Ankle', 0.25, 0, 0);
+  add('l_HindLeg_Hip', 0.45, 0.2, 0.25);
+  add('r_HindLeg_Hip', 0.45, -0.2, -0.25);
+  add('l_HindLeg_Knee1', -0.55, 0, 0);
+  add('r_HindLeg_Knee1', -0.55, 0, 0);
+  add('l_HindLeg_Knee2', 0.7, 0, 0);
+  add('r_HindLeg_Knee2', 0.7, 0, 0);
+  add('l_HindLeg_Ankle', -0.2, 0, 0);
+  add('r_HindLeg_Ankle', -0.2, 0, 0);
+  add('Tail_01_02', 0.12, 0.08, 0.85);
+  add('Tail_01_03', 0.08, 0, 0.55);
+  add('Tail_01_04', 0.05, 0, 0.4);
+  add('Tail_01_05', 0.04, 0, 0.28);
+}
+async function loadSleepingCat() {
+  const gltf = await new GLTFLoader().loadAsync('./glb/animals/cat.glb');
+  const cat = gltf.scene;
+  cat.traverse(o => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.receiveShadow = true;
+    o.frustumCulled = false;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      if (!m) continue;
+      m.metalness = 0;
+      m.roughness = Math.max(m.roughness ?? 0.7, 0.74);
+      if (m.map) m.map.anisotropy = maxAniso;
+    }
+  });
+  poseCatSideSleep(cat);
+  const box = posedBox(cat);
+  const len = Math.max(box.max.x - box.min.x, box.max.z - box.min.z, 1e-4);
+  cat.scale.setScalar(0.48 / len);
+  const posed = new THREE.Group();
+  posed.rotation.z = Math.PI / 2;
+  posed.add(cat);
+  const seated = posedBox(posed);
+  const wrap = new THREE.Group();
+  wrap.add(posed);
+  wrap.position.set(-4.52, F + 0.52 - seated.min.y + 0.008, -9.02);
+  wrap.rotation.y = 0.18;
+  wrap.userData.spine = catBone(cat, 'Spine_02');
+  wrap.userData.spineBase = wrap.userData.spine?.rotation.x ?? 0;
+  wrap.userData.tail = catBone(cat, 'Tail_01_02');
+  wrap.userData.tailBase = wrap.userData.tail?.rotation.z ?? 0;
+  scene.add(wrap);
+  return wrap;
 }
 function palm(h = 9) {
   shape(G.trunk, M.bark, 0, 0, 0, 0.44, h, 0.44, { ry: Math.random() * 3 });
@@ -1530,18 +1866,25 @@ frame(5.2, -10.7, 0, () => {
 });
 
 frame(-4.6, -7.6, -Math.PI / 2, () => {
-  sofa(4.6, { depth: 1.05 });
+  sofa(4.6, { depth: 1.05, mat: M.sofaCream, cushion: M.fabricWarm });
 });
-frame(-6.6, -10.0, 0, () => sofa(2.4, { depth: 0.95, mat: M.fabricOlive, cushion: M.linen, arms: false }));
+frame(-6.6, -10.0, 0, () => sofa(2.4, { depth: 0.95, mat: M.sofaSage, cushion: M.linen, arms: false }));
 frame(-5.6, -5.3, Math.PI, () => armchair());
 frame(-7.6, -5.3, Math.PI, () => armchair());
 frame(-6.6, -7.6, 0, () => lowTable(1.5, 0.85));
-frame(-6.2, -7.6, 0, () => rug(5.4, 6.6, M.rug));
+frame(-6.2, -7.6, 0, () => livingRug(5.4, 6.6));
 frame(-4.3, -4.9, 0, () => {
   shape(G.cylBase, M.bronze, 0, F, 0, 0.06, 1.5, 0.06);
   shape(G.cone, M.lampShade, 0, F + 1.5, 0, 0.5, 0.4, 0.5);
 });
-frame(-8.4, -11.2, 0, () => planter(0.7, 0.55, M.foliage));
+frame(-8.4, -11.2, 0, () => planter(0.7, 0.55, M.houseplant));
+
+let sleepingCat = null;
+try {
+  sleepingCat = await loadSleepingCat();
+} catch (err) {
+  console.warn('sofa cat failed to load', err);
+}
 
 // Dining: table for eight between the kitchen and the foyer
 frame(1.6, -1.4, 0, () => {
@@ -3109,6 +3452,15 @@ function animate() {
   spaWater.position.y = SPA_RIM - 0.14 + Math.sin(t * 1.9) * 0.008;
   spill.material.opacity = 0.4 + Math.sin(t * 2.6) * 0.06;
   fireLight.intensity = 11 + Math.sin(t * 7.3) * 2.4 + Math.sin(t * 2.1) * 1.5;
+
+  if (sleepingCat?.userData.spine) {
+    sleepingCat.userData.spine.rotation.x =
+      sleepingCat.userData.spineBase + Math.sin(t * 1.45) * 0.028;
+  }
+  if (sleepingCat?.userData.tail) {
+    sleepingCat.userData.tail.rotation.z =
+      sleepingCat.userData.tailBase + Math.sin(t * 0.48) * 0.09;
+  }
 
   for (const c of traffic) {
     c.mesh.position.x += c.speed * c.dir * dt;
