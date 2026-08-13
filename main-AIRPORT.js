@@ -1,0 +1,1446 @@
+import * as THREE from 'three';
+import { Player } from './player.js?v=49';
+import { harmoniseHair } from './hair.js?v=8';
+import { Input } from './input.js';
+import { Controller } from './controller.js?v=5';
+import { CameraRig } from './cameraRig.js?v=4';
+import { buildCityBoxes } from './cityBoxes.js?v=4';
+import { buildCar, carBounds } from './cars.js?v=4';
+import { makeVisitor, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=18';
+
+// ---------------------------------------------------------------------------
+// Heading to the airport — a linear terminal, laid out the way real ones are
+// (curb → processors → airside), each zone fully walled with one way through:
+//
+//   drop-off curb → glass facade + sliding doors → CHECK-IN HALL (9.5 m high,
+//   four islands, queue, FIDS) → one portal → SECURITY (low room, three lanes,
+//   offset exit) → CONCOURSE: café unit west, souvenir shop east, then the
+//   BOARDING LOUNGE on the curtain wall — gates A1–A3, jetways, and the apron
+//   with planes parked, taxiing, landing and departing beyond the glass.
+//
+// Travelers are NOT the pack skeleton. Two guest rigs — the zoo's Ready Player
+// Me woman, and the RPM masculine avatar (a different physique) — walk with
+// the animation-library clips authored for their own Hips armature.
+// ---------------------------------------------------------------------------
+
+const app = document.getElementById('app');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+const hudMode = document.getElementById('mode');
+const hudSpeed = document.getElementById('speed');
+const hudHeight = document.getElementById('height');
+const furniturePrompt = document.getElementById('furniturePrompt');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.02;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+app.appendChild(renderer.domElement);
+
+const SKY = 0xb7d2e8;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(SKY);
+scene.fog = new THREE.Fog(0xc5d8ea, 140, 640);
+
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.25, 1600);
+camera.position.set(0, 8, -20);
+
+const hemi = new THREE.HemisphereLight(0xe8f2ff, 0x8a8478, 0.82);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff3e0, 2.15);
+sun.position.set(-80, 140, 40);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -120;
+sun.shadow.camera.right = 120;
+sun.shadow.camera.top = 120;
+sun.shadow.camera.bottom = -80;
+sun.shadow.camera.near = 20;
+sun.shadow.camera.far = 380;
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 0.04;
+scene.add(sun);
+sun.target.position.set(0, 0, 20);
+scene.add(sun.target);
+
+const loader = new THREE.TextureLoader();
+const maxAniso = renderer.capabilities.getMaxAnisotropy();
+const pmrem = new THREE.PMREMGenerator(renderer);
+pmrem.compileEquirectangularShader();
+loader.load('./data/env_equirect.png', t => {
+  t.mapping = THREE.EquirectangularReflectionMapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  scene.environment = pmrem.fromEquirectangular(t).texture;
+  scene.environmentIntensity = 0.55;
+  t.dispose();
+});
+
+function tex(url, rx = 1, ry = 1) {
+  const t = loader.load(url);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  return t;
+}
+function ntex(url, rx = 1, ry = 1) {
+  const t = loader.load(url);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry);
+  t.anisotropy = maxAniso;
+  return t;
+}
+function withUV2(geometry) {
+  if (!geometry.getAttribute('uv2') && geometry.getAttribute('uv')) {
+    const uv = geometry.getAttribute('uv');
+    geometry.setAttribute('uv2', new THREE.BufferAttribute(new Float32Array(uv.array), 2));
+  }
+  return geometry;
+}
+function worldXZUv(mat, metersPerTile = 2.4) {
+  const s = 1 / metersPerTile;
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <worldpos_vertex>',
+      `#include <worldpos_vertex>
+      { vec4 wp = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          wp = instanceMatrix * wp;
+        #endif
+        wp = modelMatrix * wp;
+        vec2 gUV = wp.xz * ${s.toFixed(4)};
+        #ifdef USE_MAP
+          vMapUv = gUV;
+        #endif
+        #ifdef USE_NORMALMAP
+          vNormalMapUv = gUV;
+        #endif
+      }`,
+    );
+  };
+  mat.customProgramCacheKey = () => 'wxz-air-' + metersPerTile;
+  return mat;
+}
+
+function makeTerrazzo() {
+  const size = 512;
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#d8d2c8';
+  ctx.fillRect(0, 0, size, size);
+  const chips = ['#c4b8a8', '#eee8de', '#9a9084', '#6a6560', '#e8c8b0', '#b0c0c8', '#8a7a6a'];
+  for (let i = 0; i < 1400; i++) {
+    ctx.fillStyle = chips[i % chips.length];
+    ctx.globalAlpha = 0.35 + Math.random() * 0.5;
+    const x = Math.random() * size, y = Math.random() * size;
+    ctx.beginPath();
+    ctx.ellipse(x, y, 3 + Math.random() * 9, 2 + Math.random() * 5, Math.random() * 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(4, 4);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  t.needsUpdate = true;
+  return t;
+}
+function makeCarpet() {
+  const size = 256;
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#4c5c78';
+  ctx.fillRect(0, 0, size, size);
+  for (let y = 0; y < size; y += 3) {
+    ctx.fillStyle = y % 6 ? '#586a88' : '#445470';
+    ctx.fillRect(0, y, size, 2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(8, 8);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  t.needsUpdate = true;
+  return t;
+}
+function makeFids() {
+  const c = Object.assign(document.createElement('canvas'), { width: 1024, height: 512 });
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#0b1220';
+  ctx.fillRect(0, 0, 1024, 512);
+  ctx.fillStyle = '#1a2a44';
+  ctx.fillRect(0, 0, 1024, 48);
+  ctx.fillStyle = '#8ec8e0';
+  ctx.font = 'bold 22px sans-serif';
+  ctx.fillText('PACIFIC GATE  ·  DEPARTURES', 28, 32);
+  const rows = [
+    ['AA 214', 'NEW YORK JFK', '10:40', 'A12', 'BOARDING'],
+    ['BA 268', 'LONDON LHR', '11:05', 'B04', 'ON TIME'],
+    ['AF  72', 'PARIS CDG', '11:20', 'A08', 'ON TIME'],
+    ['JL  61', 'TOKYO HND', '11:55', 'C02', 'DELAYED'],
+    ['UA 441', 'CHICAGO ORD', '12:10', 'B11', 'ON TIME'],
+    ['LH 457', 'FRANKFURT', '12:35', 'A03', 'GATE OPEN'],
+    ['QF  12', 'SYDNEY', '13:00', 'C07', 'ON TIME'],
+    ['EK 216', 'DUBAI', '13:25', 'B02', 'ON TIME'],
+  ];
+  rows.forEach((r, i) => {
+    ctx.fillStyle = i % 2 ? '#101828' : '#0d1628';
+    ctx.fillRect(0, 56 + i * 54, 1024, 54);
+    ctx.fillStyle = '#d8e6f0';
+    ctx.font = '20px monospace';
+    ctx.fillText(r[0], 28, 92 + i * 54);
+    ctx.fillText(r[1], 200, 92 + i * 54);
+    ctx.fillText(r[2], 560, 92 + i * 54);
+    ctx.fillText(r[3], 700, 92 + i * 54);
+    ctx.fillStyle = r[4] === 'DELAYED' ? '#e07050' : r[4] === 'BOARDING' ? '#6ad08a' : '#8ec8e0';
+    ctx.fillText(r[4], 820, 92 + i * 54);
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  t.needsUpdate = true;
+  return t;
+}
+
+const concA = tex('./textures/CP_Concrete_01_A.webp', 6, 6);
+const concN = ntex('./textures/CP_Concrete_01_N.webp', 6, 6);
+const asphaltA = tex('./textures/CP_Asphalt_A.webp', 18, 18);
+const asphaltN = ntex('./textures/CP_Asphalt_N.webp', 18, 18);
+const woodA = tex('./textures/nature/wood_diff.jpg', 2, 2);
+const woodN = ntex('./textures/nature/wood_n.jpg', 2, 2);
+const tileA = tex('./textures/CP_Ceramic_Tile_A.webp', 10, 10);
+const tileN = ntex('./textures/CP_Ceramic_Tile_N.webp', 10, 10);
+const floorA = tex('./textures/CP_Floor_Tiles_A.webp', 8, 8);
+const floorN = ntex('./textures/CP_Floor_Tiles_N.webp', 8, 8);
+const stuccoA = tex('./textures/nature/stucco_diff.jpg', 4, 2);
+const stuccoN = ntex('./textures/nature/stucco_n.jpg', 4, 2);
+const metalA = tex('./textures/CP_Metal_Panel_A.webp', 3, 2);
+const metalN = ntex('./textures/CP_Metal_Panel_N.webp', 3, 2);
+const shopA = tex('./textures/CP_Glass_Showcase_A.webp', 2, 1);
+const shopN = ntex('./textures/CP_Glass_Showcase_N.webp', 2, 1);
+const posterA = tex('./textures/CP_Air_Traffic_A.webp', 1, 1);
+const posterN = ntex('./textures/CP_Air_Traffic_N.webp', 1, 1);
+const terrazzoA = makeTerrazzo();
+const carpetA = makeCarpet();
+const fidsA = makeFids();
+
+function makeSign(title, sub = '', bg = '#102033', fg = '#eef6fc') {
+  const c = Object.assign(document.createElement('canvas'), { width: 1024, height: 256 });
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, 1024, 256);
+  ctx.fillStyle = '#8ec8e0';
+  ctx.fillRect(0, 0, 16, 256);
+  ctx.fillStyle = fg;
+  ctx.font = 'bold 78px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(title, 520, sub ? 110 : 155);
+  if (sub) {
+    ctx.font = '36px sans-serif';
+    ctx.fillStyle = '#8ec8e0';
+    ctx.fillText(sub, 520, 175);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  t.needsUpdate = true;
+  return new THREE.MeshStandardMaterial({
+    map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.5, roughness: 0.42,
+  });
+}
+
+const M = {
+  terrazzo: worldXZUv(new THREE.MeshStandardMaterial({
+    map: terrazzoA, roughness: 0.35, metalness: 0.04, color: 0xffffff,
+  }), 1.7),
+  tile: worldXZUv(new THREE.MeshStandardMaterial({
+    map: tileA, normalMap: tileN, roughness: 0.28, metalness: 0.06, color: 0xe8e4dc,
+  }), 1.6),
+  paver: worldXZUv(new THREE.MeshStandardMaterial({
+    map: floorA, normalMap: floorN, roughness: 0.55, metalness: 0.04, color: 0xd8d4cc,
+  }), 2.2),
+  carpet: worldXZUv(new THREE.MeshStandardMaterial({
+    map: carpetA, roughness: 0.96, metalness: 0.0, color: 0xffffff,
+  }), 2.4),
+  concrete: worldXZUv(new THREE.MeshStandardMaterial({
+    map: concA, normalMap: concN, normalScale: new THREE.Vector2(0.45, 0.45),
+    color: 0xc8c4bc, roughness: 0.88, metalness: 0.02,
+  }), 4),
+  plaster: new THREE.MeshStandardMaterial({
+    map: stuccoA, normalMap: stuccoN, color: 0xf2eee8, roughness: 0.82,
+  }),
+  plasterWarm: new THREE.MeshStandardMaterial({
+    map: stuccoA, normalMap: stuccoN, color: 0xf4e8d8, roughness: 0.8,
+  }),
+  steel: new THREE.MeshStandardMaterial({
+    map: metalA, normalMap: metalN, color: 0xb0b6bc, roughness: 0.32, metalness: 0.72,
+  }),
+  steelDark: new THREE.MeshStandardMaterial({ color: 0x2c3238, roughness: 0.38, metalness: 0.65 }),
+  glass: new THREE.MeshPhysicalMaterial({
+    color: 0xb8d4e4, roughness: 0.04, metalness: 0.0,
+    transparent: true, opacity: 0.22, depthWrite: false,
+    clearcoat: 1, clearcoatRoughness: 0.05, side: THREE.DoubleSide,
+  }),
+  asphalt: worldXZUv(new THREE.MeshStandardMaterial({
+    map: asphaltA, normalMap: asphaltN, color: 0x6a6a6a, roughness: 0.92,
+  }), 8),
+  paint: new THREE.MeshStandardMaterial({ color: 0xe8e4d4, roughness: 0.7 }),
+  paintYellow: new THREE.MeshStandardMaterial({ color: 0xd8c45a, roughness: 0.55 }),
+  desk: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0xc8b49a, roughness: 0.55, metalness: 0.04,
+  }),
+  fabric: new THREE.MeshStandardMaterial({ color: 0x3d4e62, roughness: 0.94 }),
+  fabricWarm: new THREE.MeshStandardMaterial({ color: 0xc47858, roughness: 0.93 }),
+  cafeWood: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0xb89870, roughness: 0.62,
+  }),
+  shop: new THREE.MeshStandardMaterial({
+    map: shopA, normalMap: shopN, color: 0xd8e0e6, roughness: 0.35, metalness: 0.12,
+  }),
+  poster: new THREE.MeshStandardMaterial({
+    map: posterA, normalMap: posterN, roughness: 0.55, metalness: 0.08, color: 0xffffff,
+  }),
+  bag: new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.85 }),
+  bag2: new THREE.MeshStandardMaterial({ color: 0x2a4a6a, roughness: 0.85 }),
+  bag3: new THREE.MeshStandardMaterial({ color: 0x8a3030, roughness: 0.85 }),
+  screen: new THREE.MeshStandardMaterial({
+    map: fidsA, emissive: 0xffffff, emissiveMap: fidsA, emissiveIntensity: 0.85, roughness: 0.25,
+  }),
+  signCheck: makeSign('CHECK-IN', 'BAGGAGE DROP  ·  ISLANDS A–D'),
+  signSec: makeSign('SECURITY  ↑', 'ALL GATES  ·  LIQUIDS & LAPTOPS OUT'),
+  signGates: makeSign('GATES A1–A3', 'BOARDING LOUNGE'),
+  signArrow: makeSign('GATES A1–A3  →', 'CAFÉ  ·  SHOPS  ·  LOUNGE'),
+  signCafe: makeSign('GATE CAFÉ', 'COFFEE  ·  PASTRIES', '#2e1f14', '#f6ead8'),
+  signShop: makeSign('SOUVENIRS', 'DUTY FREE  ·  GIFTS', '#1c2e26', '#eaf6ee'),
+  signDept: makeSign('DEPARTURES', 'PACIFIC GATE TERMINAL'),
+  signGateA: makeSign('GATE A1', 'AA 214  ·  NEW YORK JFK  ·  BOARDING'),
+  signGateB: makeSign('GATE A2', 'BA 268  ·  LONDON LHR  ·  ON TIME'),
+  signGateC: makeSign('GATE A3', 'AF 72  ·  PARIS CDG  ·  ON TIME'),
+  signWC: makeSign('WC', 'RESTROOMS'),
+  ceiling: new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.7 }),
+  lightBar: new THREE.MeshStandardMaterial({
+    color: 0xfff6e8, emissive: 0xffe8c4, emissiveIntensity: 1.4, roughness: 0.4,
+  }),
+  grass: new THREE.MeshStandardMaterial({ color: 0x6a8a52, roughness: 0.96 }),
+  collider: new THREE.MeshBasicMaterial({ visible: false }),
+};
+
+const world = new THREE.Group();
+scene.add(world);
+const crowd = new THREE.Group();
+const airside = new THREE.Group();
+scene.add(crowd, airside);
+
+const G = {
+  box: withUV2(new THREE.BoxGeometry(1, 1, 1)),
+  cyl: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 16)),
+  cylBase: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 16).translate(0, 0.5, 0)),
+  sphere: withUV2(new THREE.SphereGeometry(0.5, 14, 10)),
+  cone: withUV2(new THREE.ConeGeometry(0.5, 1, 14).translate(0, 0.5, 0)),
+  card: withUV2(new THREE.PlaneGeometry(1, 1)),
+};
+
+const kits = new Map();
+let PROP = false;
+function emit(geo, mat, item) {
+  const key = `${geo.uuid}|${mat.uuid}`;
+  let k = kits.get(key);
+  if (!k) kits.set(key, (k = { geo, mat, items: [], propFlags: [] }));
+  k.items.push(item);
+  k.propFlags.push(PROP);
+}
+function addInstancedPrimitive(geometry, material, items, propFlags) {
+  if (!items.length) return null;
+  const im = new THREE.InstancedMesh(geometry, material, items.length);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+  const e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3();
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    p.set(it.x, it.y, it.z);
+    e.set(it.rx || 0, it.ry || 0, it.rz || 0, 'YXZ');
+    q.setFromEuler(e);
+    s.set(it.sx ?? 1, it.sy ?? 1, it.sz ?? 1);
+    m.compose(p, q, s);
+    im.setMatrixAt(i, m);
+  }
+  im.castShadow = true;
+  im.receiveShadow = true;
+  im.instanceMatrix.needsUpdate = true;
+  if (propFlags?.some(Boolean)) im.userData.prop = propFlags;
+  world.add(im);
+  return im;
+}
+function flushKits() {
+  for (const k of kits.values()) addInstancedPrimitive(k.geo, k.mat, k.items, k.propFlags);
+  kits.clear();
+}
+function prop(fn) {
+  const outer = PROP;
+  PROP = true;
+  fn();
+  PROP = outer;
+}
+let FX = 0, FZ = 0, FR = 0;
+function frame(x, z, ry, fn) {
+  const px = FX, pz = FZ, pr = FR;
+  const c = Math.cos(pr), s = Math.sin(pr);
+  FX = px + x * c + z * s;
+  FZ = pz - x * s + z * c;
+  FR = pr + ry;
+  fn();
+  FX = px; FZ = pz; FR = pr;
+}
+function box(mat, x, y, z, sx, sy, sz, ry = 0) {
+  const c = Math.cos(FR), s = Math.sin(FR);
+  emit(G.box, mat, { x: FX + x * c + z * s, y, z: FZ - x * s + z * c, sx, sy, sz, ry: FR + ry });
+}
+function shape(geo, mat, x, y, z, sx, sy, sz, rot = {}) {
+  const c = Math.cos(FR), s = Math.sin(FR);
+  emit(geo, mat, {
+    x: FX + x * c + z * s, y, z: FZ - x * s + z * c,
+    sx, sy, sz, ry: FR + (rot.ry || 0), rx: rot.rx || 0, rz: rot.rz || 0,
+  });
+}
+function slab(mat, x0, x1, z0, z1, y0, y1) {
+  box(mat, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2,
+    Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0));
+}
+function roomLight(x, y, z, intensity, distance) {
+  const c = Math.cos(FR), s = Math.sin(FR);
+  const l = new THREE.PointLight(0xfff0d8, intensity, distance, 2);
+  l.position.set(FX + x * c + z * s, y, FZ - x * s + z * c);
+  world.add(l);
+}
+
+const F = 0;
+const HALL_H = 9.5;   // check-in hall, the grand volume
+const SEC_H = 4.0;    // security screening, deliberately low
+const CONC_H = 6.4;   // airside concourse
+const RETAIL_H = 3.4; // café / shop units under their own bulkhead
+const furnitureInteractions = [];
+function furnitureInteraction(type, halfWidth, halfDepth, anchorZ = 0, restY = F + 0.46, label) {
+  const c = Math.cos(FR), s = Math.sin(FR);
+  furnitureInteractions.push({
+    type,
+    x: FX + anchorZ * s, y: restY, z: FZ + anchorZ * c,
+    centerX: FX, centerZ: FZ, approachY: F + 0.02, yaw: FR,
+    halfWidth, halfDepth, occupied: false, label,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Ground. Zones follow the linear-terminal plan (curb → hall → security →
+// concourse → apron), each with its own floor finish so the rooms read apart:
+// terrazzo hall, tiled checkpoint, carpet airside, timber-paver retail units.
+// ---------------------------------------------------------------------------
+slab(M.asphalt, -80, 80, -72, -40, -0.12, 0.02);           // approach road
+slab(M.paint, -30, 30, -40.5, -40, 0.02, 0.1);             // curb stone
+slab(M.concrete, -30, 30, -40, -32, 0, 0.08);              // sidewalk
+slab(M.terrazzo, -24, 24, -32, -8, 0, 0.04);               // check-in hall
+slab(M.tile, -12, 12, -8, 2, 0, 0.04);                     // security room
+slab(M.carpet, -10, 10, 2, 16, 0, 0.05);                   // airside walkway
+slab(M.carpet, -24, 24, 16, 38, 0, 0.05);                  // boarding lounge
+slab(M.tile, -24, -10, 2, 16, 0, 0.05);                    // café floor
+slab(M.tile, 10, 24, 2, 16, 0, 0.05);                      // shop floor
+slab(M.concrete, -80, -24, -40, 38.2, -0.06, 0.0);         // landside aprons
+slab(M.concrete, 24, 80, -40, 38.2, -0.06, 0.0);
+slab(M.asphalt, -70, 70, 38.2, 210, -0.08, 0.0);           // apron + field
+slab(M.asphalt, 28, 54, 30, 210, -0.06, 0.03);             // runway
+slab(M.paint, 40.6, 41.4, 34, 200, 0.03, 0.045);           // centreline
+for (let z = 40; z < 200; z += 18) {
+  slab(M.paint, 29.2, 32.4, z, z + 2.2, 0.03, 0.045);
+  slab(M.paint, 49.6, 52.8, z, z + 2.2, 0.03, 0.045);
+}
+slab(M.paintYellow, 27.7, 28.3, 32, 208, 0.03, 0.05);
+slab(M.paintYellow, 53.7, 54.3, 32, 208, 0.03, 0.05);
+for (const gx of [-8, 8])                                   // gate lead-in lines
+  slab(M.paintYellow, gx - 0.18, gx + 0.18, 40, 62, 0.005, 0.02);
+slab(M.grass, -80, 26, 42, 210, -0.1, -0.02);
+slab(M.grass, 56, 90, 32, 210, -0.1, -0.02);
+
+// Drop-off canopy over the sidewalk, lit from underneath
+slab(M.steelDark, -20, 20, -40, -33.2, 5.3, 5.7);
+for (const x of [-18, -6, 6, 18])
+  shape(G.cylBase, M.steel, x, F + 0.08, -36.4, 0.24, 5.25, 0.24);
+for (let x = -16; x <= 16; x += 8)
+  box(M.lightBar, x, 5.26, -36.6, 5.2, 0.07, 0.45);
+roomLight(0, 4.6, -36.5, 1.8, 18);
+roomLight(-14, 4.6, -36.5, 1.2, 12);
+roomLight(14, 4.6, -36.5, 1.2, 12);
+
+// ---------------------------------------------------------------------------
+// Terminal shell — every zone fully partitioned, in plan order.
+//
+//   south facade (glass + sliding doors, z=-32)
+//   CHECK-IN HALL  x -24..24, z -32..-8, 9.5 m high
+//   north hall wall, one portal x -10..-4 → SECURITY  x -12..12, z -8..2
+//   security exits x 4..10 → CONCOURSE z 2..38 (café west, shop east, lounge)
+//   north curtain wall on the apron, z=38
+// ---------------------------------------------------------------------------
+
+// South facade: full-height glazing, mullions every 4 m, central sliding doors
+for (let x = -24; x <= 24; x += 4)
+  if (Math.abs(x) > 3.2) box(M.steel, x, HALL_H / 2, -32, 0.16, HALL_H, 0.2);
+slab(M.steel, -24, -3, -32.1, -31.9, 4.35, 4.6);           // transom
+slab(M.steel, 3, 24, -32.1, -31.9, 4.35, 4.6);
+slab(M.steel, -24, -3, -32.1, -31.9, F, 0.2);              // sill
+slab(M.steel, 3, 24, -32.1, -31.9, F, 0.2);
+slab(M.glass, -24, -3, -32.04, -31.96, 0.2, 9.3);
+slab(M.glass, 3, 24, -32.04, -31.96, 0.2, 9.3);
+slab(M.glass, -3, 3, -32.04, -31.96, 4.6, 9.3);            // above the doors
+slab(M.plaster, -24.2, 24.2, -32.16, -31.84, 9.3, HALL_H); // top band
+box(M.steel, -3, 2.3, -32, 0.26, 4.6, 0.3);                // door portal
+box(M.steel, 3, 2.3, -32, 0.26, 4.6, 0.3);
+box(M.steel, 0, 4.48, -32, 6.3, 0.28, 0.3);
+box(M.glass, -4.6, 2.12, -31.68, 2.9, 4.2, 0.06);          // parked door leaves
+box(M.glass, 4.6, 2.12, -31.68, 2.9, 4.2, 0.06);
+box(M.signDept, 0, 7.0, -32.3, 8.6, 1.3, 0.08);            // fascia, street side
+
+// Hall side walls, ceiling, columns
+slab(M.plaster, -24.2, -23.8, -32, -8, F, HALL_H);
+slab(M.plaster, 23.8, 24.2, -32, -8, F, HALL_H);
+slab(M.ceiling, -24.2, 24.2, -32, -8, HALL_H, HALL_H + 0.2);
+for (const zRow of [-20, -12])
+  for (let x = -18; x <= 18; x += 6)
+    box(M.lightBar, x, HALL_H - 0.12, zRow, 4.6, 0.09, 0.5);
+for (const [x, z] of [[-16, -20], [16, -20], [-16, -12], [16, -12]])
+  shape(G.cylBase, M.steel, x, F, z, 0.5, HALL_H, 0.5);
+box(M.poster, -23.7, 4.6, -20, 0.06, 3.4, 5.0);
+box(M.poster, 23.7, 4.6, -20, 0.06, 3.4, 5.0);
+// CHECK-IN sign hung over the islands
+box(M.signCheck, 0, 6.4, -20.5, 6.2, 1.1, 0.08);
+box(M.steelDark, -2.6, 8.2, -20.5, 0.05, 2.5, 0.05);
+box(M.steelDark, 2.6, 8.2, -20.5, 0.05, 2.5, 0.05);
+
+// Hall north wall: solid, one portal into security at x -10..-4
+slab(M.plaster, -24, -10, -8.2, -7.8, F, HALL_H);
+slab(M.plaster, -4, 24, -8.2, -7.8, F, HALL_H);
+slab(M.plaster, -10, -4, -8.2, -7.8, 3.3, HALL_H);
+box(M.signSec, -7, 3.95, -7.7, 5.2, 0.95, 0.08);
+// FIDS bank on the wall east of the portal
+box(M.steelDark, 9, 4.4, -7.58, 11.0, 3.4, 0.22);
+box(M.screen, 9, 4.4, -7.44, 10.2, 3.0, 0.05);
+
+// Security room: x -12..12, low ceiling; solid service blocks either side
+slab(M.plaster, -24, -12, -8, 2, F, SEC_H);
+slab(M.plaster, 12, 24, -8, 2, F, SEC_H);
+slab(M.plaster, -24, -12, -8, 2, SEC_H, CONC_H);           // shell above blocks
+slab(M.plaster, 12, 24, -8, 2, SEC_H, CONC_H);
+slab(M.ceiling, -12, 12, -8, 2, SEC_H, SEC_H + 0.18);
+box(M.lightBar, 0, SEC_H - 0.1, -6.4, 20, 0.08, 0.4);
+box(M.lightBar, 0, SEC_H - 0.1, -3.2, 20, 0.08, 0.4);
+box(M.lightBar, 0, SEC_H - 0.1, 0.4, 20, 0.08, 0.4);
+
+// Concourse south wall: exit from security offset east (x 4..10)
+slab(M.plaster, -24, 4, 1.8, 2.2, F, CONC_H);
+slab(M.plaster, 10, 24, 1.8, 2.2, F, CONC_H);
+slab(M.plaster, 4, 10, 1.8, 2.2, 3.3, CONC_H);
+box(M.signArrow, 7, 3.9, 2.34, 5.4, 0.95, 0.08);           // faces airside
+
+// Concourse shell
+slab(M.plaster, -24.2, -23.8, 2, 38, F, CONC_H);
+slab(M.plaster, 23.8, 24.2, 2, 38, F, CONC_H);
+slab(M.ceiling, -24.2, 24.2, 2, 38, CONC_H, CONC_H + 0.18);
+for (const zRow of [8, 20, 27, 33])
+  for (let x = -18; x <= 18; x += 9)
+    box(M.lightBar, x, CONC_H - 0.1, zRow, 6.4, 0.08, 0.4);
+// GATES sign at the mouth of the lounge
+box(M.signGates, 0, 4.5, 16.8, 5.6, 0.95, 0.08);
+box(M.steelDark, -2.4, 5.7, 16.8, 0.05, 1.5, 0.05);
+box(M.steelDark, 2.4, 5.7, 16.8, 0.05, 1.5, 0.05);
+
+// North curtain wall: mullions + glass looking at the apron
+slab(M.steel, -24.2, 24.2, 37.85, 38.05, F, 0.18);         // sill
+slab(M.steel, -24.2, 24.2, 37.85, 38.05, CONC_H - 0.18, CONC_H);
+for (let x = -24; x <= 24; x += 4)
+  box(M.steel, x, CONC_H / 2, 37.95, 0.12, CONC_H, 0.14);
+slab(M.glass, -24, 24, 37.88, 38.12, 0.18, CONC_H - 0.18);
+for (const gx of [-8, 8]) box(M.steelDark, gx, 1.3, 37.95, 1.7, 2.6, 0.3); // gate doors
+
+roomLight(0, 7.2, -20, 2.6, 30);
+roomLight(-14, 6.5, -13, 1.4, 18);
+roomLight(14, 6.5, -13, 1.4, 18);
+roomLight(-4, 3.4, -3, 2.2, 15);
+roomLight(5, 3.4, -1, 1.8, 14);
+roomLight(0, 4.8, 9, 1.7, 15);
+roomLight(-17, 2.8, 9, 1.5, 11);
+roomLight(17, 2.8, 9, 1.5, 11);
+roomLight(-10, 5.2, 27, 1.9, 18);
+roomLight(10, 5.2, 27, 1.9, 18);
+roomLight(0, 5.2, 34, 1.8, 16);
+
+// ---------------------------------------------------------------------------
+// Check-in / baggage drop — four islands in two banks, queue in front
+// ---------------------------------------------------------------------------
+function checkInIsland(x, z) {
+  prop(() => {
+    frame(x, z, 0, () => {
+      box(M.desk, 0, F + 0.55, 0, 7.2, 1.1, 1.15);
+      box(M.steelDark, 0, F + 1.35, -0.4, 7.2, 0.5, 0.12);
+      box(M.screen, 0, F + 1.55, -0.38, 2.4, 0.7, 0.04);
+      for (const sx of [-2.4, 0, 2.4]) {
+        box(M.steel, sx, F + 0.08, 0.85, 0.9, 0.12, 2.4);   // bag belt
+        box(M.steelDark, sx, F + 0.22, 0.85, 0.82, 0.06, 2.2);
+        box(M.bag, sx + 0.15, F + 0.38, 1.1, 0.42, 0.28, 0.55);
+        box(M.bag2, sx - 0.18, F + 0.32, 1.55, 0.32, 0.22, 0.42);
+      }
+    });
+  });
+}
+checkInIsland(-11, -24);
+checkInIsland(11, -24);
+checkInIsland(-11, -17);
+checkInIsland(11, -17);
+
+// Queue stanchions in front of each bank, tape between the posts
+prop(() => {
+  for (const bx of [-11, 11]) {
+    for (let i = 0; i < 4; i++) {
+      const px = bx - 3.3 + i * 2.2;
+      shape(G.cylBase, M.steel, px, F, -27.4, 0.06, 0.95, 0.06);
+      shape(G.cylBase, M.steel, px, F, -26.0, 0.06, 0.95, 0.06);
+      if (i) {
+        box(M.steelDark, px - 1.1, F + 0.9, -27.4, 2.2, 0.045, 0.045);
+        box(M.steelDark, px - 1.1, F + 0.9, -26.0, 2.2, 0.045, 0.045);
+      }
+    }
+  }
+});
+
+// Benches by the south glass + a rack of baggage trolleys by the doors
+function bench(x, z, ry) {
+  prop(() => {
+    frame(x, z, ry, () => {
+      furnitureInteraction('sit', 1.3, 0.3, 0, F + 0.48);
+      box(M.cafeWood, 0, F + 0.46, 0, 2.8, 0.09, 0.62);
+      box(M.steelDark, -1.2, F + 0.2, 0, 0.08, 0.4, 0.55);
+      box(M.steelDark, 1.2, F + 0.2, 0, 0.08, 0.4, 0.55);
+    });
+  });
+}
+bench(-15, -29.8, 0);
+bench(15, -29.8, 0);
+bench(-20, -10.5, Math.PI);   // under the FIDS side of the hall
+bench(20, -10.5, Math.PI);
+prop(() => {
+  for (let i = 0; i < 3; i++) {
+    frame(-6.8, -30.2 - i * 0.55, 0, () => {
+      box(M.steel, 0, F + 0.5, 0, 0.62, 1.0, 0.08);          // handle frame
+      box(M.steel, 0, F + 0.18, 0.35, 0.6, 0.06, 0.75);      // tray
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Security screening — queue, three lanes (roller bed, x-ray tunnel, WTMD),
+// recompose table by the exit. Flow runs south → north.
+// ---------------------------------------------------------------------------
+prop(() => {
+  // zig-zag queue between the entry portal and the lanes
+  for (let i = 0; i < 4; i++) {
+    const px = -10 + i * 2.2;
+    shape(G.cylBase, M.steel, px, F, -7.0, 0.06, 0.95, 0.06);
+    shape(G.cylBase, M.steel, px, F, -4.2, 0.06, 0.95, 0.06);
+    if (i) {
+      box(M.steelDark, px - 1.1, F + 0.9, -7.0, 2.2, 0.045, 0.045);
+      box(M.steelDark, px - 1.1, F + 0.9, -4.2, 2.2, 0.045, 0.045);
+    }
+  }
+  for (const lx of [-7.5, -2.5, 2.5]) {
+    box(M.steel, lx + 1.35, F + 0.42, -1.2, 0.72, 0.72, 3.4);      // belt base
+    box(M.steelDark, lx + 1.35, F + 0.8, -1.2, 0.86, 0.07, 3.6);   // rollers
+    box(M.paint, lx + 1.35, F + 1.28, -0.7, 1.06, 0.9, 1.35);      // x-ray tunnel
+    box(M.steelDark, lx + 1.35, F + 1.28, -0.68, 0.9, 0.62, 1.37); // tunnel mouth
+    box(M.bag3, lx + 1.35, F + 0.96, -2.4, 0.4, 0.24, 0.6);        // trays
+    box(M.bag2, lx + 1.35, F + 0.95, 0.5, 0.36, 0.22, 0.5);
+    box(M.paint, lx - 0.62, F + 1.05, -1.0, 0.14, 2.1, 0.5);       // WTMD arch
+    box(M.paint, lx + 0.62, F + 1.05, -1.0, 0.14, 2.1, 0.5);
+    box(M.steelDark, lx, F + 2.16, -1.0, 1.38, 0.12, 0.5);
+  }
+  box(M.steel, 8, F + 0.72, 0.2, 3.2, 0.08, 1.0);                  // recompose
+  box(M.steel, 8, F + 0.36, 0.2, 3.0, 0.64, 0.9);
+  box(M.bag, 7.2, F + 0.95, 0.2, 0.42, 0.3, 0.55);
+  box(M.bag3, 8.9, F + 0.92, 0.15, 0.38, 0.26, 0.5);
+});
+
+// ---------------------------------------------------------------------------
+// GATE CAFÉ — a real walled unit, x -24..-10 / z 2..16, storefront on the
+// walkway with its opening at z 6..12, its own bulkhead ceiling and lights.
+// ---------------------------------------------------------------------------
+slab(M.plasterWarm, -10.2, -9.8, 2, 6, F, RETAIL_H);
+slab(M.plasterWarm, -10.2, -9.8, 12, 16, F, RETAIL_H);
+slab(M.plasterWarm, -10.2, -9.8, 6, 12, 2.55, RETAIL_H);   // header over opening
+slab(M.plasterWarm, -24, -10, 15.8, 16.2, F, RETAIL_H);    // north wall
+slab(M.ceiling, -24, -10, 2, 16, RETAIL_H, RETAIL_H + 0.14);
+for (const lz of [5.5, 12.5])
+  box(M.lightBar, -17, RETAIL_H - 0.08, lz, 8, 0.07, 0.35);
+box(M.signCafe, -9.66, 3.0, 9, 0.08, 0.8, 5.0);            // fascia over opening
+slab(M.glass, -10.02, -9.98, 2.4, 5.7, 0.25, 2.4);         // storefront glazing
+slab(M.glass, -10.02, -9.98, 12.3, 15.6, 0.25, 2.4);
+
+function cafeChair(x, z, ry) {
+  prop(() => {
+    frame(x, z, ry, () => {
+      furnitureInteraction('sit', 0.32, 0.32, 0, F + 0.48);
+      box(M.cafeWood, 0, F + 0.46, 0, 0.5, 0.08, 0.5);
+      box(M.cafeWood, 0, F + 0.78, -0.18, 0.48, 0.56, 0.07);
+      for (const [dx, dz] of [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]])
+        box(M.cafeWood, dx, F + 0.23, dz, 0.055, 0.46, 0.055);
+    });
+  });
+}
+prop(() => {
+  box(M.cafeWood, -21.3, F + 0.6, 9, 1.3, 1.2, 7.6);       // service counter
+  box(M.cafeWood, -23.5, F + 1.0, 9, 0.6, 2.0, 7.6);       // back bar
+  box(M.poster, -23.15, 2.5, 9, 0.06, 1.1, 4.2);           // menu board
+  box(M.steel, -21.3, F + 1.45, 6.8, 0.9, 0.5, 1.2);       // espresso machine
+  box(M.glass, -21.3, F + 1.5, 11.2, 0.8, 0.6, 1.4);       // pastry case
+  box(M.fabricWarm, -21.3, F + 1.28, 11.2, 0.7, 0.14, 1.3);
+  for (const pz of [5, 9, 13]) {                            // pendants over the bar
+    box(M.steelDark, -20.4, 2.9, pz, 0.04, 0.9, 0.04);
+    shape(G.sphere, M.lightBar, -20.4, 2.4, pz, 0.3, 0.24, 0.3);
+  }
+});
+function cafeTable(x, z) {
+  prop(() => {
+    shape(G.cyl, M.cafeWood, x, F + 0.74, z, 1.0, 0.06, 1.0);
+    shape(G.cyl, M.steelDark, x, F + 0.37, z, 0.08, 0.74, 0.08);
+    shape(G.cyl, M.steelDark, x, F + 0.03, z, 0.5, 0.06, 0.5);
+  });
+  cafeChair(x - 0.85, z, Math.PI / 2);
+  cafeChair(x + 0.85, z, -Math.PI / 2);
+}
+cafeTable(-17.6, 4.8);
+cafeTable(-13.6, 5.2);
+cafeTable(-17.6, 9);
+cafeTable(-13.6, 9.4);
+cafeTable(-17.6, 13.2);
+cafeTable(-13.6, 12.8);
+
+// ---------------------------------------------------------------------------
+// SOUVENIR SHOP — mirrored unit, x 10..24 / z 2..16, showcase windows
+// flanking the door, shelving on the walls and two central gondolas.
+// ---------------------------------------------------------------------------
+slab(M.plaster, 9.8, 10.2, 2, 6, F, RETAIL_H);
+slab(M.plaster, 9.8, 10.2, 12, 16, F, RETAIL_H);
+slab(M.plaster, 9.8, 10.2, 6, 12, 2.55, RETAIL_H);
+slab(M.plaster, 10, 24, 15.8, 16.2, F, RETAIL_H);
+slab(M.ceiling, 10, 24, 2, 16, RETAIL_H, RETAIL_H + 0.14);
+for (const lz of [5.5, 12.5])
+  box(M.lightBar, 17, RETAIL_H - 0.08, lz, 8, 0.07, 0.35);
+box(M.signShop, 9.66, 3.0, 9, 0.08, 0.8, 5.0);
+// showcase windows flanking the door: glass over a lit display shelf
+for (const wz of [4, 14]) {
+  box(M.paint, 10.3, F + 0.45, wz, 0.3, 0.9, 3.2);
+  box(M.glass, 10.32, F + 1.7, wz, 0.1, 1.6, 3.0);
+  box(M.fabricWarm, 10.28, F + 1.05, wz - 0.8, 0.22, 0.3, 0.5);
+  box(M.bag3, 10.28, F + 1.02, wz + 0.6, 0.24, 0.26, 0.45);
+}
+prop(() => {
+  box(M.desk, 13.4, F + 0.52, 3.6, 2.8, 1.04, 1.0);        // till by the door
+  box(M.screen, 13.9, F + 1.25, 3.6, 0.5, 0.35, 0.04);
+  // white wall shelving with colourful stock
+  box(M.paint, 17, F + 1.1, 15.4, 12.0, 2.2, 0.4);
+  box(M.paint, 23.5, F + 1.1, 9, 0.4, 2.2, 11.0);
+  for (let i = 0; i < 6; i++) {
+    const sx = 12 + i * 2;
+    box([M.bag2, M.bag3, M.fabricWarm][i % 3], sx, F + 0.7 + (i % 2) * 0.7, 15.05, 0.7, 0.45, 0.32);
+    box([M.fabricWarm, M.bag2, M.bag3][i % 3], 23.15, F + 0.7 + (i % 2) * 0.7, 4.5 + i * 1.7, 0.34, 0.45, 0.7);
+  }
+  for (const gx of [14.5, 18.5]) {                          // timber gondolas
+    box(M.desk, gx, F + 0.7, 9, 1.2, 1.4, 6.2);
+    box(M.fabricWarm, gx, F + 1.52, 7.2, 0.9, 0.24, 1.2);
+    box(M.bag3, gx, F + 1.5, 9.4, 0.85, 0.2, 1.0);
+    box(M.paintYellow, gx, F + 1.52, 11.4, 0.9, 0.24, 1.1);
+  }
+  box(M.poster, 10.4, 1.6, 7.1, 0.04, 1.5, 1.4);           // poster by the door
+});
+
+// Walkway greenery + bins between the two units
+function plant(x, z) {
+  prop(() => {
+    shape(G.cyl, M.steelDark, x, F + 0.3, z, 0.62, 0.6, 0.62);
+    shape(G.sphere, M.grass, x, F + 1.1, z, 1.0, 1.0, 1.0);
+  });
+}
+plant(-9, 3.2);
+plant(9, 17);
+plant(-9, 17);
+plant(-14, 18.4);
+plant(14, 18.4);
+plant(-21, 18.4);
+plant(21, 18.4);
+prop(() => {
+  for (const [bx, bz] of [[9, 3.2], [-6, 18.6], [6, 18.6], [22.5, 20]])
+    shape(G.cyl, M.steelDark, bx, F + 0.35, bz, 0.42, 0.7, 0.42);
+});
+
+// ---------------------------------------------------------------------------
+// BOARDING LOUNGE — back-to-back seat banks facing the glass, gate desks,
+// FIDS, restrooms and vending along the walls.
+// ---------------------------------------------------------------------------
+function loungeChair(x, z, ry) {
+  prop(() => {
+    frame(x, z, ry, () => {
+      furnitureInteraction('sit', 0.32, 0.34, 0.04, F + 0.44);
+      box(M.fabric, 0, F + 0.22, 0, 0.62, 0.16, 0.7);
+      box(M.fabric, 0, F + 0.42, 0, 0.58, 0.12, 0.64);
+      box(M.fabric, 0, F + 0.62, -0.26, 0.62, 0.48, 0.16);
+      box(M.steelDark, -0.28, F + 0.18, 0, 0.05, 0.36, 0.62);
+      box(M.steelDark, 0.28, F + 0.18, 0, 0.05, 0.36, 0.62);
+    });
+  });
+}
+for (const [rowZ, ry] of [[24.7, Math.PI], [25.6, 0], [29.2, Math.PI], [30.1, 0]]) {
+  for (let i = 0; i < 7; i++) {
+    loungeChair(-17.3 + i * 1.6, rowZ, ry);   // west bank
+    loungeChair(7.7 + i * 1.6, rowZ, ry);     // east bank
+  }
+}
+for (const [rowZ, ry] of [[29.2, Math.PI], [30.1, 0]]) {
+  for (let i = 0; i < 7; i++) loungeChair(-4.8 + i * 1.6, rowZ, ry);  // centre bank
+}
+// left-behind cabin bags near the seats
+prop(() => {
+  box(M.bag, -12.4, F + 0.3, 26.6, 0.42, 0.6, 0.28);
+  box(M.bag3, 10.6, F + 0.28, 24.0, 0.4, 0.55, 0.26);
+  box(M.bag2, 16.2, F + 0.26, 30.9, 0.38, 0.5, 0.26);
+});
+
+// Gate desks with their gate signs
+prop(() => {
+  const gates = [[-14, M.signGateA], [0, M.signGateB], [14, M.signGateC]];
+  for (const [x, sign] of gates) {
+    box(M.desk, x, F + 0.55, 36.2, 3.4, 1.1, 0.9);
+    box(M.steelDark, x, F + 1.4, 36.55, 3.4, 0.55, 0.1);
+    box(sign, x, 4.4, 35.6, 4.0, 0.8, 0.08);
+    box(M.steelDark, x - 1.7, 5.4, 35.6, 0.05, 1.2, 0.05);
+    box(M.steelDark, x + 1.7, 5.4, 35.6, 0.05, 1.2, 0.05);
+  }
+});
+// Lounge FIDS on the east wall
+box(M.steelDark, 23.62, 3.1, 26, 0.2, 2.5, 7.6);
+box(M.screen, 23.48, 3.1, 26, 0.06, 2.3, 7.2);
+// Restrooms on the west wall
+box(M.signWC, -23.6, 3.0, 21, 0.08, 0.7, 2.6);
+box(M.steelDark, -23.72, 1.05, 20.2, 0.12, 2.1, 0.9);
+box(M.steelDark, -23.72, 1.05, 21.8, 0.12, 2.1, 0.9);
+// Vending machines by the shop's back wall
+prop(() => {
+  for (const vz of [18.6, 20.2]) {
+    box(M.steelDark, 23.35, F + 0.95, vz, 0.8, 1.9, 1.1);
+    box(M.glass, 22.92, F + 1.05, vz, 0.06, 1.3, 0.9);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Apron furniture: two jetways onto the parked planes, ground service
+// ---------------------------------------------------------------------------
+prop(() => {
+  for (const gx of [-8, 8]) {
+    box(M.steel, gx, 3.4, 42.6, 2.2, 2.3, 8.4);      // jetway tube
+    box(M.steelDark, gx, 1.6, 46.2, 0.35, 3.2, 0.35);
+    box(M.steelDark, gx, 1.6, 39.8, 0.35, 3.2, 0.35);
+    box(M.steel, gx, 3.5, 38.5, 2.6, 2.4, 1.2);      // hood against the glass
+    box(M.steel, gx, 3.45, 47.4, 2.6, 2.5, 1.5);     // cab at the aircraft door
+  }
+  // baggage cart train + loader near gate A2
+  frame(14.5, 50, 0.4, () => {
+    box(M.steelDark, 0, 0.55, 0, 1.1, 0.5, 2.2);
+    box(M.bag, 0, 1.0, -0.4, 0.8, 0.4, 0.8);
+    box(M.bag2, 0, 1.0, 0.6, 0.8, 0.4, 0.8);
+    box(M.steelDark, 0, 0.55, 3.0, 1.1, 0.5, 2.2);
+    box(M.bag3, 0, 1.0, 3.0, 0.8, 0.4, 0.9);
+  });
+  frame(-14.5, 48, -0.3, () => {                      // belt loader
+    box(M.paintYellow, 0, 0.6, 0, 1.2, 0.6, 3.4);
+    box(M.steelDark, 0, 1.1, 1.2, 0.9, 0.35, 2.6);
+  });
+});
+
+flushKits();
+
+// ---------------------------------------------------------------------------
+// Airliners — A320-class proportions, built so they read at the glass rather
+// than as a mismatched download. White body, coloured tail, CFM-style pods.
+// ---------------------------------------------------------------------------
+function buildAirliner(livery = 0xc8102e) {
+  const root = new THREE.Group();
+  const white = new THREE.MeshStandardMaterial({ color: 0xf4f6f8, roughness: 0.22, metalness: 0.42 });
+  const paint = new THREE.MeshStandardMaterial({ color: livery, roughness: 0.28, metalness: 0.3 });
+  const stripe = new THREE.MeshStandardMaterial({ color: livery, roughness: 0.3, metalness: 0.28 });
+  const grey = new THREE.MeshStandardMaterial({ color: 0xa8b0b8, roughness: 0.38, metalness: 0.55 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1a2026, roughness: 0.3, metalness: 0.58 });
+  const intake = new THREE.MeshStandardMaterial({ color: 0x0c1014, roughness: 0.55, metalness: 0.2 });
+  const win = new THREE.MeshStandardMaterial({
+    color: 0x152030, roughness: 0.08, metalness: 0.65, emissive: 0x0c1828, emissiveIntensity: 0.4,
+  });
+  const add = (geo, mat, pos, scale, rot) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(...pos);
+    if (scale) m.scale.set(...scale);
+    if (rot) m.rotation.set(...rot);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    root.add(m);
+  };
+  // A320-class: ~37 m long, ~4 m fuselage, 34 m span — scaled to the apron.
+  const fuse = new THREE.CylinderGeometry(2.0, 2.0, 28.5, 24);
+  fuse.rotateX(Math.PI / 2);
+  add(fuse, white, [0, 0, 0]);
+  const nose = new THREE.SphereGeometry(2.0, 18, 14, 0, Math.PI * 2, 0, Math.PI / 2);
+  nose.rotateX(-Math.PI / 2);
+  add(nose, white, [0, 0, 14.25]);
+  const tailc = new THREE.ConeGeometry(2.0, 6.4, 18);
+  tailc.rotateX(Math.PI / 2);
+  add(tailc, white, [0, 0, -17.2]);
+  add(new THREE.BoxGeometry(12.4, 0.55, 7.2), white, [0, -0.85, -0.6]); // wing-body fairing
+  // Swept wings + sharklets
+  const wing = new THREE.BoxGeometry(1, 1, 1);
+  add(wing, white, [9.2, -0.35, -1.8], [16.4, 0.22, 4.6], [0, 0.22, 0.04]);
+  add(wing, white, [-9.2, -0.35, -1.8], [16.4, 0.22, 4.6], [0, -0.22, -0.04]);
+  add(new THREE.BoxGeometry(0.18, 1.65, 1.15), white, [17.2, 0.55, -4.4]);
+  add(new THREE.BoxGeometry(0.18, 1.65, 1.15), white, [-17.2, 0.55, -4.4]);
+  add(new THREE.BoxGeometry(7.4, 0.18, 2.6), white, [0, 0.15, -17.6]); // HT
+  add(new THREE.BoxGeometry(0.32, 6.2, 3.6), paint, [0, 3.85, -16.6]);
+  add(new THREE.BoxGeometry(0.14, 0.42, 24), stripe, [0, -0.15, 0.6]);
+  add(new THREE.BoxGeometry(0.12, 0.5, 22), win, [1.98, 0.38, 0.5]);
+  add(new THREE.BoxGeometry(0.12, 0.5, 22), win, [-1.98, 0.38, 0.5]);
+  add(new THREE.BoxGeometry(1.6, 0.7, 1.35), win, [0, 0.55, 15.1]); // cockpit
+  for (const sx of [-1, 1]) {
+    const eng = new THREE.CylinderGeometry(0.82, 0.9, 3.8, 16);
+    eng.rotateX(Math.PI / 2);
+    add(eng, grey, [sx * 6.2, -1.55, 0.35]);
+    add(new THREE.CylinderGeometry(0.62, 0.62, 0.12, 16).rotateX(Math.PI / 2), intake, [sx * 6.2, -1.55, 2.22]);
+    const lip = new THREE.TorusGeometry(0.84, 0.09, 8, 20);
+    add(lip, dark, [sx * 6.2, -1.55, 2.25]);
+    add(new THREE.BoxGeometry(0.38, 1.25, 0.9), grey, [sx * 6.2, -0.78, 0.2]);
+  }
+  add(new THREE.BoxGeometry(0.14, 1.7, 0.14), dark, [0, -2.55, 9.2]);
+  add(new THREE.BoxGeometry(2.4, 0.14, 0.55), dark, [0, -3.4, 9.2]);
+  add(new THREE.BoxGeometry(0.14, 1.45, 0.14), dark, [-1.15, -2.4, -5.4]);
+  add(new THREE.BoxGeometry(0.14, 1.45, 0.14), dark, [1.15, -2.4, -5.4]);
+  add(new THREE.BoxGeometry(2.8, 0.14, 0.55), dark, [0, -3.15, -5.4]);
+  root.userData.length = 38;
+  return root;
+}
+
+const planes = [];
+function placePlane(livery, x, y, z, yaw) {
+  const p = buildAirliner(livery);
+  p.position.set(x, y, z);
+  p.rotation.y = yaw;
+  airside.add(p);
+  planes.push(p);
+  return p;
+}
+const parked = placePlane(0x1a4a8a, 8, 3.55, 56, Math.PI);   // at gate A2
+placePlane(0x0a6a4a, -8, 3.55, 56, Math.PI);                 // at gate A1
+placePlane(0x8a2030, -30, 3.55, 88, Math.PI * 0.78);         // taxiing out
+const takingOff = placePlane(0xc8102e, 41, 3.55, 40, 0);
+const landing = placePlane(0x0a6a4a, 41, 28, 190, Math.PI);
+
+function tickPlanes(t) {
+  // Takeoff: roll, rotate, climb, loop.
+  const u = (t * 0.055) % 1;
+  if (u < 0.38) {
+    takingOff.position.set(41, 3.55, 30 + u / 0.38 * 90);
+    takingOff.rotation.set(0, 0, 0);
+  } else {
+    const c = (u - 0.38) / 0.62;
+    takingOff.position.set(41, 3.55 + c * 55, 120 + c * 90);
+    takingOff.rotation.set(-0.18 - c * 0.08, 0, 0);
+  }
+  // Landing: descend, flare, roll out, reset.
+  const v = (t * 0.042 + 0.35) % 1;
+  if (v < 0.55) {
+    const c = v / 0.55;
+    landing.position.set(41, 38 - c * 34.45, 210 - c * 140);
+    landing.rotation.set(0.12 * (1 - c), Math.PI, 0);
+  } else {
+    const c = (v - 0.55) / 0.45;
+    landing.position.set(41, 3.55, 70 - c * 40);
+    landing.rotation.set(0, Math.PI, 0);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Character materials (California girl, same as the villa)
+// ---------------------------------------------------------------------------
+const CHAR_MATS = await fetch('./chars/data/materials.json').then(r => r.json());
+const charTexCache = {};
+const charTexFile = file => file.replace(/\.(tga|psd|tif|png)$/i, '.webp');
+function charTexture(file, srgb = true) {
+  const key = charTexFile(file) + (srgb ? '' : '#lin');
+  if (!charTexCache[key]) {
+    const t = new THREE.TextureLoader().load('./chars/textures/' + encodeURIComponent(charTexFile(file)));
+    t.flipY = false;
+    t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = maxAniso;
+    charTexCache[key] = t;
+  }
+  return charTexCache[key];
+}
+const charImgCache = {};
+function charImage(file) {
+  const key = charTexFile(file);
+  if (!charImgCache[key]) {
+    charImgCache[key] = new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = './chars/textures/' + encodeURIComponent(key);
+    });
+  }
+  return charImgCache[key];
+}
+function girlMatFor(name) {
+  const rec = CHAR_MATS[name];
+  if (!rec) return new THREE.MeshStandardMaterial({ color: 0xff00ff });
+  const m = new THREE.MeshStandardMaterial();
+  m.color.setRGB(rec.color[0], rec.color[1], rec.color[2]);
+  if (rec.tex) m.map = charTexture(rec.tex, true);
+  if (rec.normalTex) {
+    m.normalMap = charTexture(rec.normalTex, false);
+    m.normalScale.setScalar(rec.bumpScale ?? 1);
+  }
+  if (rec.aoTex) m.aoMap = charTexture(rec.aoTex, false);
+  m.metalness = Math.min(rec.metallic ?? 0, 0.08);
+  m.roughness = THREE.MathUtils.clamp(1 - (rec.smoothness ?? 0.25), 0.55, 1);
+  const n = name.toLowerCase();
+  if (n.includes('tshirt')) { m.map = null; m.color.set('#fdfdf7'); }
+  else if (n.includes('pants')) { m.map = null; m.color.set('#ffd43b'); }
+  else if (n.includes('hat')) { m.map = null; m.color.set('#fff4b0'); }
+  else if (n.includes('shoes')) { m.map = null; m.color.set('#fffef8'); }
+  else if (n.includes('backpack')) { m.map = null; m.color.set('#ffe27a'); }
+  m.needsUpdate = true;
+  return m;
+}
+
+// ---------------------------------------------------------------------------
+// Travel car at the curb
+// ---------------------------------------------------------------------------
+const AIR_TRAVEL_CAR = Object.freeze({
+  type: 'suv', x: -10, z: -44.5, yaw: Math.PI / 2, ground: 0.12,
+});
+const airTravelCar = buildCar(AIR_TRAVEL_CAR.type, 0xb8bec6, { metallic: false });
+airTravelCar.position.set(AIR_TRAVEL_CAR.x, AIR_TRAVEL_CAR.ground, AIR_TRAVEL_CAR.z);
+airTravelCar.rotation.y = AIR_TRAVEL_CAR.yaw;
+airTravelCar.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+world.add(airTravelCar);
+const airTravelBounds = carBounds(AIR_TRAVEL_CAR.type);
+const airTravelInteraction = {
+  type: 'travel',
+  label: 'Voyager à la villa L.A.',
+  x: AIR_TRAVEL_CAR.x, y: AIR_TRAVEL_CAR.ground, z: AIR_TRAVEL_CAR.z,
+  centerX: AIR_TRAVEL_CAR.x, centerZ: AIR_TRAVEL_CAR.z,
+  approachY: AIR_TRAVEL_CAR.ground + 0.5,
+  yaw: AIR_TRAVEL_CAR.yaw,
+  halfWidth: airTravelBounds.length / 2,
+  halfDepth: airTravelBounds.width / 2,
+  triggerDistance: 1.25,
+  occupied: false,
+};
+
+// ---------------------------------------------------------------------------
+// Collision / controller
+// ---------------------------------------------------------------------------
+const bw = buildCityBoxes(world);
+let player = null;
+function groundFn(x, z, yFrom, feetY) {
+  if (z > 38.2) return 0.0;    // apron
+  if (z > 2) return 0.05;      // concourse (carpet / pavers)
+  if (z > -32) return 0.04;    // hall + security
+  if (z > -40) return 0.08;    // sidewalk
+  return 0.02;                 // road
+}
+const rays = { ray: new THREE.Raycaster(), tmp: new THREE.Vector3() };
+function castFn(origin, dir, far) {
+  rays.ray.set(origin, dir);
+  rays.ray.far = far;
+  const hit = rays.ray.intersectObjects(world.children, true)[0];
+  if (!hit) return null;
+  return { point: hit.point, normal: hit.face?.normal ?? new THREE.Vector3(0, 1, 0), distance: hit.distance };
+}
+const ctrl = new Controller(bw, groundFn, castFn, {
+  onReset: () => ctrl.rescueTo(spawnPoint),
+  onLand: impact => { if (player) player.onLand(impact); },
+});
+
+const params = new URLSearchParams(location.search);
+const arrivedFromLA = params.get('arrival') === 'la';
+const spawnPoint = arrivedFromLA
+  ? new THREE.Vector3(AIR_TRAVEL_CAR.x + 1.8, 1.4, AIR_TRAVEL_CAR.z + 0.6)
+  : new THREE.Vector3(0, 1.4, -35.5);
+ctrl.rescueTo(spawnPoint);
+
+const rig = new CameraRig(camera, bw);
+const input = new Input(renderer.domElement);
+function requestGamePointerLock() {
+  try { renderer.domElement.requestPointerLock?.()?.catch?.(() => {}); } catch (_) {}
+}
+input.yaw = Math.PI;
+
+player = new Player(scene);
+await player.load('girl', girlMatFor);
+player.addWardrobePart('hairCrown', harmoniseHair(player, {
+  scalp: await charImage(CHAR_MATS.MAT_SurvGirl_Head.tex),
+  strands: await charImage(CHAR_MATS.MAT_SurvGirl_Hair.tex),
+  strandsAO: await charImage(CHAR_MATS.MAT_SurvGirl_Hair.aoTex),
+}));
+
+// ---------------------------------------------------------------------------
+// Travelers — guest rigs only
+// ---------------------------------------------------------------------------
+const rngCrowd = (() => {
+  let s = 7;
+  return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+})();
+const walkers = [];
+const statics = [];
+
+function pathLen(pts) {
+  let n = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    n += Math.hypot(b[0] - a[0], b[1] - a[1]);
+  }
+  return n;
+}
+function atPath(pts, d) {
+  const closed = pts.closed !== false;
+  const last = closed ? pts.length : pts.length - 1;
+  let left = d;
+  for (let i = 0; i < last; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const seg = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1e-4;
+    if (left <= seg) {
+      const t = left / seg;
+      return {
+        x: a[0] + (b[0] - a[0]) * t,
+        z: a[1] + (b[1] - a[1]) * t,
+        yaw: Math.atan2(b[0] - a[0], b[1] - a[1]),
+      };
+    }
+    left -= seg;
+  }
+  const a = pts[pts.length - 2], b = pts[pts.length - 1];
+  return { x: b[0], z: b[1], yaw: Math.atan2(b[0] - a[0], b[1] - a[1]) };
+}
+
+// Loops sized to the new plan: nothing crosses a wall, everything keeps clear
+// of the queue posts, columns, seats and counters.
+const CURB_PATH = [[-14, -37.6], [14, -37.6], [14, -34.4], [-14, -34.4]];
+const HALL_LOOP = [[-18, -28.6], [18, -28.6], [18, -11], [-18, -11]];
+const HALL_AISLE = [[-1.4, -29], [1.4, -29], [1.4, -10], [-1.4, -10]];
+const SEC_QUEUE = [[-9.5, -6.3], [-1.5, -6.3], [-1.5, -4.9], [-9.5, -4.9]];
+const WALKWAY = [[-7, 4.5], [7, 4.5], [7, 18.5], [-7, 18.5]];
+const LOUNGE_LOOP = [[-15, 19.6], [15, 19.6], [15, 22.6], [-15, 22.6]];
+const GATE_PATH = [[-16, 33.2], [16, 33.2], [16, 34.4], [-16, 34.4]];
+
+{
+  const guests = [];
+  try {
+    guests.push(await loadGuestRig({
+      model: './glb/visitors/woman.glb?v=1',
+      walk: './glb/visitors/walk.glb?v=1',
+      idle: './glb/visitors/idle.glb?v=1',
+      height: 1.68,
+      recolor: 'atlas',
+    }));
+  } catch (e) { console.warn('[airport] woman rig', e); }
+  try {
+    guests.push(await loadGuestRig({
+      model: './glb/visitors/man.glb?v=1',
+      walk: './glb/visitors/walk_m.glb?v=1',
+      idle: './glb/visitors/idle_m.glb?v=1',
+      height: 1.8,
+      recolor: 'atlas-dark',
+    }));
+  } catch (e) { console.warn('[airport] man rig', e); }
+
+  const routes = [
+    [CURB_PATH, 2, 1], [CURB_PATH, 26, -1],
+    [HALL_LOOP, 0, 1], [HALL_LOOP, 30, -1], [HALL_LOOP, 58, 1],
+    [HALL_AISLE, 3, 1], [HALL_AISLE, 20, -1],
+    [SEC_QUEUE, 2, 1],
+    [WALKWAY, 4, 1], [WALKWAY, 20, -1], [WALKWAY, 36, 1],
+    [LOUNGE_LOOP, 5, 1], [LOUNGE_LOOP, 30, -1], [LOUNGE_LOOP, 50, 1],
+    [GATE_PATH, 2, 1], [GATE_PATH, 30, -1],
+  ];
+  routes.forEach(([path, at, dir], i) => {
+    if (!guests.length) return;
+    const g = guests[i % guests.length];
+    const v = makeVisitor(g.scene, g.walkClip, rngCrowd, { guest: g, idleClip: g.idleClip });
+    crowd.add(v.group);
+    v.mixer.update(0);
+    walkers.push({ ...v, path, s: at, dir, len: pathLen(path) });
+  });
+
+  // Placed people. `staff: true` puts them in the white uniform top so the
+  // check-in agents, screeners, barista, shopkeeper and gate agents read as
+  // staff at a glance.
+  const stands = [
+    // check-in agents, standing in the belt gaps behind each desk
+    { x: -12.2, z: -22.4, ry: Math.PI, staff: true },
+    { x: 12.2, z: -22.4, ry: Math.PI, staff: true },
+    { x: -9.8, z: -15.4, ry: Math.PI, staff: true },
+    { x: 9.8, z: -15.4, ry: Math.PI, staff: true },
+    // passengers queuing at the desks
+    { x: -11, z: -25.4, ry: 0 }, { x: -9.6, z: -25.9, ry: 0.3 },
+    { x: 11, z: -25.4, ry: 0 }, { x: 12.4, z: -25.9, ry: -0.2 },
+    { x: -11, z: -18.6, ry: 0 }, { x: 11, z: -18.6, ry: 0 },
+    // reading the departures board
+    { x: 7, z: -10.6, ry: 0 }, { x: 10.4, z: -11.0, ry: 0.2 },
+    // security officers
+    { x: 0, z: 1.2, ry: Math.PI, staff: true },
+    { x: 7.5, z: -6.0, ry: Math.PI, staff: true },
+    // café: barista behind the counter, customers at it
+    { x: -22.5, z: 9, ry: Math.PI / 2, staff: true },
+    { x: -20.2, z: 7.2, ry: -Math.PI / 2 }, { x: -20.2, z: 10.8, ry: -Math.PI / 2 },
+    // shop: clerk at the till, browsers in the aisles
+    { x: 13.4, z: 2.7, ry: 0, staff: true },
+    { x: 16.4, z: 8.6, ry: Math.PI / 2 }, { x: 20.7, z: 11.6, ry: -Math.PI / 2 },
+    // gate agents behind their desks
+    { x: -14, z: 37.1, ry: Math.PI, staff: true },
+    { x: 0, z: 37.1, ry: Math.PI, staff: true },
+    // watching the planes at the glass
+    { x: -4.5, z: 36.8, ry: 0 }, { x: 5.2, z: 36.7, ry: 0 }, { x: 10.6, z: 36.8, ry: 0.15 },
+    // at the curb
+    { x: 6, z: -34.6, ry: Math.PI }, { x: -13, z: -35.2, ry: 0.4 },
+  ];
+  stands.forEach(({ x, z, ry, staff }, i) => {
+    if (!guests.length) return;
+    const g = guests[i % guests.length];
+    const v = makeVisitor(g.scene, g.walkClip, rngCrowd, {
+      guest: g, idleClip: g.idleClip, still: true,
+      uniform: staff ? STAFF_UNIFORM : null,
+    });
+    v.group.position.set(x, F, z);
+    v.group.rotation.y = ry;
+    crowd.add(v.group);
+    statics.push(v);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Interaction
+// ---------------------------------------------------------------------------
+const forward = new THREE.Vector3();
+const clock = new THREE.Clock();
+let started = false, usedLock = false, paused = false;
+let activeFurnitureInteraction = null;
+let furnitureInteractionCooldown = 0;
+let promptedFurniture = null;
+let furnitureActionRequested = false;
+let travelInProgress = false;
+let releasedSpot = null;
+let choosingFurniturePrompt = false;
+const RELEASE_RADIUS = 1.1;
+const interactionExitKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyE'];
+const interactionInputHeld = () => interactionExitKeys.some(code => input.down(code));
+
+function distanceToFurniture(spot, position) {
+  const dx = position.x - spot.centerX;
+  const dz = position.z - spot.centerZ;
+  const c = Math.cos(spot.yaw), s = Math.sin(spot.yaw);
+  const localX = dx * c - dz * s;
+  const localZ = dx * s + dz * c;
+  return Math.hypot(
+    Math.max(0, Math.abs(localX) - spot.halfWidth),
+    Math.max(0, Math.abs(localZ) - spot.halfDepth));
+}
+function setFurniturePrompt(spot) {
+  if (promptedFurniture === spot) return;
+  promptedFurniture = spot;
+  furnitureActionRequested = false;
+  const show = Boolean(spot);
+  furniturePrompt.textContent = show ? (spot.label || "S'asseoir") : '';
+  furniturePrompt.classList.toggle('show', show);
+  furniturePrompt.setAttribute('aria-hidden', show ? 'false' : 'true');
+  choosingFurniturePrompt = show;
+  if (show) {
+    if (document.pointerLockElement === renderer.domElement) document.exitPointerLock?.();
+  } else if (started && !paused) {
+    requestGamePointerLock();
+  }
+}
+furniturePrompt.addEventListener('click', event => {
+  event.stopPropagation();
+  if (!promptedFurniture) return;
+  furnitureActionRequested = true;
+  choosingFurniturePrompt = false;
+  requestGamePointerLock();
+});
+renderer.domElement.addEventListener('click', () => {
+  if (started && !paused && !choosingFurniturePrompt
+    && document.pointerLockElement !== renderer.domElement) {
+    requestGamePointerLock();
+  }
+});
+
+function enterFurnitureInteraction(spot) {
+  setFurniturePrompt(null);
+  if (spot.occupied !== 'visitor') spot.occupied = 'player';
+  activeFurnitureInteraction = { ...spot, source: spot, returnPosition: ctrl.pos.clone(), readyToExit: false };
+  ctrl.pos.set(spot.x, spot.y, spot.z);
+  ctrl.prevY = spot.y;
+  ctrl.vel.set(0, 0, 0);
+  ctrl.mode = spot.type;
+  ctrl.webOn = false;
+}
+function leaveFurnitureInteraction() {
+  const interaction = activeFurnitureInteraction;
+  if (!interaction) return;
+  ctrl.pos.copy(interaction.returnPosition);
+  ctrl.prevY = ctrl.pos.y;
+  ctrl.vel.set(0, 0, 0);
+  ctrl.mode = 'ground';
+  releasedSpot = interaction.source;
+  if (interaction.source.occupied === 'player') interaction.source.occupied = false;
+  activeFurnitureInteraction = null;
+  furnitureInteractionCooldown = 0.4;
+}
+function updateFurnitureInteraction(dt) {
+  if (travelInProgress) return true;
+  if (furnitureInteractionCooldown > 0) furnitureInteractionCooldown -= dt;
+  if (activeFurnitureInteraction) {
+    const held = interactionInputHeld();
+    if (!held) activeFurnitureInteraction.readyToExit = true;
+    if (held && activeFurnitureInteraction.readyToExit) {
+      leaveFurnitureInteraction();
+      return false;
+    }
+    return true;
+  }
+  if (releasedSpot && distanceToFurniture(releasedSpot, ctrl.pos) > RELEASE_RADIUS) releasedSpot = null;
+  if (furnitureInteractionCooldown > 0 || ctrl.mode !== 'ground') {
+    setFurniturePrompt(null);
+    return false;
+  }
+  let nearest = null, nearestDistance = Infinity;
+  for (const spot of [airTravelInteraction, ...furnitureInteractions]) {
+    if (spot === releasedSpot || spot.occupied) continue;
+    if (Math.abs(ctrl.pos.y - spot.approachY) > (spot.type === 'travel' ? 1.25 : 0.75)) continue;
+    const distance = distanceToFurniture(spot, ctrl.pos);
+    if (distance < (spot.triggerDistance ?? 0.54) && distance < nearestDistance) {
+      nearest = spot;
+      nearestDistance = distance;
+    }
+  }
+  setFurniturePrompt(nearest);
+  if (nearest && (furnitureActionRequested || input.pressed('LMB'))) {
+    furnitureActionRequested = false;
+    if (nearest.type === 'travel') {
+      travelInProgress = true;
+      setFurniturePrompt(null);
+      location.href = 'index.html?map=la&arrival=airport';
+      return true;
+    }
+    enterFurnitureInteraction(nearest);
+  }
+  return activeFurnitureInteraction !== null;
+}
+
+function updateAvatar(dt) {
+  if (!player) return;
+  player.setOutfit({ hat: false, backpack: true, longSleeves: false });
+  player.update({
+    dt, mode: ctrl.mode, pos: ctrl.pos, vel: ctrl.vel,
+    webOn: ctrl.webOn, webHand: ctrl.webHand, anchor: ctrl.anchor,
+    ropeSlack: ctrl.webOn ? Math.max(0, ctrl.pos.distanceTo(ctrl.anchor) - ctrl.ropeLen) : 0,
+    posture: activeFurnitureInteraction?.type,
+    facingYaw: activeFurnitureInteraction?.yaw,
+    floorY: activeFurnitureInteraction?.approachY,
+  });
+}
+
+function tickCrowd(dt) {
+  for (const w of walkers) {
+    w.s += w.speed * w.dir * dt;
+    const len = w.len || 1;
+    if (w.s > len) w.s -= len;
+    if (w.s < 0) w.s += len;
+    const at = atPath(w.path, w.s);
+    w.group.position.set(at.x, F, at.z);
+    w.group.rotation.y = at.yaw + (w.dir < 0 ? Math.PI : 0);
+    w.mixer.update(dt);
+  }
+  for (const v of statics) v.mixer.update(dt);
+}
+
+function updateHud() {
+  hudMode.textContent = ctrl.mode;
+  hudSpeed.textContent = Math.round(ctrl.vel.length() * 3.6).toString();
+  hudHeight.textContent = ctrl.pos.y.toFixed(1);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.033, clock.getDelta());
+  const t = clock.elapsedTime;
+  if (started && !paused) {
+    input.updateLook(dt);
+    const cp = Math.cos(input.pitch);
+    forward.set(-Math.sin(input.yaw) * cp, Math.sin(input.pitch), -Math.cos(input.yaw) * cp).normalize();
+    const locked = updateFurnitureInteraction(dt);
+    if (!locked) {
+      ctrl.update(dt, input, input.yaw, forward);
+      updateFurnitureInteraction(0);
+    }
+    if (ctrl.pos.y < -60) ctrl.rescueTo(spawnPoint);
+  }
+  tickPlanes(t);
+  tickCrowd(dt);
+  updateAvatar(dt);
+  rig.update(dt, input, ctrl);
+  updateHud();
+  renderer.render(scene, camera);
+  input.endFrame();
+}
+animate();
+
+function resumePlay() {
+  overlay.style.display = 'none';
+  paused = false;
+  requestGamePointerLock();
+}
+function startAirport() {
+  if (started) { resumePlay(); return; }
+  setFurniturePrompt(null);
+  started = true;
+  resumePlay();
+}
+startBtn.addEventListener('click', startAirport);
+if (arrivedFromLA) startAirport();
+
+document.addEventListener('pointerlockchange', () => {
+  usedLock = usedLock || document.pointerLockElement !== null;
+  if (choosingFurniturePrompt && document.pointerLockElement === null) {
+    paused = false;
+    overlay.style.display = 'none';
+    return;
+  }
+  if (!usedLock) return;
+  paused = !input.locked;
+  if (paused) setFurniturePrompt(null);
+  overlay.style.display = paused ? 'flex' : 'none';
+});
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+window.__airport = {
+  THREE, scene, camera, renderer, world, crowd, ctrl, rig, input, player, spawnPoint,
+  furnitureInteractions, planes, walkers, statics,
+  get activeFurnitureInteraction() { return activeFurnitureInteraction; },
+};
+window.__villa = window.__airport;

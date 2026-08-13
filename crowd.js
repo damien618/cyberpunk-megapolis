@@ -139,19 +139,29 @@ function rootStride(clip) {
   return span;
 }
 
+function boneShort(name = '') {
+  return name.split(/[:|/]/).pop().replace(/^mixamorig/i, '');
+}
+
 function bindClipTo(clip, root) {
   const names = new Set();
-  root.traverse(o => { if (o.name) names.add(o.name); });
+  const byShort = new Map();
+  root.traverse(o => {
+    if (!o.name) return;
+    names.add(o.name);
+    byShort.set(boneShort(o.name), o.name);
+  });
   const out = clip.clone();
   out.tracks = out.tracks.map(t => {
     const dot = t.name.lastIndexOf('.');
     if (dot < 0) return t;
     const bone = t.name.slice(0, dot), prop = t.name.slice(dot + 1);
     if (names.has(bone)) return t;
-    const short = bone.split(/[:|/]/).pop();
-    if (!names.has(short)) return t;
+    const short = boneShort(bone);
+    const mapped = names.has(short) ? short : byShort.get(short);
+    if (!mapped) return t;
     const n = t.clone();
-    n.name = `${short}.${prop}`;
+    n.name = `${mapped}.${prop}`;
     return n;
   });
   return out;
@@ -221,18 +231,71 @@ function dressGuestAtlas(map, shirtHex) {
 }
 
 /**
+ * The masculine guest's atlas keeps the same layout but his polo is dark navy:
+ * the light-fabric pass above would read it as "ink" and flatten every fold to
+ * one tone. Dye it instead — keep each pixel's own luminance as the shading
+ * and remap the hue, so the folds and the seams survive the recolour.
+ */
+function dressGuestAtlasDark(map, shirtHex) {
+  const img = map?.image;
+  if (!img) return map;
+  const w = img.width || img.videoWidth, h = img.height || img.videoHeight;
+  if (!w || !h) return map;
+  const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, w, h);
+  const p = data.data;
+  const shirt = new THREE.Color(shirtHex);
+  const x1 = w >> 1, y0 = h >> 1;
+  let sum = 0, n = 0;
+  for (let y = y0; y < h; y++) {
+    for (let x = 0; x < x1; x++) {
+      const i = (y * w + x) * 4;
+      if (p[i + 3] < 16) continue;
+      sum += 0.3 * p[i] + 0.59 * p[i + 1] + 0.11 * p[i + 2];
+      n++;
+    }
+  }
+  const mean = Math.max(12, sum / Math.max(1, n));
+  for (let y = y0; y < h; y++) {
+    for (let x = 0; x < x1; x++) {
+      const i = (y * w + x) * 4;
+      if (p[i + 3] < 16) continue;
+      const lum = 0.3 * p[i] + 0.59 * p[i + 1] + 0.11 * p[i + 2];
+      const k = Math.min(1.45, 0.25 + 0.75 * (lum / mean));
+      p[i]     = Math.min(255, shirt.r * 255 * k);
+      p[i + 1] = Math.min(255, shirt.g * 255 * k);
+      p[i + 2] = Math.min(255, shirt.b * 255 * k);
+    }
+  }
+  ctx.putImageData(data, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.flipY = map.flipY;
+  t.wrapS = map.wrapS;
+  t.wrapT = map.wrapT;
+  t.anisotropy = map.anisotropy || 4;
+  t.needsUpdate = true;
+  return t;
+}
+
+/**
  * A visitor who is not the pack: her own mesh, her own walk, her own idle,
  * scaled to a standing height in metres. Clips are loaded separately because
  * that is how the animation library ships them — same pattern as retargeting
  * a Mixamo walk onto a mesh that already has the matching bone names.
  */
-export async function loadGuestRig({ model, walk, idle, height = 1.68 } = {}) {
+export async function loadGuestRig({
+  model, walk, idle, height = 1.68, recolor = 'atlas',
+  walkClipName, idleClipName,
+} = {}) {
   const loader = new GLTFLoader().setDRACOLoader(dracoLoader);
-  const [gltf, walkGltf, idleGltf] = await Promise.all([
-    loader.loadAsync(model),
-    loader.loadAsync(walk),
-    loader.loadAsync(idle),
-  ]);
+  const gltf = await loader.loadAsync(model);
+  const walkGltf = walk && walk !== model ? await loader.loadAsync(walk) : gltf;
+  const idleGltf = !idle || idle === model || idle === walk
+    ? (idle === walk && walkGltf !== gltf ? walkGltf : gltf)
+    : await loader.loadAsync(idle);
   const scene = gltf.scene;
   scene.traverse(o => {
     if (!o.isMesh && !o.isSkinnedMesh) return;
@@ -247,13 +310,20 @@ export async function loadGuestRig({ model, walk, idle, height = 1.68 } = {}) {
     o.receiveShadow = true;
     o.frustumCulled = false;
   });
-  const rawWalk = walkGltf.animations[0];
-  const rawIdle = idleGltf.animations[0];
+  const pick = (gltfSrc, name, fallback = 0) => {
+    if (name) {
+      const hit = gltfSrc.animations.find(c => c.name.toLowerCase() === String(name).toLowerCase());
+      if (hit) return hit;
+    }
+    return gltfSrc.animations[fallback];
+  };
+  const rawWalk = pick(walkGltf, walkClipName, 0);
+  const rawIdle = pick(idleGltf, idleClipName, 0);
   const stride = rootStride(rawWalk);
   const walkClip = bindClipTo(pinRootXZ(rawWalk), scene);
   const idleClip = bindClipTo(pinRootXZ(rawIdle), scene);
   const { height: measured } = skinnedExtents(scene);
-  return { scene, walkClip, idleClip, kind: 'guest', measured, fitHeight: height, stride };
+  return { scene, walkClip, idleClip, kind: 'guest', recolor, measured, fitHeight: height, stride };
 }
 
 // The two characters do not name their clothing the same way. The girl has a
@@ -469,9 +539,13 @@ export function makeVisitor(base, walkClip, rng,
       if (!m) return m;
       const c = m.clone();
       if (isGuest) {
-        // Keep the authored atlas — this face is the point — and only recolour
-        // the tank so clones of her are not a matching set.
-        if (c.map) c.map = dressGuestAtlas(c.map, chosen.tshirt);
+        // RPM guests ship as one atlas — light fabric gets the ink-lift pass,
+        // dark fabric gets the dye pass. Mixamo bodies (X Bot) are a single
+        // tintable mesh: dressing an atlas region on those dyes the whole
+        // person the shirt colour, which is how a clone army starts.
+        if (guest?.recolor === 'atlas-dark' && c.map) c.map = dressGuestAtlasDark(c.map, chosen.tshirt);
+        else if (guest?.recolor !== 'tint' && c.map) c.map = dressGuestAtlas(c.map, chosen.tshirt);
+        else c.color.lerp(new THREE.Color(chosen.tshirt), 0.42);
         c.metalness = Math.min(c.metalness ?? 0, 0.06);
         c.roughness = Math.max(c.roughness ?? 0.5, 0.6);
         c.envMapIntensity = 0.7;

@@ -12,6 +12,7 @@
     const WORLDS = {
       la: { engine: 'world', title: 'Cyberpunk Megapolis — Villa LA' },
       zoo: { engine: 'world', title: 'Cyberpunk Megapolis — A Trip to the Zoo' },
+      airport: { engine: 'world', title: 'Cyberpunk Megapolis — Heading to the Airport' },
     };
     const mode = new URLSearchParams(location.search).get('map');
     const world = WORLDS[mode];
@@ -41,6 +42,7 @@
     --dim: #8b93a8;
     --la-accent: #5fd7ff;
     --zoo-accent: #ffbe5c;
+    --airport-accent: #8ec8e0;
     --mono: 'Geist Mono', ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -129,22 +131,22 @@
     color: #707a92; text-transform: uppercase; text-shadow: 0 1px 8px rgba(0,0,0,.9); }
 
   /* ---------- menu (right corner: the standalone worlds, stacked) ---------- */
-  #menuColLA { position: absolute; right: clamp(40px, 7vw, 120px); top: 0; bottom: 0;
+  #menuColLA { position: absolute; right: clamp(28px, 5vw, 100px); top: 0; bottom: 0;
     display: flex; flex-direction: column; justify-content: center; align-items: flex-end;
-    gap: 18px; }
+    gap: 8px; }
   .la-panel { background: rgba(9,14,25,0.55); border: 1px solid rgba(125,165,255,0.3);
-    border-radius: 14px; padding: 26px 32px; backdrop-filter: blur(4px);
+    border-radius: 14px; padding: 12px 22px 14px; backdrop-filter: blur(4px);
     display: flex; flex-direction: column; align-items: flex-end; text-align: right;
-    min-width: 260px; max-width: 340px; }
-  .la-panel h2 { font-weight: 800; font-size: clamp(22px, 2.6vw, 32px);
+    min-width: 220px; max-width: 300px; }
+  .la-panel h2 { font-weight: 800; font-size: clamp(18px, 2.2vw, 28px);
     letter-spacing: -0.01em; line-height: 1.05; color: var(--ink);
     text-shadow: 0 2px 22px rgba(0,0,0,.85); }
   .la-panel .accent-la { color: var(--la-accent); text-shadow: 0 0 24px rgba(95,215,255,.45); }
-  #brandRuleLA { margin-top: 18px; width: 64px; height: 1px;
+  #brandRuleLA { margin-top: 10px; width: 64px; height: 1px;
     background: linear-gradient(270deg, var(--la-accent), transparent); }
-  .la-card { margin-top: 26px; display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
+  .la-card { margin-top: 12px; display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
   .la-card .m-name { color: var(--la-accent); text-shadow: 0 0 12px rgba(95,215,255,.4); }
-  #enterBtnLA { align-self: flex-end; margin-top: 22px; }
+  #enterBtnLA { align-self: flex-end; margin-top: 12px; }
 
   /* The zoo corner is the same panel in a warmer key — savanna amber instead of
      the villa's pool blue, so the two read as siblings rather than a repeat. */
@@ -152,13 +154,25 @@
   .zoo-panel .kicker { color: #e0b476; }
   .zoo-panel .accent-zoo { color: var(--zoo-accent); text-shadow: 0 0 24px rgba(255,190,92,.42); }
   .zoo-panel .m-name { color: var(--zoo-accent); text-shadow: 0 0 12px rgba(255,190,92,.4); }
-  #brandRuleZoo { margin-top: 18px; width: 64px; height: 1px;
+  #brandRuleZoo { margin-top: 10px; width: 64px; height: 1px;
     background: linear-gradient(270deg, var(--zoo-accent), transparent); }
-  #enterBtnZoo { align-self: flex-end; margin-top: 22px;
+  #enterBtnZoo { align-self: flex-end; margin-top: 12px;
     color: #2a1c05; background: linear-gradient(90deg, rgba(255,190,92,.34), rgba(255,190,92,.14));
     border-color: var(--zoo-accent); text-shadow: 0 0 8px rgba(255,190,92,.9);
     box-shadow: 0 0 26px rgba(255,190,92,.26); }
   #enterBtnZoo:hover { background: linear-gradient(90deg, rgba(255,190,92,.55), rgba(255,190,92,.3)); }
+
+  .airport-panel { border-color: rgba(142,200,224,0.38); }
+  .airport-panel .kicker { color: #a8d4e6; }
+  .airport-panel .accent-airport { color: var(--airport-accent); text-shadow: 0 0 24px rgba(142,200,224,.42); }
+  .airport-panel .m-name { color: var(--airport-accent); text-shadow: 0 0 12px rgba(142,200,224,.4); }
+  #brandRuleAirport { margin-top: 10px; width: 64px; height: 1px;
+    background: linear-gradient(270deg, var(--airport-accent), transparent); }
+  #enterBtnAirport { align-self: flex-end; margin-top: 12px;
+    color: #062028; background: linear-gradient(90deg, rgba(142,200,224,.38), rgba(142,200,224,.14));
+    border-color: var(--airport-accent); text-shadow: 0 0 8px rgba(142,200,224,.9);
+    box-shadow: 0 0 26px rgba(142,200,224,.26); }
+  #enterBtnAirport:hover { background: linear-gradient(90deg, rgba(142,200,224,.58), rgba(142,200,224,.32)); }
 
   /* ---------- pause ---------- */
   #pause { position: fixed; inset: 0; z-index: 19; display: flex;
@@ -312,8 +326,17 @@
   html[data-engine="world"] #errOv { display: none !important; }
 
   /* …and within the shared overlay, only the briefing for the map being run. */
+  html[data-mode="airport"] #overlay {
+    background: radial-gradient(circle at 65% 30%, rgba(142, 200, 224, 0.16), rgba(5, 8, 15, 0.95) 60%);
+  }
+  html[data-mode="airport"] #panel .tag { color: var(--airport-accent); }
+  html[data-mode="airport"] #startBtn {
+    border-color: rgba(142, 200, 224, 0.55);
+    background: linear-gradient(90deg, rgba(142, 200, 224, 0.38), rgba(160, 180, 210, 0.22));
+  }
   html:not([data-mode="la"]) .brief-la,
-  html:not([data-mode="zoo"]) .brief-zoo { display: none !important; }
+  html:not([data-mode="zoo"]) .brief-zoo,
+  html:not([data-mode="airport"]) .brief-airport { display: none !important; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -376,6 +399,16 @@
       </div>
       <button id="enterBtnZoo" class="enter-btn ready">Enter Game</button>
     </div>
+    <div class="la-panel airport-panel">
+      <div class="kicker">New Map</div>
+      <h2>HEADING TO<br><span class="accent-airport">THE AIRPORT</span></h2>
+      <div id="brandRuleAirport"></div>
+      <div class="la-card">
+        <span class="m-tag">Runner 01</span>
+        <span class="m-name">California Girl</span>
+      </div>
+      <button id="enterBtnAirport" class="enter-btn ready">Enter Game</button>
+    </div>
   </div>
 </div>
 <div id="pause">
@@ -421,7 +454,15 @@
       <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter, <b>Shift</b> sprint, <b>R</b> reset. Approchez-vous d'un banc ou d'une table de terrasse pour vous asseoir, puis <b>WASD</b> ou <b>Space</b> pour vous relever.</p>
       <p class="credit">Lion 3D — WildMesh 3D · CC BY</p>
     </div>
-    <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span></button>
+    <div class="brief-airport">
+      <span class="tag">Nouvelle map</span>
+      <h1>Heading to the airport</h1>
+      <p>Vous descendez devant le terminal: hall d'enregistrement et dépose-bagages, couloir de sécurité, puis la salle d'embarquement ouverte sur le tarmac. Café, boutique de souvenirs, et à travers la baie vitrée les avions qui atterrissent et décollent.</p>
+      <p>Vous démarrez sur le dépose-minute, face aux portes du hall.</p>
+      <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter, <b>Shift</b> sprint, <b>R</b> reset. Approchez-vous d'une chaise pour vous asseoir, puis <b>WASD</b> ou <b>Space</b> pour vous relever.</p>
+      <p class="credit">Voyageurs — Ready Player Me (animation library)</p>
+    </div>
+    <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span><span class="brief-airport">Entrer dans l'aéroport</span></button>
   </div>
 </div>
 <button id="furniturePrompt" type="button" aria-hidden="true"></button>
@@ -432,6 +473,7 @@
 <div id="travelPromptGroup" role="group" aria-label="Choisir une destination" aria-hidden="true">
   <button id="travelCyberpunkPrompt" class="lie-prompt" type="button">Voyager à Cyberpunk Megapolis</button>
   <button id="travelZooPrompt" class="lie-prompt" type="button">Voyager au zoo</button>
+  <button id="travelAirportPrompt" class="lie-prompt" type="button">Voyager à l'aéroport</button>
 </div>
 <div id="crosshair"></div>
 <div id="hud">Mode: <b id="mode">air</b> · Vitesse: <b id="speed">0</b> km/h · Hauteur: <b id="height">0</b> m</div>
@@ -456,6 +498,9 @@
   document.getElementById('enterBtnZoo').addEventListener('click', () => {
     location.href = 'index.html?map=zoo';
   });
+  document.getElementById('enterBtnAirport').addEventListener('click', () => {
+    location.href = 'index.html?map=airport';
+  });
   // Day/Night toggle — capture phase so window.__nightMode is set before the
   // module's bubble-phase handler fires.
   document.querySelectorAll('.tt-btn').forEach(btn => {
@@ -469,8 +514,9 @@
 </script>
 <script type="module">
   const ENGINES = {
-    la: './main-LA.js?v=202608131900',
-    zoo: './main-ZOO.js?v=202608122320',
+    la: './main-LA.js?v=202608131910',
+    zoo: './main-ZOO.js?v=202608131910',
+    airport: './main-AIRPORT.js?v=202608132130',
   };
   import(ENGINES[document.documentElement.dataset.mode] ?? './main.js?v=24');
 </script>
