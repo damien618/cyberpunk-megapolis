@@ -277,6 +277,14 @@ const M = {
   plasterWarm: new THREE.MeshStandardMaterial({
     map: stuccoA, normalMap: stuccoN, color: 0xf4e8d8, roughness: 0.8,
   }),
+  // Security checkpoint: cool metal walls + blue-grey tiles, so the room
+  // through the portal does not vanish into the hall's warm plaster.
+  secWall: new THREE.MeshStandardMaterial({
+    map: metalA, normalMap: metalN, color: 0xc8d8e4, roughness: 0.46, metalness: 0.28,
+  }),
+  secFloor: worldXZUv(new THREE.MeshStandardMaterial({
+    map: floorA, normalMap: floorN, roughness: 0.38, metalness: 0.08, color: 0x8aa4b8,
+  }), 1.15),
   steel: new THREE.MeshStandardMaterial({
     map: metalA, normalMap: metalN, color: 0xb0b6bc, roughness: 0.32, metalness: 0.72,
   }),
@@ -442,7 +450,7 @@ slab(M.asphalt, -80, 80, -72, -40, -0.12, 0.02);           // approach road
 slab(M.paint, -30, 30, -40.5, -40, 0.02, 0.1);             // curb stone
 slab(M.concrete, -30, 30, -40, -32, 0, 0.08);              // sidewalk
 slab(M.terrazzo, -24, 24, -32, -8, 0, 0.04);               // check-in hall
-slab(M.tile, -12, 12, -8, 2, 0, 0.04);                     // security room
+slab(M.secFloor, -12, 12, -8, 2, 0, 0.045);                // security room
 slab(M.carpet, -10, 10, 2, 16, 0, 0.05);                   // airside walkway
 slab(M.carpet, -24, 24, 16, 38, 0, 0.05);                  // boarding lounge
 slab(M.tile, -24, -10, 2, 16, 0, 0.05);                    // café floor
@@ -459,7 +467,7 @@ for (let z = 40; z < 200; z += 18) {
 slab(M.paintYellow, 27.7, 28.3, 32, 208, 0.03, 0.05);
 slab(M.paintYellow, 53.7, 54.3, 32, 208, 0.03, 0.05);
 for (const gx of [-8, 8])                                   // gate lead-in lines
-  slab(M.paintYellow, gx - 0.18, gx + 0.18, 40, 62, 0.005, 0.02);
+  slab(M.paintYellow, gx - 0.18, gx + 0.18, 40, 78, 0.005, 0.02);
 slab(M.grass, -80, 26, 42, 210, -0.1, -0.02);
 slab(M.grass, 56, 90, 32, 210, -0.1, -0.02);
 
@@ -521,6 +529,11 @@ box(M.steelDark, 2.6, 8.2, -20.5, 0.05, 2.5, 0.05);
 slab(M.plaster, -24, -10, -8.2, -7.8, F, HALL_H);
 slab(M.plaster, -4, 24, -8.2, -7.8, F, HALL_H);
 slab(M.plaster, -10, -4, -8.2, -7.8, 3.3, HALL_H);
+// Dark portal so the opening reads against the plaster
+box(M.steelDark, -10, 1.65, -8.0, 0.22, 3.3, 0.32);
+box(M.steelDark, -4, 1.65, -8.0, 0.22, 3.3, 0.32);
+box(M.steelDark, -7, 3.32, -8.0, 6.22, 0.18, 0.32);
+slab(M.paintYellow, -10, -4, -8.12, -7.88, 0.04, 0.075);
 box(M.signSec, -7, 3.95, -7.7, 5.2, 0.95, 0.08);
 // FIDS bank on the wall east of the portal
 box(M.steelDark, 9, 4.4, -7.58, 11.0, 3.4, 0.22);
@@ -531,16 +544,23 @@ slab(M.plaster, -24, -12, -8, 2, F, SEC_H);
 slab(M.plaster, 12, 24, -8, 2, F, SEC_H);
 slab(M.plaster, -24, -12, -8, 2, SEC_H, CONC_H);           // shell above blocks
 slab(M.plaster, 12, 24, -8, 2, SEC_H, CONC_H);
+// Inner lining — metal panels, not the hall's plaster
+slab(M.secWall, -12.08, -11.72, -8, 2, F, SEC_H);
+slab(M.secWall, 11.72, 12.08, -8, 2, F, SEC_H);
+slab(M.secWall, -12, -10, -7.78, -7.52, F, SEC_H);          // hall wall, security face
+slab(M.secWall, -4, 12, -7.78, -7.52, F, SEC_H);
+slab(M.secWall, -12, 2, 1.52, 1.78, F, SEC_H);              // far wall of the checkpoint
+slab(M.secWall, 11.5, 12, 1.52, 1.78, F, SEC_H);
 slab(M.ceiling, -12, 12, -8, 2, SEC_H, SEC_H + 0.18);
 box(M.lightBar, 0, SEC_H - 0.1, -6.4, 20, 0.08, 0.4);
 box(M.lightBar, 0, SEC_H - 0.1, -3.2, 20, 0.08, 0.4);
 box(M.lightBar, 0, SEC_H - 0.1, 0.4, 20, 0.08, 0.4);
 
-// Concourse south wall: exit from security offset east (x 4..10)
-slab(M.plaster, -24, 4, 1.8, 2.2, F, CONC_H);
-slab(M.plaster, 10, 24, 1.8, 2.2, F, CONC_H);
-slab(M.plaster, 4, 10, 1.8, 2.2, 3.3, CONC_H);
-box(M.signArrow, 7, 3.9, 2.34, 5.4, 0.95, 0.08);           // faces airside
+// Concourse south wall: wide exit from security (x 2..11.5)
+slab(M.plaster, -24, 2, 1.8, 2.2, F, CONC_H);
+slab(M.plaster, 11.5, 24, 1.8, 2.2, F, CONC_H);
+slab(M.plaster, 2, 11.5, 1.8, 2.2, 3.3, CONC_H);
+box(M.signArrow, 6.75, 3.9, 2.34, 6.4, 0.95, 0.08);        // faces airside
 
 // Concourse shell
 slab(M.plaster, -24.2, -23.8, 2, 38, F, CONC_H);
@@ -567,6 +587,11 @@ roomLight(-14, 6.5, -13, 1.4, 18);
 roomLight(14, 6.5, -13, 1.4, 18);
 roomLight(-4, 3.4, -3, 2.2, 15);
 roomLight(5, 3.4, -1, 1.8, 14);
+{
+  const l = new THREE.PointLight(0xd4e4ff, 2.1, 14, 2);
+  l.position.set(-6.5, 3.15, -4.2);
+  world.add(l);
+}
 roomLight(0, 4.8, 9, 1.7, 15);
 roomLight(-17, 2.8, 9, 1.5, 11);
 roomLight(17, 2.8, 9, 1.5, 11);
@@ -662,10 +687,11 @@ prop(() => {
     box(M.paint, lx + 0.62, F + 1.05, -1.0, 0.14, 2.1, 0.5);
     box(M.steelDark, lx, F + 2.16, -1.0, 1.38, 0.12, 0.5);
   }
-  box(M.steel, 8, F + 0.72, 0.2, 3.2, 0.08, 1.0);                  // recompose
-  box(M.steel, 8, F + 0.36, 0.2, 3.0, 0.64, 0.9);
-  box(M.bag, 7.2, F + 0.95, 0.2, 0.42, 0.3, 0.55);
-  box(M.bag3, 8.9, F + 0.92, 0.15, 0.38, 0.26, 0.5);
+  // Recompose against the east wall, south of the exit — not in the aisle
+  box(M.steel, 10.4, F + 0.72, -2.4, 2.2, 0.08, 0.9);
+  box(M.steel, 10.4, F + 0.36, -2.4, 2.0, 0.64, 0.8);
+  box(M.bag, 9.7, F + 0.95, -2.4, 0.42, 0.3, 0.55);
+  box(M.bag3, 11.0, F + 0.92, -2.35, 0.38, 0.26, 0.5);
 });
 
 // ---------------------------------------------------------------------------
@@ -842,12 +868,17 @@ prop(() => {
 // Apron furniture: two jetways onto the parked planes, ground service
 // ---------------------------------------------------------------------------
 prop(() => {
+  // Dock on the aircraft's port side (world −X when the plane faces the
+  // terminal). The tube leaves the glass, jogs aside, then runs beside the
+  // fuselage so it never occupies the nose on the centreline.
   for (const gx of [-8, 8]) {
-    box(M.steel, gx, 3.4, 42.6, 2.2, 2.3, 8.4);      // jetway tube
-    box(M.steelDark, gx, 1.6, 46.2, 0.35, 3.2, 0.35);
-    box(M.steelDark, gx, 1.6, 39.8, 0.35, 3.2, 0.35);
-    box(M.steel, gx, 3.5, 38.5, 2.6, 2.4, 1.2);      // hood against the glass
-    box(M.steel, gx, 3.45, 47.4, 2.6, 2.5, 1.5);     // cab at the aircraft door
+    const dock = gx - 2.8;
+    box(M.steel, gx, 3.35, 39.2, 1.6, 1.9, 1.6);            // hood at the gate
+    box(M.steel, (gx + dock) / 2, 3.35, 41.6, Math.abs(gx - dock) + 1.4, 1.8, 3.2);
+    box(M.steel, dock, 3.35, 47.4, 1.45, 1.8, 10.0);        // tube along the side
+    box(M.steel, dock, 3.4, 53.0, 1.8, 2.0, 2.2);           // cab at the forward door
+    box(M.steelDark, gx, 1.55, 39.6, 0.28, 3.1, 0.28);
+    box(M.steelDark, dock, 1.55, 51.4, 0.28, 3.1, 0.28);
   }
   // baggage cart train + loader near gate A2
   frame(14.5, 50, 0.4, () => {
@@ -893,12 +924,22 @@ function buildAirliner(livery = 0xc8102e) {
   const fuse = new THREE.CylinderGeometry(2.0, 2.0, 28.5, 24);
   fuse.rotateX(Math.PI / 2);
   add(fuse, white, [0, 0, 0]);
-  const nose = new THREE.SphereGeometry(2.0, 18, 14, 0, Math.PI * 2, 0, Math.PI / 2);
-  nose.rotateX(-Math.PI / 2);
-  add(nose, white, [0, 0, 14.25]);
+  // Parabolic ogive: a hemisphere left a flat disk facing the lounge; a cone
+  // read as a pipe cap. This lathe tapers over 6.2 m so the nose is obvious
+  // both head-on and in profile.
+  {
+    const R = 2, L = 6.2, pts = [];
+    for (let i = 0; i <= 14; i++) {
+      const t = i / 14;
+      pts.push(new THREE.Vector2(R * Math.pow(1 - t, 0.58), t * L));
+    }
+    const ogive = new THREE.LatheGeometry(pts, 24);
+    ogive.rotateX(Math.PI / 2);
+    add(ogive, white, [0, 0, 14.25]);
+  }
   const tailc = new THREE.ConeGeometry(2.0, 6.4, 18);
-  tailc.rotateX(Math.PI / 2);
-  add(tailc, white, [0, 0, -17.2]);
+  tailc.rotateX(-Math.PI / 2);
+  add(tailc, white, [0, 0, -17.45]);
   add(new THREE.BoxGeometry(12.4, 0.55, 7.2), white, [0, -0.85, -0.6]); // wing-body fairing
   // Swept wings + sharklets
   const wing = new THREE.BoxGeometry(1, 1, 1);
@@ -911,7 +952,7 @@ function buildAirliner(livery = 0xc8102e) {
   add(new THREE.BoxGeometry(0.14, 0.42, 24), stripe, [0, -0.15, 0.6]);
   add(new THREE.BoxGeometry(0.12, 0.5, 22), win, [1.98, 0.38, 0.5]);
   add(new THREE.BoxGeometry(0.12, 0.5, 22), win, [-1.98, 0.38, 0.5]);
-  add(new THREE.BoxGeometry(1.6, 0.7, 1.35), win, [0, 0.55, 15.1]); // cockpit
+  add(new THREE.BoxGeometry(1.5, 0.42, 1.85), win, [0, 0.82, 16.6]); // cockpit
   for (const sx of [-1, 1]) {
     const eng = new THREE.CylinderGeometry(0.82, 0.9, 3.8, 16);
     eng.rotateX(Math.PI / 2);
@@ -939,8 +980,8 @@ function placePlane(livery, x, y, z, yaw) {
   planes.push(p);
   return p;
 }
-const parked = placePlane(0x1a4a8a, 8, 3.55, 56, Math.PI);   // at gate A2
-placePlane(0x0a6a4a, -8, 3.55, 56, Math.PI);                 // at gate A1
+const parked = placePlane(0x1a4a8a, 8, 3.55, 64, Math.PI - 0.22);  // at gate A2
+placePlane(0x0a6a4a, -8, 3.55, 64, Math.PI + 0.22);                // at gate A1
 placePlane(0x8a2030, -30, 3.55, 88, Math.PI * 0.78);         // taxiing out
 const takingOff = placePlane(0xc8102e, 41, 3.55, 40, 0);
 const landing = placePlane(0x0a6a4a, 41, 28, 190, Math.PI);
@@ -1199,8 +1240,8 @@ const GATE_PATH = [[-16, 33.2], [16, 33.2], [16, 34.4], [-16, 34.4]];
     // reading the departures board
     { x: 7, z: -10.6, ry: 0 }, { x: 10.4, z: -11.0, ry: 0.2 },
     // security officers
-    { x: 0, z: 1.2, ry: Math.PI, staff: true },
-    { x: 7.5, z: -6.0, ry: Math.PI, staff: true },
+    { x: -0.5, z: 0.6, ry: Math.PI, staff: true },
+    { x: 9.6, z: -5.4, ry: Math.PI, staff: true },
     // café: barista behind the counter, customers at it
     { x: -22.5, z: 9, ry: Math.PI / 2, staff: true },
     { x: -20.2, z: 7.2, ry: -Math.PI / 2 }, { x: -20.2, z: 10.8, ry: -Math.PI / 2 },
