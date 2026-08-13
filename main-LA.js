@@ -1306,21 +1306,29 @@ function sofa(len, { depth = 0.95, mat = M.sofaCream, cushion = M.fabricWarm, ar
   shape(G.blob, cushion, -len * 0.16, F + 0.62, -depth / 2 + 0.34, 0.3, 0.26, 0.14, { ry: 0.45, rz: 0.12 });
   shape(G.blob, M.linen, len * 0.1, F + 0.6, -depth / 2 + 0.32, 0.26, 0.22, 0.12, { ry: -0.3 });
 }
-function armchair(mat = M.fabricOlive) {
-  // restY is the cushion top. The seated pose used to hang the HIP JOINT 7.5 cm
-  // over that, which parked the ischium and the thighs inside the slab — the
-  // joint is inside the pelvis, not on the sitting surface. player.js now
-  // measures the flesh; this chair just has to offer a real seat and leave a
-  // cave for the shins. Sit point toward the backrest so the thighs rest on
-  // the cushion instead of hanging off the front edge.
-  furnitureInteraction('sit', 0.34, 0.38, -0.10, F + 0.50);
-  box(mat, 0, F + 0.26, -0.10, 0.88, 0.18, 0.50);   // plinth, short of the front
-  box(mat, 0, F + 0.43, -0.08, 0.84, 0.14, 0.58);   // cushion: top F+0.50, front +0.21
-  box(mat, 0, F + 0.70, -0.36, 0.92, 0.62, 0.18);
-  box(mat, -0.4, F + 0.52, -0.08, 0.14, 0.48, 0.70);
-  box(mat, 0.4, F + 0.52, -0.08, 0.14, 0.48, 0.70);
-  for (const [dx, dz] of [[-0.36, -0.30], [0.36, -0.30], [-0.36, 0.10], [0.36, 0.10]])
-    shape(G.cylBase, M.walnut, dx, F, dz, 0.07, 0.18, 0.07);
+function armchair(mat = M.sofaSage) {
+  // restY is the cushion top. The seated pose hangs the calves from the knee,
+  // ~45 cm forward of the hip (SEAT_BACK is −16 cm). Sitting toward the
+  // backrest put that knee inside the cushion, which is why the shins still
+  // read as going through the chair. Sit a little forward of centre so the
+  // knees clear the lip; recess the plinth under the board so the shins have
+  // air. Dining chairs and park benches are already that shallow — leave them.
+  //
+  // 72 cm wide, not the old 94: the TV corner has to let a 42 cm-radius
+  // capsule through between this pair and the long sofa. Same bouclé as the
+  // sage sofa, same cushion/arm language, so they read as a set not as boxes.
+  furnitureInteraction('sit', 0.26, 0.34, 0.06, F + 0.50);
+  for (const [dx, dz] of [[-0.24, -0.26], [0.24, -0.26], [-0.24, 0.04], [0.24, 0.04]])
+    shape(G.cylBase, M.walnut, dx, F, dz, 0.05, 0.16, 0.05);
+  box(mat, 0, F + 0.24, -0.12, 0.62, 0.16, 0.40);                 // plinth: front +0.08
+  box(mat, 0, F + 0.42, -0.08, 0.50, 0.12, 0.44);                 // seat board, top F+0.48
+  shape(G.cushion, mat, 0, F + 0.48, -0.04, 0.46, 0.16, 0.40);
+  box(mat, 0, F + 0.68, -0.34, 0.68, 0.54, 0.14);
+  shape(G.cushion, mat, 0, F + 0.70, -0.30, 0.44, 0.30, 0.15, { rx: -0.22 });
+  for (const sx of [-1, 1]) {
+    box(mat, sx * 0.30, F + 0.46, -0.08, 0.11, 0.40, 0.50);
+    shape(G.sphere, mat, sx * 0.30, F + 0.68, -0.08, 0.11, 0.10, 0.42);
+  }
 }
 function lowTable(w, d, mat = M.walnut) {
   box(mat, 0, F + 0.4, 0, w, 0.07, d);
@@ -1869,8 +1877,10 @@ frame(-4.6, -7.6, -Math.PI / 2, () => {
   sofa(4.6, { depth: 1.05, mat: M.sofaCream, cushion: M.fabricWarm });
 });
 frame(-6.6, -10.0, 0, () => sofa(2.4, { depth: 0.95, mat: M.sofaSage, cushion: M.linen, arms: false }));
-frame(-5.6, -5.3, Math.PI, () => armchair());
-frame(-7.6, -5.3, Math.PI, () => armchair());
+// 72 cm chairs, pulled a little west of the long sofa so the capsule fits
+// the aisle (sofa arm, between the pair, and the west partition).
+frame(-6.50, -5.3, Math.PI, () => armchair());
+frame(-8.20, -5.3, Math.PI, () => armchair());
 frame(-6.6, -7.6, 0, () => lowTable(1.5, 0.85));
 frame(-6.2, -7.6, 0, () => livingRug(5.4, 6.6));
 frame(-4.3, -4.9, 0, () => {
@@ -2040,7 +2050,7 @@ frame(-12.6, -8.0, 0, () => {
   box(M.teak, 0.7, F + 0.11, 0, 0.1, 0.22, 0.4);
   box(M.fabricOlive, 0, F + 0.33, 0, 1.5, 0.08, 0.4);
 });
-frame(-14.6, -10.2, 0.6, () => armchair(M.fabric));
+frame(-14.6, -10.2, 0.6, () => armchair(M.sofaCream));
 frame(-13.4, -10.6, 0, () => {
   shape(G.cyl, M.terracotta, 0, F + 0.3, 0, 0.6, 0.6, 0.6);
   shape(G.blob, M.foliage, 0, F + 0.95, 0, 1.1, 1.1, 1.1);
@@ -3164,6 +3174,11 @@ let lieWakeModeRequested = null;
 let choosingLieWakeMode = false;
 let travelDestinationRequested = null;
 let choosingTravelDestination = false;
+// True while the sit prompt is on screen: we drop pointer lock so the cursor
+// can click the button, and pointerlockchange must not treat that as a pause.
+// Same contract the zoo already uses, and the same one the villa already had
+// for the lie / travel choice rows.
+let choosingFurniturePrompt = false;
 let travelInProgress = false;
 // Getting up puts the avatar back exactly where it was grabbed, which is still
 // inside that seat's trigger — on the cooldown alone it simply sat back down a
@@ -3206,13 +3221,36 @@ function setFurniturePrompt(spot) {
   travelPromptGroup.setAttribute('aria-hidden', showTravelChoices ? 'false' : 'true');
   choosingLieWakeMode = showLieChoices;
   choosingTravelDestination = showTravelChoices;
-  if ((showLieChoices || showTravelChoices) && document.pointerLockElement === renderer.domElement)
-    document.exitPointerLock?.();
+  choosingFurniturePrompt = showSinglePrompt;
+  // Unlock for any clickable prompt — sit, lie, or travel — then re-lock when
+  // it goes away. With pointer lock the canvas steals every trackpad click, so
+  // the button on screen can never be hit.
+  const choosingPrompt = showSinglePrompt || showLieChoices || showTravelChoices;
+  if (choosingPrompt) {
+    if (document.pointerLockElement === renderer.domElement)
+      document.exitPointerLock?.();
+  } else if (started && !paused) {
+    requestGamePointerLock();
+  }
 }
 
 furniturePrompt.addEventListener('click', event => {
   event.stopPropagation();
-  if (promptedFurniture) furnitureActionRequested = true;
+  if (!promptedFurniture) return;
+  furnitureActionRequested = true;
+  // Re-lock from the click itself: browsers reject pointer lock outside a
+  // user gesture, and enterFurnitureInteraction only runs on the next frame.
+  choosingFurniturePrompt = false;
+  requestGamePointerLock();
+});
+renderer.domElement.addEventListener('click', () => {
+  // After walking away from a chair the unlock is not a user gesture, so the
+  // first canvas click reclaims the mouse look.
+  if (started && !paused
+    && !choosingFurniturePrompt && !choosingLieWakeMode && !choosingTravelDestination
+    && document.pointerLockElement !== renderer.domElement) {
+    requestGamePointerLock();
+  }
 });
 
 function requestLieWakeMode(mode, event) {
@@ -3478,8 +3516,19 @@ function animate() {
 }
 animate();
 
+function resumePlay() {
+  overlay.style.display = 'none';
+  paused = false;
+  requestGamePointerLock();
+}
+
 function startVilla() {
-  if (started) return;
+  if (started) {
+    // Escape re-shows this overlay; the same button must resume in place,
+    // not no-op because started is already true (and never teleport home).
+    resumePlay();
+    return;
+  }
   try {
     setVillaTime(window.__nightMode === true);
   } catch (e) {
@@ -3494,11 +3543,9 @@ function startVilla() {
       console.error('[night mode]', e);
     }
   }
-  overlay.style.display = 'none';
   setFurniturePrompt(null);
   started = true;
-  paused = false;
-  requestGamePointerLock();
+  resumePlay();
 }
 
 startBtn.addEventListener('click', startVilla);
@@ -3506,7 +3553,10 @@ if (arrivedFromTravel) startVilla();
 
 document.addEventListener('pointerlockchange', () => {
   usedLock = usedLock || document.pointerLockElement !== null;
-  if ((choosingLieWakeMode || choosingTravelDestination) && document.pointerLockElement === null) {
+  // Dropping the lock for a clickable prompt is intentional — keep playing
+  // and leave the overlay closed (mirrors main-ZOO.js choosingFurniturePrompt).
+  if ((choosingFurniturePrompt || choosingLieWakeMode || choosingTravelDestination)
+    && document.pointerLockElement === null) {
     paused = false;
     overlay.style.display = 'none';
     return;
