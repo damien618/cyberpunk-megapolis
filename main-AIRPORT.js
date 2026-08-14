@@ -44,9 +44,9 @@ app.appendChild(renderer.domElement);
 const SKY = 0xb7d2e8;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY);
-scene.fog = new THREE.Fog(0xc5d8ea, 140, 640);
+scene.fog = new THREE.Fog(0xc8d8e6, 200, 920);
 
-const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.25, 1600);
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.25, 2200);
 camera.position.set(0, 8, -20);
 
 const hemi = new THREE.HemisphereLight(0xe8f2ff, 0x8a8478, 0.82);
@@ -223,12 +223,200 @@ const metalA = tex('./textures/CP_Metal_Panel_A.webp', 3, 2);
 const metalN = ntex('./textures/CP_Metal_Panel_N.webp', 3, 2);
 const shopA = tex('./textures/CP_Glass_Showcase_A.webp', 2, 1);
 const shopN = ntex('./textures/CP_Glass_Showcase_N.webp', 2, 1);
-const posterA = tex('./textures/CP_Air_Traffic_A.webp', 1, 1);
-const posterN = ntex('./textures/CP_Air_Traffic_N.webp', 1, 1);
 const terrazzoA = makeTerrazzo();
 const carpetA = makeCarpet();
 const fidsA = makeFids();
+const vinylA = makeVinylFloor();
+const slatA = makeSlatTex();
+vinylA.repeat.set(1, 1);
+slatA.repeat.set(4, 2);
 
+function canvasTex(w, h, draw, { srgb = true, wrap = false } = {}) {
+  const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.anisotropy = maxAniso;
+  if (wrap) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.needsUpdate = true;
+  return t;
+}
+function makeTravelPoster({ city, tag, c0, c1, accent, motif }) {
+  const t = canvasTex(1280, 768, (ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, c0);
+    g.addColorStop(1, c1);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = accent;
+    if (motif === 'sun') {
+      ctx.beginPath();
+      ctx.arc(w * 0.78, h * 0.38, 150, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.beginPath();
+      ctx.moveTo(w * 0.18, h * 0.82);
+      ctx.lineTo(w * 0.48, h * 0.28);
+      ctx.lineTo(w * 0.78, h * 0.82);
+      ctx.fill();
+    } else if (motif === 'tower') {
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      for (let i = 0; i < 18; i++) {
+        const x = 40 + i * 70;
+        const bh = 80 + ((i * 97) % 280);
+        ctx.fillRect(x, h - 80 - bh, 48, bh);
+      }
+      ctx.fillStyle = accent;
+      ctx.fillRect(w * 0.62, h * 0.18, 28, h * 0.62);
+      ctx.fillRect(w * 0.58, h * 0.18, 80, 14);
+    } else if (motif === 'shells') {
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 10;
+      for (let i = 0; i < 5; i++) {
+        ctx.beginPath();
+        ctx.ellipse(220 + i * 160, h * 0.62, 70 + i * 8, 110, -0.4, Math.PI, 0);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.fillRect(0, h * 0.72, w, h * 0.28);
+    } else if (motif === 'spire') {
+      ctx.fillStyle = accent;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.72, h * 0.12);
+      ctx.lineTo(w * 0.78, h * 0.78);
+      ctx.lineTo(w * 0.66, h * 0.78);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(0, h * 0.78, w, h * 0.22);
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,0.14)';
+      ctx.beginPath();
+      ctx.arc(w * 0.2, h * 0.2, 220, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(8,14,22,0.55)';
+    ctx.fillRect(0, h - 210, w, 210);
+    ctx.fillStyle = '#f4f7fb';
+    ctx.font = 'bold 118px sans-serif';
+    ctx.fillText(city, 56, h - 108);
+    ctx.fillStyle = accent;
+    ctx.font = '36px sans-serif';
+    ctx.fillText(tag, 58, h - 52);
+  });
+  return new THREE.MeshStandardMaterial({
+    map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.28, roughness: 0.48,
+  });
+}
+function makeMenuBoard() {
+  const t = canvasTex(1024, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#241810';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#c47858';
+    ctx.fillRect(0, 0, w, 10);
+    ctx.fillStyle = '#f6ead8';
+    ctx.font = 'bold 42px sans-serif';
+    ctx.fillText('GATE CAFÉ', 40, 64);
+    ctx.font = '28px sans-serif';
+    ctx.fillStyle = '#d8c4a8';
+    const rows = [
+      ['Espresso', '3.2'], ['Flat white', '4.4'], ['Iced latte', '4.8'],
+      ['Croissant', '3.8'], ['Berry danish', '4.1'], ['Airport bun', '5.0'],
+    ];
+    rows.forEach((r, i) => {
+      const y = 130 + i * 56;
+      ctx.fillStyle = '#f0e0cc';
+      ctx.fillText(r[0], 48, y);
+      ctx.fillStyle = '#c47858';
+      ctx.fillText(r[1], w - 140, y);
+    });
+  });
+  return new THREE.MeshStandardMaterial({
+    map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.22, roughness: 0.55,
+  });
+}
+function makeClock() {
+  const t = canvasTex(512, 512, (ctx, w) => {
+    const c = w / 2;
+    ctx.fillStyle = '#0e1620';
+    ctx.beginPath(); ctx.arc(c, c, 240, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#8ec8e0'; ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.arc(c, c, 228, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#d8e6f0';
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
+      ctx.beginPath();
+      ctx.arc(c + Math.cos(a) * 190, c + Math.sin(a) * 190, i % 3 ? 5 : 9, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = '#eef6fc'; ctx.lineWidth = 10; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(c, c); ctx.lineTo(c + 70, c + 20); ctx.stroke();
+    ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(c, c); ctx.lineTo(c - 20, c - 130); ctx.stroke();
+    ctx.fillStyle = '#8ec8e0';
+    ctx.beginPath(); ctx.arc(c, c, 10, 0, Math.PI * 2); ctx.fill();
+  });
+  return new THREE.MeshStandardMaterial({
+    map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.35, roughness: 0.4,
+  });
+}
+function makeVinylFloor() {
+  return canvasTex(512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#6a7a88';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = 'rgba(20,28,36,0.22)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i <= 8; i++) {
+      ctx.beginPath(); ctx.moveTo(i * 64, 0); ctx.lineTo(i * 64, h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i * 64); ctx.lineTo(w, i * 64); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    for (let i = 0; i < 80; i++) ctx.fillRect(Math.random() * w, Math.random() * h, 3, 2);
+  }, { wrap: true });
+}
+function makeSlatTex() {
+  return canvasTex(256, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#2a221c';
+    ctx.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 18) {
+      ctx.fillStyle = x % 36 ? '#8a6a48' : '#7a5c3c';
+      ctx.fillRect(x + 1, 0, 15, h);
+      ctx.fillStyle = 'rgba(255,220,180,0.08)';
+      ctx.fillRect(x + 3, 0, 3, h);
+    }
+  }, { wrap: true });
+}
+function makeAirlineDecal(name, hex) {
+  const col = '#' + hex.toString(16).padStart(6, '0');
+  const t = canvasTex(1024, 180, (ctx, w, h) => {
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = col;
+    ctx.font = 'bold 92px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name, w / 2, h / 2 + 4);
+  });
+  return new THREE.MeshStandardMaterial({
+    map: t, transparent: true, roughness: 0.35, metalness: 0.15,
+    depthWrite: false,
+  });
+}
+function makeTailFlash(hex) {
+  const col = '#' + hex.toString(16).padStart(6, '0');
+  const t = canvasTex(256, 512, (ctx, w, h) => {
+    ctx.fillStyle = col;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#f4f6f8';
+    ctx.beginPath();
+    ctx.moveTo(40, 80);
+    ctx.lineTo(210, 200);
+    ctx.lineTo(40, 320);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = col;
+    ctx.fillRect(40, 430, 176, 18);
+  });
+  return new THREE.MeshStandardMaterial({ map: t, roughness: 0.32, metalness: 0.28 });
+}
 function makeSign(title, sub = '', bg = '#102033', fg = '#eef6fc') {
   const c = Object.assign(document.createElement('canvas'), { width: 1024, height: 256 });
   const ctx = c.getContext('2d');
@@ -283,8 +471,8 @@ const M = {
     map: metalA, normalMap: metalN, color: 0xc8d8e4, roughness: 0.46, metalness: 0.28,
   }),
   secFloor: worldXZUv(new THREE.MeshStandardMaterial({
-    map: floorA, normalMap: floorN, roughness: 0.38, metalness: 0.08, color: 0x8aa4b8,
-  }), 1.15),
+    map: vinylA, roughness: 0.55, metalness: 0.06, color: 0x9aafbe,
+  }), 1.4),
   steel: new THREE.MeshStandardMaterial({
     map: metalA, normalMap: metalN, color: 0xb0b6bc, roughness: 0.32, metalness: 0.72,
   }),
@@ -310,8 +498,55 @@ const M = {
   shop: new THREE.MeshStandardMaterial({
     map: shopA, normalMap: shopN, color: 0xd8e0e6, roughness: 0.35, metalness: 0.12,
   }),
-  poster: new THREE.MeshStandardMaterial({
-    map: posterA, normalMap: posterN, roughness: 0.55, metalness: 0.08, color: 0xffffff,
+  posterTokyo: makeTravelPoster({
+    city: 'TOKYO', tag: 'JL 61  ·  DAILY  ·  PACIFIC GATE',
+    c0: '#1a2040', c1: '#8a2030', accent: '#e07050', motif: 'sun',
+  }),
+  posterParis: makeTravelPoster({
+    city: 'PARIS', tag: 'AF 72  ·  NONSTOP  ·  CDG',
+    c0: '#3a2a58', c1: '#c4a070', accent: '#f0d8a0', motif: 'tower',
+  }),
+  posterNy: makeTravelPoster({
+    city: 'NEW YORK', tag: 'AA 214  ·  JFK  ·  BOARDING',
+    c0: '#102033', c1: '#1a4a8a', accent: '#8ec8e0', motif: 'tower',
+  }),
+  posterSydney: makeTravelPoster({
+    city: 'SYDNEY', tag: 'QF 12  ·  SOUTH PACIFIC',
+    c0: '#0a3a48', c1: '#4aa0b0', accent: '#e8f4f8', motif: 'shells',
+  }),
+  posterDubai: makeTravelPoster({
+    city: 'DUBAI', tag: 'EK 216  ·  DUTY FREE HUB',
+    c0: '#2a1a10', c1: '#c49040', accent: '#f4e0b0', motif: 'spire',
+  }),
+  menu: makeMenuBoard(),
+  clock: makeClock(),
+  slat: new THREE.MeshStandardMaterial({
+    map: slatA, roughness: 0.72, metalness: 0.04, color: 0xffffff,
+  }),
+  wainscot: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0xc8b49a, roughness: 0.62,
+  }),
+  accent: new THREE.MeshStandardMaterial({
+    color: 0x8ec8e0, roughness: 0.35, metalness: 0.22, emissive: 0x8ec8e0, emissiveIntensity: 0.18,
+  }),
+  bottleAmber: new THREE.MeshStandardMaterial({ color: 0x8a4a18, roughness: 0.18, metalness: 0.42 }),
+  bottleGreen: new THREE.MeshStandardMaterial({ color: 0x1a4a32, roughness: 0.2, metalness: 0.38 }),
+  bottleClear: new THREE.MeshStandardMaterial({ color: 0xc8d8e0, roughness: 0.12, metalness: 0.28 }),
+  bottleWine: new THREE.MeshStandardMaterial({ color: 0x5a1020, roughness: 0.22, metalness: 0.35 }),
+  capGold: new THREE.MeshStandardMaterial({ color: 0xc4a060, roughness: 0.28, metalness: 0.72 }),
+  capBlack: new THREE.MeshStandardMaterial({ color: 0x1a1c1e, roughness: 0.4, metalness: 0.35 }),
+  shirt: new THREE.MeshStandardMaterial({ color: 0xf2eee6, roughness: 0.88 }),
+  shirtBlue: new THREE.MeshStandardMaterial({ color: 0x3a5a78, roughness: 0.88 }),
+  shirtRed: new THREE.MeshStandardMaterial({ color: 0x8a3030, roughness: 0.88 }),
+  gold: new THREE.MeshStandardMaterial({ color: 0xd4b060, roughness: 0.3, metalness: 0.65 }),
+  water: new THREE.MeshStandardMaterial({
+    color: 0x4a7a92, roughness: 0.18, metalness: 0.35,
+  }),
+  hill: new THREE.MeshStandardMaterial({ color: 0x6a7a58, roughness: 0.96 }),
+  tower: new THREE.MeshStandardMaterial({ color: 0x9aa4ae, roughness: 0.62, metalness: 0.12 }),
+  towerDark: new THREE.MeshStandardMaterial({ color: 0x5a646e, roughness: 0.58, metalness: 0.18 }),
+  towerGlass: new THREE.MeshStandardMaterial({
+    color: 0x7a9ab0, roughness: 0.18, metalness: 0.35, emissive: 0x1a3040, emissiveIntensity: 0.15,
   }),
   bag: new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.85 }),
   bag2: new THREE.MeshStandardMaterial({ color: 0x2a4a6a, roughness: 0.85 }),
@@ -342,7 +577,36 @@ const world = new THREE.Group();
 scene.add(world);
 const crowd = new THREE.Group();
 const airside = new THREE.Group();
-scene.add(crowd, airside);
+const scenery = new THREE.Group();
+scene.add(crowd, airside, scenery);
+
+{
+  const skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+    vertexShader: `
+      varying vec3 vDir;
+      void main() {
+        vDir = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      varying vec3 vDir;
+      void main() {
+        float h = normalize(vDir).y;
+        vec3 zenith = vec3(0.42, 0.66, 0.88);
+        vec3 horizon = vec3(0.86, 0.90, 0.94);
+        vec3 glow = vec3(0.96, 0.88, 0.72);
+        vec3 col = mix(horizon, zenith, smoothstep(-0.02, 0.58, h));
+        col = mix(glow, col, smoothstep(-0.1, 0.14, h));
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  });
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(1400, 32, 16), skyMat);
+  dome.frustumCulled = false;
+  scenery.add(dome);
+}
 
 const G = {
   box: withUV2(new THREE.BoxGeometry(1, 1, 1)),
@@ -516,14 +780,38 @@ slab(M.ceiling, -24.2, 24.2, -32, -8, HALL_H, HALL_H + 0.2);
 for (const zRow of [-20, -12])
   for (let x = -18; x <= 18; x += 6)
     box(M.lightBar, x, HALL_H - 0.12, zRow, 4.6, 0.09, 0.5);
-for (const [x, z] of [[-16, -20], [16, -20], [-16, -12], [16, -12]])
+for (const [x, z] of [[-16, -20], [16, -20], [-16, -12], [16, -12]]) {
   shape(G.cylBase, M.steel, x, F, z, 0.5, HALL_H, 0.5);
-box(M.poster, -23.7, 4.6, -20, 0.06, 3.4, 5.0);
-box(M.poster, 23.7, 4.6, -20, 0.06, 3.4, 5.0);
+  shape(G.cyl, M.steelDark, x, HALL_H - 0.22, z, 0.72, 0.18, 0.72);
+  shape(G.cyl, M.steelDark, x, F + 0.12, z, 0.68, 0.16, 0.68);
+}
+for (const zRow of [-26, -16])
+  box(M.steelDark, 0, HALL_H - 0.08, zRow, 46, 0.12, 0.28);
+// Hall identity: timber dado, cyan wayfinding rail, slat panels, travel ads
+slab(M.wainscot, -24.05, -23.72, -31.6, -8.4, F, 1.28);
+slab(M.wainscot, 23.72, 24.05, -31.6, -8.4, F, 1.28);
+slab(M.accent, -24.08, -23.7, -31.6, -8.4, 2.22, 2.42);
+slab(M.accent, 23.7, 24.08, -31.6, -8.4, 2.22, 2.42);
+slab(M.steel, -24.08, -23.7, -31.6, -8.4, F, 0.08);
+slab(M.steel, 23.7, 24.08, -31.6, -8.4, F, 0.08);
+box(M.slat, -23.68, 3.4, -14.5, 0.08, 4.2, 4.4);
+box(M.slat, 23.68, 3.4, -14.5, 0.08, 4.2, 4.4);
+box(M.posterTokyo, -23.68, 4.55, -26.2, 0.05, 2.6, 4.2);
+box(M.posterParis, 23.68, 4.55, -26.2, 0.05, 2.6, 4.2);
+box(M.posterNy, -23.68, 4.55, -20.2, 0.05, 2.6, 4.2);
+box(M.posterSydney, 23.68, 4.55, -20.2, 0.05, 2.6, 4.2);
 // CHECK-IN sign hung over the islands
 box(M.signCheck, 0, 6.4, -20.5, 6.2, 1.1, 0.08);
 box(M.steelDark, -2.6, 8.2, -20.5, 0.05, 2.5, 0.05);
 box(M.steelDark, 2.6, 8.2, -20.5, 0.05, 2.5, 0.05);
+// Clock over the security portal + roof-line PACIFIC GATE on the curb canopy
+slab(M.wainscot, -24, -10.2, -8.05, -7.72, F, 1.28);
+slab(M.wainscot, -3.8, 24, -8.05, -7.72, F, 1.28);
+slab(M.accent, -24, -10.2, -8.05, -7.72, 2.22, 2.42);
+slab(M.accent, -3.8, 24, -8.05, -7.72, 2.22, 2.42);
+box(M.clock, -7, 5.2, -8.32, 0.9, 0.9, 0.06);
+box(M.posterParis, 17.4, 4.7, -7.72, 4.4, 2.5, 0.05);
+box(M.signDept, 0, 6.55, -36.4, 10.4, 1.15, 0.12);
 
 // Hall north wall: solid, one portal into security at x -10..-4
 slab(M.plaster, -24, -10, -8.2, -7.8, F, HALL_H);
@@ -723,10 +1011,14 @@ function cafeChair(x, z, ry) {
 prop(() => {
   box(M.cafeWood, -21.3, F + 0.6, 9, 1.3, 1.2, 7.6);       // service counter
   box(M.cafeWood, -23.5, F + 1.0, 9, 0.6, 2.0, 7.6);       // back bar
-  box(M.poster, -23.15, 2.5, 9, 0.06, 1.1, 4.2);           // menu board
+  box(M.menu, -23.15, 2.5, 9, 0.06, 1.15, 4.4);            // menu board
   box(M.steel, -21.3, F + 1.45, 6.8, 0.9, 0.5, 1.2);       // espresso machine
+  box(M.steelDark, -21.3, F + 1.72, 6.55, 0.55, 0.18, 0.55);
+  shape(G.cyl, M.steel, -21.55, F + 1.82, 6.55, 0.18, 0.22, 0.18);
   box(M.glass, -21.3, F + 1.5, 11.2, 0.8, 0.6, 1.4);       // pastry case
-  box(M.fabricWarm, -21.3, F + 1.28, 11.2, 0.7, 0.14, 1.3);
+  box(M.fabricWarm, -21.55, F + 1.28, 10.7, 0.22, 0.08, 0.28);
+  box(M.fabricWarm, -21.2, F + 1.3, 11.15, 0.26, 0.1, 0.22);
+  box(M.shirt, -21.45, F + 1.29, 11.55, 0.2, 0.07, 0.24);
   for (const pz of [5, 9, 13]) {                            // pendants over the bar
     box(M.steelDark, -20.4, 2.9, pz, 0.04, 0.9, 0.04);
     shape(G.sphere, M.lightBar, -20.4, 2.4, pz, 0.3, 0.24, 0.3);
@@ -747,6 +1039,13 @@ cafeTable(-17.6, 9);
 cafeTable(-13.6, 9.4);
 cafeTable(-17.6, 13.2);
 cafeTable(-13.6, 12.8);
+prop(() => {
+  for (const [x, z] of [[-17.6, 4.8], [-13.6, 9.4], [-17.6, 13.2]]) {
+    shape(G.cyl, M.shirt, x + 0.16, F + 0.82, z + 0.1, 0.09, 0.08, 0.09);
+    shape(G.cyl, M.shirt, x + 0.16, F + 0.88, z + 0.1, 0.07, 0.04, 0.07);
+    shape(G.cyl, M.fabricWarm, x - 0.18, F + 0.8, z - 0.12, 0.14, 0.05, 0.1);
+  }
+});
 
 // ---------------------------------------------------------------------------
 // SOUVENIR SHOP — mirrored unit, x 10..24 / z 2..16, showcase windows
@@ -760,38 +1059,91 @@ slab(M.ceiling, 10, 24, 2, 16, RETAIL_H, RETAIL_H + 0.14);
 for (const lz of [5.5, 12.5])
   box(M.lightBar, 17, RETAIL_H - 0.08, lz, 8, 0.07, 0.35);
 box(M.signShop, 9.66, 3.0, 9, 0.08, 0.8, 5.0);
+function bottle(x, y, z, body, cap, h = 0.34) {
+  shape(G.cyl, body, x, y, z, 0.09, h, 0.09);
+  shape(G.cyl, body, x, y + h * 0.5 + 0.04, z, 0.032, 0.08, 0.032);
+  shape(G.cyl, cap, x, y + h * 0.5 + 0.09, z, 0.038, 0.03, 0.038);
+}
+function tote(x, y, z, mat) {
+  box(mat, x, y, z, 0.28, 0.32, 0.1);
+  box(mat, x - 0.08, y + 0.22, z, 0.03, 0.16, 0.03);
+  box(mat, x + 0.08, y + 0.22, z, 0.03, 0.16, 0.03);
+}
+function foldedShirt(x, y, z, mat) {
+  box(mat, x, y, z, 0.32, 0.06, 0.24);
+  box(mat, x, y + 0.04, z + 0.02, 0.28, 0.03, 0.16);
+}
+function snowGlobe(x, y, z) {
+  shape(G.cyl, M.gold, x, y, z, 0.14, 0.08, 0.14);
+  shape(G.sphere, M.glass, x, y + 0.14, z, 0.18, 0.18, 0.18);
+  shape(G.sphere, M.grass, x, y + 0.12, z, 0.07, 0.07, 0.07);
+}
 // showcase windows flanking the door: glass over a lit display shelf
 for (const wz of [4, 14]) {
   box(M.paint, 10.3, F + 0.45, wz, 0.3, 0.9, 3.2);
   box(M.glass, 10.32, F + 1.7, wz, 0.1, 1.6, 3.0);
-  box(M.fabricWarm, 10.28, F + 1.05, wz - 0.8, 0.22, 0.3, 0.5);
-  box(M.bag3, 10.28, F + 1.02, wz + 0.6, 0.24, 0.26, 0.45);
+  box(M.lightBar, 10.28, F + 0.92, wz, 0.18, 0.03, 2.8);
 }
+prop(() => {
+  bottle(10.28, F + 1.12, 3.2, M.bottleAmber, M.capGold, 0.3);
+  bottle(10.28, F + 1.12, 3.55, M.bottleWine, M.capBlack, 0.32);
+  bottle(10.28, F + 1.12, 3.9, M.bottleGreen, M.capGold, 0.28);
+  tote(10.28, F + 1.12, 4.4, M.bag2);
+  snowGlobe(10.28, F + 1.02, 4.85);
+  bottle(10.28, F + 1.12, 13.2, M.bottleClear, M.capGold, 0.26);
+  bottle(10.28, F + 1.12, 13.55, M.bottleAmber, M.capBlack, 0.3);
+  tote(10.28, F + 1.12, 14.05, M.bag3);
+  foldedShirt(10.28, F + 1.02, 14.5, M.shirtBlue);
+  snowGlobe(10.28, F + 1.02, 14.9);
+});
 prop(() => {
   box(M.desk, 13.4, F + 0.52, 3.6, 2.8, 1.04, 1.0);        // till by the door
   box(M.screen, 13.9, F + 1.25, 3.6, 0.5, 0.35, 0.04);
-  // white wall shelving with colourful stock
-  box(M.paint, 17, F + 1.1, 15.4, 12.0, 2.2, 0.4);
-  box(M.paint, 23.5, F + 1.1, 9, 0.4, 2.2, 11.0);
-  for (let i = 0; i < 6; i++) {
-    const sx = 12 + i * 2;
-    box([M.bag2, M.bag3, M.fabricWarm][i % 3], sx, F + 0.7 + (i % 2) * 0.7, 15.05, 0.7, 0.45, 0.32);
-    box([M.fabricWarm, M.bag2, M.bag3][i % 3], 23.15, F + 0.7 + (i % 2) * 0.7, 4.5 + i * 1.7, 0.34, 0.45, 0.7);
+  // wall shelving — three rails, stock that reads as bottles / gifts / shirts
+  box(M.paint, 17, F + 1.15, 15.45, 12.0, 2.3, 0.12);
+  box(M.paint, 23.55, F + 1.15, 9, 0.12, 2.3, 11.0);
+  for (const y of [0.55, 1.15, 1.75]) {
+    box(M.steelDark, 17, F + y, 15.28, 11.6, 0.04, 0.28);
+    box(M.steelDark, 23.38, F + y, 9, 0.28, 0.04, 10.6);
   }
-  for (const gx of [14.5, 18.5]) {                          // timber gondolas
-    box(M.desk, gx, F + 0.7, 9, 1.2, 1.4, 6.2);
-    box(M.fabricWarm, gx, F + 1.52, 7.2, 0.9, 0.24, 1.2);
-    box(M.bag3, gx, F + 1.5, 9.4, 0.85, 0.2, 1.0);
-    box(M.paintYellow, gx, F + 1.52, 11.4, 0.9, 0.24, 1.1);
+  const bodies = [M.bottleAmber, M.bottleGreen, M.bottleWine, M.bottleClear];
+  const caps = [M.capGold, M.capBlack];
+  for (let i = 0; i < 10; i++) {
+    const sx = 11.6 + i * 1.15;
+    bottle(sx, F + 0.72, 15.2, bodies[i % 4], caps[i % 2], 0.26 + (i % 3) * 0.04);
+    bottle(sx, F + 1.32, 15.2, bodies[(i + 2) % 4], caps[(i + 1) % 2], 0.24);
+    if (i % 2 === 0) foldedShirt(sx, F + 1.88, 15.18, [M.shirt, M.shirtBlue, M.shirtRed][i % 3]);
+    else tote(sx, F + 1.92, 15.18, i % 4 ? M.bag2 : M.bag3);
   }
-  box(M.poster, 10.4, 1.6, 7.1, 0.04, 1.5, 1.4);           // poster by the door
+  for (let i = 0; i < 8; i++) {
+    const sz = 4.2 + i * 1.25;
+    bottle(23.28, F + 0.72, sz, bodies[i % 4], caps[i % 2], 0.28);
+    snowGlobe(23.28, F + 1.2, sz);
+    foldedShirt(23.28, F + 1.88, sz, [M.shirt, M.shirtBlue, M.shirtRed][i % 3]);
+  }
+  for (const gx of [14.6, 18.8]) {                          // open gondolas
+    box(M.desk, gx, F + 0.06, 9, 1.15, 0.12, 6.2);
+    box(M.desk, gx, F + 0.7, 9, 0.08, 1.4, 6.2);
+    for (const y of [0.42, 0.88, 1.34]) box(M.desk, gx, F + y, 9, 1.05, 0.04, 6.0);
+    for (let i = 0; i < 6; i++) {
+      const z = 6.6 + i * 0.95;
+      bottle(gx - 0.22, F + 0.58, z, bodies[i % 4], caps[i % 2], 0.24);
+      bottle(gx + 0.22, F + 0.58, z, bodies[(i + 1) % 4], caps[(i + 1) % 2], 0.26);
+      if (i % 2) tote(gx, F + 1.08, z, i % 4 ? M.bag3 : M.bag2);
+      else foldedShirt(gx, F + 0.98, z, [M.shirt, M.shirtBlue, M.shirtRed][i % 3]);
+      snowGlobe(gx, F + 1.42, z);
+    }
+  }
+  box(M.posterDubai, 10.38, 1.7, 9, 0.04, 1.5, 1.1);        // duty-free ad by the door
 });
 
 // Walkway greenery + bins between the two units
 function plant(x, z) {
   prop(() => {
-    shape(G.cyl, M.steelDark, x, F + 0.3, z, 0.62, 0.6, 0.62);
-    shape(G.sphere, M.grass, x, F + 1.1, z, 1.0, 1.0, 1.0);
+    shape(G.cyl, M.steelDark, x, F + 0.28, z, 0.62, 0.56, 0.62);
+    shape(G.sphere, M.hill, x, F + 0.95, z, 0.85, 0.7, 0.85);
+    shape(G.sphere, M.grass, x + 0.18, F + 1.2, z - 0.12, 0.7, 0.62, 0.7);
+    shape(G.sphere, M.grass, x - 0.16, F + 1.15, z + 0.16, 0.58, 0.55, 0.58);
   });
 }
 plant(-9, 3.2);
@@ -852,6 +1204,8 @@ prop(() => {
 // Lounge FIDS on the east wall
 box(M.steelDark, 23.62, 3.1, 26, 0.2, 2.5, 7.6);
 box(M.screen, 23.48, 3.1, 26, 0.06, 2.3, 7.2);
+box(M.posterDubai, -23.68, 3.4, 27.4, 0.06, 2.2, 3.4);
+box(M.slat, -23.68, 2.2, 32.4, 0.08, 3.6, 4.6);
 // Restrooms on the west wall
 box(M.signWC, -23.6, 3.0, 21, 0.08, 0.7, 2.6);
 box(M.steelDark, -23.72, 1.05, 20.2, 0.12, 2.1, 0.9);
@@ -894,13 +1248,24 @@ prop(() => {
   });
 });
 
+// Control tower + hangar — landmarks on the field, not sky-box flats
+box(M.tower, 66, 12, 118, 5.2, 24, 5.2);
+box(M.steelDark, 66, 24.6, 118, 8.4, 1.4, 8.4);
+box(M.towerGlass, 66, 27.2, 118, 9.2, 3.8, 9.2);
+box(M.steelDark, 66, 29.3, 118, 9.6, 0.35, 9.6);
+box(M.steel, 66, 32.4, 118, 0.22, 6.2, 0.22);
+box(M.bag3, 66, 35.6, 118, 0.45, 0.45, 0.45);
+box(M.towerDark, -62, 6, 96, 28, 12, 18);
+box(M.steelDark, -62, 12.3, 96, 30, 0.5, 20);
+box(M.towerGlass, -62, 7.2, 86.8, 18, 3.2, 0.12);
+
 flushKits();
 
 // ---------------------------------------------------------------------------
 // Airliners — A320-class proportions, built so they read at the glass rather
 // than as a mismatched download. White body, coloured tail, CFM-style pods.
 // ---------------------------------------------------------------------------
-function buildAirliner(livery = 0xc8102e) {
+function buildAirliner(livery = 0xc8102e, name = 'PACIFIC') {
   const root = new THREE.Group();
   const white = new THREE.MeshStandardMaterial({ color: 0xf4f6f8, roughness: 0.22, metalness: 0.42 });
   const paint = new THREE.MeshStandardMaterial({ color: livery, roughness: 0.28, metalness: 0.3 });
@@ -908,9 +1273,13 @@ function buildAirliner(livery = 0xc8102e) {
   const grey = new THREE.MeshStandardMaterial({ color: 0xa8b0b8, roughness: 0.38, metalness: 0.55 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x1a2026, roughness: 0.3, metalness: 0.58 });
   const intake = new THREE.MeshStandardMaterial({ color: 0x0c1014, roughness: 0.55, metalness: 0.2 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x141618, roughness: 0.9, metalness: 0.05 });
+  const fan = new THREE.MeshStandardMaterial({ color: 0x6a7480, roughness: 0.28, metalness: 0.62 });
   const win = new THREE.MeshStandardMaterial({
     color: 0x152030, roughness: 0.08, metalness: 0.65, emissive: 0x0c1828, emissiveIntensity: 0.4,
   });
+  const decal = makeAirlineDecal(name, livery);
+  const flash = makeTailFlash(livery);
   const add = (geo, mat, pos, scale, rot) => {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(...pos);
@@ -919,14 +1288,11 @@ function buildAirliner(livery = 0xc8102e) {
     m.castShadow = true;
     m.receiveShadow = true;
     root.add(m);
+    return m;
   };
-  // A320-class: ~37 m long, ~4 m fuselage, 34 m span — scaled to the apron.
   const fuse = new THREE.CylinderGeometry(2.0, 2.0, 28.5, 24);
   fuse.rotateX(Math.PI / 2);
   add(fuse, white, [0, 0, 0]);
-  // Parabolic ogive: a hemisphere left a flat disk facing the lounge; a cone
-  // read as a pipe cap. This lathe tapers over 6.2 m so the nose is obvious
-  // both head-on and in profile.
   {
     const R = 2, L = 6.2, pts = [];
     for (let i = 0; i <= 14; i++) {
@@ -940,51 +1306,144 @@ function buildAirliner(livery = 0xc8102e) {
   const tailc = new THREE.ConeGeometry(2.0, 6.4, 18);
   tailc.rotateX(-Math.PI / 2);
   add(tailc, white, [0, 0, -17.45]);
-  add(new THREE.BoxGeometry(12.4, 0.55, 7.2), white, [0, -0.85, -0.6]); // wing-body fairing
-  // Swept wings + sharklets
+  add(new THREE.BoxGeometry(12.4, 0.55, 7.2), white, [0, -0.85, -0.6]);
   const wing = new THREE.BoxGeometry(1, 1, 1);
-  add(wing, white, [9.2, -0.35, -1.8], [16.4, 0.22, 4.6], [0, 0.22, 0.04]);
-  add(wing, white, [-9.2, -0.35, -1.8], [16.4, 0.22, 4.6], [0, -0.22, -0.04]);
-  add(new THREE.BoxGeometry(0.18, 1.65, 1.15), white, [17.2, 0.55, -4.4]);
-  add(new THREE.BoxGeometry(0.18, 1.65, 1.15), white, [-17.2, 0.55, -4.4]);
-  add(new THREE.BoxGeometry(7.4, 0.18, 2.6), white, [0, 0.15, -17.6]); // HT
-  add(new THREE.BoxGeometry(0.32, 6.2, 3.6), paint, [0, 3.85, -16.6]);
-  add(new THREE.BoxGeometry(0.14, 0.42, 24), stripe, [0, -0.15, 0.6]);
-  add(new THREE.BoxGeometry(0.12, 0.5, 22), win, [1.98, 0.38, 0.5]);
-  add(new THREE.BoxGeometry(0.12, 0.5, 22), win, [-1.98, 0.38, 0.5]);
-  add(new THREE.BoxGeometry(1.5, 0.42, 1.85), win, [0, 0.82, 16.6]); // cockpit
+  add(wing, white, [5.4, -0.28, -0.6], [8.6, 0.32, 5.4], [0, 0.18, 0.03]);
+  add(wing, white, [-5.4, -0.28, -0.6], [8.6, 0.32, 5.4], [0, -0.18, -0.03]);
+  add(wing, white, [12.6, -0.38, -2.6], [8.2, 0.16, 3.4], [0, 0.28, 0.05]);
+  add(wing, white, [-12.6, -0.38, -2.6], [8.2, 0.16, 3.4], [0, -0.28, -0.05]);
+  add(new THREE.BoxGeometry(0.16, 1.7, 1.2), white, [16.6, 0.55, -4.6]);
+  add(new THREE.BoxGeometry(0.16, 1.7, 1.2), white, [-16.6, 0.55, -4.6]);
+  add(new THREE.BoxGeometry(7.4, 0.18, 2.6), white, [0, 0.15, -17.6]);
+  add(new THREE.BoxGeometry(0.28, 6.2, 3.6), paint, [0, 3.85, -16.6], null, [0, 0.12, 0]);
+  add(new THREE.PlaneGeometry(1.4, 3.2), flash, [0.16, 4.1, -16.4], null, [0, Math.PI / 2, 0]);
+  add(new THREE.PlaneGeometry(1.4, 3.2), flash, [-0.16, 4.1, -16.4], null, [0, -Math.PI / 2, 0]);
+  add(new THREE.BoxGeometry(0.16, 0.38, 26), stripe, [0, -0.22, 0.4]);
+  for (let i = 0; i < 18; i++) {
+    if (i === 3 || i === 12) continue;
+    const z = 10.4 - i * 1.18;
+    add(new THREE.BoxGeometry(0.08, 0.28, 0.38), win, [1.99, 0.44, z]);
+    add(new THREE.BoxGeometry(0.08, 0.28, 0.38), win, [-1.99, 0.44, z]);
+  }
+  add(new THREE.BoxGeometry(0.06, 1.15, 0.7), dark, [2.0, 0.2, 6.9]);
+  add(new THREE.BoxGeometry(0.06, 1.15, 0.7), dark, [-2.0, 0.2, 6.9]);
+  add(new THREE.BoxGeometry(1.7, 0.5, 1.9), win, [0, 0.78, 16.55]);
+  add(new THREE.PlaneGeometry(7.4, 0.85), decal, [2.03, -0.58, 1.6], null, [0, Math.PI / 2, 0]);
+  add(new THREE.PlaneGeometry(7.4, 0.85), decal, [-2.03, -0.58, 1.6], null, [0, -Math.PI / 2, 0]);
   for (const sx of [-1, 1]) {
-    const eng = new THREE.CylinderGeometry(0.82, 0.9, 3.8, 16);
+    const eng = new THREE.CylinderGeometry(0.78, 0.92, 3.9, 16);
     eng.rotateX(Math.PI / 2);
     add(eng, grey, [sx * 6.2, -1.55, 0.35]);
-    add(new THREE.CylinderGeometry(0.62, 0.62, 0.12, 16).rotateX(Math.PI / 2), intake, [sx * 6.2, -1.55, 2.22]);
-    const lip = new THREE.TorusGeometry(0.84, 0.09, 8, 20);
-    add(lip, dark, [sx * 6.2, -1.55, 2.25]);
-    add(new THREE.BoxGeometry(0.38, 1.25, 0.9), grey, [sx * 6.2, -0.78, 0.2]);
+    add(new THREE.CylinderGeometry(0.58, 0.58, 0.1, 16).rotateX(Math.PI / 2), intake, [sx * 6.2, -1.55, 2.28]);
+    add(new THREE.CircleGeometry(0.56, 16), fan, [sx * 6.2, -1.55, 2.24], null, [0, 0, 0]);
+    add(new THREE.TorusGeometry(0.84, 0.09, 8, 20), dark, [sx * 6.2, -1.55, 2.25]);
+    add(new THREE.CylinderGeometry(0.62, 0.7, 0.45, 12).rotateX(Math.PI / 2), dark, [sx * 6.2, -1.55, -1.7]);
+    add(new THREE.BoxGeometry(0.32, 1.25, 0.9), grey, [sx * 6.2, -0.78, 0.2]);
   }
-  add(new THREE.BoxGeometry(0.14, 1.7, 0.14), dark, [0, -2.55, 9.2]);
-  add(new THREE.BoxGeometry(2.4, 0.14, 0.55), dark, [0, -3.4, 9.2]);
-  add(new THREE.BoxGeometry(0.14, 1.45, 0.14), dark, [-1.15, -2.4, -5.4]);
-  add(new THREE.BoxGeometry(0.14, 1.45, 0.14), dark, [1.15, -2.4, -5.4]);
-  add(new THREE.BoxGeometry(2.8, 0.14, 0.55), dark, [0, -3.15, -5.4]);
+  const wheel = new THREE.CylinderGeometry(0.36, 0.36, 0.16, 14);
+  wheel.rotateZ(Math.PI / 2);
+  add(new THREE.BoxGeometry(0.14, 1.55, 0.14), dark, [0, -2.45, 9.2]);
+  add(wheel, rubber, [-0.55, -3.28, 9.2]);
+  add(wheel, rubber, [0.55, -3.28, 9.2]);
+  add(new THREE.BoxGeometry(0.12, 1.35, 0.12), dark, [-1.15, -2.3, -5.4]);
+  add(new THREE.BoxGeometry(0.12, 1.35, 0.12), dark, [1.15, -2.3, -5.4]);
+  add(wheel, rubber, [-1.55, -3.05, -5.4]);
+  add(wheel, rubber, [-0.75, -3.05, -5.4]);
+  add(wheel, rubber, [0.75, -3.05, -5.4]);
+  add(wheel, rubber, [1.55, -3.05, -5.4]);
   root.userData.length = 38;
   return root;
 }
 
 const planes = [];
-function placePlane(livery, x, y, z, yaw) {
-  const p = buildAirliner(livery);
+function placePlane(livery, x, y, z, yaw, name) {
+  const p = buildAirliner(livery, name);
   p.position.set(x, y, z);
   p.rotation.y = yaw;
   airside.add(p);
   planes.push(p);
   return p;
 }
-const parked = placePlane(0x1a4a8a, 8, 3.55, 64, Math.PI - 0.22);  // at gate A2
-placePlane(0x0a6a4a, -8, 3.55, 64, Math.PI + 0.22);                // at gate A1
-placePlane(0x8a2030, -30, 3.55, 88, Math.PI * 0.78);         // taxiing out
-const takingOff = placePlane(0xc8102e, 41, 3.55, 40, 0);
-const landing = placePlane(0x0a6a4a, 41, 28, 190, Math.PI);
+const parked = placePlane(0x1a4a8a, 8, 3.55, 64, Math.PI - 0.22, 'PACIFIC');
+placePlane(0x0a6a4a, -8, 3.55, 64, Math.PI + 0.22, 'AERO NORD');
+placePlane(0x8a2030, -30, 3.55, 88, Math.PI * 0.78, 'REDWOOD');
+const takingOff = placePlane(0xc8102e, 41, 3.55, 40, 0, 'CRIMSON');
+const landing = placePlane(0x0a6a4a, 41, 28, 190, Math.PI, 'AERO NORD');
+
+{
+  const ground = new THREE.Mesh(
+    new THREE.CircleGeometry(780, 48),
+    new THREE.MeshStandardMaterial({ color: 0x6a7a52, roughness: 0.98 }),
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.22;
+  ground.receiveShadow = true;
+  scenery.add(ground);
+
+  const water = new THREE.Mesh(
+    new THREE.CircleGeometry(260, 32),
+    M.water,
+  );
+  water.rotation.x = -Math.PI / 2;
+  water.position.set(210, -0.16, 160);
+  scenery.add(water);
+
+  const hillGeo = new THREE.SphereGeometry(1, 10, 8);
+  for (const [x, z, sx, sy, sz] of [
+    [-340, 420, 120, 18, 70], [-260, 510, 90, 14, 55], [40, 560, 140, 16, 60],
+    [220, 500, 100, 13, 50], [-80, 580, 110, 15, 55], [160, 620, 80, 12, 40],
+  ]) {
+    const h = new THREE.Mesh(hillGeo, M.hill);
+    h.position.set(x, sy * 0.15, z);
+    h.scale.set(sx, sy, sz);
+    scenery.add(h);
+  }
+
+  const towerMat = [M.tower, M.towerDark];
+  const downtown = [
+    [-40, 390, 18, 52, 16], [8, 402, 14, 70, 14], [38, 388, 16, 44, 18],
+    [72, 410, 12, 86, 12], [110, 396, 20, 38, 16], [-80, 404, 15, 48, 14],
+    [-120, 386, 18, 32, 16], [150, 400, 14, 56, 13], [-8, 418, 10, 62, 10],
+    [50, 424, 11, 40, 11],
+  ];
+  for (const [x, z, w, h, d] of downtown) {
+    const shaft = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), towerMat[(Math.abs(x) >> 3) % 2]);
+    shaft.position.set(x, h / 2, z);
+    scenery.add(shaft);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, 2.4, d * 0.7), M.steelDark);
+    cap.position.set(x, h + 0.8, z);
+    scenery.add(cap);
+    const pane = new THREE.Mesh(new THREE.BoxGeometry(w * 0.92, h * 0.72, 0.2), M.towerGlass);
+    pane.position.set(x, h * 0.52, z - d / 2 - 0.05);
+    scenery.add(pane);
+  }
+
+  const cloudFiles = [
+    './textures/CP_Cloud_01.webp',
+    './textures/CP_Cloud_02.webp',
+    './textures/CP_Cloud_03.webp',
+  ];
+  const cloudSlots = [
+    [-220, 110, 40, 160, 50], [80, 95, -80, 180, 55], [260, 120, 90, 200, 60],
+    [-80, 140, 220, 170, 48], [180, 105, 260, 190, 52], [-300, 90, 160, 150, 44],
+    [40, 160, 340, 220, 58], [-160, 125, -140, 170, 46],
+  ];
+  cloudFiles.forEach((url, i) => {
+    const t = loader.load(url);
+    t.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshBasicMaterial({
+      map: t, alphaMap: t, transparent: true, depthWrite: false,
+      opacity: 0.82, fog: true, color: 0xffffff,
+    });
+    for (let k = 0; k < 3; k++) {
+      const slot = cloudSlots[(i * 3 + k) % cloudSlots.length];
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(slot[3], slot[4]), mat);
+      m.position.set(slot[0] + k * 30, slot[1] + k * 8, slot[2] - k * 20);
+      m.lookAt(0, 40, 20);
+      scenery.add(m);
+    }
+  });
+}
 
 function tickPlanes(t) {
   // Takeoff: roll, rotate, climb, loop.
