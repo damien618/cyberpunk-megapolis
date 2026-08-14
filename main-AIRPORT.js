@@ -3,7 +3,7 @@ import { Player } from './player.js?v=49';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=5';
-import { CameraRig } from './cameraRig.js?v=4';
+import { CameraRig } from './cameraRig.js?v=5';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar, carBounds } from './cars.js?v=4';
 import { makeVisitor, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=18';
@@ -838,17 +838,18 @@ slab(M.secWall, 11.72, 12.08, -8, 2, F, SEC_H);
 slab(M.secWall, -12, -10, -7.78, -7.52, F, SEC_H);          // hall wall, security face
 slab(M.secWall, -4, 12, -7.78, -7.52, F, SEC_H);
 slab(M.secWall, -12, 2, 1.52, 1.78, F, SEC_H);              // far wall of the checkpoint
-slab(M.secWall, 11.5, 12, 1.52, 1.78, F, SEC_H);
+slab(M.secWall, 10, 12, 1.52, 1.78, F, SEC_H);              // closes on the shop's west face
 slab(M.ceiling, -12, 12, -8, 2, SEC_H, SEC_H + 0.18);
 box(M.lightBar, 0, SEC_H - 0.1, -6.4, 20, 0.08, 0.4);
 box(M.lightBar, 0, SEC_H - 0.1, -3.2, 20, 0.08, 0.4);
 box(M.lightBar, 0, SEC_H - 0.1, 0.4, 20, 0.08, 0.4);
 
-// Concourse south wall: wide exit from security (x 2..11.5)
+// Concourse south wall: exit from security (x 2..10). The shop starts at
+// x=10, so the old 11.5 opening punched a hole through its south wall.
 slab(M.plaster, -24, 2, 1.8, 2.2, F, CONC_H);
-slab(M.plaster, 11.5, 24, 1.8, 2.2, F, CONC_H);
-slab(M.plaster, 2, 11.5, 1.8, 2.2, 3.3, CONC_H);
-box(M.signArrow, 6.75, 3.9, 2.34, 6.4, 0.95, 0.08);        // faces airside
+slab(M.plaster, 10, 24, 1.8, 2.2, F, CONC_H);
+slab(M.plaster, 2, 10, 1.8, 2.2, 3.3, CONC_H);
+box(M.signArrow, 6, 3.9, 2.34, 6.4, 0.95, 0.08);           // faces airside
 
 // Concourse shell
 slab(M.plaster, -24.2, -23.8, 2, 38, F, CONC_H);
@@ -1054,6 +1055,7 @@ prop(() => {
 slab(M.plaster, 9.8, 10.2, 2, 6, F, RETAIL_H);
 slab(M.plaster, 9.8, 10.2, 12, 16, F, RETAIL_H);
 slab(M.plaster, 9.8, 10.2, 6, 12, 2.55, RETAIL_H);
+slab(M.plaster, 10, 24, 1.98, 2.16, F, RETAIL_H);          // south wall — no view from security
 slab(M.plaster, 10, 24, 15.8, 16.2, F, RETAIL_H);
 slab(M.ceiling, 10, 24, 2, 16, RETAIL_H, RETAIL_H + 0.14);
 for (const lz of [5.5, 12.5])
@@ -1165,12 +1167,15 @@ prop(() => {
 function loungeChair(x, z, ry) {
   prop(() => {
     frame(x, z, ry, () => {
-      furnitureInteraction('sit', 0.32, 0.34, 0.04, F + 0.44);
-      box(M.fabric, 0, F + 0.22, 0, 0.62, 0.16, 0.7);
-      box(M.fabric, 0, F + 0.42, 0, 0.58, 0.12, 0.64);
-      box(M.fabric, 0, F + 0.62, -0.26, 0.62, 0.48, 0.16);
-      box(M.steelDark, -0.28, F + 0.18, 0, 0.05, 0.36, 0.62);
-      box(M.steelDark, 0.28, F + 0.18, 0, 0.05, 0.36, 0.62);
+      // Sit forward of centre so the posed knees clear the lip; recess the
+      // plinth so the calves hang in air instead of through the cushion
+      // (same layout as the villa armchair).
+      furnitureInteraction('sit', 0.28, 0.28, 0.12, F + 0.48);
+      box(M.fabric, 0, F + 0.20, -0.12, 0.58, 0.14, 0.40);
+      box(M.fabric, 0, F + 0.40, -0.08, 0.54, 0.10, 0.44);
+      box(M.fabric, 0, F + 0.64, -0.30, 0.58, 0.44, 0.14);
+      box(M.steelDark, -0.26, F + 0.16, -0.10, 0.05, 0.32, 0.40);
+      box(M.steelDark, 0.26, F + 0.16, -0.10, 0.05, 0.32, 0.40);
     });
   });
 }
@@ -1400,11 +1405,13 @@ const landing = placePlane(0x0a6a4a, 41, 28, 190, Math.PI, 'AERO NORD');
   }
 
   const towerMat = [M.tower, M.towerDark];
+  // Keep the extended runway (x ≈ 20..70) empty so arrivals/departures
+  // never fly through, or stack on, the skyline.
   const downtown = [
-    [-40, 390, 18, 52, 16], [8, 402, 14, 70, 14], [38, 388, 16, 44, 18],
-    [72, 410, 12, 86, 12], [110, 396, 20, 38, 16], [-80, 404, 15, 48, 14],
-    [-120, 386, 18, 32, 16], [150, 400, 14, 56, 13], [-8, 418, 10, 62, 10],
-    [50, 424, 11, 40, 11],
+    [-160, 520, 18, 58, 16], [-120, 545, 14, 76, 14], [-88, 530, 16, 48, 18],
+    [-200, 555, 12, 64, 12], [130, 535, 20, 42, 16], [168, 550, 15, 70, 14],
+    [210, 525, 18, 36, 16], [250, 560, 14, 62, 13], [-240, 540, 11, 50, 11],
+    [300, 548, 13, 44, 12],
   ];
   for (const [x, z, w, h, d] of downtown) {
     const shaft = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), towerMat[(Math.abs(x) >> 3) % 2]);
@@ -1446,25 +1453,38 @@ const landing = placePlane(0x0a6a4a, 41, 28, 190, Math.PI, 'AERO NORD');
 }
 
 function tickPlanes(t) {
-  // Takeoff: roll, rotate, climb, loop.
-  const u = (t * 0.055) % 1;
-  if (u < 0.38) {
-    takingOff.position.set(41, 3.55, 30 + u / 0.38 * 90);
-    takingOff.rotation.set(0, 0, 0);
-  } else {
-    const c = (u - 0.38) / 0.62;
-    takingOff.position.set(41, 3.55 + c * 55, 120 + c * 90);
-    takingOff.rotation.set(-0.18 - c * 0.08, 0, 0);
+  // One runway, one occupant. Independent loops used to put both on x=41
+  // at once, so they stacked on each other (and on the skyline) from the lounge.
+  const RW = 41;
+  const p = (t % 36) / 36;
+
+  if (p < 0.46) {
+    const u = p / 0.46;
+    takingOff.visible = true;
+    landing.visible = false;
+    landing.position.set(RW, 80, 700);
+    if (u < 0.36) {
+      takingOff.position.set(RW, 3.55, 28 + (u / 0.36) * 95);
+      takingOff.rotation.set(0, 0, 0);
+    } else {
+      const c = (u - 0.36) / 0.64;
+      takingOff.position.set(RW, 3.55 + c * 85, 123 + c * 170);
+      takingOff.rotation.set(-0.16 - c * 0.1, 0, 0);
+    }
+    return;
   }
-  // Landing: descend, flare, roll out, reset.
-  const v = (t * 0.042 + 0.35) % 1;
-  if (v < 0.55) {
-    const c = v / 0.55;
-    landing.position.set(41, 38 - c * 34.45, 210 - c * 140);
-    landing.rotation.set(0.12 * (1 - c), Math.PI, 0);
+
+  takingOff.visible = false;
+  takingOff.position.set(RW, 3.55, -80);
+  landing.visible = true;
+  const u = (p - 0.46) / 0.54;
+  if (u < 0.64) {
+    const c = u / 0.64;
+    landing.position.set(RW, 58 - c * 54.45, 320 - c * 240);
+    landing.rotation.set(0.1 * (1 - c), Math.PI, 0);
   } else {
-    const c = (v - 0.55) / 0.45;
-    landing.position.set(41, 3.55, 70 - c * 40);
+    const c = (u - 0.64) / 0.36;
+    landing.position.set(RW, 3.55, 80 - c * 48);
     landing.rotation.set(0, Math.PI, 0);
   }
 }
@@ -1879,6 +1899,7 @@ function updateHud() {
   hudMode.textContent = ctrl.mode;
   hudSpeed.textContent = Math.round(ctrl.vel.length() * 3.6).toString();
   hudHeight.textContent = ctrl.pos.y.toFixed(1);
+  document.documentElement.classList.toggle('is-seated', ctrl.mode === 'sit' || ctrl.mode === 'lie');
 }
 
 function animate() {

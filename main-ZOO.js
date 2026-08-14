@@ -3,7 +3,7 @@ import { Player } from './player.js?v=49';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=5';
-import { CameraRig } from './cameraRig.js?v=4';
+import { CameraRig } from './cameraRig.js?v=5';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar } from './cars.js?v=4';
 import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=18';
@@ -2816,6 +2816,7 @@ function updateHud() {
   hudMode.textContent = ctrl.mode;
   hudSpeed.textContent = Math.round(ctrl.vel.length() * 3.6).toString();
   hudHeight.textContent = ctrl.pos.y.toFixed(1);
+  document.documentElement.classList.toggle('is-seated', ctrl.mode === 'sit' || ctrl.mode === 'lie');
 }
 
 function animate() {

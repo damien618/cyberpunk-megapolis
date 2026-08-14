@@ -273,6 +273,7 @@
   }
   #crosshair::before { left: 6px; top: 0; width: 2px; height: 14px; }
   #crosshair::after { left: 0; top: 6px; width: 14px; height: 2px; }
+  html.is-seated #crosshair { opacity: 0; }
   #furniturePrompt, .lie-prompt {
     padding: 10px 20px; border: 2px solid #000; border-radius: 2px;
     background: #fff; color: #000; cursor: pointer;
@@ -514,9 +515,9 @@
 </script>
 <script type="module">
   const ENGINES = {
-    la: './main-LA.js?v=202608131910',
-    zoo: './main-ZOO.js?v=202608131910',
-    airport: './main-AIRPORT.js?v=202608141230',
+    la: './main-LA.js?v=202608141500',
+    zoo: './main-ZOO.js?v=202608141500',
+    airport: './main-AIRPORT.js?v=202608141600',
   };
   import(ENGINES[document.documentElement.dataset.mode] ?? './main.js?v=24');
 </script>
