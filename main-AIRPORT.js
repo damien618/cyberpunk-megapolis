@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Player } from './player.js?v=49';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
@@ -48,6 +52,20 @@ scene.fog = new THREE.Fog(0xc8d8e6, 200, 920);
 
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.25, 2200);
 camera.position.set(0, 8, -20);
+
+// Post-processing: Bloom for luminous screens, runway lights, illuminated signs and reflections
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
+  window.innerWidth, window.innerHeight, { samples: 4, type: THREE.HalfFloatType }
+));
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.48, // bloom strength: crisp natural glow on lights and emissive signage
+  0.42, // bloom radius
+  0.82  // bloom threshold: only emissives and specular highlights trigger bloom
+);
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());
 
 const hemi = new THREE.HemisphereLight(0xe8f2ff, 0x8a8478, 0.82);
 scene.add(hemi);
@@ -442,12 +460,66 @@ function makeSign(title, sub = '', bg = '#102033', fg = '#eef6fc') {
   });
 }
 
+function makePostcardTex() {
+  return canvasTex(512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#f8f4ee';
+    ctx.fillRect(0, 0, w, h);
+    const cols = ['#2c4870', '#b04030', '#2a7060', '#c07820', '#483060', '#206080'];
+    const titles = ['TOKYO', 'PARIS', 'PACIFIC', 'NEW YORK', 'DUBAI', 'SYDNEY'];
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 2; col++) {
+        const x = 18 + col * 248, y = 18 + row * 160;
+        ctx.fillStyle = cols[(row * 2 + col) % cols.length];
+        ctx.fillRect(x, y, 230, 144);
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.fillRect(x + 10, y + 10, 210, 80);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 22px sans-serif';
+        ctx.fillText(titles[(row * 2 + col) % titles.length], x + 18, y + 120);
+        ctx.fillStyle = '#ffd080';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('POSTCARD · SOUVENIR', x + 18, y + 136);
+      }
+    }
+  });
+}
+function makeMagazineTex() {
+  return canvasTex(256, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#10141c';
+    ctx.fillRect(0, 0, w, h);
+    const mags = [
+      { title: 'VOYAGE', sub: 'WORLD TRAVEL 2026', c: '#e04030' },
+      { title: 'AERO', sub: 'AVIATION TODAY', c: '#2080d0' },
+      { title: 'STYLE', sub: 'DUTY FREE LUXE', c: '#d0a040' },
+      { title: 'ESCAPE', sub: 'PACIFIC ISLANDS', c: '#20a060' },
+    ];
+    mags.forEach((m, i) => {
+      const y = 12 + i * 124;
+      ctx.fillStyle = '#1c2230';
+      ctx.fillRect(10, y, w - 20, 114);
+      ctx.fillStyle = m.c;
+      ctx.fillRect(10, y, w - 20, 32);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillText(m.title, 20, y + 23);
+      ctx.fillStyle = '#d0d8e8';
+      ctx.font = '11px sans-serif';
+      ctx.fillText(m.sub, 20, y + 54);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(20, y + 64, w - 40, 48);
+    });
+  });
+}
+const postcardA = makePostcardTex();
+const magazineA = makeMagazineTex();
+
 const M = {
-  terrazzo: worldXZUv(new THREE.MeshStandardMaterial({
-    map: terrazzoA, roughness: 0.35, metalness: 0.04, color: 0xffffff,
+  // Polished Terrazzo & Tiles with subtle gloss reflections
+  terrazzo: worldXZUv(new THREE.MeshPhysicalMaterial({
+    map: terrazzoA, roughness: 0.22, metalness: 0.08, clearcoat: 0.38, clearcoatRoughness: 0.12, color: 0xffffff,
   }), 1.7),
-  tile: worldXZUv(new THREE.MeshStandardMaterial({
-    map: tileA, normalMap: tileN, roughness: 0.28, metalness: 0.06, color: 0xe8e4dc,
+  tile: worldXZUv(new THREE.MeshPhysicalMaterial({
+    map: tileA, normalMap: tileN, roughness: 0.24, metalness: 0.08, clearcoat: 0.32, clearcoatRoughness: 0.1, color: 0xe8e4dc,
   }), 1.6),
   paver: worldXZUv(new THREE.MeshStandardMaterial({
     map: floorA, normalMap: floorN, roughness: 0.55, metalness: 0.04, color: 0xd8d4cc,
@@ -465,8 +537,6 @@ const M = {
   plasterWarm: new THREE.MeshStandardMaterial({
     map: stuccoA, normalMap: stuccoN, color: 0xf4e8d8, roughness: 0.8,
   }),
-  // Security checkpoint: cool metal walls + blue-grey tiles, so the room
-  // through the portal does not vanish into the hall's warm plaster.
   secWall: new THREE.MeshStandardMaterial({
     map: metalA, normalMap: metalN, color: 0xc8d8e4, roughness: 0.46, metalness: 0.28,
   }),
@@ -477,13 +547,14 @@ const M = {
     map: metalA, normalMap: metalN, color: 0xb0b6bc, roughness: 0.32, metalness: 0.72,
   }),
   steelDark: new THREE.MeshStandardMaterial({ color: 0x2c3238, roughness: 0.38, metalness: 0.65 }),
+  // Enhanced optical glass with transmission clearcoat
   glass: new THREE.MeshPhysicalMaterial({
-    color: 0xb8d4e4, roughness: 0.04, metalness: 0.0,
-    transparent: true, opacity: 0.22, depthWrite: false,
-    clearcoat: 1, clearcoatRoughness: 0.05, side: THREE.DoubleSide,
+    color: 0xb8d4e4, roughness: 0.03, metalness: 0.04,
+    transparent: true, opacity: 0.24, depthWrite: false,
+    clearcoat: 1.0, clearcoatRoughness: 0.04, side: THREE.DoubleSide,
   }),
   asphalt: worldXZUv(new THREE.MeshStandardMaterial({
-    map: asphaltA, normalMap: asphaltN, color: 0x6a6a6a, roughness: 0.92,
+    map: asphaltA, normalMap: asphaltN, color: 0x606060, roughness: 0.92,
   }), 8),
   paint: new THREE.MeshStandardMaterial({ color: 0xe8e4d4, roughness: 0.7 }),
   paintYellow: new THREE.MeshStandardMaterial({ color: 0xd8c45a, roughness: 0.55 }),
@@ -527,7 +598,7 @@ const M = {
     map: woodA, normalMap: woodN, color: 0xc8b49a, roughness: 0.62,
   }),
   accent: new THREE.MeshStandardMaterial({
-    color: 0x8ec8e0, roughness: 0.35, metalness: 0.22, emissive: 0x8ec8e0, emissiveIntensity: 0.18,
+    color: 0x8ec8e0, roughness: 0.35, metalness: 0.22, emissive: 0x8ec8e0, emissiveIntensity: 0.28,
   }),
   bottleAmber: new THREE.MeshStandardMaterial({ color: 0x8a4a18, roughness: 0.18, metalness: 0.42 }),
   bottleGreen: new THREE.MeshStandardMaterial({ color: 0x1a4a32, roughness: 0.2, metalness: 0.38 }),
@@ -546,20 +617,20 @@ const M = {
   tower: new THREE.MeshStandardMaterial({ color: 0x9aa4ae, roughness: 0.62, metalness: 0.12 }),
   towerDark: new THREE.MeshStandardMaterial({ color: 0x5a646e, roughness: 0.58, metalness: 0.18 }),
   towerGlass: new THREE.MeshStandardMaterial({
-    color: 0x7a9ab0, roughness: 0.18, metalness: 0.35, emissive: 0x1a3040, emissiveIntensity: 0.15,
+    color: 0x7a9ab0, roughness: 0.18, metalness: 0.35, emissive: 0x1a3040, emissiveIntensity: 0.22,
   }),
   bag: new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 0.85 }),
   bag2: new THREE.MeshStandardMaterial({ color: 0x2a4a6a, roughness: 0.85 }),
   bag3: new THREE.MeshStandardMaterial({ color: 0x8a3030, roughness: 0.85 }),
   screen: new THREE.MeshStandardMaterial({
-    map: fidsA, emissive: 0xffffff, emissiveMap: fidsA, emissiveIntensity: 0.85, roughness: 0.25,
+    map: fidsA, emissive: 0xffffff, emissiveMap: fidsA, emissiveIntensity: 1.1, roughness: 0.2,
   }),
   signCheck: makeSign('CHECK-IN', 'BAGGAGE DROP  ·  ISLANDS A–D'),
   signSec: makeSign('SECURITY  ↑', 'ALL GATES  ·  LIQUIDS & LAPTOPS OUT'),
   signGates: makeSign('GATES A1–A3', 'BOARDING LOUNGE'),
   signArrow: makeSign('GATES A1–A3  →', 'CAFÉ  ·  SHOPS  ·  LOUNGE'),
   signCafe: makeSign('GATE CAFÉ', 'COFFEE  ·  PASTRIES', '#2e1f14', '#f6ead8'),
-  signShop: makeSign('SOUVENIRS', 'DUTY FREE  ·  GIFTS', '#1c2e26', '#eaf6ee'),
+  signShop: makeSign('DUTY FREE & SOUVENIRS', 'PERFUMES · GIFTS · SWEETS', '#221410', '#fceee2'),
   signDept: makeSign('DEPARTURES', 'PACIFIC GATE TERMINAL'),
   signGateA: makeSign('GATE A1', 'AA 214  ·  NEW YORK JFK  ·  BOARDING'),
   signGateB: makeSign('GATE A2', 'BA 268  ·  LONDON LHR  ·  ON TIME'),
@@ -567,10 +638,126 @@ const M = {
   signWC: makeSign('WC', 'RESTROOMS'),
   ceiling: new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.7 }),
   lightBar: new THREE.MeshStandardMaterial({
-    color: 0xfff6e8, emissive: 0xffe8c4, emissiveIntensity: 1.4, roughness: 0.4,
+    color: 0xfff6e8, emissive: 0xffe8c4, emissiveIntensity: 1.6, roughness: 0.35,
   }),
   grass: new THREE.MeshStandardMaterial({ color: 0x6a8a52, roughness: 0.96 }),
   collider: new THREE.MeshBasicMaterial({ visible: false }),
+
+  // --- Aerodrome Runway & Taxiway Lighting Materials (Bloom Enabled) ---
+  runwayLightWhite: new THREE.MeshStandardMaterial({
+    color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.8, roughness: 0.2,
+  }),
+  runwayLightAmber: new THREE.MeshStandardMaterial({
+    color: 0xffaa33, emissive: 0xffaa33, emissiveIntensity: 2.6, roughness: 0.2,
+  }),
+  runwayLightGreen: new THREE.MeshStandardMaterial({
+    color: 0x33ff66, emissive: 0x33ff66, emissiveIntensity: 2.8, roughness: 0.2,
+  }),
+  runwayLightRed: new THREE.MeshStandardMaterial({
+    color: 0xff2222, emissive: 0xff2222, emissiveIntensity: 2.8, roughness: 0.2,
+  }),
+  taxiwayLightBlue: new THREE.MeshStandardMaterial({
+    color: 0x3399ff, emissive: 0x2288ff, emissiveIntensity: 2.7, roughness: 0.2,
+  }),
+  taxiwayLightGreen: new THREE.MeshStandardMaterial({
+    color: 0x22ee66, emissive: 0x22ee66, emissiveIntensity: 2.7, roughness: 0.2,
+  }),
+  papiWhite: new THREE.MeshStandardMaterial({
+    color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 3.2, roughness: 0.15,
+  }),
+  papiRed: new THREE.MeshStandardMaterial({
+    color: 0xff2222, emissive: 0xff1111, emissiveIntensity: 3.2, roughness: 0.15,
+  }),
+
+  // --- Tarmac Weathering Decals & Markings ---
+  rubberSkid: new THREE.MeshStandardMaterial({
+    color: 0x161616, roughness: 0.98, metalness: 0.02, transparent: true, opacity: 0.75, depthWrite: false,
+  }),
+  oilStain: new THREE.MeshStandardMaterial({
+    color: 0x111114, roughness: 0.4, metalness: 0.4, transparent: true, opacity: 0.7, depthWrite: false,
+  }),
+
+  // --- Dynamic Aircraft Lighting Materials ---
+  navRed: new THREE.MeshStandardMaterial({
+    color: 0xff1020, emissive: 0xff1020, emissiveIntensity: 3.2, roughness: 0.2,
+  }),
+  navGreen: new THREE.MeshStandardMaterial({
+    color: 0x10ff30, emissive: 0x10ff30, emissiveIntensity: 3.2, roughness: 0.2,
+  }),
+  strobeWhite: new THREE.MeshStandardMaterial({
+    color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.0, roughness: 0.1,
+  }),
+  beaconRed: new THREE.MeshStandardMaterial({
+    color: 0xff1818, emissive: 0xff1818, emissiveIntensity: 0.0, roughness: 0.1,
+  }),
+  thrustGlow: new THREE.MeshStandardMaterial({
+    color: 0xff8833, emissive: 0xff6611, emissiveIntensity: 0.0, transparent: true, opacity: 0.0, depthWrite: false,
+  }),
+
+  // --- Luxury Souvenir Shop Materials (Warm, Inviting & Rich) ---
+  shopWood: worldXZUv(new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0x8a5832, roughness: 0.42, metalness: 0.05,
+  }), 1.5),
+  shopWoodDark: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0x3d2012, roughness: 0.45, metalness: 0.08,
+  }),
+  shopCarpet: worldXZUv(new THREE.MeshStandardMaterial({
+    map: carpetA, color: 0x822424, roughness: 0.94, metalness: 0.0,
+  }), 1.8),
+  shopWarmWall: new THREE.MeshStandardMaterial({
+    map: stuccoA, normalMap: stuccoN, color: 0xf6ede0, roughness: 0.78,
+  }),
+  shopGold: new THREE.MeshStandardMaterial({
+    color: 0xd8b248, roughness: 0.28, metalness: 0.78,
+  }),
+  shopLightWarm: new THREE.MeshStandardMaterial({
+    color: 0xffeed0, emissive: 0xffc860, emissiveIntensity: 1.8, roughness: 0.3,
+  }),
+  perfumeGlass: new THREE.MeshPhysicalMaterial({
+    color: 0xf2f8ff, roughness: 0.06, metalness: 0.1, transparent: true, opacity: 0.65, clearcoat: 1.0,
+  }),
+  perfumeAmber: new THREE.MeshPhysicalMaterial({
+    color: 0xda7820, roughness: 0.12, metalness: 0.25, clearcoat: 1.0,
+  }),
+  perfumeRose: new THREE.MeshPhysicalMaterial({
+    color: 0xd84868, roughness: 0.12, metalness: 0.25, clearcoat: 1.0,
+  }),
+  chocGold: new THREE.MeshStandardMaterial({
+    color: 0xdcb848, roughness: 0.26, metalness: 0.72,
+  }),
+  chocRed: new THREE.MeshStandardMaterial({
+    color: 0x9e1a22, roughness: 0.38, metalness: 0.25,
+  }),
+  chocDark: new THREE.MeshStandardMaterial({
+    color: 0x241610, roughness: 0.42, metalness: 0.15,
+  }),
+  plushBrown: new THREE.MeshStandardMaterial({
+    color: 0x86502c, roughness: 0.98,
+  }),
+  plushRed: new THREE.MeshStandardMaterial({
+    color: 0xbe1c2c, roughness: 0.95,
+  }),
+  plushBeige: new THREE.MeshStandardMaterial({
+    color: 0xd6b896, roughness: 0.98,
+  }),
+  luggageRed: new THREE.MeshPhysicalMaterial({
+    color: 0xb41c2c, roughness: 0.22, metalness: 0.35, clearcoat: 0.6,
+  }),
+  luggageTeal: new THREE.MeshPhysicalMaterial({
+    color: 0x168294, roughness: 0.22, metalness: 0.35, clearcoat: 0.6,
+  }),
+  luggageDark: new THREE.MeshPhysicalMaterial({
+    color: 0x202226, roughness: 0.28, metalness: 0.45, clearcoat: 0.5,
+  }),
+  postcardMat: new THREE.MeshStandardMaterial({
+    map: postcardA, roughness: 0.35,
+  }),
+  magazineMat: new THREE.MeshStandardMaterial({
+    map: magazineA, roughness: 0.35,
+  }),
+  signPerfume: makeSign('PERFUMES & BEAUTY', 'DUTY FREE LUXURY', '#24141c', '#fce8f0'),
+  signChoc: makeSign('FINE CONFECTIONERY', 'SWISS CHOCOLATE & SWEETS', '#22150e', '#fcf2e4'),
+  signGifts: makeSign('GIFTS & SOUVENIRS', 'PLUSH · TOYS · CRAFTS', '#142018', '#eaf6ee'),
 };
 
 const world = new THREE.Group();
@@ -730,10 +917,66 @@ for (let z = 40; z < 200; z += 18) {
 }
 slab(M.paintYellow, 27.7, 28.3, 32, 208, 0.03, 0.05);
 slab(M.paintYellow, 53.7, 54.3, 32, 208, 0.03, 0.05);
-for (const gx of [-8, 8])                                   // gate lead-in lines
+for (const gx of [-8, 8, -30])                              // gate lead-in lines
   slab(M.paintYellow, gx - 0.18, gx + 0.18, 40, 78, 0.005, 0.02);
 slab(M.grass, -80, 26, 42, 210, -0.1, -0.02);
 slab(M.grass, 56, 90, 32, 210, -0.1, -0.02);
+
+// --- Runway Rubber Skid Marks (Touchdown Zone) ---
+for (let sz = 46; sz < 94; sz += 5) {
+  slab(M.rubberSkid, 39.4, 40.4, sz, sz + 3.6, 0.032, 0.046);
+  slab(M.rubberSkid, 41.6, 42.6, sz, sz + 3.6, 0.032, 0.046);
+}
+// --- Apron Oil Stains & Parking Stop Bars ---
+for (const gx of [-8, 8, -30]) {
+  slab(M.paintYellow, gx - 1.8, gx + 1.8, 63.8, 64.4, 0.01, 0.03); // T-stop bar
+  shape(G.cyl, M.oilStain, gx, 0.015, 62.5, 3.2, 0.01, 3.2);       // engine/APU drip zone
+}
+
+// --- Aerodrome Runway & Taxiway Lighting Infrastructure ---
+function elevatedRunwayLight(x, z, mat) {
+  shape(G.cylBase, M.steelDark, x, 0.03, z, 0.12, 0.22, 0.12);
+  shape(G.sphere, mat, x, 0.26, z, 0.18, 0.18, 0.18);
+}
+function flushCenterlineLight(x, z, mat) {
+  shape(G.cylBase, mat, x, 0.035, z, 0.22, 0.04, 0.22);
+}
+
+// Elevated runway edge lights (White / Amber near rollout end)
+for (let rz = 32; rz <= 208; rz += 11) {
+  const edgeMat = rz > 165 ? M.runwayLightAmber : M.runwayLightWhite;
+  elevatedRunwayLight(27.8, rz, edgeMat);
+  elevatedRunwayLight(54.2, rz, edgeMat);
+}
+// Runway Threshold lights: Green at arrival threshold (z=32), Red at departure end (z=208)
+for (let rx = 28.5; rx <= 53.5; rx += 2.1) {
+  elevatedRunwayLight(rx, 32.0, M.runwayLightGreen);
+  elevatedRunwayLight(rx, 208.0, M.runwayLightRed);
+}
+// Flush runway centerline lights (White)
+for (let cz = 36; cz < 204; cz += 12) {
+  flushCenterlineLight(41.0, cz, M.runwayLightWhite);
+}
+// Taxiway Edge Lights (Blue) along apron perimeter
+for (let tx = -24; tx <= 24; tx += 4.5) {
+  elevatedRunwayLight(tx, 38.6, M.taxiwayLightBlue);
+}
+for (let tz = 38.6; tz <= 78; tz += 6.5) {
+  elevatedRunwayLight(-24.2, tz, M.taxiwayLightBlue);
+  elevatedRunwayLight(24.2, tz, M.taxiwayLightBlue);
+}
+// Taxiway Centerline Guidance Lights (Green)
+for (const tgx of [-8, 8]) {
+  for (let tgz = 40; tgz <= 76; tgz += 5.5) {
+    flushCenterlineLight(tgx, tgz, M.taxiwayLightGreen);
+  }
+}
+// PAPI (Precision Approach Path Indicator) 4-unit light bar at touchdown zone
+for (let pi = 0; pi < 4; pi++) {
+  const papiX = 23.4 - pi * 1.0;
+  shape(G.box, M.steelDark, papiX, 0.16, 62, 0.55, 0.32, 0.65);
+  shape(G.sphere, pi < 2 ? M.papiWhite : M.papiRed, papiX, 0.28, 62, 0.24, 0.24, 0.24);
+}
 
 // Drop-off canopy over the sidewalk, lit from underneath
 slab(M.steelDark, -20, 20, -40, -33.2, 5.3, 5.7);
@@ -1049,95 +1292,239 @@ prop(() => {
 });
 
 // ---------------------------------------------------------------------------
-// SOUVENIR SHOP — mirrored unit, x 10..24 / z 2..16, showcase windows
-// flanking the door, shelving on the walls and two central gondolas.
+// SOUVENIR SHOP (DUTY FREE) — Warm, rich and vibrant retail flagship unit,
+// x 10..24 / z 2..16. Warm oak & mahogany paneling, gold trims, illuminated
+// shelves, luxury perfumes, fine Swiss chocolates, plush mascots, rotary
+// postcard racks, spinner suitcases, and warm ambient 2700K lighting.
 // ---------------------------------------------------------------------------
-slab(M.plaster, 9.8, 10.2, 2, 6, F, RETAIL_H);
-slab(M.plaster, 9.8, 10.2, 12, 16, F, RETAIL_H);
-slab(M.plaster, 9.8, 10.2, 6, 12, 2.55, RETAIL_H);
-slab(M.plaster, 10, 24, 1.98, 2.16, F, RETAIL_H);          // south wall — no view from security
-slab(M.plaster, 10, 24, 15.8, 16.2, F, RETAIL_H);
+slab(M.shopWarmWall, 9.8, 10.2, 2, 6, F, RETAIL_H);
+slab(M.shopWarmWall, 9.8, 10.2, 12, 16, F, RETAIL_H);
+slab(M.shopWoodDark, 9.8, 10.2, 6, 12, 2.55, RETAIL_H);   // luxury dark wood header
+slab(M.shopWarmWall, 10, 24, 1.98, 2.16, F, RETAIL_H);     // south wall
+slab(M.shopWarmWall, 10, 24, 15.8, 16.2, F, RETAIL_H);     // north wall
 slab(M.ceiling, 10, 24, 2, 16, RETAIL_H, RETAIL_H + 0.14);
-for (const lz of [5.5, 12.5])
-  box(M.lightBar, 17, RETAIL_H - 0.08, lz, 8, 0.07, 0.35);
+
+// Wooden slat wall paneling & luxury trims
+box(M.slat, 17, RETAIL_H / 2, 15.72, 13.8, RETAIL_H - 0.2, 0.08);
+box(M.slat, 23.72, RETAIL_H / 2, 9, 0.08, RETAIL_H - 0.2, 13.8);
+box(M.shopGold, 17, 0.1, 15.72, 13.8, 0.08, 0.09);
+box(M.shopGold, 23.72, 0.1, 9, 0.09, 0.08, 13.8);
+
+// Luxury burgundy central aisle runner carpet
+slab(M.shopCarpet, 11.5, 22.5, 4.2, 13.8, 0.05, 0.058);
+
+// Warm ambient light bars & downlights
+for (const lz of [5.2, 8.8, 12.8]) {
+  box(M.shopLightWarm, 17, RETAIL_H - 0.08, lz, 9.5, 0.06, 0.28);
+}
+roomLight(13.5, 2.9, 5.5, 1.8, 12);
+roomLight(20.5, 2.9, 5.5, 1.8, 12);
+roomLight(13.5, 2.9, 12.5, 1.8, 12);
+roomLight(20.5, 2.9, 12.5, 1.8, 12);
+
+// Entrance illuminated fascia sign
 box(M.signShop, 9.66, 3.0, 9, 0.08, 0.8, 5.0);
-function bottle(x, y, z, body, cap, h = 0.34) {
-  shape(G.cyl, body, x, y, z, 0.09, h, 0.09);
-  shape(G.cyl, body, x, y + h * 0.5 + 0.04, z, 0.032, 0.08, 0.032);
-  shape(G.cyl, cap, x, y + h * 0.5 + 0.09, z, 0.038, 0.03, 0.038);
+
+// Helper product builders
+function perfumeBottle(x, y, z, matBody, matCap, h = 0.24, isRound = false) {
+  if (isRound) shape(G.sphere, matBody, x, y + h * 0.45, z, 0.12, h * 0.8, 0.12);
+  else box(matBody, x, y + h * 0.45, z, 0.11, h * 0.9, 0.11);
+  shape(G.cyl, matCap, x, y + h + 0.03, z, 0.045, 0.06, 0.045);
 }
-function tote(x, y, z, mat) {
-  box(mat, x, y, z, 0.28, 0.32, 0.1);
-  box(mat, x - 0.08, y + 0.22, z, 0.03, 0.16, 0.03);
-  box(mat, x + 0.08, y + 0.22, z, 0.03, 0.16, 0.03);
+function chocPyramid(x, y, z) {
+  shape(G.cone, M.chocGold, x, y, z, 0.14, 0.22, 0.14);
 }
-function foldedShirt(x, y, z, mat) {
-  box(mat, x, y, z, 0.32, 0.06, 0.24);
-  box(mat, x, y + 0.04, z + 0.02, 0.28, 0.03, 0.16);
+function chocBox(x, y, z, mat, w = 0.28, h = 0.08, d = 0.18, ry = 0) {
+  box(mat, x, y + h / 2, z, w, h, d, ry);
+  box(M.shopGold, x, y + h / 2, z, w * 0.25, h + 0.005, d + 0.005, ry); // ribbon
+}
+function teddyBear(x, y, z, ry = 0) {
+  frame(x, z, ry, () => {
+    shape(G.sphere, M.plushBrown, 0, y + 0.16, 0, 0.22, 0.24, 0.20);
+    shape(G.sphere, M.plushBrown, 0, y + 0.32, 0, 0.20, 0.19, 0.18);
+    shape(G.sphere, M.plushBeige, 0, y + 0.30, 0.08, 0.11, 0.09, 0.08);
+    shape(G.sphere, M.capBlack, 0, y + 0.32, 0.12, 0.035, 0.03, 0.03);
+    shape(G.sphere, M.plushBrown, -0.07, y + 0.40, 0, 0.07, 0.07, 0.04);
+    shape(G.sphere, M.plushBrown, 0.07, y + 0.40, 0, 0.07, 0.07, 0.04);
+    shape(G.sphere, M.plushBeige, -0.07, y + 0.40, 0.02, 0.04, 0.04, 0.02);
+    shape(G.sphere, M.plushBeige, 0.07, y + 0.40, 0.02, 0.04, 0.04, 0.02);
+    shape(G.cyl, M.plushRed, 0, y + 0.23, 0, 0.18, 0.05, 0.18);
+    shape(G.sphere, M.plushBrown, -0.12, y + 0.17, 0.04, 0.08, 0.14, 0.08);
+    shape(G.sphere, M.plushBrown, 0.12, y + 0.17, 0.04, 0.08, 0.14, 0.08);
+    shape(G.sphere, M.plushBrown, -0.08, y + 0.06, 0.09, 0.09, 0.08, 0.12);
+    shape(G.sphere, M.plushBrown, 0.08, y + 0.06, 0.09, 0.09, 0.08, 0.12);
+  });
+}
+function suitcase(x, y, z, mat, ry = 0) {
+  frame(x, z, ry, () => {
+    box(mat, 0, y + 0.36, 0, 0.32, 0.56, 0.42);
+    box(M.steelDark, 0, y + 0.36, 0, 0.325, 0.57, 0.04);
+    box(M.shopGold, 0, y + 0.50, 0.14, 0.06, 0.04, 0.03);
+    for (const [wx, wz] of [[-0.11, -0.15], [0.11, -0.15], [-0.11, 0.15], [0.11, 0.15]]) {
+      shape(G.cyl, M.steelDark, wx, y + 0.04, wz, 0.05, 0.08, 0.05);
+    }
+    box(M.steelDark, 0, y + 0.68, 0, 0.16, 0.10, 0.03);
+  });
 }
 function snowGlobe(x, y, z) {
-  shape(G.cyl, M.gold, x, y, z, 0.14, 0.08, 0.14);
-  shape(G.sphere, M.glass, x, y + 0.14, z, 0.18, 0.18, 0.18);
-  shape(G.sphere, M.grass, x, y + 0.12, z, 0.07, 0.07, 0.07);
+  shape(G.cyl, M.shopGold, x, y, z, 0.14, 0.08, 0.14);
+  shape(G.sphere, M.perfumeGlass, x, y + 0.14, z, 0.18, 0.18, 0.18);
+  shape(G.cone, M.gold, x, y + 0.12, z, 0.08, 0.14, 0.08);
 }
-// showcase windows flanking the door: glass over a lit display shelf
+function souvenirMug(x, y, z, mat) {
+  shape(G.cyl, mat, x, y + 0.08, z, 0.11, 0.16, 0.11);
+  box(mat, x + 0.07, y + 0.08, z, 0.04, 0.10, 0.06);
+}
+
+// --- Entrance Showcase Display Windows ---
 for (const wz of [4, 14]) {
-  box(M.paint, 10.3, F + 0.45, wz, 0.3, 0.9, 3.2);
+  box(M.shopWoodDark, 10.3, F + 0.45, wz, 0.32, 0.9, 3.2);
   box(M.glass, 10.32, F + 1.7, wz, 0.1, 1.6, 3.0);
-  box(M.lightBar, 10.28, F + 0.92, wz, 0.18, 0.03, 2.8);
+  box(M.shopLightWarm, 10.28, F + 0.92, wz, 0.22, 0.04, 2.8);
+  box(M.shopGold, 10.3, F + 0.91, wz, 0.34, 0.03, 3.2);
 }
 prop(() => {
-  bottle(10.28, F + 1.12, 3.2, M.bottleAmber, M.capGold, 0.3);
-  bottle(10.28, F + 1.12, 3.55, M.bottleWine, M.capBlack, 0.32);
-  bottle(10.28, F + 1.12, 3.9, M.bottleGreen, M.capGold, 0.28);
-  tote(10.28, F + 1.12, 4.4, M.bag2);
-  snowGlobe(10.28, F + 1.02, 4.85);
-  bottle(10.28, F + 1.12, 13.2, M.bottleClear, M.capGold, 0.26);
-  bottle(10.28, F + 1.12, 13.55, M.bottleAmber, M.capBlack, 0.3);
-  tote(10.28, F + 1.12, 14.05, M.bag3);
-  foldedShirt(10.28, F + 1.02, 14.5, M.shirtBlue);
-  snowGlobe(10.28, F + 1.02, 14.9);
+  // Left window showcase: Perfumes & Gold Chocolates
+  perfumeBottle(10.28, F + 0.96, 3.1, M.perfumeAmber, M.capGold, 0.26);
+  perfumeBottle(10.28, F + 0.96, 3.5, M.perfumeRose, M.shopGold, 0.24, true);
+  chocPyramid(10.28, F + 0.96, 4.0);
+  chocBox(10.28, F + 0.96, 4.5, M.chocRed, 0.32, 0.09, 0.2);
+  snowGlobe(10.28, F + 0.96, 5.0);
+
+  // Right window showcase: Teddy Mascot & Luxe Treats
+  teddyBear(10.28, F + 0.96, 12.8, Math.PI / 2);
+  chocBox(10.28, F + 0.96, 13.5, M.chocGold, 0.3, 0.08, 0.18);
+  perfumeBottle(10.28, F + 0.96, 14.1, M.perfumeGlass, M.capBlack, 0.28);
+  chocPyramid(10.28, F + 0.96, 14.7);
+  snowGlobe(10.28, F + 0.96, 15.2);
 });
+
+// --- Zone 1 & 2: North Wall Luxury Duty-Free Wall Units ---
 prop(() => {
-  box(M.desk, 13.4, F + 0.52, 3.6, 2.8, 1.04, 1.0);        // till by the door
-  box(M.screen, 13.9, F + 1.25, 3.6, 0.5, 0.35, 0.04);
-  // wall shelving — three rails, stock that reads as bottles / gifts / shirts
-  box(M.paint, 17, F + 1.15, 15.45, 12.0, 2.3, 0.12);
-  box(M.paint, 23.55, F + 1.15, 9, 0.12, 2.3, 11.0);
-  for (const y of [0.55, 1.15, 1.75]) {
-    box(M.steelDark, 17, F + y, 15.28, 11.6, 0.04, 0.28);
-    box(M.steelDark, 23.38, F + y, 9, 0.28, 0.04, 10.6);
+  // Zone 1: Perfumes & Cosmetics (x: 10.8..16.8, z: 15.4)
+  box(M.shopWoodDark, 13.8, F + 1.25, 15.46, 5.8, 2.5, 0.35);
+  box(M.signPerfume, 13.8, F + 2.65, 15.3, 5.2, 0.48, 0.06);
+  for (const sy of [0.55, 1.15, 1.75]) {
+    box(M.shopWood, 13.8, F + sy, 15.3, 5.6, 0.04, 0.3);
+    box(M.shopLightWarm, 13.8, F + sy + 0.01, 15.42, 5.4, 0.02, 0.06); // under-shelf LED
   }
-  const bodies = [M.bottleAmber, M.bottleGreen, M.bottleWine, M.bottleClear];
-  const caps = [M.capGold, M.capBlack];
-  for (let i = 0; i < 10; i++) {
-    const sx = 11.6 + i * 1.15;
-    bottle(sx, F + 0.72, 15.2, bodies[i % 4], caps[i % 2], 0.26 + (i % 3) * 0.04);
-    bottle(sx, F + 1.32, 15.2, bodies[(i + 2) % 4], caps[(i + 1) % 2], 0.24);
-    if (i % 2 === 0) foldedShirt(sx, F + 1.88, 15.18, [M.shirt, M.shirtBlue, M.shirtRed][i % 3]);
-    else tote(sx, F + 1.92, 15.18, i % 4 ? M.bag2 : M.bag3);
+  const perfumeMats = [M.perfumeAmber, M.perfumeRose, M.perfumeGlass, M.bottleAmber];
+  for (let i = 0; i < 6; i++) {
+    const px = 11.6 + i * 0.88;
+    perfumeBottle(px, F + 0.58, 15.25, perfumeMats[i % 4], M.capGold, 0.24 + (i % 2) * 0.04);
+    perfumeBottle(px, F + 1.18, 15.25, perfumeMats[(i + 1) % 4], M.capBlack, 0.22, i % 2 === 0);
+    perfumeBottle(px, F + 1.78, 15.25, perfumeMats[(i + 2) % 4], M.shopGold, 0.25);
   }
-  for (let i = 0; i < 8; i++) {
-    const sz = 4.2 + i * 1.25;
-    bottle(23.28, F + 0.72, sz, bodies[i % 4], caps[i % 2], 0.28);
-    snowGlobe(23.28, F + 1.2, sz);
-    foldedShirt(23.28, F + 1.88, sz, [M.shirt, M.shirtBlue, M.shirtRed][i % 3]);
+
+  // Zone 2: Fine Chocolates & Sweets (x: 17.2..23.4, z: 15.4)
+  box(M.shopWoodDark, 20.3, F + 1.25, 15.46, 5.8, 2.5, 0.35);
+  box(M.signChoc, 20.3, F + 2.65, 15.3, 5.2, 0.48, 0.06);
+  for (const sy of [0.55, 1.15, 1.75]) {
+    box(M.shopWood, 20.3, F + sy, 15.3, 5.6, 0.04, 0.3);
+    box(M.shopLightWarm, 20.3, F + sy + 0.01, 15.42, 5.4, 0.02, 0.06);
   }
-  for (const gx of [14.6, 18.8]) {                          // open gondolas
-    box(M.desk, gx, F + 0.06, 9, 1.15, 0.12, 6.2);
-    box(M.desk, gx, F + 0.7, 9, 0.08, 1.4, 6.2);
-    for (const y of [0.42, 0.88, 1.34]) box(M.desk, gx, F + y, 9, 1.05, 0.04, 6.0);
-    for (let i = 0; i < 6; i++) {
-      const z = 6.6 + i * 0.95;
-      bottle(gx - 0.22, F + 0.58, z, bodies[i % 4], caps[i % 2], 0.24);
-      bottle(gx + 0.22, F + 0.58, z, bodies[(i + 1) % 4], caps[(i + 1) % 2], 0.26);
-      if (i % 2) tote(gx, F + 1.08, z, i % 4 ? M.bag3 : M.bag2);
-      else foldedShirt(gx, F + 0.98, z, [M.shirt, M.shirtBlue, M.shirtRed][i % 3]);
-      snowGlobe(gx, F + 1.42, z);
-    }
+  for (let i = 0; i < 6; i++) {
+    const cx = 18.0 + i * 0.92;
+    chocBox(cx, F + 0.58, 15.25, [M.chocRed, M.chocGold, M.chocDark][i % 3], 0.36, 0.09, 0.22);
+    if (i % 2 === 0) chocPyramid(cx, F + 1.18, 15.25);
+    else chocBox(cx, F + 1.18, 15.25, M.chocGold, 0.32, 0.08, 0.2);
+    chocBox(cx, F + 1.78, 15.25, [M.chocDark, M.chocRed, M.chocGold][(i + 1) % 3], 0.34, 0.08, 0.2);
   }
-  box(M.posterDubai, 10.38, 1.7, 9, 0.04, 1.5, 1.1);        // duty-free ad by the door
 });
+
+// --- Zone 3: East Wall - Mascots, Plush Toys, Mugs & Souvenirs ---
+prop(() => {
+  box(M.shopWoodDark, 23.55, F + 1.25, 9.0, 0.35, 2.5, 11.2);
+  box(M.signGifts, 23.36, F + 2.65, 9.0, 0.06, 0.48, 6.2);
+  for (const sy of [0.52, 1.05, 1.62, 2.15]) {
+    box(M.shopWood, 23.38, F + sy, 9.0, 0.3, 0.04, 10.8);
+    box(M.shopLightWarm, 23.5, F + sy + 0.01, 9.0, 0.06, 0.02, 10.4);
+  }
+  // Shelf 1 & 2: Teddy Bears & Mugs
+  for (let i = 0; i < 7; i++) {
+    const sz = 4.4 + i * 1.5;
+    if (i % 2 === 0) teddyBear(23.28, F + 0.56, sz, -Math.PI / 2);
+    else souvenirMug(23.28, F + 0.56, sz, [M.shirtRed, M.shirtBlue, M.gold][i % 3]);
+    
+    if (i % 2 !== 0) teddyBear(23.28, F + 1.09, sz, -Math.PI / 2);
+    else snowGlobe(23.28, F + 1.09, sz);
+
+    souvenirMug(23.28, F + 1.66, sz, [M.shirtBlue, M.gold, M.shirtRed][i % 3]);
+    box([M.shirt, M.shirtBlue, M.shirtRed][i % 3], 23.28, F + 2.22, sz, 0.24, 0.07, 0.32);
+  }
+});
+
+// --- Zone 4: Central Island 1 - Rotary Postcard & Travel Magazine Stand ---
+prop(() => {
+  const rx = 14.2, rz = 8.5;
+  shape(G.cylBase, M.steelDark, rx, F, rz, 0.45, 0.45, 0.45);
+  shape(G.cyl, M.shopGold, rx, F + 0.48, rz, 0.08, 0.9, 0.08);
+  // Postcards 4-sided rotary display
+  box(M.postcardMat, rx, F + 1.15, rz + 0.22, 0.52, 0.72, 0.04);
+  box(M.postcardMat, rx, F + 1.15, rz - 0.22, 0.52, 0.72, 0.04);
+  box(M.postcardMat, rx + 0.22, F + 1.15, rz, 0.04, 0.72, 0.52);
+  box(M.postcardMat, rx - 0.22, F + 1.15, rz, 0.04, 0.72, 0.52);
+  // Top Magazine rack tier
+  box(M.magazineMat, rx, F + 1.68, rz + 0.18, 0.44, 0.38, 0.04);
+  box(M.magazineMat, rx, F + 1.68, rz - 0.18, 0.44, 0.38, 0.04);
+  shape(G.cone, M.shopGold, rx, F + 1.95, rz, 0.22, 0.22, 0.22);
+});
+
+// --- Zone 5: Central Island 2 - Hard-Shell Spinner Suitcases & Travel Gear ---
+prop(() => {
+  const sx = 18.8, sz = 8.5;
+  // Wooden presentation dais with gold kickplate
+  box(M.shopWood, sx, F + 0.12, sz, 2.6, 0.24, 4.4);
+  box(M.shopGold, sx, F + 0.24, sz, 2.64, 0.03, 4.44);
+
+  // Stacks of premium luggage
+  suitcase(sx - 0.65, F + 0.24, sz - 1.2, M.luggageRed, 0.1);
+  suitcase(sx + 0.65, F + 0.24, sz - 1.2, M.luggageTeal, -0.15);
+  suitcase(sx - 0.65, F + 0.24, sz + 0.2, M.luggageDark, 0.05);
+  suitcase(sx + 0.65, F + 0.24, sz + 0.2, M.luggageRed, 0.2);
+  suitcase(sx, F + 0.24, sz + 1.3, M.luggageTeal, Math.PI / 2);
+
+  // Travel neck pillows (U-shaped toruses)
+  shape(G.cone, M.fabric, sx - 0.5, F + 0.95, sz - 1.2, 0.2, 0.12, 0.2);
+  shape(G.cone, M.fabricWarm, sx + 0.5, F + 0.95, sz + 0.2, 0.2, 0.12, 0.2);
+});
+
+// --- Zone 6: Cashier Counter Upgrade ---
+prop(() => {
+  // Main counter in warm wood with mahogany top & gold base
+  box(M.shopWoodDark, 13.4, F + 0.54, 3.6, 2.8, 1.08, 1.1);
+  box(M.desk, 13.4, F + 1.1, 3.6, 2.86, 0.06, 1.16);
+  box(M.shopGold, 13.4, F + 0.06, 3.6, 2.84, 0.12, 1.14);
+
+  // Dual POS terminals
+  box(M.screen, 12.8, F + 1.32, 3.6, 0.44, 0.32, 0.04);
+  box(M.screen, 14.0, F + 1.32, 3.6, 0.44, 0.32, 0.04);
+  box(M.steelDark, 13.4, F + 1.16, 3.4, 0.22, 0.08, 0.32); // scanner
+
+  // Impulse buy candy display on counter front
+  box(M.chocRed, 12.4, F + 1.16, 3.85, 0.22, 0.06, 0.14);
+  box(M.chocGold, 14.4, F + 1.16, 3.85, 0.22, 0.06, 0.14);
+
+  // Warm brass pendant lamps above checkout
+  for (const py of [-0.6, 0.6]) {
+    box(M.shopGold, 13.4 + py, 2.8, 3.6, 0.02, 0.7, 0.02);
+    shape(G.cone, M.shopGold, 13.4 + py, 2.45, 3.6, 0.28, 0.18, 0.28);
+    shape(G.sphere, M.shopLightWarm, 13.4 + py, 2.38, 3.6, 0.14, 0.14, 0.14);
+  }
+});
+
+// --- Elegant Indoor Greenery in Brass Planters ---
+function shopPlant(x, z) {
+  prop(() => {
+    shape(G.cylBase, M.shopGold, x, F, z, 0.42, 0.62, 0.42);
+    shape(G.sphere, M.hill, x, F + 0.75, z, 0.55, 0.5, 0.55);
+    shape(G.sphere, M.grass, x + 0.08, F + 0.95, z - 0.06, 0.45, 0.42, 0.45);
+    shape(G.sphere, M.grass, x - 0.08, F + 0.92, z + 0.08, 0.42, 0.38, 0.42);
+  });
+}
+shopPlant(22.8, 2.8);
+shopPlant(22.8, 15.0);
+shopPlant(10.8, 15.0);
 
 // Walkway greenery + bins between the two units
 function plant(x, z) {
@@ -1264,11 +1651,28 @@ box(M.towerDark, -62, 6, 96, 28, 12, 18);
 box(M.steelDark, -62, 12.3, 96, 30, 0.5, 20);
 box(M.towerGlass, -62, 7.2, 86.8, 18, 3.2, 0.12);
 
+// Animated Control Tower Radar & Hazard Beacon
+const towerRadar = new THREE.Group();
+towerRadar.position.set(66, 35.8, 118);
+{
+  const dish = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 0.35, 16, 1, false, 0, Math.PI), M.steel);
+  dish.rotation.z = Math.PI / 2;
+  towerRadar.add(dish);
+  const feed = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 1.3), M.steelDark);
+  feed.position.set(0, 0, 0.75);
+  towerRadar.add(feed);
+  const topBeacon = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 8), M.runwayLightRed);
+  topBeacon.position.set(0, 0.75, 0);
+  towerRadar.add(topBeacon);
+}
+scenery.add(towerRadar);
+
 flushKits();
 
 // ---------------------------------------------------------------------------
 // Airliners — A320-class proportions, built so they read at the glass rather
 // than as a mismatched download. White body, coloured tail, CFM-style pods.
+// Equipped with realistic navigation, strobe, beacon and exhaust lighting.
 // ---------------------------------------------------------------------------
 function buildAirliner(livery = 0xc8102e, name = 'PACIFIC') {
   const root = new THREE.Group();
@@ -1335,6 +1739,8 @@ function buildAirliner(livery = 0xc8102e, name = 'PACIFIC') {
   add(new THREE.BoxGeometry(1.7, 0.5, 1.9), win, [0, 0.78, 16.55]);
   add(new THREE.PlaneGeometry(7.4, 0.85), decal, [2.03, -0.58, 1.6], null, [0, Math.PI / 2, 0]);
   add(new THREE.PlaneGeometry(7.4, 0.85), decal, [-2.03, -0.58, 1.6], null, [0, -Math.PI / 2, 0]);
+
+  // Engines & Jet Exhaust
   for (const sx of [-1, 1]) {
     const eng = new THREE.CylinderGeometry(0.78, 0.92, 3.9, 16);
     eng.rotateX(Math.PI / 2);
@@ -1344,7 +1750,29 @@ function buildAirliner(livery = 0xc8102e, name = 'PACIFIC') {
     add(new THREE.TorusGeometry(0.84, 0.09, 8, 20), dark, [sx * 6.2, -1.55, 2.25]);
     add(new THREE.CylinderGeometry(0.62, 0.7, 0.45, 12).rotateX(Math.PI / 2), dark, [sx * 6.2, -1.55, -1.7]);
     add(new THREE.BoxGeometry(0.32, 1.25, 0.9), grey, [sx * 6.2, -0.78, 0.2]);
+
+    // Translucent jet thrust cone behind engine
+    const thrust = new THREE.ConeGeometry(0.55, 3.2, 12);
+    thrust.rotateX(-Math.PI / 2);
+    add(thrust, M.thrustGlow, [sx * 6.2, -1.55, -3.6]);
   }
+
+  // --- Regulated Aviation Navigation, Strobe & Beacon Lights ---
+  // Port / Left Wingtip: Red Nav + White Strobe
+  add(new THREE.SphereGeometry(0.14, 8, 8), M.navRed, [-16.7, 0.55, -4.6]);
+  add(new THREE.SphereGeometry(0.16, 8, 8), M.strobeWhite, [-16.7, 0.75, -4.6]);
+
+  // Starboard / Right Wingtip: Green Nav + White Strobe
+  add(new THREE.SphereGeometry(0.14, 8, 8), M.navGreen, [16.7, 0.55, -4.6]);
+  add(new THREE.SphereGeometry(0.16, 8, 8), M.strobeWhite, [16.7, 0.75, -4.6]);
+
+  // Tailcone white strobe
+  add(new THREE.SphereGeometry(0.16, 8, 8), M.strobeWhite, [0, 0.25, -20.65]);
+
+  // Anti-collision Red Beacons (Fuselage Top & Belly)
+  add(new THREE.SphereGeometry(0.18, 8, 8), M.beaconRed, [0, 2.08, 1.8]);
+  add(new THREE.SphereGeometry(0.18, 8, 8), M.beaconRed, [0, -2.08, 1.8]);
+
   const wheel = new THREE.CylinderGeometry(0.36, 0.36, 0.16, 14);
   wheel.rotateZ(Math.PI / 2);
   add(new THREE.BoxGeometry(0.14, 1.55, 0.14), dark, [0, -2.45, 9.2]);
@@ -1452,9 +1880,24 @@ const landing = placePlane(0x0a6a4a, 41, 28, 190, Math.PI, 'AERO NORD');
   });
 }
 
+function tickAirportLights(t, dt) {
+  // Strobe: dual-pulse flash every 1.25s
+  const sPhase = t % 1.25;
+  const isStrobe = (sPhase < 0.05 || (sPhase > 0.12 && sPhase < 0.17));
+  M.strobeWhite.emissiveIntensity = isStrobe ? 4.5 : 0.0;
+
+  // Anti-collision Red Beacon: pulsing sine wave
+  const beaconVal = Math.pow(Math.max(0, Math.sin(t * Math.PI * 1.5)), 4);
+  M.beaconRed.emissiveIntensity = beaconVal * 3.5;
+
+  // Control tower radar antenna rotation
+  if (towerRadar) {
+    towerRadar.rotation.y += dt * 1.6;
+  }
+}
+
 function tickPlanes(t) {
-  // One runway, one occupant. Independent loops used to put both on x=41
-  // at once, so they stacked on each other (and on the skyline) from the lounge.
+  // One runway, one occupant.
   const RW = 41;
   const p = (t % 36) / 36;
 
@@ -1463,6 +1906,11 @@ function tickPlanes(t) {
     takingOff.visible = true;
     landing.visible = false;
     landing.position.set(RW, 80, 700);
+
+    // Thrust glow during takeoff roll and climb
+    M.thrustGlow.emissiveIntensity = 3.2;
+    M.thrustGlow.opacity = 0.72;
+
     if (u < 0.36) {
       takingOff.position.set(RW, 3.55, 28 + (u / 0.36) * 95);
       takingOff.rotation.set(0, 0, 0);
@@ -1473,6 +1921,10 @@ function tickPlanes(t) {
     }
     return;
   }
+
+  // Idle engine thrust on landing/rollout
+  M.thrustGlow.emissiveIntensity = 0.0;
+  M.thrustGlow.opacity = 0.0;
 
   takingOff.visible = false;
   takingOff.position.set(RW, 3.55, -80);
@@ -1918,11 +2370,12 @@ function animate() {
     if (ctrl.pos.y < -60) ctrl.rescueTo(spawnPoint);
   }
   tickPlanes(t);
+  tickAirportLights(t, dt);
   tickCrowd(dt);
   updateAvatar(dt);
   rig.update(dt, input, ctrl);
   updateHud();
-  renderer.render(scene, camera);
+  composer.render();
   input.endFrame();
 }
 animate();
@@ -1957,11 +2410,12 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 window.__airport = {
-  THREE, scene, camera, renderer, world, crowd, ctrl, rig, input, player, spawnPoint,
-  furnitureInteractions, planes, walkers, statics,
+  THREE, scene, camera, renderer, composer, world, crowd, ctrl, rig, input, player, spawnPoint,
+  furnitureInteractions, planes, walkers, statics, towerRadar,
   get activeFurnitureInteraction() { return activeFurnitureInteraction; },
 };
 window.__villa = window.__airport;
