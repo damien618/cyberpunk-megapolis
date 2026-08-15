@@ -1018,11 +1018,23 @@ const RETAIL_H = 3.4; // café / shop units under their own bulkhead
 // planeX-2, z=planeZ-6.9. Lounge door and tube share tubeX; the cab
 // reaches the last 0.85 m onto the skin.
 const GATE_PLANE_X = [-14, 14];
-const GATE_PLANE_Z = 64;
+// The plane used to park 26 m from the lounge glass wall (z=38), which put
+// 18.5 m of jetbridge between the two doors — a jetway that long is not
+// implausible on a real stand, but it made boarding a long walk down a
+// featureless, repetitive tube (each of its 16 segments carries its own
+// glass panel, so the far end read as a receding row of windows). Parked
+// 6 m closer, the tube is a third shorter and still clears the nose by
+// 5.75 m.
+const GATE_PLANE_Z = 58;
 const GATE_FUSE_R = 2;
 const GATE_DOOR_LZ = 6.9;
 const GATE_TUBE_OUT = 0.85;
 const GATE_DOOR_Z = GATE_PLANE_Z - GATE_DOOR_LZ;
+// Jetbridge tube span. Z0 is fixed to the lounge's own glass curtain wall
+// (built separately, around z=38); Z1 tracks the door so the tube always
+// ends just short of the cab, however close the plane is parked.
+const GATE_TUBE_Z0 = 38.0;
+const GATE_TUBE_Z1 = GATE_DOOR_Z - 0.6;
 // Half-width of the L1 boarding opening. The skin cut-out, the interior wall
 // cut-out and the collider gap all read it, so they cannot drift apart.
 // The player's capsule is 0.84 m across, so a doorway only passes a band of
@@ -1034,6 +1046,16 @@ const GATE_PLANE_Y = 3.55;                             // datum of the parked pl
 const GATE_CABIN_FLOOR_Y = GATE_PLANE_Y - 0.50;        // deck, and what groundFn returns
 const GATE_SEAT_RISE = 0.445;                          // cushion top over the deck
 const GATE_SEAT_TOP_Y = GATE_CABIN_FLOOR_Y + GATE_SEAT_RISE;
+// Row spacing. player.js's seated pose solves purely for the feet landing
+// flat on the floor at this seat's height — it has no notion of what's ahead
+// of the knees — and on a 44.5 cm-high seat that plants the knee well forward.
+// At the old 1.05 m pitch (already above real economy) the row ahead's
+// backrest was closer than that reach: the sitter's own shin poked through
+// the seatback in front. 1.25 m clears it with room to spare; the aft cabin
+// has 4.45 m of empty floor past the last row to absorb the extra length.
+const ROW_PITCH = 1.25;
+const ROW0_Z = 4.50;
+const gateRowZ = r => ROW0_Z - r * ROW_PITCH;
 const gateDoorX = gx => gx - GATE_FUSE_R;
 const gateTubeX = gx => gx - GATE_FUSE_R - GATE_TUBE_OUT;
 const GATE_OPEN_HW = 1.05; // half-width of the lounge boarding opening
@@ -1084,10 +1106,15 @@ for (let sz = 46; sz < 94; sz += 5) {
   slab(M.rubberSkid, 41.6, 42.6, sz, sz + 3.6, 0.032, 0.046);
 }
 // --- Apron Oil Stains & Parking Stop Bars ---
-for (const gx of [...GATE_PLANE_X, -30]) {
-  slab(M.paintYellow, gx - 1.8, gx + 1.8, 63.8, 64.4, 0.01, 0.03); // T-stop bar
-  shape(G.cyl, M.oilStain, gx, 0.015, 62.5, 3.2, 0.01, 3.2);       // engine/APU drip zone
+// The gate stands track the parked plane's own nose-stop line; the third
+// stand at x=-30 has no gate of its own (REDWOOD sits further out at z=88
+// as background scenery), so its marking stays where it always was.
+for (const gx of GATE_PLANE_X) {
+  slab(M.paintYellow, gx - 1.8, gx + 1.8, GATE_PLANE_Z - 0.2, GATE_PLANE_Z + 0.4, 0.01, 0.03); // T-stop bar
+  shape(G.cyl, M.oilStain, gx, 0.015, GATE_PLANE_Z - 1.5, 3.2, 0.01, 3.2);                     // engine/APU drip zone
 }
+slab(M.paintYellow, -30 - 1.8, -30 + 1.8, 63.8, 64.4, 0.01, 0.03);
+shape(G.cyl, M.oilStain, -30, 0.015, 62.5, 3.2, 0.01, 3.2);
 
 // --- Aerodrome Runway & Taxiway Lighting Infrastructure ---
 function elevatedRunwayLight(x, z, mat) {
@@ -1236,19 +1263,53 @@ slab(M.secWall, -12.08, -11.72, -8, 2, F, SEC_H);
 slab(M.secWall, 11.72, 12.08, -8, 2, F, SEC_H);
 slab(M.secWall, -12, -10, -7.78, -7.52, F, SEC_H);          // hall wall, security face
 slab(M.secWall, -4, 12, -7.78, -7.52, F, SEC_H);
-slab(M.secWall, -12, 2, 1.52, 1.78, F, SEC_H);              // far wall of the checkpoint
-slab(M.secWall, 10, 12, 1.52, 1.78, F, SEC_H);              // closes on the shop's west face
 slab(M.ceiling, -12, 12, -8, 2, SEC_H, SEC_H + 0.18);
 box(M.lightBar, 0, SEC_H - 0.1, -6.4, 20, 0.08, 0.4);
 box(M.lightBar, 0, SEC_H - 0.1, -3.2, 20, 0.08, 0.4);
 box(M.lightBar, 0, SEC_H - 0.1, 0.4, 20, 0.08, 0.4);
 
-// Concourse south wall: exit from security (x 2..10). The shop starts at
-// x=10, so the old 11.5 opening punched a hole through its south wall.
-slab(M.plaster, -24, 2, 1.8, 2.2, F, CONC_H);
-slab(M.plaster, 10, 24, 1.8, 2.2, F, CONC_H);
-slab(M.plaster, 2, 10, 1.8, 2.2, 3.3, CONC_H);
-box(M.signArrow, 6, 3.9, 2.34, 6.4, 0.95, 0.08);           // faces airside
+// Concourse south wall. Café (x -24..-12) and shop (x 12..24) stay solid.
+// The 8 m hole at x 2..10 let anyone walk from the hall aisle around the
+// X-ray lanes and into the gates; the checkpoint face is now glass, with
+// openings only on the three WTMD lanes.
+slab(M.plaster, -24, -12, 1.8, 2.2, F, CONC_H);
+slab(M.plaster, 12, 24, 1.8, 2.2, F, CONC_H);
+slab(M.plaster, -12, 12, 1.8, 2.2, SEC_H, CONC_H);
+box(M.signArrow, 0, 3.9, 2.34, 6.4, 0.95, 0.08);           // faces airside
+
+{
+  const lanes = [-7.5, -2.5, 2.5];
+  const half = 0.70;
+  const doorH = 2.28;
+  const z0 = 1.62, z1 = 1.86;
+  const zMid = (z0 + z1) / 2;
+  const openings = lanes.map(lx => ({ x0: lx - half, x1: lx + half }));
+  prop(() => {
+    let cursor = -11.96;
+    const solids = [];
+    for (const o of openings) {
+      if (o.x0 - cursor > 0.05) solids.push([cursor, o.x0]);
+      cursor = o.x1;
+    }
+    if (11.96 - cursor > 0.05) solids.push([cursor, 11.96]);
+    for (const [x0, x1] of solids) {
+      slab(M.glass, x0, x1, z0, z1, F, SEC_H);
+      slab(M.steelDark, x0, x1, z0 - 0.02, z1 + 0.02, F, 0.14);
+      box(M.steelDark, (x0 + x1) / 2, 1.04, zMid, x1 - x0, 0.04, 0.07);
+      const n = Math.max(0, Math.round((x1 - x0) / 2.0));
+      for (let i = 1; i <= n; i++) {
+        const mx = x0 + (i / (n + 1)) * (x1 - x0);
+        box(M.steelDark, mx, SEC_H / 2, zMid, 0.06, SEC_H, 0.08);
+      }
+    }
+    for (const o of openings) {
+      slab(M.glass, o.x0, o.x1, z0, z1, doorH, SEC_H);
+      box(M.steelDark, o.x0, doorH / 2, zMid, 0.10, doorH, 0.20);
+      box(M.steelDark, o.x1, doorH / 2, zMid, 0.10, doorH, 0.20);
+      box(M.steelDark, (o.x0 + o.x1) / 2, doorH, zMid, o.x1 - o.x0 + 0.10, 0.10, 0.20);
+    }
+  });
+}
 
 // Concourse shell
 slab(M.plaster, -24.2, -23.8, 2, 38, F, CONC_H);
@@ -1433,6 +1494,37 @@ prop(() => {
     box(M.paint, lx - 0.62, F + 1.05, -1.0, 0.14, 2.1, 0.5);       // WTMD arch
     box(M.paint, lx + 0.62, F + 1.05, -1.0, 0.14, 2.1, 0.5);
     box(M.steelDark, lx, F + 2.16, -1.0, 1.38, 0.12, 0.5);
+  }
+  // Lane dividers on the screening line. The 2.4 m aisles between one
+  // lane's X-ray and the next WTMD (and the west/east flanks) were a
+  // walk-around that skipped the arch.
+  {
+    const lanes = [-7.5, -2.5, 2.5];
+    const wtmdR = 0.69;
+    const xrayL = lx => lx + 1.35 - 0.53;
+    const xrayR = lx => lx + 1.35 + 0.53;
+    const spans = [[-11.92, lanes[0] - wtmdR]];
+    for (let i = 0; i < lanes.length; i++) {
+      const lx = lanes[i];
+      spans.push([lx + wtmdR, xrayL(lx)]);
+      if (i + 1 < lanes.length) spans.push([xrayR(lx), lanes[i + 1] - wtmdR]);
+    }
+    spans.push([xrayR(lanes[lanes.length - 1]), 11.92]);
+    const z0 = -1.08, z1 = -0.90;
+    const zMid = (z0 + z1) / 2;
+    for (const [x0, x1] of spans) {
+      if (x1 - x0 < 0.04) continue;
+      slab(M.glass, x0, x1, z0, z1, F, SEC_H);
+      slab(M.steelDark, x0, x1, z0 - 0.02, z1 + 0.02, F, 0.14);
+      box(M.steelDark, (x0 + x1) / 2, 1.04, zMid, x1 - x0, 0.04, 0.07);
+      box(M.steelDark, x0, SEC_H / 2, zMid, 0.08, SEC_H, 0.10);
+      box(M.steelDark, x1, SEC_H / 2, zMid, 0.08, SEC_H, 0.10);
+      const n = Math.max(0, Math.round((x1 - x0) / 2.1));
+      for (let i = 1; i <= n; i++) {
+        const mx = x0 + (i / (n + 1)) * (x1 - x0);
+        box(M.steelDark, mx, SEC_H / 2, zMid, 0.06, SEC_H, 0.08);
+      }
+    }
   }
   // Recompose against the east wall, south of the exit — not in the aisle
   box(M.steel, 10.4, F + 0.72, -2.4, 2.2, 0.08, 0.9);
@@ -1832,9 +1924,12 @@ prop(() => {
 // ---------------------------------------------------------------------------
 {
   const hw = GATE_OPEN_HW;
-  const z0 = 38.0;
-  const z1 = 56.5;
-  const numSegs = 16;
+  const z0 = GATE_TUBE_Z0;
+  const z1 = GATE_TUBE_Z1;
+  // Segment count follows the shorter tube, so each ramp panel — and its
+  // glass — stays close to its original ~1.15 m length instead of packing
+  // more window-sized panels into less distance.
+  const numSegs = Math.max(6, Math.round((z1 - z0) / 1.15));
   for (const gx of GATE_PLANE_X) {
     const tx = gateTubeX(gx);
     const dx = gateDoorX(gx);
@@ -1850,21 +1945,20 @@ prop(() => {
       box(M.cabinCeiling, tx, ceilY + 0.05, szMid, hw * 2 - 0.06, 0.10, sLen + 0.03);
       box(M.lightBar, tx, ceilY - 0.03, szMid, 0.36, 0.03, sLen * 0.9);
     }
-    // The cab has to floor the whole aperture, or the last stride onto the
-    // aircraft is taken over open air (groundFn holds the player up, but the
-    // carpet stops short and you can see the apron between your feet).
+    // Cab deck stops short of the skin; the airliner's flush L1 plane covers
+    // the last stride so the apron does not show between the player's feet.
     const cabZ0 = GATE_DOOR_Z - GATE_DOOR_HW - 0.20, cabZ1 = GATE_DOOR_Z + GATE_DOOR_HW + 0.20;
     const cabZMid = (cabZ0 + cabZ1) / 2;
     const cabLen = cabZ1 - cabZ0;
-    const minX = Math.min(tx - hw, dx - 0.55);
-    const maxX = Math.max(tx + 0.25, dx + 0.45);
+    // Stop the 10 cm slab on the tube side of the skin. Pushing it past dx
+    // planted a vertical carpet face in L1 — the blue bar across the sill.
+    const minX = tx - hw;
+    const maxX = dx - 0.08;
     const cabW = maxX - minX;
     const cabXMid = (minX + maxX) / 2;
     box(M.cabinCarpet, cabXMid, 3.00, cabZMid, cabW, 0.10, cabLen);
     box(M.cabinCeiling, cabXMid, 5.52, cabZMid, cabW, 0.10, cabLen);
     box(M.lightBar, cabXMid, 5.45, cabZMid, 0.42, 0.03, cabLen * 0.85);
-    box(M.gold, dx, 3.055, GATE_DOOR_Z, 0.42, 0.02, 0.9);
-    box(M.paintYellow, dx - 0.18, 3.057, GATE_DOOR_Z, 0.05, 0.018, 0.9);
 
     // Support legs sit under the tube — not props, so they never occupy the aisle
     for (let i = 1; i < numSegs; i += 4) {
@@ -1880,9 +1974,12 @@ prop(() => {
 
 prop(() => {
   const hw = GATE_OPEN_HW;
-  const z0 = 38.0;
-  const z1 = 56.5;
-  const numSegs = 16;
+  const z0 = GATE_TUBE_Z0;
+  const z1 = GATE_TUBE_Z1;
+  // Segment count follows the shorter tube, so each ramp panel — and its
+  // glass — stays close to its original ~1.15 m length instead of packing
+  // more window-sized panels into less distance.
+  const numSegs = Math.max(6, Math.round((z1 - z0) / 1.15));
   for (const gx of GATE_PLANE_X) {
     const tx = gateTubeX(gx);
     const dx = gateDoorX(gx);
@@ -1897,6 +1994,10 @@ prop(() => {
       const wallH = ceilY - floorY;
       const wallMidY = (floorY + ceilY) / 2;
       for (const side of [-1, 1]) {
+        // Drop the plane-side glass on the last bays — those panels sat
+        // against L1 and read as cabin windows from inside the aircraft.
+        const towardDoor = Math.sign(dx - tx) === side;
+        if (towardDoor && i >= numSegs - 3) continue;
         const wx = tx + side * (hw - 0.05);
         box(M.steelDark, wx, floorY + 0.42, szMid, 0.09, 0.84, sLen);
         box(M.steelDark, wx, ceilY - 0.28, szMid, 0.09, 0.56, sLen);
@@ -1916,22 +2017,14 @@ prop(() => {
     // player can step through L1.
     box(M.steelDark, minX + 0.05, 4.25, cabZMid, 0.10, 2.48, cabLen);
     box(M.jetbridgeGlass, minX + 0.08, 4.35, cabZMid, 0.03, 1.1, cabLen - 0.15);
-    // End wall. Without it the cab was a dead end only in the sense that the
-    // floor stopped: walking the tube without turning carried you straight off
-    // the front of the bridge and 3 m down onto the apron. The tube mouth takes
-    // the whole of the other end, so that one has to stay open.
-    // Placed so its face is one capsule radius past the door centreline: walk
-    // the tube to the end, and you come to rest square in the aperture, where
-    // turning towards the aircraft walks you straight aboard. Set at the far
-    // edge of the cab instead, you stopped 33 cm forward of the opening and
-    // wedged against the fuselage — pushing into a wall yields no sideways
-    // slide, so there was no way to shuffle back into line. It stops short of
-    // the door frame in x so no edge shows across the opening.
+    // End wall. Face one capsule radius past the door centreline (R=0.42 +
+    // half the wall) so walking the tube stops square in the aperture.
+    // Further forward the capsule overlaps the fuselage collider beside L1.
     const endX1 = dx - 0.12;
-    box(M.steelDark, (minX + endX1) / 2, 4.25, GATE_DOOR_Z + 0.47, endX1 - minX, 2.48, 0.10);
-    // Accordion seals AROUND the aperture, clear of it. Sat on the opening's
-    // own edge these two posts ate 12 cm off each side of an already tight door.
-    const bellowZ = GATE_DOOR_HW + 0.24;
+    const endZ = GATE_DOOR_Z + 0.47;
+    box(M.steelDark, (minX + endX1) / 2, 4.25, endZ, endX1 - minX, 2.48, 0.10);
+    // Accordion seals AROUND the aperture, clear of it.
+    const bellowZ = GATE_DOOR_HW + 0.16;
     box(M.bellowsBlack, dx - 0.10, 4.18, GATE_DOOR_Z - bellowZ, 0.14, 2.22, 0.10);
     box(M.bellowsBlack, dx - 0.10, 4.18, GATE_DOOR_Z + bellowZ, 0.14, 2.22, 0.10);
     box(M.bellowsBlack, dx - 0.10, 5.28, GATE_DOOR_Z, 0.14, 0.14, bellowZ * 2);
@@ -1952,15 +2045,18 @@ prop(() => {
 
 for (const gx of GATE_PLANE_X) {
   const tx = gateTubeX(gx);
-  for (const z of [42, 48, 53.5]) {
-    const t = (z - 37.8) / (56.5 - 37.8);
+  // Spaced as fractions of the ramp, not fixed metres — a shorter jetbridge
+  // still gets three evenly-spread lamps instead of the last one landing
+  // past the tube's own end.
+  for (const t of [0.2, 0.5, 0.8]) {
+    const z = GATE_TUBE_Z0 + t * (GATE_TUBE_Z1 - GATE_TUBE_Z0);
     roomLight(tx, 0.05 + t * 3.00 + 2.15, z, 0.85, 6.5);
   }
   roomLight(gateDoorX(gx), 5.05, GATE_DOOR_Z, 1.05, 5.5);
   // Cabin wash. Three dim lamps left the seat banks in silhouette — the fabric
   // never caught anything and a row read as one black block. Five, brighter and
   // reaching the full 23 m tube, put light on the cushions and the sidewalls.
-  for (const z of [56.0, 63.0, 70.0]) roomLight(gx, 4.86, z, 2.6, 13);
+  for (const dz of [-8, -1, 6]) roomLight(gx, 4.86, GATE_PLANE_Z + dz, 2.6, 13);
 }
 
 // Control tower + hangar — landmarks on the field, not sky-box flats
@@ -2041,15 +2137,18 @@ function buildAirliner(livery = 0xc8102e, name = 'PACIFIC', hasInterior = false,
     const fuseFwd = new THREE.CylinderGeometry(2.0, 2.0, fwdLen, 24, 1, true);
     fuseFwd.rotateX(Math.PI / 2);
     add(fuseFwd, white, [0, 0, 14.25 - fwdLen / 2]);
-    // Door bay: a sector left out so the jetbridge opens into the cabin. theta
-    // is measured from +Z and rotateX then tips +Z down onto -Y, so a gap at
-    // theta 0 opens in the BELLY and leaves the starboard skin shut. Starting
-    // it a quarter turn round puts the hole on +X, where the jetway is.
-    const gap = 0.66;
+    // Door bay: a sector left out so the jetbridge opens into the cabin.
+    // Cut from below floor (y = -0.50) up to door lintel (y = 1.60), matching
+    // the full height and width of the L1 boarding entrance.
+    const gap = 0.92;
     const bay = new THREE.CylinderGeometry(2.0, 2.0, doorHalf * 2, 24, 1, true,
       Math.PI / 2 + gap, Math.PI * 2 - gap * 2);
     bay.rotateX(Math.PI / 2);
     add(bay, white, [0, 0, doorZ]);
+    // Cheeks of white skin either side of L1, so the vestibule reads as
+    // fuselage rather than as the airbridge.
+    add(new THREE.BoxGeometry(0.08, 2.4, 1.9), white, [1.98, 0.45, doorZ - doorHalf - 1.00]);
+    add(new THREE.BoxGeometry(0.08, 2.4, 1.7), white, [1.98, 0.45, doorZ + doorHalf + 0.90]);
   }
 
   // Nose Ogive
@@ -2092,8 +2191,20 @@ function buildAirliner(livery = 0xc8102e, name = 'PACIFIC', hasInterior = false,
   add(new THREE.PlaneGeometry(1.4, 3.2), flash, [0.16, 4.1, -16.4], null, [0, Math.PI / 2, 0]);
   add(new THREE.PlaneGeometry(1.4, 3.2), flash, [-0.16, 4.1, -16.4], null, [0, -Math.PI / 2, 0]);
 
-  // Stripe on the skin only — a box on the centreline went through the cabin
-  add(new THREE.BoxGeometry(0.05, 0.38, 26), stripe, [2.02, -0.22, 0.4]);
+  // Stripe on the skin only — a box on the centreline went through the cabin.
+  // On the starboard side, where L1 opens, the stripe still ran the full
+  // 26 m uncut: the fuselage cylinder gets its door-shaped gap, but this was
+  // a separate box that never inherited it, so it stood across the threshold
+  // as a solid blue panel with nothing to collide against — the player just
+  // walked through it. Split it around the same door span as the cylinder.
+  if (hasInterior) {
+    const sAft = (doorZ - doorHalf) - (-12.6);
+    const sFwd = 13.4 - (doorZ + doorHalf);
+    add(new THREE.BoxGeometry(0.05, 0.38, sAft), stripe, [2.02, -0.22, -12.6 + sAft / 2]);
+    add(new THREE.BoxGeometry(0.05, 0.38, sFwd), stripe, [2.02, -0.22, 13.4 - sFwd / 2]);
+  } else {
+    add(new THREE.BoxGeometry(0.05, 0.38, 26), stripe, [2.02, -0.22, 0.4]);
+  }
   add(new THREE.BoxGeometry(0.05, 0.38, 26), stripe, [-2.02, -0.22, 0.4]);
   add(new THREE.BoxGeometry(1.7, 0.5, 1.9), win, [0, 0.78, 16.55]); // Cockpit windscreen
   add(new THREE.PlaneGeometry(7.4, 0.85), decal, [2.03, -0.58, 1.6], null, [0, Math.PI / 2, 0]);
@@ -2171,7 +2282,7 @@ function buildAirliner(livery = 0xc8102e, name = 'PACIFIC', hasInterior = false,
   // -------------------------------------------------------------------------
   if (hasInterior) {
     const ROW_N = 12;
-    const rowZ = r => 4.50 - r * 1.05;
+    const rowZ = gateRowZ;
     const WIN_HW = 0.21;
     const WIN_Y0 = 0.48;
     const WIN_Y1 = 0.98;
@@ -2192,7 +2303,18 @@ function buildAirliner(livery = 0xc8102e, name = 'PACIFIC', hasInterior = false,
     // Deck at exactly -0.50: that is the height the seat legs, the sill and the
     // groundFn all assume. Centred on -0.50 instead, the carpet stood 5 cm proud
     // of it and the player walked shin-deep in the pile.
-    add(new THREE.BoxGeometry(3.68, 0.10, 23.6), M.cabinCarpet, [0, -0.55, 0.0]);
+    // Deck split around L1: a single 3.68 m slab put its 10 cm starboard
+    // face in the doorway. Vestibule volume stays on the aisle side; a
+    // flush plane covers the sill so there is carpet underfoot and no bar.
+    {
+      const d0 = doorZ - doorHalf, d1 = doorZ + doorHalf;
+      const aft0 = Z_AFT - 0.15, fwd1 = Z_FWD + 0.15;
+      add(new THREE.BoxGeometry(3.68, 0.10, d0 - aft0), M.cabinCarpet, [0, -0.55, (aft0 + d0) / 2]);
+      add(new THREE.BoxGeometry(3.68, 0.10, fwd1 - d1), M.cabinCarpet, [0, -0.55, (d1 + fwd1) / 2]);
+      add(new THREE.BoxGeometry(2.90, 0.10, d1 - d0 + 0.10), M.cabinCarpet, [-0.39, -0.55, doorZ]);
+      add(new THREE.PlaneGeometry(1.20, d1 - d0 + 0.28), M.cabinCarpet, [1.55, FLOOR_Y + 0.004, doorZ], null, [-Math.PI / 2, 0, 0]);
+      add(new THREE.PlaneGeometry(0.28, 0.90), M.gold, [1.96, FLOOR_Y + 0.006, doorZ], null, [-Math.PI / 2, 0, 0]);
+    }
     // Flat decals — a 2 cm box here sat in the player's shins.
     add(new THREE.PlaneGeometry(0.04, 23.2), M.taxiwayLightGreen, [0.38, FLOOR_Y + 0.003, 0], null, [-Math.PI / 2, 0, 0]);
     add(new THREE.PlaneGeometry(0.04, 23.2), M.taxiwayLightGreen, [-0.38, FLOOR_Y + 0.003, 0], null, [-Math.PI / 2, 0, 0]);
@@ -2210,7 +2332,12 @@ function buildAirliner(livery = 0xc8102e, name = 'PACIFIC', hasInterior = false,
     const buildSide = (side) => {
       const x = side * WALL_X;
       const holes = [];
-      for (let r = 0; r < ROW_N; r++) holes.push({ z: rowZ(r), hw: WIN_HW });
+      // No hublots in the L1 vestibule — that wall is fuselage lining.
+      for (let r = 0; r < ROW_N; r++) {
+        const z = rowZ(r);
+        if (side > 0 && z > doorZ - 2.6) continue;
+        holes.push({ z, hw: WIN_HW });
+      }
       if (side > 0) holes.push({ z: doorZ, hw: doorHalf });
       holes.sort((a, b) => a.z - b.z);
       // Dado / sill — skip the door (goes to the floor)
@@ -2240,6 +2367,10 @@ function buildAirliner(livery = 0xc8102e, name = 'PACIFIC', hasInterior = false,
     };
     buildSide(1);
     buildSide(-1);
+    // Extra starboard lining around L1 so the jetbridge bays cannot peek in.
+    add(new THREE.BoxGeometry(0.10, 2.16, 2.05), M.cabinWall, [WALL_X, 0.58, doorZ - doorHalf - 1.08]);
+    add(new THREE.BoxGeometry(0.10, 2.16, 1.85), M.cabinWall, [WALL_X, 0.58, doorZ + doorHalf + 0.98]);
+    add(new THREE.BoxGeometry(0.10, 0.18, doorHalf * 2 + 0.16), M.cabinWall, [WALL_X, DOOR_TOP + 0.08, doorZ]);
 
     // Bins sit under the ceiling (bottom ≈ 1.42 local / 4.97 m world) so a
     // standing player clears them. Starboard run is split around L1.
@@ -2261,6 +2392,7 @@ function buildAirliner(livery = 0xc8102e, name = 'PACIFIC', hasInterior = false,
 
       // Hublot reveal + clear pane + exterior glass, aligned on the seat row
       for (const sx of [1, -1]) {
+        if (sx > 0 && zr > doorZ - 2.6) continue;
         const midY = (WIN_Y0 + WIN_Y1) / 2;
         const winH = WIN_Y1 - WIN_Y0;
         add(new THREE.BoxGeometry(0.05, winH + 0.04, 0.04), M.windowFrame, [sx * 1.88, midY, zr - WIN_HW - 0.02]);
@@ -2291,77 +2423,154 @@ function buildAirliner(livery = 0xc8102e, name = 'PACIFIC', hasInterior = false,
     add(new THREE.BoxGeometry(3.7, 2.2, 0.12), M.cabinWall, [0, 0.60, -11.5]);
     add(new THREE.PlaneGeometry(0.52, 0.16), M.exitSignMat, [0, 1.42, -11.42]);
 
+    const roundedPad = (w, d, thick, radius) => {
+      const hw = w / 2, hd = d / 2;
+      const rr = Math.min(radius, hw - 0.002, hd - 0.002);
+      const sh = new THREE.Shape();
+      sh.moveTo(-hw + rr, -hd);
+      sh.lineTo(hw - rr, -hd);
+      sh.quadraticCurveTo(hw, -hd, hw, -hd + rr);
+      sh.lineTo(hw, hd - rr);
+      sh.quadraticCurveTo(hw, hd, hw - rr, hd);
+      sh.lineTo(-hw + rr, hd);
+      sh.quadraticCurveTo(-hw, hd, -hw, hd - rr);
+      sh.lineTo(-hw, -hd + rr);
+      sh.quadraticCurveTo(-hw, -hd, -hw + rr, -hd);
+      const g = new THREE.ExtrudeGeometry(sh, {
+        depth: thick,
+        bevelEnabled: true,
+        bevelThickness: Math.min(0.013, thick * 0.38),
+        bevelSize: Math.min(0.015, rr * 0.5),
+        bevelSegments: 3,
+        curveSegments: 8,
+      });
+      g.rotateX(-Math.PI / 2);
+      // Extrusion depth lands at z ∈ [0, thick]; rotateX(-90°) carries that to
+      // y ∈ [0, thick]. Centring it on the local origin takes -thick/2, not
+      // +thick/2 — the sign that was here shifted every pad's true centre a
+      // full `thick` above the y each add() call actually asked for, and
+      // since every pad in this seat uses a different thickness, they drifted
+      // out of registration with each other instead of drifting together:
+      // the backrest shell floated clear of its own cushion and fabric.
+      g.translate(0, -thick / 2, 0);
+      g.computeVertexNormals();
+      return g;
+    };
+    // roundedPad lays its second dimension flat along Z — right for a cushion
+    // or a bolster, lying on the seat pan with depth running fore-aft. A
+    // backrest is the opposite shape: upright, with its second dimension
+    // running vertically and only a thin skin along Z. Feeding roundedPad's
+    // (w, d, thick) as (width, height, thickness) — the way a BoxGeometry
+    // call reads those three numbers — silently swapped them: a 0.58 m
+    // backrest became 5.5 cm tall and 58 cm deep, standing out over the row
+    // behind like a tray table instead of standing up behind the sitter.
+    // roundedPanel keeps the same rounded-rect cross-section but extrudes it
+    // upright to begin with, so (w, h, thick) means what it says.
+    const roundedPanel = (w, h, thick, radius) => {
+      const hw = w / 2, hh = h / 2;
+      const rr = Math.min(radius, hw - 0.002, hh - 0.002);
+      const sh = new THREE.Shape();
+      sh.moveTo(-hw + rr, -hh);
+      sh.lineTo(hw - rr, -hh);
+      sh.quadraticCurveTo(hw, -hh, hw, -hh + rr);
+      sh.lineTo(hw, hh - rr);
+      sh.quadraticCurveTo(hw, hh, hw - rr, hh);
+      sh.lineTo(-hw + rr, hh);
+      sh.quadraticCurveTo(-hw, hh, -hw, hh - rr);
+      sh.lineTo(-hw, -hh + rr);
+      sh.quadraticCurveTo(-hw, -hh, -hw + rr, -hh);
+      const g = new THREE.ExtrudeGeometry(sh, {
+        depth: thick,
+        bevelEnabled: true,
+        bevelThickness: Math.min(0.013, thick * 0.38),
+        bevelSize: Math.min(0.015, rr * 0.5),
+        bevelSegments: 3,
+        curveSegments: 8,
+      });
+      g.translate(0, 0, -thick / 2);   // centre the thin (Z) face on the local origin
+      g.computeVertexNormals();
+      return g;
+    };
+    // 2+2: a 3.7 m cabin cannot fit 3-across seats wide enough for these
+    // characters. Two 64 cm chairs per side leave a walkable aisle.
+    const SEAT_WIN = 1.48;
+    const SEAT_PITCH = 0.74;
+    const geoCushion = roundedPad(0.64, 0.48, 0.07, 0.09);
+    const geoPan = roundedPad(0.66, 0.50, 0.03, 0.085);
+    const geoLip = roundedPad(0.60, 0.12, 0.055, 0.055);
+    const geoBack = roundedPanel(0.62, 0.60, 0.06, 0.08);
+    const geoBackShell = roundedPanel(0.65, 0.64, 0.032, 0.08);
+    const geoHead = roundedPanel(0.48, 0.16, 0.065, 0.07);
+    const geoWing = roundedPanel(0.09, 0.15, 0.08, 0.035);
+    const geoBolster = roundedPad(0.07, 0.40, 0.10, 0.03);
+    const geoArm = new THREE.CylinderGeometry(0.018, 0.02, 0.36, 8);
+    geoArm.rotateZ(Math.PI / 2);
+    geoArm.rotateY(Math.PI / 2);
+
     for (let r = 0; r < ROW_N; r++) {
       const zr = rowZ(r);
       for (const sx of [1, -1]) {
-        for (let s = 0; s < 3; s++) {
-          const lx = sx * (1.52 - s * 0.44);
+        for (let s = 0; s < 2; s++) {
+          const lx = sx * (SEAT_WIN - s * SEAT_PITCH);
           const cy = SEAT_CUSHION_Y;
-          // Cushion: fabric pad on a moulded pan, with a rolled front edge, so
-          // the seat has a lit top face and a shaded nose instead of one slab.
-          add(new THREE.BoxGeometry(0.42, 0.06, 0.46), M.seatShell, [lx, cy - 0.10, zr]);
-          add(new THREE.BoxGeometry(0.40, 0.08, 0.44), M.seatNavy, [lx, cy - 0.04, zr]);
-          add(new THREE.BoxGeometry(0.40, 0.09, 0.09), M.seatNavy, [lx, cy - 0.02, zr + 0.20]);
-          // Backrest: grey shell facing aft, fabric facing the sitter. The shell
-          // is what the row behind looks at all flight, so it carries the
-          // fittings — screen, table, pocket.
-          add(new THREE.BoxGeometry(0.42, 0.70, 0.05), M.seatShell, [lx, cy + 0.21, zr - 0.235], null, [-0.11, 0, 0]);
-          add(new THREE.BoxGeometry(0.38, 0.66, 0.05), M.seatNavy, [lx, cy + 0.20, zr - 0.185], null, [-0.11, 0, 0]);
-          add(new THREE.BoxGeometry(0.36, 0.16, 0.09), M.seatHeadrest, [lx, cy + 0.53, zr - 0.215], null, [-0.11, 0, 0]);
-          add(new THREE.BoxGeometry(0.075, 0.16, 0.11), M.seatHeadrest, [lx - 0.155, cy + 0.53, zr - 0.185], null, [-0.11, 0, 0]);
-          add(new THREE.BoxGeometry(0.075, 0.16, 0.11), M.seatHeadrest, [lx + 0.155, cy + 0.53, zr - 0.185], null, [-0.11, 0, 0]);
-          add(new THREE.BoxGeometry(0.30, 0.13, 0.015), M.seatCover, [lx, cy + 0.56, zr - 0.145], null, [-0.11, 0, 0]);
-          add(new THREE.BoxGeometry(0.28, 0.18, 0.012), M.seatIfe, [lx, cy + 0.30, zr - 0.268]);
-          add(new THREE.BoxGeometry(0.30, 0.012, 0.02), M.seatShell, [lx, cy + 0.17, zr - 0.272]);   // stowed tray
-          add(new THREE.BoxGeometry(0.05, 0.02, 0.02), M.steel, [lx, cy + 0.19, zr - 0.276]);        // tray latch
-          add(new THREE.BoxGeometry(0.32, 0.16, 0.03), M.seatNavy, [lx, cy - 0.02, zr - 0.262]);
-          add(new THREE.PlaneGeometry(0.11, 0.15), M.safetyCardMat, [lx, cy + 0.01, zr - 0.280], null, [0, Math.PI, 0]);
-          // Belt: two laps over the cushion meeting at the buckle, so an empty
-          // seat is visibly empty rather than bare.
-          add(new THREE.BoxGeometry(0.13, 0.012, 0.05), M.seatBelt, [lx - 0.10, cy + 0.007, zr + 0.02]);
-          add(new THREE.BoxGeometry(0.13, 0.012, 0.05), M.seatBelt, [lx + 0.10, cy + 0.007, zr + 0.02]);
-          add(new THREE.BoxGeometry(0.08, 0.028, 0.055), M.steel, [lx, cy + 0.017, zr + 0.02]);
+          add(geoPan, M.seatShell, [lx, cy - 0.08, zr]);
+          add(geoCushion, M.seatNavy, [lx, cy - 0.035, zr]);
+          add(geoLip, M.seatNavy, [lx, cy - 0.01, zr + 0.19]);
+          add(geoBolster, M.seatNavy, [lx - 0.26, cy + 0.025, zr - 0.02]);
+          add(geoBolster, M.seatNavy, [lx + 0.26, cy + 0.025, zr - 0.02]);
+          add(geoBackShell, M.seatShell, [lx, cy + 0.24, zr - 0.24], null, [-0.16, 0, 0]);
+          add(geoBack, M.seatNavy, [lx, cy + 0.22, zr - 0.19], null, [-0.16, 0, 0]);
+          add(geoHead, M.seatHeadrest, [lx, cy + 0.55, zr - 0.21], null, [-0.16, 0, 0]);
+          add(geoWing, M.seatHeadrest, [lx - 0.22, cy + 0.54, zr - 0.19], null, [-0.16, 0, 0]);
+          add(geoWing, M.seatHeadrest, [lx + 0.22, cy + 0.54, zr - 0.19], null, [-0.16, 0, 0]);
+          add(new THREE.BoxGeometry(0.36, 0.12, 0.012), M.seatCover, [lx, cy + 0.57, zr - 0.155], null, [-0.16, 0, 0]);
+          add(new THREE.BoxGeometry(0.36, 0.17, 0.01), M.seatIfe, [lx, cy + 0.28, zr - 0.262]);
+          add(new THREE.BoxGeometry(0.38, 0.01, 0.018), M.seatShell, [lx, cy + 0.16, zr - 0.266]);
+          add(new THREE.BoxGeometry(0.04, 0.018, 0.016), M.steel, [lx, cy + 0.18, zr - 0.27]);
+          add(new THREE.BoxGeometry(0.40, 0.15, 0.025), M.seatNavy, [lx, cy - 0.01, zr - 0.255]);
+          add(new THREE.PlaneGeometry(0.12, 0.15), M.safetyCardMat, [lx, cy + 0.02, zr - 0.272], null, [0, Math.PI, 0]);
+          add(new THREE.BoxGeometry(0.18, 0.01, 0.045), M.seatBelt, [lx - 0.14, cy + 0.01, zr + 0.02]);
+          add(new THREE.BoxGeometry(0.18, 0.01, 0.045), M.seatBelt, [lx + 0.14, cy + 0.01, zr + 0.02]);
+          add(new THREE.BoxGeometry(0.09, 0.024, 0.05), M.steel, [lx, cy + 0.018, zr + 0.02]);
         }
-        // Armrests, four to a bank: fabric-free grey caps on a dark stem.
-        for (let s = 0; s < 4; s++) {
-          const ax = sx * (1.74 - s * 0.44);
-          add(new THREE.BoxGeometry(0.05, 0.045, 0.38), M.seatShell, [ax, SEAT_CUSHION_Y + 0.12, zr - 0.02]);
-          add(new THREE.BoxGeometry(0.035, 0.10, 0.10), M.seatShell, [ax, SEAT_CUSHION_Y + 0.05, zr - 0.16]);
+        for (let s = 0; s < 3; s++) {
+          const ax = sx * (1.82 - s * 0.68);
+          add(geoArm, M.seatShell, [ax, SEAT_CUSHION_Y + 0.11, zr - 0.02]);
+          add(new THREE.CylinderGeometry(0.016, 0.016, 0.09, 8), M.seatShell, [ax, SEAT_CUSHION_Y + 0.05, zr - 0.14]);
         }
         const legTop = SEAT_CUSHION_Y - 0.13;
-        add(new THREE.BoxGeometry(0.035, legTop - FLOOR_Y, 0.035), M.steelDark, [sx * 1.42, (legTop + FLOOR_Y) / 2, zr]);
-        add(new THREE.BoxGeometry(0.035, legTop - FLOOR_Y, 0.035), M.steelDark, [sx * 0.74, (legTop + FLOOR_Y) / 2, zr]);
-        add(new THREE.BoxGeometry(0.78, 0.02, 0.04), M.steelDark, [sx * 1.12, FLOOR_Y + 0.008, zr]);
+        add(new THREE.CylinderGeometry(0.014, 0.016, legTop - FLOOR_Y, 8), M.steelDark, [sx * 1.42, (legTop + FLOOR_Y) / 2, zr]);
+        add(new THREE.CylinderGeometry(0.014, 0.016, legTop - FLOOR_Y, 8), M.steelDark, [sx * 0.82, (legTop + FLOOR_Y) / 2, zr]);
+        add(new THREE.BoxGeometry(0.78, 0.016, 0.035), M.steelDark, [sx * 1.12, FLOOR_Y + 0.006, zr]);
       }
 
-      // Only window seats — aisle seats would steal pointer-lock while walking
+      // Trigger sits in the aisle at this row. Seat-bank colliders keep the
+      // player off the cushion, so a window-centred trigger could never fire.
+      // keepLock: walking the aisle must not drop pointer-lock every row.
       if (planePos) {
         const { px, py, pz, pyaw } = planePos;
         const c = Math.cos(pyaw), s = Math.sin(pyaw);
         const sitY = py - 0.50 + GATE_SEAT_RISE - 0.045;
         const floorY = py - 0.50;
-        // Passengers use rotation.y = π to face the nose (world −Z). yaw 0 sat
-        // the player the other way, looking at the seat back in front of them.
         const faceNose = Math.PI;
+        const rowWz = pz - zr; // yaw π: world z = pz - local z
         for (const spec of [
-          { lx: 1.42, side: 1, label: r === 1
-            ? "S'asseoir — hublot, vue passerelle" : `S'asseoir — hublot ${r + 1}A` },
-          { lx: -1.42, side: -1, label: r === 1
-            ? "S'asseoir — hublot, vue piste" : `S'asseoir — hublot ${r + 1}F, vue piste` },
+          { lx: SEAT_WIN, label: r === 1
+            ? "S'asseoir — hublot, vue passerelle  (E)" : `S'asseoir — hublot ${r + 1}A  (E)` },
+          { lx: -SEAT_WIN, label: r === 1
+            ? "S'asseoir — hublot, vue piste  (E)" : `S'asseoir — hublot ${r + 1}F, vue piste  (E)` },
         ]) {
           const wx = px + spec.lx * c + zr * s;
           const wz = pz - spec.lx * s + zr * c;
-          const aisleLx = spec.side * 0.52;
-          const cx = px + aisleLx * c + zr * s;
-          const cz = pz - aisleLx * s + zr * c;
           furnitureInteractions.push({
             type: 'sit',
             x: wx, y: sitY, z: wz,
-            centerX: cx, centerZ: cz,
+            centerX: px - spec.lx * 0.12, centerZ: rowWz,
             approachY: floorY,
             yaw: faceNose,
-            halfWidth: 0.14, halfDepth: 0.22,
-            triggerDistance: 0.32,
+            halfWidth: 0.40, halfDepth: 0.36,
+            triggerDistance: 0.14,
+            keepLock: true,
             occupied: false,
             label: spec.label,
           });
@@ -2571,10 +2780,23 @@ function girlMatFor(name) {
   if (rec.aoTex) m.aoMap = charTexture(rec.aoTex, false);
   m.metalness = Math.min(rec.metallic ?? 0, 0.08);
   m.roughness = THREE.MathUtils.clamp(1 - (rec.smoothness ?? 0.25), 0.55, 1);
+  // Cornea is mode 3 (clear shell). Without this it renders as an opaque
+  // white ball and hides the iris.
+  if (rec.mode === 1) {
+    m.alphaTest = rec.cutoff ?? 0.5;
+    m.alphaToCoverage = true;
+    m.side = THREE.DoubleSide;
+  } else if (rec.mode >= 2) {
+    m.transparent = true;
+    m.opacity = Math.max(rec.color[3] ?? 1, rec.mode >= 3 ? 0.05 : 0.32);
+    m.depthWrite = rec.mode < 3;
+    m.side = THREE.DoubleSide;
+    if (rec.mode >= 3) { m.roughness = 0.06; m.metalness = 0; }
+  }
   const n = name.toLowerCase();
   if (n.includes('tshirt')) { m.map = null; m.color.set('#fdfdf7'); }
   else if (n.includes('pants')) { m.map = null; m.color.set('#ffd43b'); }
-  else if (n.includes('hat')) { m.map = null; m.color.set('#fff4b0'); }
+  else if (n.includes('hat') && !n.includes('that')) { m.map = null; m.color.set('#fff4b0'); }
   else if (n.includes('shoes')) { m.map = null; m.color.set('#fffef8'); }
   else if (n.includes('backpack')) { m.map = null; m.color.set('#ffe27a'); }
   m.needsUpdate = true;
@@ -2625,8 +2847,8 @@ const bw = buildCityBoxes(world);
     const xPort = gx + GATE_FUSE_R - 0.16;
     const zFwd = GATE_PLANE_Z - 11.15;
     const zAft = GATE_PLANE_Z + 11.45;
-    const door0 = GATE_DOOR_Z - GATE_DOOR_HW;
-    const door1 = GATE_DOOR_Z + GATE_DOOR_HW;
+    const door0 = GATE_DOOR_Z - GATE_DOOR_HW - 0.22;
+    const door1 = GATE_DOOR_Z + GATE_DOOR_HW + 0.22;
     boxAt(xPort, 4.15, (zFwd + zAft) / 2, 0.10, 2.2, zAft - zFwd);
     const aftLen = door0 - zFwd;
     const fwdLen = zAft - door1;
@@ -2635,16 +2857,16 @@ const bw = buildCityBoxes(world);
     boxAt(gx, 4.15, zFwd, 3.7, 2.2, 0.12);
     boxAt(gx, 4.15, zAft, 3.7, 2.2, 0.12);
     for (let r = 0; r < 12; r++) {
-      const wz = GATE_PLANE_Z - (4.50 - r * 1.05);
+      const wz = GATE_PLANE_Z - gateRowZ(r);
       for (const sx of [1, -1]) {
-        boxAt(gx - sx * 1.08, GATE_CABIN_FLOOR_Y + 0.52, wz, 1.26, 1.04, 0.50);
+        boxAt(gx - sx * 1.11, GATE_CABIN_FLOOR_Y + 0.52, wz, 1.38, 1.04, 0.52);
       }
     }
   }
 }
 let player = null;
 function jetbridgeFloorY(z) {
-  const t = THREE.MathUtils.clamp((z - 37.8) / (56.5 - 37.8), 0, 1);
+  const t = THREE.MathUtils.clamp((z - (GATE_TUBE_Z0 - 0.2)) / (GATE_TUBE_Z1 - (GATE_TUBE_Z0 - 0.2)), 0, 1);
   return 0.05 + t * 3.00;
 }
 function onCabinDeck(gx, x, z) {
@@ -2655,10 +2877,10 @@ function onCabinDeck(gx, x, z) {
 function onJetbridgeDeck(gx, x, z) {
   const tx = gateTubeX(gx);
   const dx = gateDoorX(gx);
-  if (z >= 37.75 && z <= 56.55 && Math.abs(x - tx) <= 1.18) return true;
-  if (z >= GATE_DOOR_Z - GATE_DOOR_HW - 0.25 && z <= GATE_DOOR_Z + GATE_DOOR_HW + 0.25) {
-    const lo = Math.min(tx - 1.18, dx - 0.55);
-    const hi = Math.max(tx + 0.40, dx + 0.55);
+  if (z >= GATE_TUBE_Z0 - 0.25 && z <= GATE_TUBE_Z1 + 0.05 && Math.abs(x - tx) <= 1.18) return true;
+  if (z >= GATE_DOOR_Z - GATE_DOOR_HW - 0.35 && z <= GATE_DOOR_Z + GATE_DOOR_HW + 0.35) {
+    const lo = Math.min(tx - 1.25, dx - 0.60);
+    const hi = Math.max(tx + 0.50, dx + 0.80);
     if (x >= lo && x <= hi) return true;
   }
   return false;
@@ -2768,15 +2990,14 @@ const SEC_QUEUE = [
   [-5.7, -2.0],  // Exiting queue towards screening lane
   [-7.5, -1.8],  // Lining up at Lane 1 metal detector
   [-7.5, -0.2],  // Walking under the metal detector arch!
-  [-7.5, 1.2],   // Retrieving luggage on roller bed
-  [5.0, 1.2],    // Walking across to concourse exit opening
-  [5.0, 5.0],    // Entering the concourse / gates area!
-  [5.0, 14.0],   // Walking towards boarding gates
+  [-7.5, 1.2],   // Airside of the glass, still in the lane
+  [-7.5, 5.0],   // Through the Lane 1 glass door into the concourse
+  [-7.5, 14.0],  // Walking towards boarding gates
   [0.0, 18.0],   // Strolling near central lounge
   [-4.0, 14.0],  // Concourse west side
-  [7.0, 5.0],    // Returning towards security
-  [7.0, 1.2],    // Passing security exit east side
-  [7.5, -6.0],   // East bypass aisle in security room
+  [-7.5, 5.0],   // Returning to the Lane 1 door
+  [-7.5, 1.2],   // Back through the glass
+  [-7.5, -1.8],  // South through the metal detector
   [-5.0, -7.5],  // Exiting security back through portal into hall
 ];
 const WALKWAY = [[-7, 4.5], [7, 4.5], [7, 18.5], [-7, 18.5]];
@@ -2853,7 +3074,7 @@ const GATE_PATH = [[-16, 33.2], [16, 33.2], [16, 34.4], [-16, 34.4]];
     { x: -14, z: 37.1, ry: Math.PI, staff: true },
     { x: 14, z: 37.1, ry: Math.PI, staff: true },
     // flight attendant welcoming passengers in the airplane galley
-    { x: 12.8, z: 58.2, ry: 0.35, staff: true },
+    { x: 12.8, z: GATE_DOOR_Z + 1.1, ry: 0.35, staff: true },
     // watching the planes at the glass
     { x: -4.5, z: 36.8, ry: 0 }, { x: 3.3, z: 36.7, ry: 0 }, { x: 10.6, z: 36.8, ry: 0.15 },
     // at the curb
@@ -2969,7 +3190,7 @@ function seatOn(v, x, cushionY, z, ry, floorY) {
     // leg fit — crossed into the walkway, and the player walked through a knee
     // every second row. Window and middle only, which is also what a cabin
     // still boarding looks like.
-    const SEAT_LX = [1.52, 1.08];         // window, middle
+    const SEAT_LX = [1.48, 0.74];         // window, aisle (2+2)
     const PLAN = [
       [0, 1, 1], [0, -1, 1], [1, 1, 1], [1, -1, 0], [2, 1, 0], [2, -1, 1],
       [3, 1, 1], [3, -1, 1], [4, -1, 1], [5, 1, 1], [5, -1, 0], [6, 1, 1],
@@ -2979,7 +3200,7 @@ function seatOn(v, x, cushionY, z, ry, floorY) {
     for (const gx of GATE_PLANE_X) {
       for (const [row, sx, col] of PLAN) {
         const lx = sx * SEAT_LX[col];
-        const lz = 4.50 - row * 1.05;
+        const lz = gateRowZ(row);
         // Plane yaw is π, so cabin-local (lx, lz) lands at (gx - lx, planeZ - lz)
         // and "facing forward" (local +z) points at world -z.
         const wx = gx - lx;
@@ -3044,10 +3265,11 @@ function setFurniturePrompt(spot) {
   furniturePrompt.textContent = show ? (spot.label || "S'asseoir") : '';
   furniturePrompt.classList.toggle('show', show);
   furniturePrompt.setAttribute('aria-hidden', show ? 'false' : 'true');
-  choosingFurniturePrompt = show;
-  if (show) {
+  const stealLock = show && !spot.keepLock;
+  choosingFurniturePrompt = stealLock;
+  if (stealLock) {
     if (document.pointerLockElement === renderer.domElement) document.exitPointerLock?.();
-  } else if (started && !paused) {
+  } else if (started && !paused && !show) {
     requestGamePointerLock();
   }
 }
@@ -3118,7 +3340,7 @@ function updateFurnitureInteraction(dt) {
     }
   }
   setFurniturePrompt(nearest);
-  if (nearest && (furnitureActionRequested || input.pressed('LMB'))) {
+  if (nearest && (furnitureActionRequested || input.pressed('LMB') || input.pressed('KeyE'))) {
     furnitureActionRequested = false;
     if (nearest.type === 'travel') {
       travelInProgress = true;
@@ -3170,7 +3392,7 @@ function tickCrowd(dt) {
   // through the door. `pose` runs after the mixer, which would otherwise stand
   // everyone up and walk them.
   for (const p of cabinPassengers) {
-    const near = ctrl.pos.z > 50 && Math.abs(ctrl.pos.x - p.gx) < 7;
+    const near = ctrl.pos.z > GATE_DOOR_Z - 7.1 && Math.abs(ctrl.pos.x - p.gx) < 7;
     if (near !== p.shown) {
       p.shown = near;
       p.v.group.visible = near;
