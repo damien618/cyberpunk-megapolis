@@ -73,6 +73,8 @@ export class CameraRig {
     this.forward(_dir, input);
 
     let targetDist = 4.2 + speedN * 3.6 + (ctrl.mode === 'swing' ? 1.1 : 0);
+    if (ctrl.mode === 'sit') targetDist = 1.72;
+    else if (ctrl.mode === 'lie') targetDist = 2.35;
     this.dist += (targetDist - this.dist) * (1 - Math.exp(-4 * dt));
 
     _desired.copy(this.smoothLook).addScaledVector(_dir, -this.dist);

@@ -69,7 +69,19 @@ export function buildCityBoxes(world) {
     return out;
   }
 
-  return { aabbs, queryNearby };
+  function add(b) {
+    const i = aabbs.length;
+    aabbs.push(b);
+    const cx0 = Math.floor(b.x0 / CELL), cx1 = Math.floor(b.x1 / CELL);
+    const cz0 = Math.floor(b.z0 / CELL), cz1 = Math.floor(b.z1 / CELL);
+    for (let cx = cx0; cx <= cx1; cx++)
+      for (let cz = cz0; cz <= cz1; cz++) {
+        const k = key(cx, cz);
+        (cells.get(k) ?? cells.set(k, []).get(k)).push(i);
+      }
+  }
+
+  return { aabbs, queryNearby, add };
 }
 
 // slab method: first intersection t∈[0,1] of segment p0→p1 with box (padded), 1 = no hit

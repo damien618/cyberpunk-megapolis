@@ -511,13 +511,23 @@
   });
   document.getElementById('startBtn')?.addEventListener('click', () => {
     window.__nightMode = document.querySelector('.tt-btn.active')?.dataset.time === 'night';
+    window.__startRequested = true;
+    if (window.__startAirport) window.__startAirport();
+    if (window.__startVilla) window.__startVilla();
+    if (window.__startZoo) window.__startZoo();
   }, true);
+  window.addEventListener('error', e => {
+    console.error('[Page Error]', e.error || e.message);
+  });
+  window.addEventListener('unhandledrejection', e => {
+    console.error('[Unhandled Rejection]', e.reason);
+  });
 </script>
 <script type="module">
   const ENGINES = {
     la: './main-LA.js?v=202608141500',
     zoo: './main-ZOO.js?v=202608141500',
-    airport: './main-AIRPORT.js?v=202608151400',
+    airport: './main-AIRPORT.js?v=202608160515',
   };
   import(ENGINES[document.documentElement.dataset.mode] ?? './main.js?v=24');
 </script>
