@@ -881,6 +881,19 @@ const HALL_H = 9.5;   // check-in hall, the grand volume
 const SEC_H = 4.0;    // security screening, deliberately low
 const CONC_H = 6.4;   // airside concourse
 const RETAIL_H = 3.4; // café / shop units under their own bulkhead
+// Two airbridges. Planes park on ±8 facing the glass (yaw π), so the
+// starboard forward door — the dark decal at local (2, 6.9) — sits at
+// planeX-2, z=planeZ-6.9. Lounge door and tube share tubeX; the cab
+// reaches the last 0.85 m onto the skin.
+const GATE_PLANE_X = [-8, 8];
+const GATE_PLANE_Z = 64;
+const GATE_FUSE_R = 2;
+const GATE_DOOR_LZ = 6.9;
+const GATE_TUBE_OUT = 0.85;
+const GATE_DOOR_Z = GATE_PLANE_Z - GATE_DOOR_LZ;
+const gateDoorX = gx => gx - GATE_FUSE_R;
+const gateTubeX = gx => gx - GATE_FUSE_R - GATE_TUBE_OUT;
+const GATE_OPEN_HW = 1.05; // half-width of the lounge boarding opening
 const furnitureInteractions = [];
 function furnitureInteraction(type, halfWidth, halfDepth, anchorZ = 0, restY = F + 0.46, label) {
   const c = Math.cos(FR), s = Math.sin(FR);
@@ -1106,13 +1119,32 @@ box(M.signGates, 0, 4.5, 16.8, 5.6, 0.95, 0.08);
 box(M.steelDark, -2.4, 5.7, 16.8, 0.05, 1.5, 0.05);
 box(M.steelDark, 2.4, 5.7, 16.8, 0.05, 1.5, 0.05);
 
-// North curtain wall: mullions + glass looking at the apron
+// North curtain wall: mullions + glass looking at the apron.
+// Boarding openings sit on the jetway centreline (not the aircraft
+// centreline) so the door, tube and fuselage door read as one corridor.
 slab(M.steel, -24.2, 24.2, 37.85, 38.05, F, 0.18);         // sill
 slab(M.steel, -24.2, 24.2, 37.85, 38.05, CONC_H - 0.18, CONC_H);
 for (let x = -24; x <= 24; x += 4)
   box(M.steel, x, CONC_H / 2, 37.95, 0.12, CONC_H, 0.14);
-slab(M.glass, -24, 24, 37.88, 38.12, 0.18, CONC_H - 0.18);
-for (const gx of [-8, 8]) box(M.steelDark, gx, 1.3, 37.95, 1.7, 2.6, 0.3); // gate doors
+{
+  const gaps = GATE_PLANE_X.map(gx => {
+    const tx = gateTubeX(gx);
+    return { x0: tx - GATE_OPEN_HW, x1: tx + GATE_OPEN_HW, y1: 3.02 };
+  }).sort((a, b) => a.x0 - b.x0);
+  let cursor = -24;
+  for (const g of gaps) {
+    if (g.x0 > cursor) slab(M.glass, cursor, g.x0, 37.88, 38.12, 0.18, CONC_H - 0.18);
+    slab(M.glass, g.x0, g.x1, 37.88, 38.12, g.y1, CONC_H - 0.18); // transom
+    cursor = g.x1;
+  }
+  if (cursor < 24) slab(M.glass, cursor, 24, 37.88, 38.12, 0.18, CONC_H - 0.18);
+}
+for (const gx of GATE_PLANE_X) {
+  const tx = gateTubeX(gx);
+  box(M.steelDark, tx - GATE_OPEN_HW, 1.51, 37.95, 0.18, 3.02, 0.32);
+  box(M.steelDark, tx + GATE_OPEN_HW, 1.51, 37.95, 0.18, 3.02, 0.32);
+  box(M.steelDark, tx, 3.08, 37.95, GATE_OPEN_HW * 2 + 0.18, 0.16, 0.32);
+}
 
 roomLight(0, 7.2, -20, 2.6, 30);
 roomLight(-14, 6.5, -13, 1.4, 18);
@@ -1198,16 +1230,46 @@ prop(() => {
 // recompose table by the exit. Flow runs south → north.
 // ---------------------------------------------------------------------------
 prop(() => {
-  // zig-zag queue between the entry portal and the lanes
-  for (let i = 0; i < 4; i++) {
-    const px = -10 + i * 2.2;
-    shape(G.cylBase, M.steel, px, F, -7.0, 0.06, 0.95, 0.06);
-    shape(G.cylBase, M.steel, px, F, -4.2, 0.06, 0.95, 0.06);
-    if (i) {
-      box(M.steelDark, px - 1.1, F + 0.9, -7.0, 2.2, 0.045, 0.045);
-      box(M.steelDark, px - 1.1, F + 0.9, -4.2, 2.2, 0.045, 0.045);
+  // Stanchions helper: heavy circular base, chrome post, belt housing
+  function stanchionPost(x, z) {
+    shape(G.cylBase, M.steelDark, x, F, z, 0.32, 0.035, 0.32);
+    shape(G.cylBase, M.steel, x, F + 0.035, z, 0.065, 0.90, 0.065);
+    shape(G.cylBase, M.steelDark, x, F + 0.86, z, 0.10, 0.10, 0.10);
+  }
+  function stanchionLineX(x0, x1, z, postSpacing = 2.0) {
+    const minX = Math.min(x0, x1), maxX = Math.max(x0, x1);
+    const len = maxX - minX;
+    if (len < 0.1) return;
+    box(M.steelDark, (minX + maxX) / 2, F + 0.88, z, len, 0.045, 0.035);
+    const n = Math.max(2, Math.round(len / postSpacing) + 1);
+    for (let i = 0; i < n; i++) {
+      stanchionPost(minX + (i / (n - 1)) * len, z);
     }
   }
+  function stanchionLineZ(x, z0, z1, postSpacing = 2.0) {
+    const minZ = Math.min(z0, z1), maxZ = Math.max(z0, z1);
+    const len = maxZ - minZ;
+    if (len < 0.1) return;
+    box(M.steelDark, x, F + 0.88, (minZ + maxZ) / 2, 0.035, 0.045, len);
+    const n = Math.max(2, Math.round(len / postSpacing) + 1);
+    for (let i = 0; i < n; i++) {
+      stanchionPost(x, minZ + (i / (n - 1)) * len);
+    }
+  }
+
+  // Serpentine queue in front of Lane 1 screening.
+  // Doorway is at z = -8.0; z = -8.0 to -5.4 is kept completely clear for free entry.
+  // Flow starts at queue entry (x = -5.2, z = -5.4), weaves west along Lane 1,
+  // turns north into Lane 2 heading east, then exits directly towards screening Lane 1 (WTMD arch at x=-7.5, z=-1.0).
+  // West boundary
+  stanchionLineZ(-9.4, -5.4, -2.6, 1.4);
+  // South barrier (entry opening on east x > -5.4)
+  stanchionLineX(-9.4, -5.4, -5.4, 2.0);
+  // Middle divider (turn opening on west x < -7.4)
+  stanchionLineX(-7.4, -5.2, -4.0, 2.0);
+  // North barrier (exit opening on east x > -6.2 leading to screening lane)
+  stanchionLineX(-9.4, -6.2, -2.6, 1.6);
+
   for (const lx of [-7.5, -2.5, 2.5]) {
     box(M.steel, lx + 1.35, F + 0.42, -1.2, 0.72, 0.72, 3.4);      // belt base
     box(M.steelDark, lx + 1.35, F + 0.8, -1.2, 0.86, 0.07, 3.6);   // rollers
@@ -1614,17 +1676,27 @@ prop(() => {
 // Apron furniture: two jetways onto the parked planes, ground service
 // ---------------------------------------------------------------------------
 prop(() => {
-  // Dock on the aircraft's port side (world −X when the plane faces the
-  // terminal). The tube leaves the glass, jogs aside, then runs beside the
-  // fuselage so it never occupies the nose on the centreline.
-  for (const gx of [-8, 8]) {
-    const dock = gx - 2.8;
-    box(M.steel, gx, 3.35, 39.2, 1.6, 1.9, 1.6);            // hood at the gate
-    box(M.steel, (gx + dock) / 2, 3.35, 41.6, Math.abs(gx - dock) + 1.4, 1.8, 3.2);
-    box(M.steel, dock, 3.35, 47.4, 1.45, 1.8, 10.0);        // tube along the side
-    box(M.steel, dock, 3.4, 53.0, 1.8, 2.0, 2.2);           // cab at the forward door
-    box(M.steelDark, gx, 1.55, 39.6, 0.28, 3.1, 0.28);
-    box(M.steelDark, dock, 1.55, 51.4, 0.28, 3.1, 0.28);
+  // Hollow airbridge on the same X as the lounge opening, so looking
+  // through the door you see down the tube to the cab on the starboard
+  // forward door. Walls stay 0.85 m outside the fuselage skin.
+  const hw = GATE_OPEN_HW;
+  for (const gx of GATE_PLANE_X) {
+    const tx = gateTubeX(gx);
+    const dx = gateDoorX(gx);
+    const z0 = 38.16;
+    const z1 = GATE_DOOR_Z - 1.7;
+    const zMid = (z0 + z1) / 2;
+    const len = z1 - z0;
+    // Floor at the lounge sill so the opening is the corridor, not a
+    // hole under it. The cab at the far end steps up onto the door.
+    const y0 = 0.22, y1 = 3.02, h = y1 - y0;
+    box(M.steel, tx, y0 + 0.07, zMid, hw * 2, 0.14, len);             // floor
+    box(M.steel, tx, y1 - 0.07, zMid, hw * 2, 0.14, len);             // roof
+    box(M.steel, tx - hw + 0.06, (y0 + y1) / 2, zMid, 0.12, h, len);  // walls
+    box(M.steel, tx + hw - 0.06, (y0 + y1) / 2, zMid, 0.12, h, len);
+    // Cab / bellows: the 0.85 m reach from the tube onto the door
+    box(M.steel, (tx + dx) / 2, 3.45, GATE_DOOR_Z, Math.abs(dx - tx) + 1.6, 2.2, 2.4);
+    box(M.steelDark, tx, 1.55, GATE_DOOR_Z - 1.4, 0.28, 3.1, 0.28);
   }
   // baggage cart train + loader near gate A2
   frame(14.5, 50, 0.4, () => {
@@ -1797,8 +1869,8 @@ function placePlane(livery, x, y, z, yaw, name) {
   planes.push(p);
   return p;
 }
-const parked = placePlane(0x1a4a8a, 8, 3.55, 64, Math.PI - 0.22, 'PACIFIC');
-placePlane(0x0a6a4a, -8, 3.55, 64, Math.PI + 0.22, 'AERO NORD');
+const parked = placePlane(0x1a4a8a, 8, 3.55, GATE_PLANE_Z, Math.PI, 'PACIFIC');
+placePlane(0x0a6a4a, -8, 3.55, GATE_PLANE_Z, Math.PI, 'AERO NORD');
 placePlane(0x8a2030, -30, 3.55, 88, Math.PI * 0.78, 'REDWOOD');
 const takingOff = placePlane(0xc8102e, 41, 3.55, 40, 0, 'CRIMSON');
 const landing = placePlane(0x0a6a4a, 41, 28, 190, Math.PI, 'AERO NORD');
@@ -2111,7 +2183,28 @@ function atPath(pts, d) {
 const CURB_PATH = [[-14, -37.6], [14, -37.6], [14, -34.4], [-14, -34.4]];
 const HALL_LOOP = [[-18, -28.6], [18, -28.6], [18, -11], [-18, -11]];
 const HALL_AISLE = [[-1.4, -29], [1.4, -29], [1.4, -10], [-1.4, -10]];
-const SEC_QUEUE = [[-9.5, -6.3], [-1.5, -6.3], [-1.5, -4.9], [-9.5, -4.9]];
+const SEC_QUEUE = [
+  [-7.0, -14.0], // Check-in hall: walking north towards security
+  [-7.0, -8.5],  // Approaching portal under the SECURITY sign
+  [-6.0, -6.8],  // Stepping through portal into open security vestibule
+  [-5.0, -5.4],  // Entering queue Lane 1
+  [-8.4, -4.7],  // Walking west along Lane 1
+  [-8.4, -3.3],  // Turning into Lane 2
+  [-5.7, -3.3],  // Walking east along Lane 2
+  [-5.7, -2.0],  // Exiting queue towards screening lane
+  [-7.5, -1.8],  // Lining up at Lane 1 metal detector
+  [-7.5, -0.2],  // Walking under the metal detector arch!
+  [-7.5, 1.2],   // Retrieving luggage on roller bed
+  [5.0, 1.2],    // Walking across to concourse exit opening
+  [5.0, 5.0],    // Entering the concourse / gates area!
+  [5.0, 14.0],   // Walking towards boarding gates
+  [0.0, 18.0],   // Strolling near central lounge
+  [-4.0, 14.0],  // Concourse west side
+  [7.0, 5.0],    // Returning towards security
+  [7.0, 1.2],    // Passing security exit east side
+  [7.5, -6.0],   // East bypass aisle in security room
+  [-5.0, -7.5],  // Exiting security back through portal into hall
+];
 const WALKWAY = [[-7, 4.5], [7, 4.5], [7, 18.5], [-7, 18.5]];
 const LOUNGE_LOOP = [[-15, 19.6], [15, 19.6], [15, 22.6], [-15, 22.6]];
 const GATE_PATH = [[-16, 33.2], [16, 33.2], [16, 34.4], [-16, 34.4]];
@@ -2141,7 +2234,7 @@ const GATE_PATH = [[-16, 33.2], [16, 33.2], [16, 34.4], [-16, 34.4]];
     [CURB_PATH, 2, 1], [CURB_PATH, 26, -1],
     [HALL_LOOP, 0, 1], [HALL_LOOP, 30, -1], [HALL_LOOP, 58, 1],
     [HALL_AISLE, 3, 1], [HALL_AISLE, 20, -1],
-    [SEC_QUEUE, 2, 1],
+    [SEC_QUEUE, 2, 1], [SEC_QUEUE, 56, 1],
     [WALKWAY, 4, 1], [WALKWAY, 20, -1], [WALKWAY, 36, 1],
     [LOUNGE_LOOP, 5, 1], [LOUNGE_LOOP, 30, -1], [LOUNGE_LOOP, 50, 1],
     [GATE_PATH, 2, 1], [GATE_PATH, 30, -1],
@@ -2168,6 +2261,9 @@ const GATE_PATH = [[-16, 33.2], [16, 33.2], [16, 34.4], [-16, 34.4]];
     { x: -11, z: -25.4, ry: 0 }, { x: -9.6, z: -25.9, ry: 0.3 },
     { x: 11, z: -25.4, ry: 0 }, { x: 12.4, z: -25.9, ry: -0.2 },
     { x: -11, z: -18.6, ry: 0 }, { x: 11, z: -18.6, ry: 0 },
+    // passengers queuing in security line
+    { x: -7.0, z: -4.7, ry: -Math.PI / 2 },
+    { x: -7.2, z: -3.3, ry: Math.PI / 2 },
     // reading the departures board
     { x: 7, z: -10.6, ry: 0 }, { x: 10.4, z: -11.0, ry: 0.2 },
     // security officers
@@ -2183,7 +2279,7 @@ const GATE_PATH = [[-16, 33.2], [16, 33.2], [16, 34.4], [-16, 34.4]];
     { x: -14, z: 37.1, ry: Math.PI, staff: true },
     { x: 0, z: 37.1, ry: Math.PI, staff: true },
     // watching the planes at the glass
-    { x: -4.5, z: 36.8, ry: 0 }, { x: 5.2, z: 36.7, ry: 0 }, { x: 10.6, z: 36.8, ry: 0.15 },
+    { x: -4.5, z: 36.8, ry: 0 }, { x: 3.3, z: 36.7, ry: 0 }, { x: 10.6, z: 36.8, ry: 0.15 },
     // at the curb
     { x: 6, z: -34.6, ry: Math.PI }, { x: -13, z: -35.2, ry: 0.4 },
   ];
