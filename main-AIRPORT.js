@@ -2323,10 +2323,16 @@ prop(() => {
   // lane B, then out to whichever WTMD arch is free.
   // West boundary, closing the U-turn
   stanchionLineZ(-11.6, -5.4, -2.6, 1.4);
+  // Tape 1 & 2 run the full 21 m width now instead of the old 4-6 m pen, so
+  // their post spacing is opened up too (2.0 -> 3.4 m). The connecting rail
+  // is one continuous collider regardless of post count — each post is its
+  // own small AABB in the broad-phase (buildCityBoxes gives every instance
+  // one), and walking the length of a lane was querying two dozen of them
+  // every frame for no collision benefit the rail wasn't already providing.
   // Tape 1 — south side, entry gap left at the east end (x > 9.4)
-  stanchionLineX(-11.6, 9.4, -5.4, 2.0);
+  stanchionLineX(-11.6, 9.4, -5.4, 3.4);
   // Tape 2 — middle divider, U-turn gap left at the west end (x < -9.4)
-  stanchionLineX(-9.4, 11.6, -4.0, 2.0);
+  stanchionLineX(-9.4, 11.6, -4.0, 3.4);
   // Tape 3 — north side, stops before the Lane 1 arch
   stanchionLineX(-11.6, -8.4, -2.6, 1.6);
 
@@ -4379,8 +4385,19 @@ function updateAvatar(dt) {
   });
 }
 
+// Terminal-wide crowd, so nearby zones (check-in, security, cafe, shop, gates,
+// curb) all animate every frame regardless of which one the player is in.
+// With the roster grown past ~70 skinned rigs that unconditional mixer cost
+// was the slowdown: cull the way cabinPassengers already does below, just on
+// plain distance instead of a gate check. Squared, XZ-only, one comparison.
+const CROWD_CULL_R2 = 42 * 42;
 function tickCrowd(dt) {
+  const px = ctrl.pos.x, pz = ctrl.pos.z;
   for (const w of walkers) {
+    const dx = w.group.position.x - px, dz = w.group.position.z - pz;
+    const near = dx * dx + dz * dz < CROWD_CULL_R2;
+    if (near !== w.group.visible) w.group.visible = near;
+    if (!near) continue;
     w.s += w.speed * w.dir * dt;
     const len = w.len || 1;
     if (w.s > len) w.s -= len;
@@ -4390,7 +4407,12 @@ function tickCrowd(dt) {
     w.group.rotation.y = at.yaw + (w.dir < 0 ? Math.PI : 0);
     w.mixer.update(dt);
   }
-  for (const v of statics) v.mixer.update(dt);
+  for (const v of statics) {
+    const dx = v.group.position.x - px, dz = v.group.position.z - pz;
+    const near = dx * dx + dz * dz < CROWD_CULL_R2;
+    if (near !== v.group.visible) v.group.visible = near;
+    if (near) v.mixer.update(dt);
+  }
   // Cabin passengers exist only for the aircraft you are actually at. Every
   // visitor runs with frustum culling off — a skinned bounding sphere from the
   // bind pose is wrong the moment the clip moves — so nothing else takes them
