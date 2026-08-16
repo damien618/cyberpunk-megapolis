@@ -3695,7 +3695,11 @@ const airTravelInteraction = {
 // ---------------------------------------------------------------------------
 // Collision / controller
 // ---------------------------------------------------------------------------
-const bw = buildCityBoxes(world);
+// 12 m cells instead of the open-city default of 100: the terminal is a
+// self-contained ~50x100 m interior, smaller than one default cell, so every
+// broad-phase query was returning almost the whole map (~1500 of 3272 AABBs
+// for a 3 m radius) instead of what's actually nearby.
+const bw = buildCityBoxes(world, 12);
 {
   // Invisible AABBs — never instanced into the scene (those drew as grey
   // slabs through the seats). Shell keeps the player in the tube; seat banks

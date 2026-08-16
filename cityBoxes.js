@@ -4,7 +4,15 @@ import * as THREE from 'three';
 
 const CELL = 100;
 
-export function buildCityBoxes(world) {
+// cellSize overrides the 100 m default. That default suits the open city map
+// (its objects range up to the 400 m merged districts a comment below refers
+// to), but a self-contained interior — an airport terminal, a villa — is
+// smaller than a single cell, so every query returns nearly the whole map
+// instead of what's actually nearby. add() already spans an object across
+// every cell it overlaps, so shrinking the cell is safe for any caller; it
+// only changes how finely the broad phase buckets things.
+export function buildCityBoxes(world, cellSize = CELL) {
+  const CELL = cellSize;
   const aabbs = [];
   const _m = new THREE.Matrix4();
   const _c = new THREE.Vector3();
