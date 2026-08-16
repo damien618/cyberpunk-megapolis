@@ -13,7 +13,7 @@ import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=31';
 // Visit to a Shinto shrine (Japan) — an authentic Japanese sacred precinct
 // and tranquil Zen garden:
 //
-//   airfield apron & parking lot → Grand Vermilion Torii Gate (大鳥居)
+//   parking lot → Grand Vermilion Torii Gate (大鳥居)
 //   → Stone lantern-lined Sando approach (参道)
 //   → Chōzuya purification pavilion (手水舎) & Sacred Koi Pond (神池)
 //   → Arched red Taiko-bashi bridge (太鼓橋)
@@ -364,8 +364,8 @@ function buildStoneLantern(x, y, z, scale = 1, ry = 0) {
 // 3. Chōzuya Water Purification Pavilion (手水舎)
 // ---------------------------------------------------------------------------
 function buildChozuya(x, y, z) {
-  // Stone paved floor
-  box(M.stonePaver, x, y + 0.15, z, 6.0, 0.3, 5.0, 0, 0, 0, true);
+  // Stone paved floor (walkable — not a prop wall)
+  box(M.stonePaver, x, y + 0.15, z, 6.0, 0.3, 5.0, 0, 0, 0, false);
 
   // 4 Timber pillars
   const px = 2.4, pz = 1.9, colH = 3.6;
@@ -418,8 +418,8 @@ function buildTaikoBashi(x, y, z, span = 14, width = 3.6) {
     const py = y + (1 - t * t) * archHeight;
     const pitch = -t * 0.34;
 
-    // Plank deck
-    box(M.templeWood, x, py, pz, width, 0.18, span / steps + 0.08, 0, pitch, 0, true);
+    // Plank deck (walkable — not a prop wall)
+    box(M.templeWood, x, py, pz, width, 0.18, span / steps + 0.08, 0, pitch, 0, false);
 
     // Left and right red lacquer railings & balustrades
     const leftX = x - width / 2 + 0.12;
@@ -453,12 +453,12 @@ function buildMainShrine(x, y, z) {
   // Elevated Stone Foundation
   box(M.stoneLantern, x, y + 0.6, z, W + 3.0, 1.2, D + 3.0, 0, 0, 0, true);
 
-  // Wooden Veranda Deck (Engawa)
-  box(M.templeWood, x, y + 1.3, z, W + 2.0, 0.25, D + 2.0, 0, 0, 0, true);
+  // Wooden Veranda Deck (Engawa) — walkable floor, not a prop wall
+  box(M.templeWood, x, y + 1.3, z, W + 2.0, 0.25, D + 2.0, 0, 0, 0, false);
 
   // Entrance staircase (Steps)
   for (let i = 0; i < 5; i++) {
-    box(M.templeWood, x, y + 0.2 + i * 0.24, z - D / 2 - 1.2 - (4 - i) * 0.45, 6.0, 0.26, 0.55, 0, 0, 0, true);
+    box(M.templeWood, x, y + 0.2 + i * 0.24, z - D / 2 - 1.2 - (4 - i) * 0.45, 6.0, 0.26, 0.55, 0, 0, 0, false);
   }
 
   // Colonnade of dark wooden Hinoki pillars
@@ -616,8 +616,8 @@ function buildZenGarden(x, y, z, width = 24, depth = 18) {
     box(M.stoneLantern, x + rp.dx, y + rp.sy / 2 + 0.1, z + rp.dz, rp.sx, rp.sy, rp.sz, rp.ry, 0.1, 0, true);
   }
 
-  // Wooden viewing platform with cedar bench
-  box(M.templeWood, x, y + 0.45, z + depth / 2 + 1.8, 8.0, 0.3, 3.2, 0, 0, 0, true);
+  // Wooden viewing platform with cedar bench (walkable)
+  box(M.templeWood, x, y + 0.45, z + depth / 2 + 1.8, 8.0, 0.3, 3.2, 0, 0, 0, false);
   box(M.templeWoodLight, x, y + 0.85, z + depth / 2 + 2.2, 5.0, 0.5, 0.7, 0, 0, 0, true);
 
   furnitureInteractions.push({
@@ -828,8 +828,12 @@ mainGround.position.set(0, 0, 50);
 mainGround.receiveShadow = true;
 scenery.add(mainGround);
 
-// Sando Slate Approach Path (from Torii to Haiden)
-box(M.stonePaver, 0, 0.12, 40, 5.2, 0.22, 140, 0, 0, 0, true);
+// Sando Slate Approach Path (from Torii to Haiden).
+// Not a prop: a 140 m slab is a floor, and groundFn stands the player on SANDO_TOP.
+const SANDO_X = 0, SANDO_Z = 40, SANDO_W = 5.2, SANDO_D = 140;
+const SANDO_Y = 0.12, SANDO_H = 0.22;
+const SANDO_TOP = SANDO_Y + SANDO_H / 2;
+box(M.stonePaver, SANDO_X, SANDO_Y, SANDO_Z, SANDO_W, SANDO_H, SANDO_D, 0, 0, 0, false);
 // Flanking dark stone borders
 box(M.stoneLantern, -2.9, 0.14, 40, 0.5, 0.26, 140, 0, 0, 0, true);
 box(M.stoneLantern, 2.9, 0.14, 40, 0.5, 0.26, 140, 0, 0, 0, true);
@@ -841,7 +845,14 @@ for (let z = -20; z <= 90; z += 9) {
   buildStoneLantern(3.8, 0.15, z, 1.0, Math.PI);
 }
 
-// Parking Lot & Airfield Ramp (Z: -100 to -24)
+// Parking lot (Z: -100 to -24). Perpendicular stalls: dividers run along Z
+// (stall depth), 4.2 m apart on X. buildCar is +X-forward, so yaw π/2 puts
+// the length down the stall, toward the torii.
+const PARK_BAY_PITCH = 4.2;
+const PARK_BAY_DEPTH = 6.0;
+const PARK_BAY_Z = -50;
+const PARK_LINE_I0 = -5;
+const PARK_YAW = Math.PI / 2;
 const parkingGround = new THREE.Mesh(
   new THREE.PlaneGeometry(160, 90),
   M.asphalt
@@ -851,9 +862,12 @@ parkingGround.position.set(0, 0.05, -65);
 parkingGround.receiveShadow = true;
 scenery.add(parkingGround);
 
-// Parking lines
-for (let i = -5; i <= 5; i++) {
-  box(M.parkingLine, i * 4.2, 0.08, -50, 0.15, 0.02, 6.0, 0, 0, 0, false);
+for (let i = PARK_LINE_I0; i <= 5; i++) {
+  box(M.parkingLine, i * PARK_BAY_PITCH, 0.08, PARK_BAY_Z, 0.15, 0.02, PARK_BAY_DEPTH, 0, 0, 0, false);
+}
+
+function parkBayX(k) {
+  return (PARK_LINE_I0 + k + 0.5) * PARK_BAY_PITCH;
 }
 
 // ---------------------------------------------------------------------------
@@ -915,7 +929,8 @@ buildBambooGrove(0, 0.1, 135, 45, 16);
 // ---------------------------------------------------------------------------
 // 14. Vehicles & Return Car on Parking Lot
 // ---------------------------------------------------------------------------
-// Parked airliner on the apron (adjacent to parking)
+// Arrival cinematic mesh only — never left parked on the lot. The shrine is
+// far from the airport, so no airliner belongs on this asphalt.
 function buildSimpleAirliner() {
   const g = new THREE.Group();
   // Fuselage
@@ -938,32 +953,28 @@ function buildSimpleAirliner() {
   return g;
 }
 
-const parkedAirliner = buildSimpleAirliner();
-parkedAirliner.position.set(-45, 0, -68);
-parkedAirliner.rotation.y = Math.PI * 0.15;
-world.add(parkedAirliner);
-
-// Parked scenery cars
+// Parked scenery cars — one per stall, centred between the painted dividers.
+// Bays 4–5 (around x = 0) stay empty so the walk toward the torii is clear.
 const car1 = buildCar('sedan', 0xe8eef5, { metallic: true });
-car1.position.set(-16, 0.1, -50);
-car1.rotation.y = 0;
+car1.position.set(parkBayX(1), 0.1, PARK_BAY_Z);
+car1.rotation.y = PARK_YAW;
 world.add(car1);
 
 const car2 = buildCar('suv', 0x1e242c, { metallic: false });
-car2.position.set(-8, 0.1, -50);
-car2.rotation.y = 0;
+car2.position.set(parkBayX(2), 0.1, PARK_BAY_Z);
+car2.rotation.y = PARK_YAW;
 world.add(car2);
 
 const car3 = buildCar('coupe', 0xb82828, { metallic: true });
-car3.position.set(8, 0.1, -50);
-car3.rotation.y = 0;
+car3.position.set(parkBayX(7), 0.1, PARK_BAY_Z);
+car3.rotation.y = PARK_YAW;
 world.add(car3);
 
 // The Interactive Return Car ("Retour à LA")
-const RETURN_CAR_X = 16.0;
+const RETURN_CAR_X = parkBayX(8);
 const RETURN_CAR_Y = 0.1;
-const RETURN_CAR_Z = -50.0;
-const RETURN_CAR_YAW = 0;
+const RETURN_CAR_Z = PARK_BAY_Z;
+const RETURN_CAR_YAW = PARK_YAW;
 
 const returnCar = buildCar('sedan', 0x223c58, { metallic: true });
 returnCar.position.set(RETURN_CAR_X, RETURN_CAR_Y, RETURN_CAR_Z);
@@ -1092,7 +1103,43 @@ function girlMatFor(name) {
 }
 
 let player = null;
-const groundFn = (x, z) => 0.1;
+// Parking / lawn sit at 0.1. The sando, bridge, shrine deck and a few
+// other slabs stand proud of that — a constant groundY left the feet
+// buried in the raised central alley (and anywhere else the stone is higher).
+const BASE_GROUND = 0.1;
+function groundFn(x, z) {
+  // Main shrine deck & stairs — buildMainShrine(0, 0.15, 95)
+  {
+    const sx = 0, sy = 0.15, sz = 95, W = 18, D = 14;
+    if (Math.abs(x - sx) <= (W + 2) / 2 && Math.abs(z - sz) <= (D + 2) / 2) {
+      return sy + 1.3 + 0.125;
+    }
+    if (Math.abs(x - sx) <= 3.1) {
+      for (let i = 4; i >= 0; i--) {
+        const stepZ = sz - D / 2 - 1.2 - (4 - i) * 0.45;
+        if (Math.abs(z - stepZ) <= 0.32) return sy + 0.2 + i * 0.24 + 0.13;
+      }
+    }
+  }
+  // Taiko-bashi deck — buildTaikoBashi(0, 0.45, 32, 16, 3.8)
+  {
+    const bx = 0, by = 0.45, bz = 32, span = 16, width = 3.8, archH = 2.4;
+    if (Math.abs(x - bx) <= width / 2 && z >= bz - span / 2 && z <= bz + span / 2) {
+      const t = ((z - (bz - span / 2)) / span - 0.5) * 2;
+      return by + (1 - t * t) * archH + 0.09;
+    }
+  }
+  // Chōzuya paved floor — buildChozuya(-9.5, 0.15, 12)
+  if (Math.abs(x + 9.5) <= 3 && Math.abs(z - 12) <= 2.5) return 0.45;
+  // Zen garden viewing platform — buildZenGarden(28, 0.15, 78, 22, 16)
+  if (Math.abs(x - 28) <= 4 && Math.abs(z - 87.8) <= 1.6) return 0.75;
+  // Central sando (and its overlap with the parking at the torii)
+  if (Math.abs(x - SANDO_X) <= SANDO_W / 2 &&
+      z >= SANDO_Z - SANDO_D / 2 && z <= SANDO_Z + SANDO_D / 2) {
+    return SANDO_TOP;
+  }
+  return BASE_GROUND;
+}
 const castFn = () => false;
 
 const ctrl = new Controller(bw, groundFn, castFn, {
@@ -1273,13 +1320,13 @@ function updateFlightLanding(dt) {
   const t = flightLandingTimer;
 
   if (t < 3.2) {
-    // Phase 1 (0 to 3.2s): Airliner descends from the Japanese sky and touches down on the airfield
+    // Phase 1 (0 to 3.2s): distant airliner over the Japanese countryside —
+    // it never reaches the shrine parking, which is far from the airport.
     const u = t / 3.2;
     const descent = 1 - u;
-    landingPlane.position.set(-45, 0.1 + descent * descent * 55, -180 + u * 120);
+    landingPlane.position.set(-80, 18 + descent * descent * 50, -320 + u * 80);
     landingPlane.rotation.set(descent * 0.12, 0, 0);
 
-    // Distant cinematic exterior camera overlooking the Japanese landscape & landing strip
     camera.position.set(40, 22, -12);
     camera.lookAt(landingPlane.position.x, landingPlane.position.y + 4, landingPlane.position.z);
 
@@ -1287,27 +1334,13 @@ function updateFlightLanding(dt) {
       fadeEl.style.opacity = String(1 - t / 0.8);
     }
   } else {
-    // Phase 2: Smooth cut into the plane cabin seated view, ready to stand up
     flightLandingActive = false;
     landingPlane.visible = false;
-    parkedAirliner.visible = true;
-
-    // Enter seated state inside the plane / on the arrival seat
-    enterFurnitureInteraction({
-      type: 'sit',
-      x: -45, y: 3.5, z: -68,
-      centerX: -45, centerZ: -68,
-      approachY: 3.0,
-      yaw: Math.PI,
-      halfWidth: 0.5, halfDepth: 0.5,
-      triggerDistance: 0.5,
-      occupied: false,
-      returnPosition: parkingSpawnPoint.clone(),
-    });
+    ctrl.rescueTo(parkingSpawnPoint);
 
     const msg = document.getElementById('msg');
     if (msg) {
-      msg.textContent = 'Atterrissage au Japon — ZQSD / Espace pour vous lever';
+      msg.textContent = 'Arrivée au temple — le grand torii est devant vous';
       msg.style.opacity = '1';
       setTimeout(() => { if (msg) msg.style.opacity = '0'; }, 3500);
     }
