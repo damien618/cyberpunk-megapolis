@@ -2110,7 +2110,9 @@ function checkInBank(d, fascia) {
         prev = qz;
       }
     }
-    tape(laneA, qz0, laneB, qz0);          // the fold that closes the south end
+    // Queue entrance is at the south (qz0) under the sign; the fold at the north
+    // end (qz1, deep in the hall) directs passengers forward to the counters.
+    tape(laneA, qz1, laneB, qz1);
   });
   // Floor line telling the queue where to stop. Outside prop(): a 7 mm-tall
   // decal marked solid would be a wall the player cannot step over.
@@ -2119,6 +2121,20 @@ function checkInBank(d, fascia) {
 }
 checkInBank(1, M.chkFasciaW);
 checkInBank(-1, M.chkFasciaE);
+
+// Suitcases standing by queuing travelers in the check-in hall
+prop(() => {
+  // West bank queue suitcases
+  suitcase(-19.25, F, -27.4, M.luggageTeal, 0.12);
+  suitcase(-19.25, F, -21.8, M.luggageDark, -0.08);
+  suitcase(-19.25, F, -16.2, M.luggageRed, 0.15);
+  suitcase(-19.25, F, -13.4, M.luggageTeal, -0.1);
+  // East bank queue suitcases
+  suitcase(19.25, F, -27.4, M.luggageRed, -0.1);
+  suitcase(19.25, F, -21.8, M.luggageTeal, 0.14);
+  suitcase(19.25, F, -16.2, M.luggageDark, -0.05);
+  suitcase(19.25, F, -13.4, M.luggageRed, 0.08);
+});
 
 // ---------------------------------------------------------------------------
 // Self-service kiosks. With the counters gone from the middle of the hall the
@@ -2292,18 +2308,27 @@ prop(() => {
     }
   }
 
-  // Serpentine queue in front of Lane 1 screening.
-  // Doorway is at z = -8.0; z = -8.0 to -5.4 is kept completely clear for free entry.
-  // Flow starts at queue entry (x = -5.2, z = -5.4), weaves west along Lane 1,
-  // turns north into Lane 2 heading east, then exits directly towards screening Lane 1 (WTMD arch at x=-7.5, z=-1.0).
-  // West boundary
-  stanchionLineZ(-9.4, -5.4, -2.6, 1.4);
-  // South barrier (entry opening on east x > -5.4)
-  stanchionLineX(-9.4, -5.4, -5.4, 2.0);
-  // Middle divider (turn opening on west x < -7.4)
-  stanchionLineX(-7.4, -5.2, -4.0, 2.0);
-  // North barrier (exit opening on east x > -6.2 leading to screening lane)
-  stanchionLineX(-9.4, -6.2, -2.6, 1.6);
+  // Serpentine queue feeding the three screening lanes. It runs the full width
+  // of the room, the way a real checkpoint corral does: a short pen tucked in
+  // one corner holds nobody and reads as a prop.
+  //
+  // Doorway is at z = -8.0; the aisle z = -7.6 to -5.4 stays clear so arrivals
+  // can walk east along the room to the queue mouth at the far end.
+  //   tape 1 (z = -5.4)  west wall → x = 9.4, mouth of the queue past its east end
+  //   tape 2 (z = -4.0)  x = -9.4 → east wall, U-turn past its west end
+  //   tape 3 (z = -2.6)  west wall → x = -6.8, stopping short of the Lane 1
+  //                      x-ray tunnel (its west face is at x = -6.68) so the
+  //                      last leg opens straight onto the screening lanes.
+  // Flow: in at the east, west down lane A, U-turn at the west wall, east down
+  // lane B, then out to whichever WTMD arch is free.
+  // West boundary, closing the U-turn
+  stanchionLineZ(-11.6, -5.4, -2.6, 1.4);
+  // Tape 1 — south side, entry gap left at the east end (x > 9.4)
+  stanchionLineX(-11.6, 9.4, -5.4, 2.0);
+  // Tape 2 — middle divider, U-turn gap left at the west end (x < -9.4)
+  stanchionLineX(-9.4, 11.6, -4.0, 2.0);
+  // Tape 3 — north side, stops before the first x-ray machine
+  stanchionLineX(-11.6, -6.8, -2.6, 1.6);
 
   for (const lx of [-7.5, -2.5, 2.5]) {
     box(M.steel, lx + 1.35, F + 0.42, -1.2, 0.72, 0.72, 3.4);      // belt base
@@ -3818,12 +3843,14 @@ const HALL_AISLE = [[-1.4, -29], [1.4, -29], [1.4, -10], [-1.4, -10]];
 const SEC_QUEUE = [
   [-7.0, -14.0], // Check-in hall: walking north towards security
   [-7.0, -8.5],  // Approaching portal under the SECURITY sign
-  [-6.0, -6.8],  // Stepping through portal into open security vestibule
-  [-5.0, -5.4],  // Entering queue Lane 1
-  [-8.4, -4.7],  // Walking west along Lane 1
-  [-8.4, -3.3],  // Turning into Lane 2
-  [-5.7, -3.3],  // Walking east along Lane 2
-  [-5.7, -2.0],  // Exiting queue towards screening lane
+  [-6.0, -6.6],  // Stepping through portal into the security vestibule
+  [8.8, -6.5],   // East along the entry aisle, south of the first tape
+  [10.5, -6.2],  // Round the east end of tape 1 into the queue mouth
+  [10.5, -4.7],  // Entering lane A of the corral
+  [-10.5, -4.7], // The whole run west along lane A
+  [-10.5, -3.3], // U-turn at the west wall, past the end of tape 2
+  [-6.2, -3.3],  // Back east along lane B
+  [-6.2, -2.0],  // Leaving the corral past the end of tape 3
   [-7.5, -1.8],  // Lining up at Lane 1 metal detector
   [-7.5, -0.2],  // Walking under the metal detector arch!
   [-7.5, 1.2],   // Airside of the glass, still in the lane
@@ -3892,24 +3919,51 @@ const GATE_PATH = [[-16, 33.2], [16, 33.2], [16, 34.4], [-16, 34.4]];
     { x: 23.05, z: chkDeskZ(1), ry: -Math.PI / 2, staff: true },
     { x: 23.05, z: chkDeskZ(3), ry: -Math.PI / 2, staff: true },
     { x: 23.05, z: chkDeskZ(5), ry: -Math.PI / 2, staff: true },
-    // Passengers at the counter face, and more waiting between the queue tapes
+    { x: 23.05, z: chkDeskZ(6), ry: -Math.PI / 2, staff: true },
+
+    // Passengers at the counter face, and queue extending all the way to the back of the hall
+    // West bank (counters x = -21.4, queue x = -19.65):
     { x: -21.4, z: chkDeskZ(0) - 0.3, ry: -Math.PI / 2 },
+    { x: -21.4, z: chkDeskZ(2) + 0.1, ry: -Math.PI / 2 },
     { x: -21.4, z: chkDeskZ(4) + 0.2, ry: -Math.PI / 2 },
-    { x: -19.7, z: -26.4, ry: 0 }, { x: -19.6, z: -23.2, ry: 0.25 },
+    { x: -21.4, z: chkDeskZ(6) - 0.2, ry: -Math.PI / 2 },
+    { x: -19.65, z: -27.6, ry: 0 },
+    { x: -19.65, z: -24.8, ry: 0.1 },
+    { x: -19.65, z: -22.0, ry: -0.06 },
+    { x: -19.65, z: -19.2, ry: 0.08 },
+    { x: -19.65, z: -16.4, ry: 0 },
+    { x: -19.65, z: -13.6, ry: -0.1 },
+
+    // East bank (counters x = 21.4, queue x = 19.65):
     { x: 21.4, z: chkDeskZ(1) - 0.2, ry: Math.PI / 2 },
+    { x: 21.4, z: chkDeskZ(3) + 0.2, ry: Math.PI / 2 },
     { x: 21.4, z: chkDeskZ(5) + 0.3, ry: Math.PI / 2 },
-    { x: 19.7, z: -27.0, ry: 0 }, { x: 19.6, z: -22.0, ry: -0.2 },
+    { x: 21.4, z: chkDeskZ(6) - 0.1, ry: Math.PI / 2 },
+    { x: 19.65, z: -27.6, ry: 0 },
+    { x: 19.65, z: -24.8, ry: -0.08 },
+    { x: 19.65, z: -22.0, ry: 0.12 },
+    { x: 19.65, z: -19.2, ry: -0.05 },
+    { x: 19.65, z: -16.4, ry: 0.06 },
+    { x: 19.65, z: -13.6, ry: 0 },
     // At the self-service kiosks, tagging their own bags
     { x: -9.6, z: -28.0, ry: 0 }, { x: -7.4, z: -23.4, ry: 0 },
     { x: 8.2, z: -28.0, ry: 0 }, { x: 9.9, z: -23.4, ry: 0 },
-    // passengers queuing in security line
+    // Passengers queuing in the security corral. Lane A (z = -4.7) walks west,
+    // lane B (z = -3.3) walks back east, so the two rows face opposite ways.
+    { x: 7.6, z: -4.7, ry: -Math.PI / 2 },
+    { x: 2.2, z: -4.7, ry: -Math.PI / 2 },
+    { x: -2.6, z: -4.7, ry: -Math.PI / 2 },
     { x: -7.0, z: -4.7, ry: -Math.PI / 2 },
+    { x: -9.8, z: -3.3, ry: Math.PI / 2 },
     { x: -7.2, z: -3.3, ry: Math.PI / 2 },
+    { x: -1.8, z: -3.3, ry: Math.PI / 2 },
+    { x: 4.6, z: -3.3, ry: Math.PI / 2 },
     // reading the departures board
     { x: 7, z: -10.6, ry: 0 }, { x: 10.4, z: -11.0, ry: 0.2 },
     // security officers
     { x: -0.5, z: 0.6, ry: Math.PI, staff: true },
-    { x: 9.6, z: -5.4, ry: Math.PI, staff: true },
+    // at the queue mouth, facing the aisle the arrivals walk down
+    { x: 10.4, z: -6.5, ry: -Math.PI / 2, staff: true },
     // café: barista behind the counter, customers at it
     { x: -22.5, z: 9, ry: Math.PI / 2, staff: true },
     { x: -20.2, z: 7.2, ry: -Math.PI / 2 }, { x: -20.2, z: 10.8, ry: -Math.PI / 2 },
