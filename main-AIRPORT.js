@@ -2308,33 +2308,31 @@ prop(() => {
     }
   }
 
-  // Serpentine queue feeding the three screening lanes. It runs the full width
-  // of the room, the way a real checkpoint corral does: a short pen tucked in
-  // one corner holds nobody and reads as a prop.
+  // Single-file queue feeding the three screening lanes. It runs the full
+  // width of the room, the way a real checkpoint corral does: a short pen
+  // tucked in one corner holds nobody and reads as a prop.
   //
   // Doorway is at z = -8.0; the aisle z = -7.6 to -5.4 stays clear so arrivals
   // can walk east along the room to the queue mouth at the far end.
-  //   tape 1 (z = -5.4)  west wall → x = 9.4, mouth of the queue past its east end
-  //   tape 2 (z = -4.0)  x = -9.4 → east wall, U-turn past its west end
-  //   tape 3 (z = -2.6)  west wall → x = -8.4, stopping short of the Lane 1
-  //                      WTMD arch (which spans x = -8.19 to -6.81) so the last
-  //                      leg opens straight onto it instead of barring the way.
-  // Flow: in at the east, west down lane A, U-turn at the west wall, east down
-  // lane B, then out to whichever WTMD arch is free.
-  // West boundary, closing the U-turn
-  stanchionLineZ(-11.6, -5.4, -2.6, 1.4);
-  // Tape 1 & 2 run the full 21 m width now instead of the old 4-6 m pen, so
-  // their post spacing is opened up too (2.0 -> 3.4 m). The connecting rail
-  // is one continuous collider regardless of post count — each post is its
-  // own small AABB in the broad-phase (buildCityBoxes gives every instance
-  // one), and walking the length of a lane was querying two dozen of them
-  // every frame for no collision benefit the rail wasn't already providing.
-  // Tape 1 — south side, entry gap left at the east end (x > 9.4)
+  //   south tape (z = -5.4)  west wall → x = 9.4, mouth of the queue past its east end
+  //   north tape (z = -2.6)  west wall → x = -8.4, stopping short of the Lane 1
+  //                          WTMD arch (which spans x = -8.19 to -6.81) so the
+  //                          exit opens straight onto it.
+  // Flow: in at the east mouth, west along the lane, out to whichever WTMD
+  // arch is free. This used to be a serpentine (two 1.4 m-wide lanes split by
+  // a middle divider) to fit a long queue into a short pen; now that the pen
+  // runs the room's full 21 m width a single lane already has plenty of
+  // length, and at 2.8 m wide it gives a 0.42 m-radius walker real clearance
+  // from either tape — the old two-lane split left only ~0.28 m of drift
+  // margin per side, enough to clip a tape rail and stick to it mid-stride.
+  // Tape post spacing (3.4 m) matches the west-anchor fix: the connecting
+  // rail is one continuous collider regardless of post count, so packing
+  // more posts than that added collision-query cost with no benefit the
+  // rail wasn't already providing.
+  // South tape — entry gap left at the east end (x > 9.4)
   stanchionLineX(-11.6, 9.4, -5.4, 3.4);
-  // Tape 2 — middle divider, U-turn gap left at the west end (x < -9.4)
-  stanchionLineX(-9.4, 11.6, -4.0, 3.4);
-  // Tape 3 — north side, stops before the Lane 1 arch
-  stanchionLineX(-11.6, -8.4, -2.6, 1.6);
+  // North tape — stops before the Lane 1 arch
+  stanchionLineX(-11.6, -8.4, -2.6, 3.4);
 
   for (const lx of [-7.5, -2.5, 2.5]) {
     box(M.steel, lx + 1.35, F + 0.42, -1.2, 0.72, 0.72, 3.4);      // belt base
@@ -3855,12 +3853,10 @@ const SEC_QUEUE = [
   [-7.0, -8.5],  // Approaching portal under the SECURITY sign
   [-6.0, -6.6],  // Stepping through portal into the security vestibule
   [8.8, -6.5],   // East along the entry aisle, south of the first tape
-  [10.5, -6.2],  // Round the east end of tape 1 into the queue mouth
-  [10.5, -4.7],  // Entering lane A of the corral
-  [-10.5, -4.7], // The whole run west along lane A
-  [-10.5, -3.3], // U-turn at the west wall, past the end of tape 2
-  [-7.9, -3.3],  // Back east along lane B
-  [-7.9, -2.1],  // Leaving the corral past the end of tape 3
+  [10.5, -6.2],  // Round the east end of the south tape into the queue mouth
+  [10.5, -4.0],  // Entering the corral, single lane down its centreline
+  [-9.6, -4.0],  // The whole run west, clear of both tapes
+  [-7.9, -2.6],  // Angling out past the end of the north tape
   [-7.5, -1.8],  // Lining up at Lane 1 metal detector
   [-7.5, -0.2],  // Walking under the metal detector arch!
   [-7.5, 1.2],   // Airside of the glass, still in the lane
@@ -3958,16 +3954,17 @@ const GATE_PATH = [[-16, 33.2], [16, 33.2], [16, 34.4], [-16, 34.4]];
     // At the self-service kiosks, tagging their own bags
     { x: -9.6, z: -28.0, ry: 0 }, { x: -7.4, z: -23.4, ry: 0 },
     { x: 8.2, z: -28.0, ry: 0 }, { x: 9.9, z: -23.4, ry: 0 },
-    // Passengers queuing in the security corral. Lane A (z = -4.7) walks west,
-    // lane B (z = -3.3) walks back east, so the two rows face opposite ways.
-    { x: 7.6, z: -4.7, ry: -Math.PI / 2 },
-    { x: 2.2, z: -4.7, ry: -Math.PI / 2 },
-    { x: -2.6, z: -4.7, ry: -Math.PI / 2 },
-    { x: -7.0, z: -4.7, ry: -Math.PI / 2 },
-    { x: -9.8, z: -3.3, ry: Math.PI / 2 },
-    { x: -8.9, z: -3.3, ry: Math.PI / 2 },
-    { x: -1.8, z: -3.3, ry: Math.PI / 2 },
-    { x: 4.6, z: -3.3, ry: Math.PI / 2 },
+    // Passengers queuing in the security corral, single file down its
+    // centreline (z = -4.0), all facing west towards the screening lanes.
+    // Slight z-jitter keeps the row from reading as machine-straight.
+    { x: 7.6, z: -3.9, ry: -Math.PI / 2 },
+    { x: 4.6, z: -4.1, ry: -Math.PI / 2 },
+    { x: 2.2, z: -3.85, ry: -Math.PI / 2 },
+    { x: -1.8, z: -4.15, ry: -Math.PI / 2 },
+    { x: -2.6, z: -3.9, ry: -Math.PI / 2 },
+    { x: -7.0, z: -4.05, ry: -Math.PI / 2 },
+    { x: -8.9, z: -3.9, ry: -Math.PI / 2 },
+    { x: -9.8, z: -4.1, ry: -Math.PI / 2 },
     // reading the departures board
     { x: 7, z: -10.6, ry: 0 }, { x: 10.4, z: -11.0, ry: 0.2 },
     // security officers
