@@ -1356,7 +1356,7 @@ function requestGamePointerLock() {
 
 let phase = 'menu';          // menu | play | pause
 let chosen = null;
-let selGender = null;
+let selGender = 'girl';
 const travelParams = new URLSearchParams(location.search);
 const arrivedFromVilla = travelParams.get('arrival') === 'la';
 const travelPrompt = $('furniturePrompt');
@@ -1411,9 +1411,12 @@ const menuEl = $('menu'), enterBtn = $('enterBtn');
 function selectGender(g) {
   selGender = g;
   document.querySelectorAll('.m-card').forEach(c => c.classList.toggle('sel', c.dataset.g === g));
-  enterBtn.disabled = false;
-  enterBtn.classList.add('ready');
+  if (enterBtn) {
+    enterBtn.disabled = false;
+    enterBtn.classList.add('ready');
+  }
 }
+selectGender('girl');
 document.querySelectorAll('.m-card').forEach(c =>
   c.addEventListener('click', () => selectGender(c.dataset.g)));
 addEventListener('keydown', e => {
