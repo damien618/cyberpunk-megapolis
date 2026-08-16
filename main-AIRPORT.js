@@ -4014,7 +4014,11 @@ function seatOn(v, x, cushionY, z, ry, floorY) {
 
 {
   const bases = [];
-  for (const url of ['./chars/glb/man.glb', './chars/glb/girl.glb']) {
+  // The player is always 'girl' on this map (see player.load('girl', ...)
+  // above). Skip that same base here so no cabin passenger ends up wearing
+  // the player's own face — man.glb is the only one of the two sit-capable
+  // rigs left, and every seat still varies by clothing, skin and hair.
+  for (const url of ['./chars/glb/man.glb']) {
     try { bases.push(await loadVisitorBase(url, girlMatFor)); }
     catch (e) { console.warn('[airport] cabin passenger model unavailable:', url, e); }
   }
