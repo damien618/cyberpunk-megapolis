@@ -2316,9 +2316,9 @@ prop(() => {
   // can walk east along the room to the queue mouth at the far end.
   //   tape 1 (z = -5.4)  west wall → x = 9.4, mouth of the queue past its east end
   //   tape 2 (z = -4.0)  x = -9.4 → east wall, U-turn past its west end
-  //   tape 3 (z = -2.6)  west wall → x = -6.8, stopping short of the Lane 1
-  //                      x-ray tunnel (its west face is at x = -6.68) so the
-  //                      last leg opens straight onto the screening lanes.
+  //   tape 3 (z = -2.6)  west wall → x = -8.4, stopping short of the Lane 1
+  //                      WTMD arch (which spans x = -8.19 to -6.81) so the last
+  //                      leg opens straight onto it instead of barring the way.
   // Flow: in at the east, west down lane A, U-turn at the west wall, east down
   // lane B, then out to whichever WTMD arch is free.
   // West boundary, closing the U-turn
@@ -2327,8 +2327,8 @@ prop(() => {
   stanchionLineX(-11.6, 9.4, -5.4, 2.0);
   // Tape 2 — middle divider, U-turn gap left at the west end (x < -9.4)
   stanchionLineX(-9.4, 11.6, -4.0, 2.0);
-  // Tape 3 — north side, stops before the first x-ray machine
-  stanchionLineX(-11.6, -6.8, -2.6, 1.6);
+  // Tape 3 — north side, stops before the Lane 1 arch
+  stanchionLineX(-11.6, -8.4, -2.6, 1.6);
 
   for (const lx of [-7.5, -2.5, 2.5]) {
     box(M.steel, lx + 1.35, F + 0.42, -1.2, 0.72, 0.72, 3.4);      // belt base
@@ -3849,8 +3849,8 @@ const SEC_QUEUE = [
   [10.5, -4.7],  // Entering lane A of the corral
   [-10.5, -4.7], // The whole run west along lane A
   [-10.5, -3.3], // U-turn at the west wall, past the end of tape 2
-  [-6.2, -3.3],  // Back east along lane B
-  [-6.2, -2.0],  // Leaving the corral past the end of tape 3
+  [-7.9, -3.3],  // Back east along lane B
+  [-7.9, -2.1],  // Leaving the corral past the end of tape 3
   [-7.5, -1.8],  // Lining up at Lane 1 metal detector
   [-7.5, -0.2],  // Walking under the metal detector arch!
   [-7.5, 1.2],   // Airside of the glass, still in the lane
@@ -3955,7 +3955,7 @@ const GATE_PATH = [[-16, 33.2], [16, 33.2], [16, 34.4], [-16, 34.4]];
     { x: -2.6, z: -4.7, ry: -Math.PI / 2 },
     { x: -7.0, z: -4.7, ry: -Math.PI / 2 },
     { x: -9.8, z: -3.3, ry: Math.PI / 2 },
-    { x: -7.2, z: -3.3, ry: Math.PI / 2 },
+    { x: -8.9, z: -3.3, ry: Math.PI / 2 },
     { x: -1.8, z: -3.3, ry: Math.PI / 2 },
     { x: 4.6, z: -3.3, ry: Math.PI / 2 },
     // reading the departures board
