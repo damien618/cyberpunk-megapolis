@@ -30,6 +30,10 @@ const hudMode = document.getElementById('mode');
 const hudSpeed = document.getElementById('speed');
 const hudHeight = document.getElementById('height');
 const furniturePrompt = document.getElementById('furniturePrompt');
+const planePromptGroup = document.getElementById('planePromptGroup');
+const planeDestLaPrompt = document.getElementById('planeDestLaPrompt');
+const planeDestShintoPrompt = document.getElementById('planeDestShintoPrompt');
+const fadeEl = document.getElementById('fade');
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
@@ -3401,6 +3405,7 @@ function buildAirliner(livery = 0xc8102e, name = 'PACIFIC', hasInterior = false,
             keepLock: true,
             occupied: false,
             label: spec.label,
+            isPlaneSeat: true,
           });
         }
       }
@@ -3739,7 +3744,8 @@ const ctrl = new Controller(bw, groundFn, castFn, {
 
 const params = new URLSearchParams(location.search);
 const arrivedFromLA = params.get('arrival') === 'la';
-const spawnPoint = arrivedFromLA
+const arrivedFromJapan = params.get('arrival') === 'japan';
+const spawnPoint = (arrivedFromLA || arrivedFromJapan)
   ? new THREE.Vector3(AIR_TRAVEL_CAR.x + 1.8, 1.4, AIR_TRAVEL_CAR.z + 0.6)
   : new THREE.Vector3(0, 1.4, -35.5);
 ctrl.rescueTo(spawnPoint);
@@ -4131,6 +4137,105 @@ renderer.domElement.addEventListener('click', () => {
   }
 });
 
+let choosingPlaneDestination = false;
+let flightTakeoffActive = false;
+let flightTakeoffTimer = 0;
+const FLIGHT_TAKEOFF_DURATION = 3.8;
+
+function showPlanePrompt() {
+  if (!planePromptGroup) return;
+  choosingPlaneDestination = true;
+  planePromptGroup.classList.add('show');
+  planePromptGroup.setAttribute('aria-hidden', 'false');
+  if (document.pointerLockElement === renderer.domElement) {
+    document.exitPointerLock?.();
+  }
+}
+function hidePlanePrompt() {
+  if (!planePromptGroup) return;
+  choosingPlaneDestination = false;
+  planePromptGroup.classList.remove('show');
+  planePromptGroup.setAttribute('aria-hidden', 'true');
+  if (started && !paused) {
+    requestGamePointerLock();
+  }
+}
+
+function selectPlaneDestination(dest) {
+  hidePlanePrompt();
+  if (dest === 'la') {
+    return;
+  }
+  if (dest === 'shinto') {
+    startFlightTakeoff();
+  }
+}
+
+planeDestLaPrompt?.addEventListener('click', event => {
+  event.stopPropagation();
+  selectPlaneDestination('la');
+});
+planeDestShintoPrompt?.addEventListener('click', event => {
+  event.stopPropagation();
+  selectPlaneDestination('shinto');
+});
+
+window.addEventListener('keydown', event => {
+  if (choosingPlaneDestination) {
+    if (event.key === '1' || event.code === 'Digit1' || event.code === 'Numpad1') {
+      event.preventDefault();
+      selectPlaneDestination('la');
+    } else if (event.key === '2' || event.code === 'Digit2' || event.code === 'Numpad2') {
+      event.preventDefault();
+      selectPlaneDestination('shinto');
+    }
+  }
+});
+
+function startFlightTakeoff() {
+  travelInProgress = true;
+  flightTakeoffActive = true;
+  flightTakeoffTimer = 0;
+  if (document.pointerLockElement === renderer.domElement) {
+    document.exitPointerLock?.();
+  }
+  takingOff.visible = true;
+  takingOff.position.set(41, 3.55, 10);
+  takingOff.rotation.set(0, 0, 0);
+  parked.visible = false;
+}
+
+function updateFlightTakeoff(dt) {
+  if (!flightTakeoffActive) return;
+  flightTakeoffTimer += dt;
+  const t = flightTakeoffTimer;
+  const RW = 41;
+
+  if (t < 1.3) {
+    const u = t / 1.3;
+    takingOff.position.set(RW, 3.55, 10 + u * 75);
+    takingOff.rotation.set(0, 0, 0);
+  } else {
+    const u = (t - 1.3) / (FLIGHT_TAKEOFF_DURATION - 1.3);
+    const climb = u * u;
+    takingOff.position.set(RW, 3.55 + climb * 75, 85 + u * 230);
+    takingOff.rotation.set(-0.14 - u * 0.12, 0, 0);
+  }
+
+  camera.position.set(-60, 26, 35);
+  camera.lookAt(takingOff.position.x, takingOff.position.y + 4, takingOff.position.z);
+
+  if (fadeEl && t > 2.8) {
+    const fadeAlpha = Math.min(1, (t - 2.8) / 0.9);
+    fadeEl.style.opacity = String(fadeAlpha);
+  }
+
+  if (t >= FLIGHT_TAKEOFF_DURATION) {
+    flightTakeoffActive = false;
+    location.href = 'index.html?map=shinto&arrival=flight';
+  }
+}
+
 function enterFurnitureInteraction(spot) {
   setFurniturePrompt(null);
   if (spot.occupied !== 'visitor') spot.occupied = 'player';
@@ -4143,8 +4248,13 @@ function enterFurnitureInteraction(spot) {
   // Character yaw 0 faces +Z; camera yaw 0 looks −Z. Offset so the rig sits
   // behind the sitter looking the way they face.
   if (Number.isFinite(spot.yaw)) input.yaw = spot.yaw + Math.PI;
+
+  if (spot.isPlaneSeat) {
+    showPlanePrompt();
+  }
 }
 function leaveFurnitureInteraction() {
+  hidePlanePrompt();
   const interaction = activeFurnitureInteraction;
   if (!interaction) return;
   ctrl.pos.copy(interaction.returnPosition);
@@ -4294,6 +4404,13 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.033, clock.getDelta());
   const t = clock.elapsedTime;
+  if (flightTakeoffActive) {
+    updateFlightTakeoff(dt);
+    tickAirportLights(t, dt);
+    renderer.render(scene, camera);
+    input.endFrame();
+    return;
+  }
   if (started && !paused) {
     input.updateLook(dt);
     const cp = Math.cos(input.pitch);
@@ -4335,14 +4452,14 @@ window.addEventListener('keydown', e => {
     startAirport();
   }
 });
-if (arrivedFromLA || window.__startRequested) {
+if (arrivedFromLA || arrivedFromJapan || window.__startRequested) {
   startAirport();
 }
 
 document.addEventListener('pointerlockchange', () => {
   const hasLock = document.pointerLockElement !== null;
   usedLock = usedLock || hasLock;
-  if (choosingFurniturePrompt && !hasLock) {
+  if ((choosingFurniturePrompt || choosingPlaneDestination) && !hasLock) {
     paused = false;
     overlay.style.display = 'none';
     return;

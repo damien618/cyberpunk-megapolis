@@ -13,6 +13,7 @@
       la: { engine: 'world', title: 'Cyberpunk Megapolis — Villa LA' },
       zoo: { engine: 'world', title: 'Cyberpunk Megapolis — A Trip to the Zoo' },
       airport: { engine: 'world', title: 'Cyberpunk Megapolis — Heading to the Airport' },
+      shinto: { engine: 'world', title: 'Cyberpunk Megapolis — Visit to a Shinto shrine (Japan)' },
     };
     const mode = new URLSearchParams(location.search).get('map');
     const world = WORLDS[mode];
@@ -43,6 +44,7 @@
     --la-accent: #5fd7ff;
     --zoo-accent: #ffbe5c;
     --airport-accent: #8ec8e0;
+    --shinto-accent: #ff6050;
     --mono: 'Geist Mono', ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -133,7 +135,7 @@
   /* ---------- menu (right corner: the standalone worlds, stacked) ---------- */
   #menuColLA { position: absolute; right: clamp(28px, 5vw, 100px); top: 0; bottom: 0;
     display: flex; flex-direction: column; justify-content: center; align-items: flex-end;
-    gap: 8px; }
+    gap: 8px; overflow-y: auto; max-height: 100vh; padding: 12px 0; }
   .la-panel { background: rgba(9,14,25,0.55); border: 1px solid rgba(125,165,255,0.3);
     border-radius: 14px; padding: 12px 22px 14px; backdrop-filter: blur(4px);
     display: flex; flex-direction: column; align-items: flex-end; text-align: right;
@@ -173,6 +175,18 @@
     border-color: var(--airport-accent); text-shadow: 0 0 8px rgba(142,200,224,.9);
     box-shadow: 0 0 26px rgba(142,200,224,.26); }
   #enterBtnAirport:hover { background: linear-gradient(90deg, rgba(142,200,224,.58), rgba(142,200,224,.32)); }
+
+  .shinto-panel { border-color: rgba(255,96,80,0.38); }
+  .shinto-panel .kicker { color: #ff9e94; }
+  .shinto-panel .accent-shinto { color: var(--shinto-accent); text-shadow: 0 0 24px rgba(255,96,80,.42); }
+  .shinto-panel .m-name { color: var(--shinto-accent); text-shadow: 0 0 12px rgba(255,96,80,.4); }
+  #brandRuleShinto { margin-top: 10px; width: 64px; height: 1px;
+    background: linear-gradient(270deg, var(--shinto-accent), transparent); }
+  #enterBtnShinto { align-self: flex-end; margin-top: 12px;
+    color: #280a06; background: linear-gradient(90deg, rgba(255,96,80,.38), rgba(255,96,80,.14));
+    border-color: var(--shinto-accent); text-shadow: 0 0 8px rgba(255,96,80,.9);
+    box-shadow: 0 0 26px rgba(255,96,80,.26); }
+  #enterBtnShinto:hover { background: linear-gradient(90deg, rgba(255,96,80,.58), rgba(255,96,80,.32)); }
 
   /* ---------- pause ---------- */
   #pause { position: fixed; inset: 0; z-index: 19; display: flex;
@@ -293,14 +307,14 @@
   .lie-prompt:hover, .lie-prompt:focus-visible {
     background: #f1f1f1; outline: 2px solid #fff; outline-offset: 2px;
   }
-  #liePromptGroup, #travelPromptGroup {
+  #liePromptGroup, #travelPromptGroup, #planePromptGroup {
     position: fixed; left: 50%; top: calc(50% + 42px); z-index: 9;
     transform: translate(-50%, 8px); display: flex; flex-direction: column; gap: 9px;
     width: min(470px, calc(100vw - 32px));
     opacity: 0; visibility: hidden; pointer-events: none;
     transition: opacity .14s ease, transform .14s ease, visibility .14s;
   }
-  #liePromptGroup.show, #travelPromptGroup.show {
+  #liePromptGroup.show, #travelPromptGroup.show, #planePromptGroup.show {
     transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto;
   }
   .lie-prompt { width: 100%; }
@@ -315,6 +329,7 @@
   html:not([data-engine="world"]) #crosshair,
   html:not([data-engine="world"]) #liePromptGroup,
   html:not([data-engine="world"]) #travelPromptGroup,
+  html:not([data-engine="world"]) #planePromptGroup,
   html:not([data-engine="world"]) #hud { display: none !important; }
 
   html[data-engine="world"] #loader,
@@ -335,9 +350,18 @@
     border-color: rgba(142, 200, 224, 0.55);
     background: linear-gradient(90deg, rgba(142, 200, 224, 0.38), rgba(160, 180, 210, 0.22));
   }
+  html[data-mode="shinto"] #overlay {
+    background: radial-gradient(circle at 65% 30%, rgba(255, 96, 80, 0.16), rgba(5, 8, 15, 0.95) 60%);
+  }
+  html[data-mode="shinto"] #panel .tag { color: var(--shinto-accent); }
+  html[data-mode="shinto"] #startBtn {
+    border-color: rgba(255, 96, 80, 0.55);
+    background: linear-gradient(90deg, rgba(255, 96, 80, 0.38), rgba(220, 140, 160, 0.22));
+  }
   html:not([data-mode="la"]) .brief-la,
   html:not([data-mode="zoo"]) .brief-zoo,
-  html:not([data-mode="airport"]) .brief-airport { display: none !important; }
+  html:not([data-mode="airport"]) .brief-airport,
+  html:not([data-mode="shinto"]) .brief-shinto { display: none !important; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -410,6 +434,16 @@
       </div>
       <button id="enterBtnAirport" class="enter-btn ready">Enter Game</button>
     </div>
+    <div class="la-panel shinto-panel">
+      <div class="kicker">New Map</div>
+      <h2>VISIT TO A<br><span class="accent-shinto">SHINTO SHRINE</span></h2>
+      <div id="brandRuleShinto"></div>
+      <div class="la-card">
+        <span class="m-tag">Runner 01</span>
+        <span class="m-name">Kyoto Traveler</span>
+      </div>
+      <button id="enterBtnShinto" class="enter-btn ready">Enter Game</button>
+    </div>
   </div>
 </div>
 <div id="pause">
@@ -463,7 +497,15 @@
       <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter, <b>Shift</b> sprint, <b>R</b> reset. Approchez-vous d'une chaise pour vous asseoir, puis <b>WASD</b> ou <b>Space</b> pour vous relever.</p>
       <p class="credit">Voyageurs — Ready Player Me (animation library)</p>
     </div>
-    <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span><span class="brief-airport">Entrer dans l'aéroport</span></button>
+    <div class="brief-shinto">
+      <span class="tag">Nouvelle map</span>
+      <h1>Visite d'un temple shinto (Japon)</h1>
+      <p>Sanctuaire shinto traditionnel niché au cœur d'un jardin japonais d'un réalisme saisissant : grand Torii vermillon, allée pavée bordée de lanternes de pierre (tōrō), pavillon de purification (chōzuya), pont voûté en bois laqué rouge (taiko-bashi) enjambant un étang aux carpes koï, pavillon principal (honden/haiden) aux toitures courbées et ornements sacrés (shimenawa & shide), forêt de bambous géants et cerisiers en fleurs (sakura) dont les pétales voltigent dans l'air.</p>
+      <p>Vous arrivez sur le parking en bordure du sanctuaire, face au Torii d'entrée.</p>
+      <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter, <b>Shift</b> sprint, <b>R</b> reset. Approchez-vous de la voiture pour retourner à l'aéroport de L.A., ou des bancs pour vous asseoir.</p>
+      <p class="credit">Sanctuaire Shinto & Jardin Zen — Cyberpunk Megapolis</p>
+    </div>
+    <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span><span class="brief-airport">Entrer dans l'aéroport</span><span class="brief-shinto">Entrer dans le temple</span></button>
   </div>
 </div>
 <button id="furniturePrompt" type="button" aria-hidden="true"></button>
@@ -475,6 +517,10 @@
   <button id="travelCyberpunkPrompt" class="lie-prompt" type="button">Voyager à Cyberpunk Megapolis</button>
   <button id="travelZooPrompt" class="lie-prompt" type="button">Voyager au zoo</button>
   <button id="travelAirportPrompt" class="lie-prompt" type="button">Voyager à l'aéroport</button>
+</div>
+<div id="planePromptGroup" role="group" aria-label="Choisir une destination de vol" aria-hidden="true">
+  <button id="planeDestLaPrompt" class="lie-prompt" type="button">1 — Retour à LA</button>
+  <button id="planeDestShintoPrompt" class="lie-prompt" type="button">2 — Temple shinto au Japon</button>
 </div>
 <div id="crosshair"></div>
 <div id="hud">Mode: <b id="mode">air</b> · Vitesse: <b id="speed">0</b> km/h · Hauteur: <b id="height">0</b> m</div>
@@ -502,6 +548,9 @@
   document.getElementById('enterBtnAirport').addEventListener('click', () => {
     location.href = 'index.html?map=airport';
   });
+  document.getElementById('enterBtnShinto')?.addEventListener('click', () => {
+    location.href = 'index.html?map=shinto';
+  });
   // Day/Night toggle — capture phase so window.__nightMode is set before the
   // module's bubble-phase handler fires.
   document.querySelectorAll('.tt-btn').forEach(btn => {
@@ -515,6 +564,7 @@
     if (window.__startAirport) window.__startAirport();
     if (window.__startVilla) window.__startVilla();
     if (window.__startZoo) window.__startZoo();
+    if (window.__startShinto) window.__startShinto();
   }, true);
   window.addEventListener('error', e => {
     console.error('[Page Error]', e.error || e.message);
@@ -528,6 +578,7 @@
     la: './main-LA.js?v=202608141500',
     zoo: './main-ZOO.js?v=202608141500',
     airport: './main-AIRPORT.js?v=202608162010',
+    shinto: './main-SHINTO.js?v=202608162200',
   };
   import(ENGINES[document.documentElement.dataset.mode] ?? './main.js?v=24');
 </script>
