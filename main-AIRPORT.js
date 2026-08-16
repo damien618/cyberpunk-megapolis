@@ -49,23 +49,41 @@ scene.fog = new THREE.Fog(0xc8d8e6, 200, 920);
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.25, 2200);
 camera.position.set(0, 8, -20);
 
-const hemi = new THREE.HemisphereLight(0xe8f2ff, 0x8a8478, 0.82);
+// Sky fill. Pulled down from 0.82: with the hall now taking real sun through
+// its roof glazing, a strong ambient term is what flattens the result — the
+// contrast between a lit patch of terrazzo and the shade beside it is the
+// whole effect, and hemisphere light erases exactly that.
+// The ground half is close to neutral now: hemisphere light hands its ground
+// colour to every downward-facing surface, so a warm brown one tanned every
+// ceiling and fascia soffit in the terminal.
+const hemi = new THREE.HemisphereLight(0xdceaff, 0x8d8c88, 0.66);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xfff3e0, 2.15);
+const sun = new THREE.DirectionalLight(0xfff2dc, 2.6);
 sun.position.set(-80, 140, 40);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = -120;
-sun.shadow.camera.right = 120;
-sun.shadow.camera.top = 120;
-sun.shadow.camera.bottom = -80;
+// The roof glazing turns this map into an interior light source, so its
+// resolution now sets the quality of the patches on the hall floor rather than
+// just the softness of an outdoor shadow. 3072 over the 185 m frustum is about
+// 6 cm a texel, roughly a third of what it was.
+sun.shadow.mapSize.set(3072, 3072);
+sun.shadow.camera.left = -110;
+sun.shadow.camera.right = 110;
+sun.shadow.camera.top = 110;
+sun.shadow.camera.bottom = -75;
 sun.shadow.camera.near = 20;
 sun.shadow.camera.far = 380;
-sun.shadow.bias = -0.0005;
-sun.shadow.normalBias = 0.04;
+sun.shadow.bias = -0.00035;
+sun.shadow.normalBias = 0.028;
 scene.add(sun);
 sun.target.position.set(0, 0, 20);
 scene.add(sun.target);
+// Bounce. A single dim upward-facing light standing in for the light the
+// terrazzo throws back at the ceiling and the undersides of the fascias;
+// without it every soffit in the terminal is pure black.
+const bounce = new THREE.DirectionalLight(0xffeedd, 0.42);
+bounce.position.set(20, -40, -10);
+bounce.target.position.set(0, 12, -20);
+scene.add(bounce, bounce.target);
 
 const loader = new THREE.TextureLoader();
 const maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -75,7 +93,7 @@ loader.load('./data/env_equirect.png', t => {
   t.mapping = THREE.EquirectangularReflectionMapping;
   t.colorSpace = THREE.SRGBColorSpace;
   scene.environment = pmrem.fromEquirectangular(t).texture;
-  scene.environmentIntensity = 0.55;
+  scene.environmentIntensity = 0.68;
   t.dispose();
 });
 
@@ -101,6 +119,22 @@ function withUV2(geometry) {
   }
   return geometry;
 }
+// Three declares one UV varying per map, each behind its own #ifdef, so this
+// block is inert for whichever maps a given material does not carry.
+const UV_ASSIGN = `
+        #ifdef USE_MAP
+          vMapUv = gUV;
+        #endif
+        #ifdef USE_NORMALMAP
+          vNormalMapUv = gUV;
+        #endif
+        #ifdef USE_ROUGHNESSMAP
+          vRoughnessMapUv = gUV;
+        #endif
+        #ifdef USE_METALNESSMAP
+          vMetalnessMapUv = gUV;
+        #endif`;
+
 function worldXZUv(mat, metersPerTile = 2.4) {
   const s = 1 / metersPerTile;
   mat.onBeforeCompile = (shader) => {
@@ -113,12 +147,7 @@ function worldXZUv(mat, metersPerTile = 2.4) {
         #endif
         wp = modelMatrix * wp;
         vec2 gUV = wp.xz * ${s.toFixed(4)};
-        #ifdef USE_MAP
-          vMapUv = gUV;
-        #endif
-        #ifdef USE_NORMALMAP
-          vNormalMapUv = gUV;
-        #endif
+${UV_ASSIGN}
       }`,
     );
   };
@@ -126,22 +155,133 @@ function worldXZUv(mat, metersPerTile = 2.4) {
   return mat;
 }
 
+// World-space triplanar UVs, for anything vertical. Every wall in the shell is
+// one stretched box — the west wall is a single 24 m slab — so the box's own
+// 0..1 UV smeared one stucco tile over six metres and the plaster read as grey
+// mush from any distance. Picking the projection plane from the world normal
+// instead keeps floor, wall and soffit all at the same real tile size, and
+// costs one mat3 multiply in the vertex shader.
+function worldTriUv(mat, metersPerTile = 2.4) {
+  const s = 1 / metersPerTile;
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <worldpos_vertex>',
+      `#include <worldpos_vertex>
+      { vec4 twp = vec4(transformed, 1.0);
+        vec3 twn = objectNormal;
+        #ifdef USE_INSTANCING
+          twp = instanceMatrix * twp;
+          twn = mat3(instanceMatrix) * twn;
+        #endif
+        twp = modelMatrix * twp;
+        twn = normalize(mat3(modelMatrix) * twn);
+        vec3 tax = abs(twn);
+        vec2 gUV = (tax.y >= tax.x && tax.y >= tax.z) ? twp.xz
+                 : (tax.x >= tax.z)                   ? vec2(twp.z, -twp.y)
+                 :                                      vec2(twp.x, -twp.y);
+        gUV *= ${s.toFixed(4)};
+${UV_ASSIGN}
+      }`,
+    );
+  };
+  mat.customProgramCacheKey = () => 'wtri-air-' + metersPerTile;
+  return mat;
+}
+
+// The texture pack ships Unity-style MS maps: metallic in RGB, smoothness in
+// alpha. three.js wants roughness in .g and metalness in .b of a single map,
+// so the channels get rebuilt once on a canvas as soon as the image decodes.
+// This is the difference between a floor carrying one flat roughness number
+// and one where the grout is matte while the tile itself catches the lights.
+function msPack(url) {
+  const c = Object.assign(document.createElement('canvas'), { width: 4, height: 4 });
+  {
+    // Stand-in until the decode lands: mid-rough, non-metal. Without it the
+    // blank canvas reads as roughness 0 and every surface is a mirror for a
+    // few frames.
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = 'rgb(255,205,0)';
+    ctx.fillRect(0, 0, 4, 4);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.NoColorSpace;
+  t.anisotropy = maxAniso;
+  const img = new Image();
+  img.onload = () => {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, w, h);
+    const p = d.data;
+    for (let i = 0; i < p.length; i += 4) {
+      const metal = p[i];
+      const smooth = p[i + 3];
+      p[i] = 255;
+      p[i + 1] = 255 - smooth;   // roughness → .g
+      p[i + 2] = metal;          // metalness → .b
+      p[i + 3] = 255;
+    }
+    ctx.putImageData(d, 0, 0);
+    t.needsUpdate = true;
+  };
+  img.onerror = () => console.warn('[airport] MS map missing', url);
+  img.src = url;
+  return t;
+}
+// Roughness only. The pack's metallic channel is near-zero even on the metal
+// panels — they were authored to read as metal off the albedo — so taking
+// metalness from the map would flatten every steel surface in the terminal.
+function pbrRough(mat, msUrl, roughScale = 1.0) {
+  mat.roughnessMap = msPack(msUrl);
+  mat.roughness = roughScale;
+  return mat;
+}
+
+// Terrazzo. Poured terrazzo is a dense aggregate of small chips, not the
+// sparse confetti a first pass tends to produce: the chips have to be small
+// and numerous enough that the floor reads as one stone tone at walking
+// distance and only resolves into aggregate underfoot. Brass divider strips on
+// a 1.2 m bay — the joints a real poured floor needs to control cracking —
+// give the eye something to measure the hall's width against.
 function makeTerrazzo() {
-  const size = 512;
+  const size = 1024;
   const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#d8d2c8';
+  ctx.fillStyle = '#d6d0c6';
   ctx.fillRect(0, 0, size, size);
-  const chips = ['#c4b8a8', '#eee8de', '#9a9084', '#6a6560', '#e8c8b0', '#b0c0c8', '#8a7a6a'];
-  for (let i = 0; i < 1400; i++) {
-    ctx.fillStyle = chips[i % chips.length];
-    ctx.globalAlpha = 0.35 + Math.random() * 0.5;
+  // Large-scale mottling: pours never cure to one flat tone.
+  for (let i = 0; i < 90; i++) {
+    const g = ctx.createRadialGradient(
+      Math.random() * size, Math.random() * size, 0,
+      Math.random() * size, Math.random() * size, 90 + Math.random() * 160,
+    );
+    g.addColorStop(0, Math.random() < 0.5 ? 'rgba(255,252,246,0.16)' : 'rgba(120,112,102,0.13)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+  }
+  const chips = ['#bdb2a3', '#f0eae0', '#9c9286', '#6b6660', '#e2c6b1', '#aebdc6', '#8b7c6d', '#cfc6b6'];
+  for (let i = 0; i < 9000; i++) {
+    ctx.fillStyle = chips[(Math.random() * chips.length) | 0];
+    ctx.globalAlpha = 0.3 + Math.random() * 0.45;
     const x = Math.random() * size, y = Math.random() * size;
+    const r = 1.4 + Math.random() * 4.6;
     ctx.beginPath();
-    ctx.ellipse(x, y, 3 + Math.random() * 9, 2 + Math.random() * 5, Math.random() * 6, 0, Math.PI * 2);
+    ctx.ellipse(x, y, r, r * (0.45 + Math.random() * 0.5), Math.random() * 6, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+  // Brass divider strips on the bay grid, with their own polished highlight.
+  for (const p of [0, size / 2]) {
+    ctx.fillStyle = '#9d8a5c';
+    ctx.fillRect(p, 0, 3, size);
+    ctx.fillRect(0, p, size, 3);
+    ctx.fillStyle = 'rgba(255,240,200,0.5)';
+    ctx.fillRect(p, 0, 1, size);
+    ctx.fillRect(0, p, size, 1);
+  }
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(4, 4);
@@ -420,16 +560,28 @@ function makeTailFlash(hex) {
 function makeSign(title, sub = '', bg = '#102033', fg = '#eef6fc') {
   const c = Object.assign(document.createElement('canvas'), { width: 1024, height: 256 });
   const ctx = c.getContext('2d');
+  // Fit the string to the board rather than trusting one hard-coded size: a
+  // long bilingual title at 78px runs off the canvas, and the sign then hangs
+  // in the hall reading "ECK-IN · ENREGISTREME".
+  const fitted = (text, px, weight, max) => {
+    let size = px;
+    do {
+      ctx.font = `${weight} ${size}px sans-serif`;
+      if (ctx.measureText(text).width <= max) break;
+      size -= 2;
+    } while (size > 12);
+    return size;
+  };
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, 1024, 256);
   ctx.fillStyle = '#8ec8e0';
   ctx.fillRect(0, 0, 16, 256);
   ctx.fillStyle = fg;
-  ctx.font = 'bold 78px sans-serif';
+  fitted(title, 78, 'bold', 940);
   ctx.textAlign = 'center';
   ctx.fillText(title, 520, sub ? 110 : 155);
   if (sub) {
-    ctx.font = '36px sans-serif';
+    fitted(sub, 36, '', 940);
     ctx.fillStyle = '#8ec8e0';
     ctx.fillText(sub, 520, 175);
   }
@@ -439,6 +591,195 @@ function makeSign(title, sub = '', bg = '#102033', fg = '#eef6fc') {
   t.needsUpdate = true;
   return new THREE.MeshStandardMaterial({
     map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.5, roughness: 0.42,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Check-in signage. The fascia over a check-in row is what makes the row read
+// as check-in and not as a bar: a continuous lit band carrying a desk number
+// per position, the class of service, and the flight currently being worked.
+// Drawing the whole run as one long strip keeps the bank to a single draw call
+// instead of one per desk.
+// ---------------------------------------------------------------------------
+// `reverse` draws the panels right-to-left. A box maps its +X and -X faces
+// with opposite U directions, so the two banks — one seen on each face — would
+// otherwise number in opposite directions along the hall: 01 at the north end
+// of the west wall but 08 at the south end of the east one.
+function makeCheckinFascia(first, count, airline, accent, reverse = false) {
+  const cw = 256;
+  const c = Object.assign(document.createElement('canvas'), { width: cw * count, height: 192 });
+  const ctx = c.getContext('2d');
+  const flights = [
+    ['AA 214', 'NEW YORK JFK'], ['BA 268', 'LONDON LHR'], ['AF  72', 'PARIS CDG'],
+    ['JL  61', 'TOKYO HND'], ['LH 457', 'FRANKFURT'], ['QF  12', 'SYDNEY'],
+    ['EK 216', 'DUBAI'], ['UA 441', 'CHICAGO ORD'],
+  ];
+  const classes = ['ECONOMY', 'ECONOMY', 'BAG DROP', 'PRIORITY', 'ECONOMY', 'BAG DROP', 'ECONOMY'];
+  for (let i = 0; i < count; i++) {
+    const x = (reverse ? count - 1 - i : i) * cw;
+    ctx.fillStyle = '#0d1626';
+    ctx.fillRect(x, 0, cw, 192);
+    ctx.fillStyle = '#050a12';
+    ctx.fillRect(x + cw - 4, 0, 4, 192);        // panel joint
+    ctx.fillStyle = accent;
+    ctx.fillRect(x, 0, cw - 4, 6);              // lit top reveal
+    const no = String(first + i).padStart(2, '0');
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#f4f9fd';
+    ctx.font = 'bold 92px sans-serif';
+    ctx.fillText(no, x + 18, 108);
+    ctx.fillStyle = accent;
+    ctx.font = 'bold 26px sans-serif';
+    ctx.fillText(classes[i % classes.length], x + 20, 148);
+    const f = flights[i % flights.length];
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#9fd4e8';
+    ctx.font = 'bold 34px monospace';
+    ctx.fillText(f[0], x + cw - 22, 66);
+    ctx.fillStyle = '#c8d8e4';
+    ctx.font = '25px sans-serif';
+    ctx.fillText(f[1], x + cw - 22, 102);
+    ctx.fillStyle = '#5ec98a';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText(i % 4 === 3 ? 'CLOSING' : 'OPEN', x + cw - 22, 146);
+    ctx.fillStyle = 'rgba(255,255,255,0.30)';
+    ctx.font = 'bold 17px sans-serif';
+    ctx.fillText(airline, x + cw - 22, 176);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  t.needsUpdate = true;
+  return new THREE.MeshStandardMaterial({
+    map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.85, roughness: 0.4,
+  });
+}
+
+// The back wall of a check-in row is never bare plaster — it is a panelled
+// system wall. The pattern has to be uniform in both axes, because it is
+// mapped by world position: anything with a distinct band or a wordmark in it
+// tiles into a stripe of repeated text across twenty metres of wall. Branding
+// goes on discrete plates, one per desk, further down.
+function makeCheckinBackWall() {
+  return canvasTex(512, 512, (ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#eceef1');
+    g.addColorStop(1, '#dee2e7');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    // Faint brushed grain, then the joints of a 1 m panel module.
+    ctx.globalAlpha = 0.05;
+    for (let i = 0; i < 900; i++) {
+      ctx.fillStyle = i % 2 ? '#ffffff' : '#8d949c';
+      ctx.fillRect(0, Math.random() * h, w, 1);
+    }
+    ctx.globalAlpha = 1;
+    for (const p of [0, w / 2]) {
+      ctx.fillStyle = 'rgba(112,122,134,0.5)';
+      ctx.fillRect(p, 0, 3, h);
+      ctx.fillRect(0, p, w, 3);
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillRect(p + 3, 0, 2, h);
+      ctx.fillRect(0, p + 3, w, 2);
+    }
+  }, { wrap: true });
+}
+// One branding plate per desk, so the airline reads once a position instead of
+// once every two metres.
+function makeDeskPlate() {
+  return canvasTex(512, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#12243a';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#8ec8e0';
+    ctx.fillRect(0, 0, w, 5);
+    ctx.fillStyle = '#eaf4fa';
+    ctx.font = 'bold 46px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('PACIFIC GATE', w / 2, 66);
+    ctx.fillStyle = '#7fb6cc';
+    ctx.font = '24px sans-serif';
+    ctx.fillText('CHECK-IN  ·  ENREGISTREMENT', w / 2, 102);
+  });
+}
+
+// Vertical rubber flap strips over the belt hatch — the one detail that says
+// "this hole swallows luggage" rather than "this hole is a hole".
+function makeFlapTex() {
+  return canvasTex(64, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#1a1c1e';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    ctx.fillRect(2, 0, 3, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(w - 6, 0, 6, h);
+    ctx.fillStyle = '#c8a020';                          // hazard chevron near the lip
+    for (let y = 8; y < 40; y += 14) ctx.fillRect(0, y, w, 6);
+  }, { wrap: true });
+}
+
+// Self-service kiosk screen: the "scan your passport" step every hall has now.
+function makeKioskScreen() {
+  return canvasTex(512, 384, (ctx, w, h) => {
+    ctx.fillStyle = '#0b1a2c';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#8ec8e0';
+    ctx.fillRect(0, 0, w, 56);
+    ctx.fillStyle = '#06121f';
+    ctx.font = 'bold 30px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('SELF CHECK-IN', 20, 40);
+    ctx.fillStyle = '#eaf4fa';
+    ctx.font = 'bold 34px sans-serif';
+    ctx.fillText('Scan your', 28, 122);
+    ctx.fillText('passport', 28, 164);
+    ctx.strokeStyle = '#8ec8e0';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(28, 196, 200, 132);
+    ctx.fillStyle = 'rgba(142,200,224,0.22)';
+    ctx.fillRect(32, 200, 192, 124);
+    ctx.fillStyle = '#5ec98a';
+    ctx.fillRect(288, 214, 196, 56);
+    ctx.fillStyle = '#052013';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.fillText('CONTINUER', 300, 251);
+    ctx.fillStyle = '#c8d8e4';
+    ctx.font = '20px sans-serif';
+    ctx.fillText('Bag tags printed here →', 288, 314);
+  });
+}
+
+// Weighing-scale readout on the belt head.
+function makeScaleReadout() {
+  return canvasTex(256, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#0a0d10';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#6cf0a0';
+    ctx.font = 'bold 62px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText('18.4', w - 54, 82);
+    ctx.font = 'bold 26px monospace';
+    ctx.fillText('kg', w - 12, 82);
+    ctx.fillStyle = '#3a6a80';
+    ctx.font = '18px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('MAX 23 kg', 14, 112);
+  });
+}
+
+// Paper bag tag looped on a handle: white, printed, and the reason a checked
+// bag looks checked.
+function makeBagTagTex() {
+  return canvasTex(64, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#f6f6f2';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#101010';
+    for (let y = 12; y < 150; y += 5) ctx.fillRect(8, y, w - 16, Math.random() < 0.5 ? 2 : 3);
+    ctx.fillStyle = '#c81828';
+    ctx.fillRect(0, 158, w, 26);
+    ctx.fillStyle = '#101010';
+    ctx.font = 'bold 26px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('JFK', w / 2, 214);
   });
 }
 
@@ -585,31 +926,36 @@ const exitSignA = makeExitSignTex();
 
 const M = {
   // Polished Terrazzo & Tiles with subtle gloss reflections
+  // 2.4 m per tile puts the brass dividers on a 1.2 m bay — the spacing a
+  // poured floor actually needs — and lands the chips at a believable 5–15 mm.
   terrazzo: worldXZUv(new THREE.MeshPhysicalMaterial({
-    map: terrazzoA, roughness: 0.22, metalness: 0.08, clearcoat: 0.38, clearcoatRoughness: 0.12, color: 0xffffff,
-  }), 1.7),
-  tile: worldXZUv(new THREE.MeshPhysicalMaterial({
-    map: tileA, normalMap: tileN, roughness: 0.24, metalness: 0.08, clearcoat: 0.32, clearcoatRoughness: 0.1, color: 0xe8e4dc,
-  }), 1.6),
-  paver: worldXZUv(new THREE.MeshStandardMaterial({
-    map: floorA, normalMap: floorN, roughness: 0.55, metalness: 0.04, color: 0xd8d4cc,
-  }), 2.2),
+    map: terrazzoA, roughness: 0.20, metalness: 0.08, clearcoat: 0.45, clearcoatRoughness: 0.1, color: 0xffffff,
+  }), 2.4),
+  tile: worldXZUv(pbrRough(new THREE.MeshPhysicalMaterial({
+    map: tileA, normalMap: tileN, metalness: 0.08, clearcoat: 0.32, clearcoatRoughness: 0.1, color: 0xe8e4dc,
+  }), './textures/CP_Ceramic_Tile_MS.webp'), 1.6),
+  paver: worldXZUv(pbrRough(new THREE.MeshStandardMaterial({
+    map: floorA, normalMap: floorN, metalness: 0.04, color: 0xd8d4cc,
+  }), './textures/CP_Floor_Tiles_MS.webp'), 2.2),
   carpet: worldXZUv(new THREE.MeshStandardMaterial({
     map: carpetA, roughness: 0.96, metalness: 0.0, color: 0xffffff,
   }), 2.4),
-  concrete: worldXZUv(new THREE.MeshStandardMaterial({
-    map: concA, normalMap: concN, normalScale: new THREE.Vector2(0.45, 0.45),
-    color: 0xc8c4bc, roughness: 0.88, metalness: 0.02,
-  }), 4),
-  plaster: new THREE.MeshStandardMaterial({
-    map: stuccoA, normalMap: stuccoN, color: 0xf2eee8, roughness: 0.82,
-  }),
-  plasterWarm: new THREE.MeshStandardMaterial({
-    map: stuccoA, normalMap: stuccoN, color: 0xf4e8d8, roughness: 0.8,
-  }),
-  secWall: new THREE.MeshStandardMaterial({
-    map: metalA, normalMap: metalN, color: 0xc8d8e4, roughness: 0.46, metalness: 0.28,
-  }),
+  concrete: worldTriUv(pbrRough(new THREE.MeshStandardMaterial({
+    map: concA, normalMap: concN, normalScale: new THREE.Vector2(0.7, 0.7),
+    color: 0xc8c4bc, metalness: 0.02,
+  }), './textures/CP_Concrete_01_MS.webp'), 3.2),
+  // The shell's plaster. Triplanar, so a 24 m wall slab and a 4 m return get
+  // the same tile size instead of the wall smearing one tile over six metres.
+  plaster: worldTriUv(new THREE.MeshStandardMaterial({
+    map: stuccoA, normalMap: stuccoN, normalScale: new THREE.Vector2(0.7, 0.7),
+    color: 0xeeeae3, roughness: 0.86,
+  }), 2.6),
+  plasterWarm: worldTriUv(new THREE.MeshStandardMaterial({
+    map: stuccoA, normalMap: stuccoN, color: 0xf4e8d8, roughness: 0.82,
+  }), 2.6),
+  secWall: worldTriUv(pbrRough(new THREE.MeshStandardMaterial({
+    map: metalA, normalMap: metalN, color: 0xc8d8e4, metalness: 0.28,
+  }), './textures/CP_Metal_Panel_MS.webp'), 2.0),
   secFloor: worldXZUv(new THREE.MeshStandardMaterial({
     map: vinylA, roughness: 0.55, metalness: 0.06, color: 0x9aafbe,
   }), 1.4),
@@ -695,7 +1041,11 @@ const M = {
   screen: new THREE.MeshStandardMaterial({
     map: fidsA, emissive: 0xffffff, emissiveMap: fidsA, emissiveIntensity: 1.1, roughness: 0.2,
   }),
-  signCheck: makeSign('CHECK-IN', 'BAGGAGE DROP  ·  ISLANDS A–D'),
+  signCheck: makeSign('CHECK-IN  ·  ENREGISTREMENT', 'DESKS 01–14  ·  BAGGAGE DROP'),
+  signCheckW: makeSign('← CHECK-IN  01–07', 'DÉPÔT BAGAGES  ·  ALL AIRLINES'),
+  signCheckE: makeSign('CHECK-IN  08–14  →', 'DÉPÔT BAGAGES  ·  ALL AIRLINES'),
+  signKiosk: makeSign('SELF SERVICE', 'BORNES  ·  BAG TAGS', '#0d2a1e', '#e6fbf0'),
+  signBhs: makeSign('BAGGAGE MAKE-UP', 'STAFF ONLY  ·  PERSONNEL AUTORISÉ', '#2a2210', '#f6ecd0'),
   signSec: makeSign('SECURITY  ↑', 'ALL GATES  ·  LIQUIDS & LAPTOPS OUT'),
   signGates: makeSign('GATES A1–A3', 'BOARDING LOUNGE'),
   signArrow: makeSign('GATES A1–A3  →', 'CAFÉ  ·  SHOPS  ·  LOUNGE'),
@@ -706,10 +1056,92 @@ const M = {
   signGateB: makeSign('GATE A2', 'BA 268  ·  LONDON LHR  ·  ON TIME'),
   signGateC: makeSign('GATE A3', 'AF 72  ·  PARIS CDG  ·  ON TIME'),
   signWC: makeSign('WC', 'RESTROOMS'),
-  ceiling: new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.7 }),
+  ceiling: worldTriUv(new THREE.MeshStandardMaterial({
+    map: stuccoA, normalMap: stuccoN, normalScale: new THREE.Vector2(0.25, 0.25),
+    color: 0xf2f0ea, roughness: 0.74,
+  }), 1.8),
   lightBar: new THREE.MeshStandardMaterial({
     color: 0xfff6e8, emissive: 0xffe8c4, emissiveIntensity: 1.6, roughness: 0.35,
   }),
+  // Cove lighting: the strip that washes the top of a wall and turns a flat
+  // grey plane into a gradient. Dimmer and cooler than the ceiling fixtures.
+  coveLight: new THREE.MeshStandardMaterial({
+    color: 0xfdf4e6, emissive: 0xffe6bc, emissiveIntensity: 1.05, roughness: 0.5,
+  }),
+  // --- Daylight ---
+  // Roof glazing over the check-in hall. Its InstancedMesh has castShadow
+  // cleared after the kits flush: three's shadow pass ignores transparency, so
+  // left alone this pane would block the very sunlight it exists to admit.
+  skylight: new THREE.MeshPhysicalMaterial({
+    color: 0xdff0ff, roughness: 0.06, metalness: 0.0,
+    transparent: true, opacity: 0.16, depthWrite: false,
+    emissive: 0xcfe6ff, emissiveIntensity: 0.55, side: THREE.DoubleSide,
+  }),
+
+  // --- Check-in row: counters, belts and the wall they inject through ---
+  // A check-in run is a system-furniture kit, not joinery, so it reads in
+  // three materials: a light panel carcass, a dark solid-surface top and
+  // stainless everywhere the luggage touches.
+  chkPanel: worldTriUv(new THREE.MeshStandardMaterial({
+    map: makeCheckinBackWall(), color: 0xffffff, roughness: 0.42, metalness: 0.08,
+  }), 2.0),
+  chkPlate: (() => {
+    const t = makeDeskPlate();
+    return new THREE.MeshStandardMaterial({
+      map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.42, roughness: 0.35,
+    });
+  })(),
+  chkCarcass: new THREE.MeshStandardMaterial({ color: 0xeef1f4, roughness: 0.36, metalness: 0.1 }),
+  // The soffit over the counters is a lit ceiling, not a dark slab: it is what
+  // separates a check-in row from a row of unlit joinery at the back of a hall.
+  chkSoffit: new THREE.MeshStandardMaterial({
+    color: 0xfdf8ef, emissive: 0xffeed2, emissiveIntensity: 0.62, roughness: 0.55,
+  }),
+  // Pale solid-surface top. A dark stone looks right in isolation, but the
+  // belts and their beds are already dark, and the two together turned the
+  // whole counter line into one black mass a metre off the floor.
+  chkTop: new THREE.MeshPhysicalMaterial({
+    color: 0xb9bec6, roughness: 0.24, metalness: 0.12, clearcoat: 0.7, clearcoatRoughness: 0.1,
+  }),
+  chkFasciaW: makeCheckinFascia(1, 7, 'PACIFIC GATE', '#8ec8e0', true),
+  chkFasciaE: makeCheckinFascia(8, 7, 'PACIFIC GATE', '#8ec8e0'),
+  // Stainless: scale decks, belt frames, hatch surrounds. Brushed, not chrome —
+  // a mirror finish here would blow out under the fascia downlights.
+  inox: new THREE.MeshStandardMaterial({ color: 0xdae0e6, roughness: 0.26, metalness: 0.8 }),
+  inoxDull: new THREE.MeshStandardMaterial({ color: 0xa8b0b8, roughness: 0.45, metalness: 0.65 }),
+  beltRubber: new THREE.MeshStandardMaterial({ color: 0x2b3034, roughness: 0.86, metalness: 0.05 }),
+  flapRubber: new THREE.MeshStandardMaterial({
+    map: makeFlapTex(), color: 0xffffff, roughness: 0.9, metalness: 0.04, side: THREE.DoubleSide,
+  }),
+  hatchVoid: new THREE.MeshBasicMaterial({ color: 0x05070a }),
+  scaleReadout: (() => {
+    const t = makeScaleReadout();
+    return new THREE.MeshStandardMaterial({
+      map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 1.2, roughness: 0.25,
+    });
+  })(),
+  kioskScreen: (() => {
+    const t = makeKioskScreen();
+    return new THREE.MeshStandardMaterial({
+      map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 1.15, roughness: 0.22,
+    });
+  })(),
+  kioskBody: new THREE.MeshStandardMaterial({ color: 0x30373f, roughness: 0.42, metalness: 0.35 }),
+  bagTag: new THREE.MeshStandardMaterial({
+    map: makeBagTagTex(), color: 0xffffff, roughness: 0.75, side: THREE.DoubleSide,
+  }),
+  hazard: new THREE.MeshStandardMaterial({ color: 0xd8b02a, roughness: 0.6, metalness: 0.12 }),
+  // Landside back-of-house: the baggage make-up hall the belts run into.
+  bhsWall: worldTriUv(pbrRough(new THREE.MeshStandardMaterial({
+    map: tex('./textures/CP_Wall_Panel_A.webp'), normalMap: ntex('./textures/CP_Wall_Panel_N.webp'),
+    color: 0xb8bec4, metalness: 0.22,
+  }), './textures/CP_Wall_Panel_MS.webp'), 3.0),
+  shutter: new THREE.MeshStandardMaterial({
+    map: tex('./textures/CP_Roller_Shutters_A.webp'), normalMap: ntex('./textures/CP_Roller_Shutters_N.webp'),
+    color: 0xa8aeb4, roughness: 0.55, metalness: 0.4,
+  }),
+  cartCanvas: new THREE.MeshStandardMaterial({ color: 0x2f4256, roughness: 0.92 }),
+  uld: new THREE.MeshStandardMaterial({ color: 0xa9b0b6, roughness: 0.42, metalness: 0.62 }),
   grass: new THREE.MeshStandardMaterial({ color: 0x6a8a52, roughness: 0.96 }),
   collider: new THREE.MeshBasicMaterial({ visible: false, colorWrite: false, depthWrite: false }),
 
@@ -1199,20 +1631,93 @@ box(M.glass, -4.6, 2.12, -31.68, 2.9, 4.2, 0.06);          // parked door leaves
 box(M.glass, 4.6, 2.12, -31.68, 2.9, 4.2, 0.06);
 box(M.signDept, 0, 7.0, -32.3, 8.6, 1.3, 0.08);            // fascia, street side
 
-// Hall side walls, ceiling, columns
+// Hall side walls
 slab(M.plaster, -24.2, -23.8, -32, -8, F, HALL_H);
 slab(M.plaster, 23.8, 24.2, -32, -8, F, HALL_H);
-slab(M.ceiling, -24.2, 24.2, -32, -8, HALL_H, HALL_H + 0.2);
-for (const zRow of [-20, -12])
-  for (let x = -18; x <= 18; x += 6)
-    box(M.lightBar, x, HALL_H - 0.12, zRow, 4.6, 0.09, 0.5);
+
+// ---------------------------------------------------------------------------
+// Hall roof. The old flat lid sealed the volume, so the only light reaching a
+// 48 × 24 m room was a handful of point lights and the ambient term — which is
+// why the walls read as one dead grey. Three north–south glazed strips replace
+// bands of that lid with actual holes: the sun (from the west, ~60° up) drops
+// through them onto the terrazzo about 5.5 m east of each strip, and those
+// three moving bands of light are what give the hall its depth. The glass is
+// its own material so its castShadow can be cleared once the kits flush.
+// ---------------------------------------------------------------------------
+const SKY_STRIPS = [-15, 0, 15];
+const SKY_HW = 1.35;
+{
+  const edges = [-24.2];
+  for (const sx of SKY_STRIPS) edges.push(sx - SKY_HW, sx + SKY_HW);
+  edges.push(24.2);
+  for (let i = 0; i < edges.length; i += 2)          // solid deck between strips
+    slab(M.ceiling, edges[i], edges[i + 1], -32, -8, HALL_H, HALL_H + 0.2);
+  for (const sx of SKY_STRIPS) {
+    // Glazing sits a touch below the deck so the upstand kerb reads as a kerb.
+    slab(M.skylight, sx - SKY_HW, sx + SKY_HW, -31.4, -8.6, HALL_H + 0.02, HALL_H + 0.1);
+    // Kerb + end closures, so daylight does not leak past the strip's ends.
+    slab(M.ceiling, sx - SKY_HW, sx + SKY_HW, -32, -31.4, HALL_H, HALL_H + 0.2);
+    slab(M.ceiling, sx - SKY_HW, sx + SKY_HW, -8.6, -8, HALL_H, HALL_H + 0.2);
+    for (const ex of [sx - SKY_HW, sx + SKY_HW]) {
+      box(M.steel, ex, HALL_H + 0.34, -20, 0.14, 0.5, 22.8);      // upstand kerb
+    }
+    // Glazing bars every 2.4 m — the scale cue that makes the strip read as
+    // glass rather than as a gap in the model.
+    for (let gz = -30.6; gz <= -9.4; gz += 2.4)
+      box(M.steel, sx, HALL_H + 0.14, gz, SKY_HW * 2, 0.12, 0.12);
+    box(M.steel, sx, HALL_H + 0.14, -20, 0.12, 0.12, 22.6);
+  }
+}
+// Exposed roof trusses under the deck: bottom chord, verticals, and the
+// crossing purlins. A 9.5 m volume with nothing between the light bars and the
+// lid has no sense of height at all.
+for (const zRow of [-29, -25, -21, -17, -13, -9]) {
+  box(M.steelDark, 0, HALL_H - 1.35, zRow, 47.6, 0.22, 0.34);      // bottom chord
+  box(M.steelDark, 0, HALL_H - 0.28, zRow, 47.6, 0.16, 0.24);      // top chord
+  for (let tx = -22; tx <= 22; tx += 2.75)
+    box(M.steelDark, tx, HALL_H - 0.82, zRow, 0.1, 1.3, 0.16);     // web posts
+}
+for (const px of [-19.5, -10.5, -4.5, 4.5, 10.5, 19.5])
+  box(M.steelDark, px, HALL_H - 1.55, -20, 0.16, 0.2, 23.4);       // purlins
+// Ceiling fixtures, hung off the trusses and paired with real point lights so
+// the emissive strip is not lying about what it does to the room.
+for (const zRow of [-28, -23, -18, -13]) {
+  for (let x = -19.5; x <= 19.5; x += 6.5) {
+    box(M.lightBar, x, HALL_H - 1.62, zRow, 5.4, 0.1, 0.42);
+    box(M.steelDark, x, HALL_H - 1.5, zRow, 5.5, 0.14, 0.52);
+  }
+}
 for (const [x, z] of [[-16, -20], [16, -20], [-16, -12], [16, -12]]) {
   shape(G.cylBase, M.steel, x, F, z, 0.5, HALL_H, 0.5);
   shape(G.cyl, M.steelDark, x, HALL_H - 0.22, z, 0.72, 0.18, 0.72);
   shape(G.cyl, M.steelDark, x, F + 0.12, z, 0.68, 0.16, 0.68);
+  shape(G.cyl, M.steelDark, x, HALL_H - 1.42, z, 0.9, 0.16, 0.9);  // truss capital
 }
-for (const zRow of [-26, -16])
-  box(M.steelDark, 0, HALL_H - 0.08, zRow, 46, 0.12, 0.28);
+
+// ---------------------------------------------------------------------------
+// Wall articulation. A 48 m plaster plane with nothing on it is the single
+// biggest thing reading as "untextured box" in the hall, and no amount of
+// texture work fixes it — what a real wall has is depth: a shadow gap at the
+// floor, reveals at storey height, a cornice, and a cove that washes the top
+// three metres so the plane is a gradient rather than a flat fill.
+// ---------------------------------------------------------------------------
+for (const d of [1, -1]) {                     // d = +1 west wall, -1 east wall
+  const inner = -23.8 * d;                     // hall-side face of the wall
+  const at = o => inner + d * o;               // o metres proud of that face
+  // Band course at 6.2 m: a projecting plaster shelf with a dark reveal under
+  // its nose, so the upper wall casts a real line across the lower one.
+  slab(M.plaster, at(0), at(0.13), -31.9, -8.1, 6.2, 6.42);
+  slab(M.steelDark, at(0), at(0.135), -31.9, -8.1, 6.12, 6.2);
+  // Cornice + cove. The strip faces up and washes the last metre of plaster
+  // and the ceiling edge; that gradient is what stops the wall reading flat.
+  slab(M.plaster, at(0), at(0.40), -31.9, -8.1, HALL_H - 0.95, HALL_H - 0.72);
+  slab(M.coveLight, at(0.06), at(0.32), -31.9, -8.1, HALL_H - 0.72, HALL_H - 0.66);
+  slab(M.steelDark, at(0), at(0.42), -31.9, -8.1, HALL_H - 1.0, HALL_H - 0.95);
+  // Pilasters on the structural bay, starting above the check-in fascia so
+  // they articulate the empty upper wall without fouling the counters.
+  for (let pz = -30.5; pz <= -9.5; pz += 3.5)
+    box(M.plaster, at(0.14), (4.1 + HALL_H - 1.0) / 2, pz, 0.28, HALL_H - 5.1, 0.6);
+}
 // Hall identity: timber dado, cyan wayfinding rail, slat panels, travel ads
 slab(M.wainscot, -24.05, -23.72, -31.6, -8.4, F, 1.28);
 slab(M.wainscot, 23.72, 24.05, -31.6, -8.4, F, 1.28);
@@ -1220,23 +1725,25 @@ slab(M.accent, -24.08, -23.7, -31.6, -8.4, 2.22, 2.42);
 slab(M.accent, 23.7, 24.08, -31.6, -8.4, 2.22, 2.42);
 slab(M.steel, -24.08, -23.7, -31.6, -8.4, F, 0.08);
 slab(M.steel, 23.7, 24.08, -31.6, -8.4, F, 0.08);
-box(M.slat, -23.68, 3.4, -14.5, 0.08, 4.2, 4.4);
-box(M.slat, 23.68, 3.4, -14.5, 0.08, 4.2, 4.4);
-box(M.posterTokyo, -23.68, 4.55, -26.2, 0.05, 2.6, 4.2);
-box(M.posterParis, 23.68, 4.55, -26.2, 0.05, 2.6, 4.2);
-box(M.posterNy, -23.68, 4.55, -20.2, 0.05, 2.6, 4.2);
-box(M.posterSydney, 23.68, 4.55, -20.2, 0.05, 2.6, 4.2);
-// CHECK-IN sign hung over the islands
-box(M.signCheck, 0, 6.4, -20.5, 6.2, 1.1, 0.08);
-box(M.steelDark, -2.6, 8.2, -20.5, 0.05, 2.5, 0.05);
-box(M.steelDark, 2.6, 8.2, -20.5, 0.05, 2.5, 0.05);
+// The travel ads move up out of the check-in fascia's band and onto the piers
+// between the two banks' signage, where they are still read from the floor.
+box(M.posterTokyo, -23.44, 4.85, -28.75, 0.05, 2.1, 2.6);
+box(M.posterParis, 23.44, 4.85, -28.75, 0.05, 2.1, 2.6);
+box(M.posterNy, -23.44, 4.85, -11.25, 0.05, 2.1, 2.6);
+box(M.posterSydney, 23.44, 4.85, -11.25, 0.05, 2.1, 2.6);
+// CHECK-IN sign hung on the hall centreline, reading across both banks
+box(M.signCheck, 0, 6.6, -20.5, 8.4, 1.35, 0.1);
+box(M.steelDark, -3.6, 8.15, -20.5, 0.05, 1.75, 0.05);
+box(M.steelDark, 3.6, 8.15, -20.5, 0.05, 1.75, 0.05);
+// Bank-mouth signage, hung where each queue starts
+box(M.signCheckW, -17.6, 4.6, -31.0, 5.2, 0.85, 0.08);
+box(M.signCheckE, 17.6, 4.6, -31.0, 5.2, 0.85, 0.08);
 // Clock over the security portal + roof-line PACIFIC GATE on the curb canopy
 slab(M.wainscot, -24, -10.2, -8.05, -7.72, F, 1.28);
 slab(M.wainscot, -3.8, 24, -8.05, -7.72, F, 1.28);
 slab(M.accent, -24, -10.2, -8.05, -7.72, 2.22, 2.42);
 slab(M.accent, -3.8, 24, -8.05, -7.72, 2.22, 2.42);
 box(M.clock, -7, 5.2, -8.32, 0.9, 0.9, 0.06);
-box(M.posterParis, 17.4, 4.7, -7.72, 4.4, 2.5, 0.05);
 box(M.signDept, 0, 6.55, -36.4, 10.4, 1.15, 0.12);
 
 // Hall north wall: solid, one portal into security at x -10..-4
@@ -1249,9 +1756,33 @@ box(M.steelDark, -4, 1.65, -8.0, 0.22, 3.3, 0.32);
 box(M.steelDark, -7, 3.32, -8.0, 6.22, 0.18, 0.32);
 slab(M.paintYellow, -10, -4, -8.12, -7.88, 0.04, 0.075);
 box(M.signSec, -7, 3.95, -7.7, 5.2, 0.95, 0.08);
-// FIDS bank on the wall east of the portal
-box(M.steelDark, 9, 4.4, -7.58, 11.0, 3.4, 0.22);
-box(M.screen, 9, 4.4, -7.44, 10.2, 3.0, 0.05);
+// FIDS bank east of the portal. It used to hang at z = -7.44 — the security
+// side of a wall that spans -8.2..-7.8 — so the departures board the hall's
+// two board-readers are posed in front of was buried inside the checkpoint.
+// It belongs on the hall face, at -8.2 and proud of it.
+box(M.steelDark, 9, 4.4, -8.31, 11.0, 3.4, 0.22);
+box(M.screen, 9, 4.4, -8.45, 10.2, 3.0, 0.05);
+// The rest of the north wall was twenty metres of blank plaster facing
+// everyone who walked in. It gets the same articulation as the side walls,
+// plus the terminal's own crest, so the hall has something to end on.
+{
+  const nz = -8.2;                                       // hall-side face
+  const at = o => nz - o;                                // o metres into the hall
+  slab(M.plaster, -23.9, -10.1, at(0.13), at(0), 6.2, 6.42);
+  slab(M.plaster, -3.9, 23.9, at(0.13), at(0), 6.2, 6.42);
+  slab(M.steelDark, -23.9, -10.1, at(0.135), at(0), 6.12, 6.2);
+  slab(M.steelDark, -3.9, 23.9, at(0.135), at(0), 6.12, 6.2);
+  slab(M.plaster, -23.9, 23.9, at(0.40), at(0), HALL_H - 0.95, HALL_H - 0.72);
+  slab(M.coveLight, -23.9, 23.9, at(0.32), at(0.06), HALL_H - 0.72, HALL_H - 0.66);
+  slab(M.steelDark, -23.9, 23.9, at(0.42), at(0), HALL_H - 1.0, HALL_H - 0.95);
+  for (const px of [-21.5, -18, -14.5, 0.5, 4, 21.5])
+    box(M.plaster, px, (4.1 + HALL_H - 1.0) / 2, at(0.14), 0.6, HALL_H - 5.1, 0.28);
+  // Terminal crest west of the portal, and a wall clock at the far east end.
+  box(M.steelDark, -16.2, 4.6, at(0.16), 6.6, 2.4, 0.18);
+  box(M.accent, -16.2, 4.6, at(0.28), 6.2, 2.0, 0.06);
+  box(M.signDept, -16.2, 4.6, at(0.34), 5.8, 1.1, 0.06);
+  box(M.clock, 21.5, 5.6, at(0.2), 0.9, 0.9, 0.06);
+}
 
 // Security room: x -12..12, low ceiling; solid service blocks either side
 slab(M.plaster, -24, -12, -8, 2, F, SEC_H);
@@ -1360,9 +1891,18 @@ for (const gx of GATE_PLANE_X) {
   box(M.steelDark, tx, 3.08, 37.95, GATE_OPEN_HW * 2 + 0.18, 0.16, 0.32);
 }
 
-roomLight(0, 7.2, -20, 2.6, 30);
-roomLight(-14, 6.5, -13, 1.4, 18);
-roomLight(14, 6.5, -13, 1.4, 18);
+// Hall. Four lamps on the fixture grid rather than three for the whole volume,
+// so the floor brightens under each run and falls off between them. The count
+// stays small on purpose: this is a forward renderer and the scene already
+// carries thirty-odd point lights, each one another iteration in every
+// fragment shader that runs. The daylight through the roof does most of the
+// work here, and the cove and the fascias are emissive geometry, which is free.
+for (const lz of [-25, -15])
+  for (const lx of [-13, 13]) {
+    const l = new THREE.PointLight(0xfdf5e8, 1.7, 30, 2);
+    l.position.set(lx, HALL_H - 2.3, lz);
+    world.add(l);
+  }
 roomLight(-4, 3.4, -3, 2.2, 15);
 roomLight(5, 3.4, -1, 1.8, 14);
 {
@@ -1378,42 +1918,319 @@ roomLight(10, 5.2, 27, 1.9, 18);
 roomLight(0, 5.2, 34, 1.8, 16);
 
 // ---------------------------------------------------------------------------
-// Check-in / baggage drop — four islands in two banks, queue in front
+// CHECK-IN / BAGGAGE DROP — two linear banks, both backed onto a wall.
+//
+// This used to be four free-standing islands in the middle of the floor, each
+// with three stub belts that ran two metres and stopped in mid-air. That is
+// not how a bag gets checked: the whole point of the counter line is that it
+// is the boundary between the public hall and the baggage system, so it has
+// to sit against something a belt can go *through*. A bag dropped in the
+// middle of a hall has nowhere to go.
+//
+// So the counters move to the hall's two long walls, seven positions a side,
+// desks 01–07 west and 08–14 east — the classic linear (frontal) check-in
+// arrangement. Per position, reading from the queue inward:
+//
+//   queue line → scale deck (proud of the counter, where you lift the bag) →
+//   take-away belt → counter line, interrupted at the belt → agent aisle →
+//   flap-curtained hatch in the back wall → baggage make-up hall outside.
+//
+// The hatch and the make-up hall behind it are the parts that make the rest
+// legible: you can follow a suitcase from the passenger's hand to the point
+// where the building swallows it.
 // ---------------------------------------------------------------------------
-function checkInIsland(x, z) {
+const CHK_WALL = 23.8;      // hall-side face of the side walls
+const CHK_PITCH = 2.6;      // one position: belt slot + counter module
+const CHK_N = 7;            // positions per bank
+const CHK_Z0 = -29.0;       // centre of the southernmost position
+const CHK_SLOT = 1.10;      // belt slot width, measured along the wall
+// A position runs z ∈ [c-1.3, c+1.3]: belt in the southern 1.1 m of it, then
+// 1.5 m of counter. Splitting it this way is what lets the counter line be
+// continuous to the eye while still being interrupted at every belt.
+const chkZ = i => CHK_Z0 + i * CHK_PITCH;
+const chkBeltZ = i => chkZ(i) - CHK_PITCH / 2 + CHK_SLOT / 2;   // c - 0.75
+const chkDeskZ = i => chkZ(i) + CHK_SLOT / 2;                   // c + 0.55
+const CHK_Z_S = chkZ(0) - CHK_PITCH / 2;                        // -30.3
+const CHK_Z_N = chkZ(CHK_N - 1) + CHK_PITCH / 2;                // -12.1
+
+// One bank. `d` is the direction from the wall into the hall: +1 for the west
+// wall, -1 for the east. Everything is written as a distance proud of the wall
+// face, so the two banks are one piece of code read in a mirror.
+function checkInBank(d, fascia) {
+  const wall = -CHK_WALL * d;
+  const at = o => wall + d * o;
+  // slab() wants ordered bounds and the mirror flips them, so span() sorts.
+  const span = (a, b) => (d > 0 ? [at(a), at(b)] : [at(b), at(a)]);
+  const xslab = (mat, a, b, za, zb, y0, y1) => {
+    const [x0, x1] = span(a, b);
+    slab(mat, x0, x1, za, zb, y0, y1);
+  };
+  const z0 = CHK_Z_S, z1 = CHK_Z_N;
+
   prop(() => {
-    frame(x, z, 0, () => {
-      box(M.desk, 0, F + 0.55, 0, 7.2, 1.1, 1.15);
-      box(M.steelDark, 0, F + 1.35, -0.4, 7.2, 0.5, 0.12);
-      box(M.screen, 0, F + 1.55, -0.38, 2.4, 0.7, 0.04);
-      for (const sx of [-2.4, 0, 2.4]) {
-        box(M.steel, sx, F + 0.08, 0.85, 0.9, 0.12, 2.4);   // bag belt
-        box(M.steelDark, sx, F + 0.22, 0.85, 0.82, 0.06, 2.2);
-        box(M.bag, sx + 0.15, F + 0.38, 1.1, 0.42, 0.28, 0.55);
-        box(M.bag2, sx - 0.18, F + 0.32, 1.55, 0.32, 0.22, 0.42);
+    // --- Back wall lining, interrupted at every belt slot -------------------
+    for (let i = 0; i <= CHK_N; i++) {
+      const a = i === 0 ? z0 : chkBeltZ(i - 1) + CHK_SLOT / 2;
+      const b = i === CHK_N ? z1 : chkBeltZ(i) - CHK_SLOT / 2;
+      if (b - a > 0.05) xslab(M.chkPanel, 0, 0.22, a, b, F, 3.90);
+    }
+    // Lintel filling the wall above each hatch head.
+    for (let i = 0; i < CHK_N; i++)
+      xslab(M.chkPanel, 0, 0.22, chkBeltZ(i) - CHK_SLOT / 2, chkBeltZ(i) + CHK_SLOT / 2, 1.18, 3.90);
+    xslab(M.steelDark, 0, 0.26, z0, z1, 3.90, 4.02);
+
+    // --- Fascia: soffit cantilevered over the counters, sign band on its nose
+    xslab(M.chkSoffit, 0.22, 2.55, z0, z1, 3.28, 3.40);
+    box(fascia, at(2.62), 2.96, (z0 + z1) / 2, 0.14, 0.72, z1 - z0);
+    xslab(M.steelDark, 2.50, 2.70, z0, z1, 3.32, 3.46);
+    xslab(M.steelDark, 2.52, 2.68, z0, z1, 2.52, 2.60);
+    // Downlights under the soffit. The counter line has to be the brightest
+    // thing in the hall or nobody reads it as the place you go first.
+    for (let lz = z0 + 1.3; lz < z1; lz += 2.6) {
+      box(M.lightBar, at(1.5), 3.245, lz, 1.7, 0.05, 0.36);
+      box(M.lightBar, at(2.36), 3.245, lz, 0.32, 0.05, 2.3);
+    }
+  });
+  // Two lamps a bank. Emissive geometry paints a lit soffit but throws nothing
+  // on the counters underneath, and the counters are the point of the room.
+  for (const lz of [z0 + 4.5, z1 - 4.5]) {
+    const l = new THREE.PointLight(0xfff2de, 1.35, 13, 2);
+    l.position.set(at(1.7), 3.0, lz);
+    world.add(l);
+  }
+
+  for (let i = 0; i < CHK_N; i++) {
+    const mz = chkDeskZ(i);         // counter module centre
+    const bz = chkBeltZ(i);         // belt slot centre
+    const mLen = CHK_PITCH - CHK_SLOT;
+
+    // --- Counter module ---------------------------------------------------
+    prop(() => {
+      box(M.steelDark, at(1.56), F + 0.06, mz, 0.68, 0.12, mLen);           // recessed plinth
+      box(M.chkCarcass, at(1.55), F + 0.54, mz, 0.80, 0.84, mLen);          // carcass
+      box(M.accent, at(1.955), F + 0.91, mz, 0.03, 0.05, mLen);             // lit reveal
+      box(M.chkTop, at(1.52), F + 1.00, mz, 0.95, 0.08, mLen + 0.06);       // solid-surface top
+      // The agent's kit, all of it turned toward the wall side: monitor on a
+      // stalk, keyboard, and the two printers every desk has — boarding pass
+      // and bag tag.
+      box(M.steelDark, at(1.28), F + 1.28, mz + 0.24, 0.05, 0.48, 0.05);
+      box(M.seatIfe, at(1.34), F + 1.44, mz + 0.24, 0.07, 0.32, 0.48);
+      box(M.steelDark, at(1.60), F + 1.06, mz + 0.22, 0.30, 0.03, 0.42);
+      box(M.chkCarcass, at(1.30), F + 1.14, mz - 0.36, 0.34, 0.20, 0.32);
+      box(M.inox, at(1.30), F + 1.25, mz - 0.36, 0.30, 0.02, 0.26);
+      box(M.chkCarcass, at(1.66), F + 1.12, mz - 0.44, 0.24, 0.16, 0.24);
+      // Passenger side: card terminal on a short stalk.
+      box(M.inox, at(2.00), F + 1.12, mz - 0.32, 0.04, 0.16, 0.04);
+      box(M.steelDark, at(2.00), F + 1.25, mz - 0.32, 0.10, 0.14, 0.16);
+      // Agent stool in the aisle behind the counter.
+      shape(G.cylBase, M.steelDark, at(0.66), F, mz + 0.1, 0.36, 0.05, 0.36);
+      shape(G.cylBase, M.inoxDull, at(0.66), F + 0.05, mz + 0.1, 0.07, 0.55, 0.07);
+      shape(G.cyl, M.fabric, at(0.66), F + 0.64, mz + 0.1, 0.42, 0.1, 0.42);
+      // Branding plate on the lining, at eye height for the queue, with the
+      // accent reveal under it.
+      box(M.chkPlate, at(0.24), F + 2.34, mz, 0.03, 0.30, 1.20);
+      box(M.accent, at(0.25), F + 2.13, mz, 0.03, 0.05, 1.20);
+    });
+
+    // --- Belt slot: scale deck, take-away belt, hatch -----------------------
+    prop(() => {
+      // The belt runs from 2.50 m proud of the wall — half a metre in front
+      // of the counter face, so a bag goes straight up onto it — back through
+      // the counter line, across the agent aisle, and into the wall.
+      const runMid = 1.26, runLen = 2.48;
+      box(M.inoxDull, at(runMid), F + 0.16, bz, runLen, 0.28, 0.94);        // bed
+      box(M.beltRubber, at(runMid), F + 0.315, bz, runLen, 0.05, 0.80);     // belt
+      box(M.inox, at(runMid), F + 0.36, bz + 0.455, runLen, 0.12, 0.06);    // side guards
+      box(M.inox, at(runMid), F + 0.36, bz - 0.455, runLen, 0.12, 0.06);
+      for (const lz of [bz - 0.38, bz + 0.38])
+        for (const lx of [0.35, 2.20])
+          shape(G.cylBase, M.inoxDull, at(lx), F, lz, 0.07, 0.14, 0.07);
+      // Weighing deck: the outer 0.9 m, its own stainless platform set a hair
+      // proud of the belt, with the readout on a post beside it.
+      box(M.inox, at(2.08), F + 0.335, bz, 0.86, 0.05, 0.86);
+      box(M.steelDark, at(2.08), F + 0.29, bz, 0.92, 0.05, 0.92);
+      shape(G.cylBase, M.inoxDull, at(2.42), F + 0.30, bz + 0.54, 0.06, 0.78, 0.06);
+      box(M.scaleReadout, at(2.42), F + 1.12, bz + 0.54, 0.03, 0.11, 0.20);
+      // Hazard edging on the lip. It is the one place in the terminal where a
+      // moving machine meets the public, and it is always striped.
+      box(M.hazard, at(2.515), F + 0.235, bz, 0.04, 0.16, 0.94);
+
+      // --- The hatch through the wall ---
+      box(M.hatchVoid, at(-0.14), F + 0.72, bz, 0.48, 0.84, 1.02);          // darkness beyond
+      box(M.inox, at(0.14), F + 1.16, bz, 0.20, 0.14, 1.20);                // head
+      for (const sz of [bz - 0.57, bz + 0.57])
+        box(M.inox, at(0.14), F + 0.72, sz, 0.20, 1.02, 0.10);              // jambs
+      // Rubber flap curtain, seven strips, each hung at a slightly different
+      // angle so it reads as hanging rubber and not as a painted panel.
+      for (let s = 0; s < 7; s++)
+        box(M.flapRubber, at(0.22), F + 0.72, bz - 0.42 + s * 0.14,
+          0.02, 0.78, 0.135, (s % 3 - 1) * 0.04);
+      box(M.runwayLightAmber, at(0.30), F + 1.28, bz, 0.06, 0.06, 0.06);    // belt-running lamp
+    });
+
+    // Bags mid-transaction. On the scale deck rather than deep in the run:
+    // that is where a bag actually sits while it is being weighed and tagged,
+    // and it is the only part of the belt the queue can see over the counter.
+    if (i % 3 !== 1) {
+      prop(() => {
+        const bm = [M.luggageRed, M.luggageTeal, M.luggageDark, M.bag2][i % 4];
+        box(bm, at(2.08), F + 0.60, bz + 0.02, 0.34, 0.52, 0.66);
+        box(M.steelDark, at(2.08), F + 0.89, bz + 0.02, 0.06, 0.07, 0.24);  // handle
+        box(M.bagTag, at(2.03), F + 0.78, bz + 0.26, 0.005, 0.18, 0.10);    // paper tag
+        // One already swallowed, half through the flaps.
+        if (i % 2 === 0) box(M.luggageTeal, at(0.42), F + 0.56, bz, 0.44, 0.44, 0.58);
+        if (i % 2 === 1) box(M.bag3, at(3.05), F + 0.28, bz - 0.66, 0.36, 0.56, 0.28);
+      });
+    }
+  }
+
+  // --- Queue: belt stanchions parallel to the counters --------------------
+  prop(() => {
+    const post = (x, z) => {
+      shape(G.cylBase, M.steelDark, x, F, z, 0.30, 0.03, 0.30);
+      shape(G.cylBase, M.inox, x, F + 0.03, z, 0.055, 0.92, 0.055);
+      shape(G.cyl, M.steelDark, x, F + 0.93, z, 0.09, 0.09, 0.09);
+    };
+    const tape = (xa, za, xb, zb) => {
+      const len = Math.hypot(xb - xa, zb - za);
+      box(M.accent, (xa + xb) / 2, F + 0.86, (za + zb) / 2, len, 0.05, 0.03,
+        Math.atan2(-(zb - za), xb - xa));
+    };
+    const laneA = at(3.30), laneB = at(5.00);
+    const qz0 = z0 + 0.6, qz1 = z1 - 0.6;
+    for (const lx of [laneA, laneB]) {
+      let prev = null;
+      for (let qz = qz0; qz <= qz1 + 0.01; qz += 2.9) {
+        post(lx, qz);
+        if (prev !== null) tape(lx, prev, lx, qz);
+        prev = qz;
       }
+    }
+    tape(laneA, qz0, laneB, qz0);          // the fold that closes the south end
+  });
+  // Floor line telling the queue where to stop. Outside prop(): a 7 mm-tall
+  // decal marked solid would be a wall the player cannot step over.
+  const [lx0, lx1] = span(2.85, 3.00);
+  slab(M.paintYellow, lx0, lx1, z0, z1, 0.041, 0.048);
+}
+checkInBank(1, M.chkFasciaW);
+checkInBank(-1, M.chkFasciaE);
+
+// ---------------------------------------------------------------------------
+// Self-service kiosks. With the counters gone from the middle of the hall the
+// floor needed the thing that is genuinely free-standing in a modern
+// departures hall: the bag-tag kiosk. Two clusters, clear of the central aisle
+// so the walk from the doors to security still runs straight through.
+// ---------------------------------------------------------------------------
+function kiosk(x, z, ry) {
+  prop(() => {
+    frame(x, z, ry, () => {
+      box(M.steelDark, 0, F + 0.04, 0, 0.62, 0.08, 0.52);
+      box(M.kioskBody, 0, F + 0.58, 0, 0.52, 1.00, 0.42);
+      box(M.kioskBody, 0, F + 1.16, -0.06, 0.56, 0.30, 0.50);
+      box(M.kioskScreen, 0, F + 1.25, -0.22, 0.44, 0.30, 0.03, 0);
+      box(M.inox, 0, F + 1.02, -0.24, 0.30, 0.03, 0.10);      // bag-tag slot
+      box(M.accent, 0, F + 0.06, -0.22, 0.44, 0.03, 0.02);
     });
   });
 }
-checkInIsland(-11, -24);
-checkInIsland(11, -24);
-checkInIsland(-11, -17);
-checkInIsland(11, -17);
-
-// Queue stanchions in front of each bank, tape between the posts
-prop(() => {
-  for (const bx of [-11, 11]) {
-    for (let i = 0; i < 4; i++) {
-      const px = bx - 3.3 + i * 2.2;
-      shape(G.cylBase, M.steel, px, F, -27.4, 0.06, 0.95, 0.06);
-      shape(G.cylBase, M.steel, px, F, -26.0, 0.06, 0.95, 0.06);
-      if (i) {
-        box(M.steelDark, px - 1.1, F + 0.9, -27.4, 2.2, 0.045, 0.045);
-        box(M.steelDark, px - 1.1, F + 0.9, -26.0, 2.2, 0.045, 0.045);
-      }
-    }
+for (const [kx, kry] of [[-8.6, 0], [8.6, 0]]) {
+  for (let i = 0; i < 4; i++) {
+    kiosk(kx - 1.65 + i * 1.1, -27.2, kry);
+    kiosk(kx - 1.65 + i * 1.1, -22.6, kry);
   }
-});
+  box(M.signKiosk, kx, 3.2, -28.4, 3.4, 0.6, 0.06);
+  // Hangers run all the way to the truss bottom chord. Stopped short they read
+  // as two rods ending in mid-air with a sign dangling off them.
+  for (const hx of [kx - 1.5, kx + 1.5])
+    box(M.steelDark, hx, (3.5 + HALL_H - 1.35) / 2, -28.4, 0.05, HALL_H - 1.35 - 3.5, 0.05);
+}
+
+// ---------------------------------------------------------------------------
+// BAGGAGE MAKE-UP HALL — the other side of the hatches.
+//
+// Fourteen belts now run through the check-in wall, and they have to arrive
+// somewhere: a landside back-of-house shed against each flank of the terminal,
+// with roller doors onto the apron and the make-up area's rolling stock parked
+// outside it. Anyone who walks around the building sees the industrial end of
+// the same system they just watched swallow a suitcase, which is what makes
+// the hatch read as a hatch and not as a hole in a wall.
+// ---------------------------------------------------------------------------
+function baggageMakeUp(d) {                // d = +1 west flank, -1 east flank
+  const inner = -24.2 * d;                 // outer face of the terminal wall
+  const at = o => inner - d * o;           // o metres out from the terminal
+  const H = 5.1;
+  const z0 = -31.0, z1 = -11.0;
+  const xs = (a, b) => (d > 0 ? [at(b), at(a)] : [at(a), at(b)]);
+  const xslab = (mat, a, b, za, zb, y0, y1) => {
+    const [p, q] = xs(a, b);
+    slab(mat, p, q, za, zb, y0, y1);
+  };
+  prop(() => {
+    xslab(M.bhsWall, 0, 10.4, z0, z0 + 0.35, F, H);          // south gable
+    xslab(M.bhsWall, 0, 10.4, z1 - 0.35, z1, F, H);          // north gable
+    xslab(M.bhsWall, 10.05, 10.4, z0, z1, F, H);             // outer wall
+    xslab(M.concrete, 0, 10.4, z0, z1, H, H + 0.34);         // roof deck
+    xslab(M.steelDark, -0.1, 10.7, z0 - 0.12, z1 + 0.12, H + 0.34, H + 0.46);
+    // Roller shutter doors onto the service road, with their concrete aprons.
+    for (const dz of [-27.0, -21.0, -15.0]) {
+      xslab(M.steelDark, 10.28, 10.52, dz - 1.85, dz + 1.85, F, 4.25);
+      xslab(M.shutter, 10.4, 10.56, dz - 1.7, dz + 1.7, 0.05, 4.1);
+      xslab(M.hazard, 10.42, 10.58, dz - 1.85, dz + 1.85, 4.25, 4.42);
+      box(M.paint, at(11.9), F + 0.02, dz, 3.0, 0.06, 4.6);
+    }
+    // Personnel door, a canopy over it, and the vents every plant room has.
+    xslab(M.steelDark, 10.34, 10.5, -12.6, -11.6, F, 2.2);
+    xslab(M.steel, 10.4, 12.0, -13.0, -11.2, 2.3, 2.42);
+    for (let vz = -29.5; vz < -12; vz += 3.6)
+      xslab(M.inoxDull, 10.42, 10.56, vz - 0.5, vz + 0.5, 4.5, 5.0);
+    // Rooftop plant.
+    for (const pz of [-26.5, -18.5]) {
+      xslab(M.inoxDull, 2.2, 6.4, pz - 1.6, pz + 1.6, H + 0.46, H + 1.9);
+      xslab(M.steelDark, 3.0, 5.6, pz - 1.0, pz + 1.0, H + 1.9, H + 2.05);
+    }
+  });
+  box(M.signBhs, at(10.62), 3.3, -18.0, 0.08, 0.9, 5.0);
+  // Dollies and containers waiting on the service road: canvas-topped baggage
+  // carts in a train, two ULD containers, and the tug that pulls them.
+  prop(() => {
+    for (let i = 0; i < 5; i++) {
+      const cz = -28.4 + i * 2.35;
+      box(M.steelDark, at(13.6), F + 0.22, cz, 2.9, 0.16, 1.5);
+      box(M.uld, at(13.6), F + 0.52, cz, 2.8, 0.46, 1.44);
+      box(M.cartCanvas, at(13.6), F + 1.28, cz, 2.7, 1.06, 1.36);
+      for (const wz of [cz - 0.55, cz + 0.55])
+        for (const wx of [12.5, 14.7])
+          shape(G.cyl, M.steelDark, at(wx), F + 0.14, wz, 0.28, 0.14, 0.28, { rz: Math.PI / 2 });
+      if (i < 4) box(M.steelDark, at(13.6), F + 0.20, cz + 1.17, 0.12, 0.1, 0.85);
+    }
+    for (let i = 0; i < 2; i++) {
+      const uz = -16.0 + i * 2.6;
+      box(M.uld, at(13.8), F + 0.86, uz, 2.2, 1.72, 2.1);
+      box(M.steelDark, at(13.8), F + 1.74, uz, 2.24, 0.1, 2.14);
+      box(M.inoxDull, at(12.75), F + 0.86, uz, 0.08, 1.5, 1.8);
+    }
+    // Tug at the head of the train.
+    box(M.paintYellow, at(13.6), F + 0.62, -31.4, 2.4, 0.72, 1.5);
+    box(M.glass, at(13.9), F + 1.34, -31.4, 1.5, 0.72, 1.36);
+    box(M.steelDark, at(13.6), F + 1.78, -31.4, 2.0, 0.12, 1.5);
+    for (const wz of [-32.0, -30.8])
+      for (const wx of [12.7, 14.5])
+        shape(G.cyl, M.steelDark, at(wx), F + 0.3, wz, 0.6, 0.22, 0.6, { rz: Math.PI / 2 });
+    // Safety bollards along the shed wall.
+    for (let bz = -29; bz < -12; bz += 4.2) {
+      shape(G.cylBase, M.hazard, at(11.2), F, bz, 0.2, 1.0, 0.2);
+      shape(G.sphere, M.hazard, at(11.2), F + 1.0, bz, 0.2, 0.16, 0.2);
+    }
+  });
+  // Service road hatching in front of the doors, and the yard's flood mast.
+  slab(M.paintYellow, ...xs(11.4, 11.55), z0, z1, 0.001, 0.02);
+  shape(G.cylBase, M.steelDark, at(16.5), F, -21.0, 0.3, 8.2, 0.3);
+  box(M.steelDark, at(16.5), 8.35, -21.0, 1.9, 0.22, 0.7);
+  box(M.lightBar, at(16.2), 8.2, -21.0, 1.5, 0.14, 0.5);
+}
+baggageMakeUp(1);
+baggageMakeUp(-1);
 
 // Benches by the south glass + a rack of baggage trolleys by the doors
 function bench(x, z, ry) {
@@ -2087,6 +2904,17 @@ towerRadar.position.set(66, 35.8, 118);
 scenery.add(towerRadar);
 
 flushKits();
+
+// Glass does not cast a shadow — but three's shadow pass writes depth for any
+// mesh with castShadow set, transparency included, so the roof glazing would
+// black out the hall it exists to light. Cleared here rather than in
+// addInstancedPrimitive so the kit builder stays free of material special
+// cases. Same for the hall's south facade and the lounge curtain wall: those
+// are what the sun would otherwise be stopped by on the way in.
+for (const im of world.children) {
+  if (im.isInstancedMesh && (im.material === M.skylight || im.material === M.glass))
+    im.castShadow = false;
+}
 
 // ---------------------------------------------------------------------------
 // Airliners — A320-class proportions, with complete realistic walk-in interior
@@ -2977,7 +3805,9 @@ function atPath(pts, d) {
 // Loops sized to the new plan: nothing crosses a wall, everything keeps clear
 // of the queue posts, columns, seats and counters.
 const CURB_PATH = [[-14, -37.6], [14, -37.6], [14, -34.4], [-14, -34.4]];
-const HALL_LOOP = [[-18, -28.6], [18, -28.6], [18, -11], [-18, -11]];
+// Pulled in from ±18: the check-in queue tapes now stand at ±18.8, and a
+// walker tracking the old loop clipped straight through them.
+const HALL_LOOP = [[-16.4, -28.6], [16.4, -28.6], [16.4, -11], [-16.4, -11]];
 const HALL_AISLE = [[-1.4, -29], [1.4, -29], [1.4, -10], [-1.4, -10]];
 const SEC_QUEUE = [
   [-7.0, -14.0], // Check-in hall: walking north towards security
@@ -3047,15 +3877,25 @@ const GATE_PATH = [[-16, 33.2], [16, 33.2], [16, 34.4], [-16, 34.4]];
   // check-in agents, screeners, barista, shopkeeper and gate agents read as
   // staff at a glance.
   const stands = [
-    // check-in agents, standing in the belt gaps behind each desk
-    { x: -12.2, z: -22.4, ry: Math.PI, staff: true },
-    { x: 12.2, z: -22.4, ry: Math.PI, staff: true },
-    { x: -9.8, z: -15.4, ry: Math.PI, staff: true },
-    { x: 9.8, z: -15.4, ry: Math.PI, staff: true },
-    // passengers queuing at the desks
-    { x: -11, z: -25.4, ry: 0 }, { x: -9.6, z: -25.9, ry: 0.3 },
-    { x: 11, z: -25.4, ry: 0 }, { x: 12.4, z: -25.9, ry: -0.2 },
-    { x: -11, z: -18.6, ry: 0 }, { x: 11, z: -18.6, ry: 0 },
+    // Check-in agents, in the aisle between the counters and the back wall,
+    // each turned to face the queue side of their own desk.
+    { x: -23.05, z: chkDeskZ(0), ry: Math.PI / 2, staff: true },
+    { x: -23.05, z: chkDeskZ(2), ry: Math.PI / 2, staff: true },
+    { x: -23.05, z: chkDeskZ(4), ry: Math.PI / 2, staff: true },
+    { x: -23.05, z: chkDeskZ(6), ry: Math.PI / 2, staff: true },
+    { x: 23.05, z: chkDeskZ(1), ry: -Math.PI / 2, staff: true },
+    { x: 23.05, z: chkDeskZ(3), ry: -Math.PI / 2, staff: true },
+    { x: 23.05, z: chkDeskZ(5), ry: -Math.PI / 2, staff: true },
+    // Passengers at the counter face, and more waiting between the queue tapes
+    { x: -21.4, z: chkDeskZ(0) - 0.3, ry: -Math.PI / 2 },
+    { x: -21.4, z: chkDeskZ(4) + 0.2, ry: -Math.PI / 2 },
+    { x: -19.7, z: -26.4, ry: 0 }, { x: -19.6, z: -23.2, ry: 0.25 },
+    { x: 21.4, z: chkDeskZ(1) - 0.2, ry: Math.PI / 2 },
+    { x: 21.4, z: chkDeskZ(5) + 0.3, ry: Math.PI / 2 },
+    { x: 19.7, z: -27.0, ry: 0 }, { x: 19.6, z: -22.0, ry: -0.2 },
+    // At the self-service kiosks, tagging their own bags
+    { x: -9.6, z: -28.0, ry: 0 }, { x: -7.4, z: -23.4, ry: 0 },
+    { x: 8.2, z: -28.0, ry: 0 }, { x: 9.9, z: -23.4, ry: 0 },
     // passengers queuing in security line
     { x: -7.0, z: -4.7, ry: -Math.PI / 2 },
     { x: -7.2, z: -3.3, ry: Math.PI / 2 },
@@ -3410,6 +4250,42 @@ function updateHud() {
   document.documentElement.classList.toggle('is-seated', ctrl.mode === 'sit' || ctrl.mode === 'lie');
 }
 
+// ---------------------------------------------------------------------------
+// Point-light budget.
+//
+// This is a forward renderer: every point light in the scene is evaluated in
+// the fragment shader for every lit pixel, whether or not it can reach it. The
+// terminal had accumulated 38 — drop-off canopy, hall, checkpoint, concourse,
+// shop, two jetbridges, two cabins — and the cost of that turns out to be
+// sharply non-linear. Benchmarked on this scene, one frame costs roughly:
+//
+//     20 lights  21 ms      28 lights  38 ms      38 lights  67 ms
+//     24 lights  26 ms      33 lights  55 ms
+//
+// which is a shader falling off an occupancy cliff, not a per-light price. The
+// map was already over that cliff before the check-in rebuild added five more.
+//
+// So each frame only the nearest LIGHT_BUDGET stay visible, ranked by the
+// distance from the camera to the edge of each light's own falloff sphere.
+// Nothing is lost: the ranges here run 5–30 m across a 250 m map, so the lamps
+// that get switched off were contributing nothing to the picture — the two
+// renders are indistinguishable.
+//
+// The budget is a fixed count rather than "however many are in range", because
+// three keys its shader programs on the number of lights: a count that drifted
+// with the player's position would recompile every material in the scene each
+// time a lamp crossed the threshold.
+// ---------------------------------------------------------------------------
+const LIGHT_BUDGET = 20;
+const lightRank = [];
+scene.traverse(o => { if (o.isPointLight) lightRank.push({ light: o, key: 0 }); });
+function updateLightBudget() {
+  if (lightRank.length <= LIGHT_BUDGET) return;
+  for (const e of lightRank) e.key = camera.position.distanceTo(e.light.position) - e.light.distance;
+  lightRank.sort((a, b) => a.key - b.key);
+  for (let i = 0; i < lightRank.length; i++) lightRank[i].light.visible = i < LIGHT_BUDGET;
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.033, clock.getDelta());
@@ -3431,6 +4307,7 @@ function animate() {
   updateAvatar(dt);
   rig.update(dt, input, ctrl);
   updateHud();
+  updateLightBudget();          // after rig.update: it reads the camera's final position
   renderer.render(scene, camera);
   input.endFrame();
 }
