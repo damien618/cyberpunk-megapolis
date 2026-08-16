@@ -133,10 +133,33 @@
     color: #707a92; text-transform: uppercase; text-shadow: 0 1px 8px rgba(0,0,0,.9); }
 
   /* ---------- menu (right corner: the standalone worlds, stacked) ---------- */
-  #menuColLA { position: absolute; right: clamp(28px, 5vw, 100px); top: 0; bottom: 0;
-    display: flex; flex-direction: column; justify-content: center; align-items: flex-end;
-    gap: 8px; overflow-y: auto; max-height: 100vh; padding: 12px 0; }
-  .la-panel { background: rgba(9,14,25,0.55); border: 1px solid rgba(125,165,255,0.3);
+  /* Native overlay scrollbars are invisible on macOS. A real DOM rail sits
+     beside the cards so the stack is obviously scrollable. */
+  #menuMaps { position: absolute; right: clamp(10px, 2vw, 48px); top: 0; bottom: 0;
+    display: flex; flex-direction: row; align-items: stretch; gap: 10px;
+    max-height: 100%; }
+  #menuColLA { position: relative; display: flex; flex-direction: column;
+    justify-content: flex-start; align-items: flex-end; gap: 8px;
+    height: 100%; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+    padding: 20px 2px 20px 8px; scrollbar-width: none; }
+  @supports (justify-content: safe center) {
+    #menuColLA { justify-content: safe center; }
+  }
+  #menuColLA::-webkit-scrollbar { display: none; width: 0; height: 0; }
+  #menuMapsBar {
+    flex: 0 0 10px; width: 10px; margin: 24px 0; position: relative;
+    border-radius: 999px; background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(95,255,255,0.35);
+    box-shadow: 0 0 12px rgba(95,255,255,0.12);
+    opacity: 0; pointer-events: none; transition: opacity .2s; }
+  #menuMapsBar.on { opacity: 1; pointer-events: auto; }
+  #menuMapsThumb {
+    position: absolute; left: 1px; right: 1px; top: 0; min-height: 32px;
+    border-radius: 999px; cursor: grab;
+    background: linear-gradient(180deg, #5ff, #ff4fd8);
+    box-shadow: 0 0 10px rgba(95,255,255,0.55); }
+  #menuMapsThumb:active { cursor: grabbing; }
+  .la-panel { flex: 0 0 auto; background: rgba(9,14,25,0.55); border: 1px solid rgba(125,165,255,0.3);
     border-radius: 14px; padding: 12px 22px 14px; backdrop-filter: blur(4px);
     display: flex; flex-direction: column; align-items: flex-end; text-align: right;
     min-width: 220px; max-width: 300px; }
@@ -236,16 +259,33 @@
   /* ---------- L.A. villa intro overlay + HUD ---------- */
   #overlay {
     position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+    padding: 20px 16px;
+    overflow-y: auto;
     background: radial-gradient(circle at 65% 30%, rgba(95, 215, 255, 0.15), rgba(5, 8, 15, 0.95) 60%);
   }
   #panel {
     width: min(680px, 90vw);
+    max-height: calc(100vh - 40px);
+    display: flex; flex-direction: column;
     border: 1px solid rgba(125, 165, 255, 0.35);
     border-radius: 14px;
     background: rgba(9, 14, 25, 0.65);
     backdrop-filter: blur(4px);
     padding: 28px;
+    overflow: hidden;
   }
+  #panel > [class^="brief-"] {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 10px;
+    scrollbar-width: auto;
+    scrollbar-color: #5ff rgba(255,255,255,0.08);
+  }
+  #panel > [class^="brief-"]::-webkit-scrollbar { -webkit-appearance: none; width: 10px; }
+  #panel > [class^="brief-"]::-webkit-scrollbar-track {
+    background: rgba(255,255,255,0.08); border-radius: 8px; }
+  #panel > [class^="brief-"]::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #5ff, #ff4fd8);
+    border: 2px solid rgba(10,12,16,0.35);
+    border-radius: 8px; }
   #panel h1 { font-size: clamp(24px, 4vw, 42px); letter-spacing: 0.02em; margin-bottom: 12px; }
   #panel p { color: var(--dim); line-height: 1.7; margin-bottom: 14px; }
   #panel p.credit {
@@ -257,6 +297,7 @@
     color: var(--la-accent); margin-bottom: 14px;
   }
   #startBtn {
+    flex-shrink: 0;
     margin-top: 16px; padding: 12px 28px; border-radius: 9px; border: 1px solid rgba(95, 215, 255, 0.55);
     color: #eaffff; background: linear-gradient(90deg, rgba(95, 215, 255, 0.35), rgba(160, 116, 255, 0.28));
     cursor: pointer; font: inherit; letter-spacing: 0.16em; text-transform: uppercase;
@@ -403,6 +444,7 @@
     <button id="enterBtn" class="enter-btn" disabled>Enter Game</button>
     <div id="menuFoot">← → 选择 · Enter 开始</div>
   </div>
+  <div id="menuMaps">
   <div id="menuColLA">
     <div class="la-panel">
       <div class="kicker">New Map</div>
@@ -430,7 +472,7 @@
       <div id="brandRuleAirport"></div>
       <div class="la-card">
         <span class="m-tag">Runner 01</span>
-        <span class="m-name">California Girl</span>
+        <span class="m-name">World Traveler</span>
       </div>
       <button id="enterBtnAirport" class="enter-btn ready">Enter Game</button>
     </div>
@@ -444,6 +486,10 @@
       </div>
       <button id="enterBtnShinto" class="enter-btn ready">Enter Game</button>
     </div>
+  </div>
+  <div id="menuMapsBar" role="scrollbar" aria-controls="menuColLA" aria-orientation="vertical" aria-hidden="true">
+    <div id="menuMapsThumb"></div>
+  </div>
   </div>
 </div>
 <div id="pause">
@@ -551,6 +597,62 @@
   document.getElementById('enterBtnShinto')?.addEventListener('click', () => {
     location.href = 'index.html?map=shinto';
   });
+
+  // Custom map-list scrollbar — native overlay bars stay hidden on macOS.
+  (() => {
+    const col = document.getElementById('menuColLA');
+    const bar = document.getElementById('menuMapsBar');
+    const thumb = document.getElementById('menuMapsThumb');
+    const menu = document.getElementById('menu');
+    if (!col || !bar || !thumb) return;
+
+    const sync = () => {
+      const overflow = col.scrollHeight - col.clientHeight;
+      if (overflow <= 2) {
+        bar.classList.remove('on');
+        return;
+      }
+      bar.classList.add('on');
+      const track = bar.clientHeight;
+      const thumbH = Math.max(32, Math.round(track * col.clientHeight / col.scrollHeight));
+      const maxTop = Math.max(0, track - thumbH);
+      thumb.style.height = thumbH + 'px';
+      thumb.style.top = (maxTop * (col.scrollTop / overflow)) + 'px';
+    };
+
+    col.addEventListener('scroll', sync, { passive: true });
+    window.addEventListener('resize', sync);
+    if (typeof ResizeObserver === 'function') new ResizeObserver(sync).observe(col);
+    if (menu) new MutationObserver(sync).observe(menu, { attributes: true, attributeFilter: ['class'] });
+
+    let drag = null;
+    thumb.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      thumb.setPointerCapture(e.pointerId);
+      drag = { y: e.clientY, top: parseFloat(thumb.style.top) || 0 };
+    });
+    const onMove = e => {
+      if (!drag) return;
+      const overflow = col.scrollHeight - col.clientHeight;
+      const maxTop = Math.max(0, bar.clientHeight - thumb.offsetHeight);
+      if (overflow <= 0 || maxTop <= 0) return;
+      const top = Math.min(maxTop, Math.max(0, drag.top + (e.clientY - drag.y)));
+      col.scrollTop = overflow * (top / maxTop);
+    };
+    thumb.addEventListener('pointermove', onMove);
+    thumb.addEventListener('pointerup', () => { drag = null; });
+    thumb.addEventListener('pointercancel', () => { drag = null; });
+    bar.addEventListener('pointerdown', e => {
+      if (e.target === thumb) return;
+      const thumbH = thumb.offsetHeight;
+      const maxTop = Math.max(0, bar.clientHeight - thumbH);
+      const overflow = col.scrollHeight - col.clientHeight;
+      if (overflow <= 0 || maxTop <= 0) return;
+      const y = e.clientY - bar.getBoundingClientRect().top - thumbH / 2;
+      col.scrollTop = overflow * (Math.min(maxTop, Math.max(0, y)) / maxTop);
+    });
+    sync();
+  })();
   // Day/Night toggle — capture phase so window.__nightMode is set before the
   // module's bubble-phase handler fires.
   document.querySelectorAll('.tt-btn').forEach(btn => {
