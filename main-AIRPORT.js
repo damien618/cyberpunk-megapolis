@@ -1412,6 +1412,19 @@ function prop(fn) {
   fn();
   PROP = outer;
 }
+// Inverse of prop(), for the ankle-high parts of a prop: a plinth, a base
+// plate, a foot. The controller makes prop AABBs solid at ANY height (the
+// ground ray refuses to stand on props, so a low prop the player could step
+// onto would drop them through it) — which turns a 3 cm stanchion base into
+// a full-height wall, and worse, a square one, so the push-out picks whichever
+// axis is shallowest and can cancel the walk direction outright. Emitted
+// unflagged, the same shape falls under the STEP_H rule and is walked over.
+function steppable(fn) {
+  const outer = PROP;
+  PROP = false;
+  fn();
+  PROP = outer;
+}
 let FX = 0, FZ = 0, FR = 0;
 function frame(x, z, ry, fn) {
   const px = FX, pz = FZ, pr = FR;
@@ -2281,17 +2294,31 @@ prop(() => {
 // recompose table by the exit. Flow runs south → north.
 // ---------------------------------------------------------------------------
 prop(() => {
-  // Stanchions helper: heavy circular base, chrome post, belt housing
+  // Stanchions helper: heavy circular base, chrome post, belt housing.
+  //
+  // Collision footprints matter more than they look here, because the player
+  // walks BETWEEN two of these lines. Body radius is 0.42, so each part stops
+  // the player at 0.42 + its half-width:
+  //   base 0.32 wide -> 0.58   post 0.065 -> 0.4525   cap 0.08 -> 0.46
+  //   belt rail 0.10 wide -> 0.47
+  // The rail is deliberately the WIDEST, so the player always meets the long
+  // continuous box first and never reaches a post: a long box only ever pushes
+  // perpendicular to itself, which slides you along the tape. The small square
+  // parts push along whichever axis is shallowest, which — when that axis is
+  // the way you are walking — cancels the walk speed every frame and reads as
+  // the character refusing to move. The base is steppable() for the same
+  // reason: at 3.5 cm it is a floor detail, not an obstacle.
   function stanchionPost(x, z) {
-    shape(G.cylBase, M.steelDark, x, F, z, 0.32, 0.035, 0.32);
+    steppable(() => shape(G.cylBase, M.steelDark, x, F, z, 0.32, 0.035, 0.32));
     shape(G.cylBase, M.steel, x, F + 0.035, z, 0.065, 0.90, 0.065);
-    shape(G.cylBase, M.steelDark, x, F + 0.86, z, 0.10, 0.10, 0.10);
+    shape(G.cylBase, M.steelDark, x, F + 0.86, z, 0.08, 0.10, 0.08);
   }
+  const BELT_W = 0.10;   // wider than every post part above — see note
   function stanchionLineX(x0, x1, z, postSpacing = 2.0) {
     const minX = Math.min(x0, x1), maxX = Math.max(x0, x1);
     const len = maxX - minX;
     if (len < 0.1) return;
-    box(M.steelDark, (minX + maxX) / 2, F + 0.88, z, len, 0.045, 0.035);
+    box(M.steelDark, (minX + maxX) / 2, F + 0.88, z, len, 0.045, BELT_W);
     const n = Math.max(2, Math.round(len / postSpacing) + 1);
     for (let i = 0; i < n; i++) {
       stanchionPost(minX + (i / (n - 1)) * len, z);
@@ -2301,38 +2328,42 @@ prop(() => {
     const minZ = Math.min(z0, z1), maxZ = Math.max(z0, z1);
     const len = maxZ - minZ;
     if (len < 0.1) return;
-    box(M.steelDark, x, F + 0.88, (minZ + maxZ) / 2, 0.035, 0.045, len);
+    box(M.steelDark, x, F + 0.88, (minZ + maxZ) / 2, BELT_W, 0.045, len);
     const n = Math.max(2, Math.round(len / postSpacing) + 1);
     for (let i = 0; i < n; i++) {
       stanchionPost(x, minZ + (i / (n - 1)) * len);
     }
   }
 
-  // Single-file queue feeding the three screening lanes. It runs the full
-  // width of the room, the way a real checkpoint corral does: a short pen
-  // tucked in one corner holds nobody and reads as a prop.
+  // Serpentine queue feeding the three screening lanes, running the full width
+  // of the room the way a real checkpoint corral does: a short pen tucked in
+  // one corner holds nobody and reads as a prop.
   //
-  // Doorway is at z = -8.0; the aisle z = -7.6 to -5.4 stays clear so arrivals
+  // Doorway is at z = -8.0; the aisle z = -7.6 to -5.9 stays clear so arrivals
   // can walk east along the room to the queue mouth at the far end.
-  //   south tape (z = -5.4)  west wall → x = 9.4, mouth of the queue past its east end
-  //   north tape (z = -2.6)  west wall → x = -8.4, stopping short of the Lane 1
-  //                          WTMD arch (which spans x = -8.19 to -6.81) so the
-  //                          exit opens straight onto it.
-  // Flow: in at the east mouth, west along the lane, out to whichever WTMD
-  // arch is free. This used to be a serpentine (two 1.4 m-wide lanes split by
-  // a middle divider) to fit a long queue into a short pen; now that the pen
-  // runs the room's full 21 m width a single lane already has plenty of
-  // length, and at 2.8 m wide it gives a 0.42 m-radius walker real clearance
-  // from either tape — the old two-lane split left only ~0.28 m of drift
-  // margin per side, enough to clip a tape rail and stick to it mid-stride.
-  // Tape post spacing (3.4 m) matches the west-anchor fix: the connecting
-  // rail is one continuous collider regardless of post count, so packing
-  // more posts than that added collision-query cost with no benefit the
-  // rail wasn't already providing.
-  // South tape — entry gap left at the east end (x > 9.4)
-  stanchionLineX(-11.6, 9.4, -5.4, 3.4);
-  // North tape — stops before the Lane 1 arch
-  stanchionLineX(-11.6, -8.4, -2.6, 3.4);
+  //   tape 1 (z = -5.9)  west wall → x = 9.4, mouth of the queue past its east end
+  //   tape 2 (z = -4.2)  x = -9.4 → east wall, U-turn past its west end
+  //   tape 3 (z = -2.5)  west wall → x = -8.4, stopping short of the Lane 1
+  //                      WTMD arch (which spans x = -8.19 to -6.81) so the last
+  //                      leg opens straight onto it instead of barring the way.
+  // Flow: in at the east, west down lane A, U-turn at the west wall, east down
+  // lane B, then out to whichever WTMD arch is free.
+  //
+  // Lanes are 1.7 m apart rather than the 1.4 m they used to be. With the belt
+  // rail stopping a walker at 0.47 that leaves 0.76 m of side-to-side room for
+  // the player's centre instead of 0.46 — the difference between a corridor
+  // you can wander down and one you scrape along.
+  //
+  // Post spacing 3.4 m: the belt rail is one continuous collider whatever the
+  // post count, so extra posts only cost broad-phase queries.
+  // West boundary, closing the U-turn
+  stanchionLineZ(-11.6, -5.9, -2.5, 1.7);
+  // Tape 1 — south side, entry gap left at the east end (x > 9.4)
+  stanchionLineX(-11.6, 9.4, -5.9, 3.4);
+  // Tape 2 — middle divider, U-turn gap left at the west end (x < -9.4)
+  stanchionLineX(-9.4, 11.6, -4.2, 3.4);
+  // Tape 3 — north side, stops before the Lane 1 arch
+  stanchionLineX(-11.6, -8.4, -2.5, 3.4);
 
   for (const lx of [-7.5, -2.5, 2.5]) {
     box(M.steel, lx + 1.35, F + 0.42, -1.2, 0.72, 0.72, 3.4);      // belt base
@@ -3853,10 +3884,12 @@ const SEC_QUEUE = [
   [-7.0, -8.5],  // Approaching portal under the SECURITY sign
   [-6.0, -6.6],  // Stepping through portal into the security vestibule
   [8.8, -6.5],   // East along the entry aisle, south of the first tape
-  [10.5, -6.2],  // Round the east end of the south tape into the queue mouth
-  [10.5, -4.0],  // Entering the corral, single lane down its centreline
-  [-9.6, -4.0],  // The whole run west, clear of both tapes
-  [-7.9, -2.6],  // Angling out past the end of the north tape
+  [10.5, -6.6],  // Round the east end of tape 1 into the queue mouth
+  [10.5, -5.05], // Entering lane A, down its centreline
+  [-10.5, -5.05],// The whole run west along lane A
+  [-10.5, -3.35],// U-turn at the west wall, past the end of tape 2
+  [-7.9, -3.35], // Back east along lane B
+  [-7.9, -2.0],  // Leaving the corral past the end of tape 3
   [-7.5, -1.8],  // Lining up at Lane 1 metal detector
   [-7.5, -0.2],  // Walking under the metal detector arch!
   [-7.5, 1.2],   // Airside of the glass, still in the lane
@@ -3954,17 +3987,17 @@ const GATE_PATH = [[-16, 33.2], [16, 33.2], [16, 34.4], [-16, 34.4]];
     // At the self-service kiosks, tagging their own bags
     { x: -9.6, z: -28.0, ry: 0 }, { x: -7.4, z: -23.4, ry: 0 },
     { x: 8.2, z: -28.0, ry: 0 }, { x: 9.9, z: -23.4, ry: 0 },
-    // Passengers queuing in the security corral, single file down its
-    // centreline (z = -4.0), all facing west towards the screening lanes.
-    // Slight z-jitter keeps the row from reading as machine-straight.
-    { x: 7.6, z: -3.9, ry: -Math.PI / 2 },
-    { x: 4.6, z: -4.1, ry: -Math.PI / 2 },
-    { x: 2.2, z: -3.85, ry: -Math.PI / 2 },
-    { x: -1.8, z: -4.15, ry: -Math.PI / 2 },
-    { x: -2.6, z: -3.9, ry: -Math.PI / 2 },
-    { x: -7.0, z: -4.05, ry: -Math.PI / 2 },
-    { x: -8.9, z: -3.9, ry: -Math.PI / 2 },
-    { x: -9.8, z: -4.1, ry: -Math.PI / 2 },
+    // Passengers queuing in the security corral. Lane A (z = -5.05) walks
+    // west, lane B (z = -3.35) walks back east, so the two rows face opposite
+    // ways. Slight z-jitter keeps them off the exact centreline.
+    { x: 7.6, z: -5.0, ry: -Math.PI / 2 },
+    { x: 4.6, z: -5.15, ry: -Math.PI / 2 },
+    { x: 2.2, z: -4.95, ry: -Math.PI / 2 },
+    { x: -1.8, z: -5.1, ry: -Math.PI / 2 },
+    { x: -5.4, z: -5.0, ry: -Math.PI / 2 },
+    { x: -9.2, z: -5.1, ry: -Math.PI / 2 },
+    { x: -10.4, z: -3.3, ry: Math.PI / 2 },
+    { x: -9.0, z: -3.4, ry: Math.PI / 2 },
     // reading the departures board
     { x: 7, z: -10.6, ry: 0 }, { x: 10.4, z: -11.0, ry: 0.2 },
     // security officers
