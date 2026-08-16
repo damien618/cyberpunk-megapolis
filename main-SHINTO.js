@@ -970,6 +970,34 @@ car3.position.set(parkBayX(7), 0.1, PARK_BAY_Z);
 car3.rotation.y = PARK_YAW;
 world.add(car3);
 
+// Turn off headlights, DRLs and taillights of all parked scenery cars
+function turnOffCarLights(car) {
+  car.traverse(child => {
+    if (child.isMesh && child.material) {
+      if (Array.isArray(child.material)) {
+        child.material = child.material.map(m => {
+          const cloned = m.clone();
+          if (cloned.emissive) {
+            cloned.emissive.set(0x000000);
+            cloned.emissiveIntensity = 0;
+          }
+          return cloned;
+        });
+      } else {
+        const cloned = child.material.clone();
+        if (cloned.emissive) {
+          cloned.emissive.set(0x000000);
+          cloned.emissiveIntensity = 0;
+        }
+        child.material = cloned;
+      }
+    }
+  });
+}
+turnOffCarLights(car1);
+turnOffCarLights(car2);
+turnOffCarLights(car3);
+
 // The Interactive Return Car ("Retour à LA")
 const RETURN_CAR_X = parkBayX(8);
 const RETURN_CAR_Y = 0.1;
@@ -980,6 +1008,80 @@ const returnCar = buildCar('sedan', 0x223c58, { metallic: true });
 returnCar.position.set(RETURN_CAR_X, RETURN_CAR_Y, RETURN_CAR_Z);
 returnCar.rotation.y = RETURN_CAR_YAW;
 world.add(returnCar);
+
+// Keep returnCar's headlights, DRL and taillights bright and powered
+returnCar.traverse(child => {
+  if (child.isMesh && child.material) {
+    if (Array.isArray(child.material)) {
+      child.material = child.material.map(m => m.clone());
+    } else {
+      child.material = child.material.clone();
+      if (child.material.emissive) {
+        child.material.emissiveIntensity = Math.max(1.6, child.material.emissiveIntensity || 1.6);
+      }
+    }
+  }
+});
+
+// Hazard Indicator (clignotants / warning) lights on returnCar
+const indicatorMat = new THREE.MeshStandardMaterial({
+  color: 0xffaa22,
+  emissive: 0xff7700,
+  emissiveIntensity: 4.0,
+  roughness: 0.15,
+  metalness: 0.1,
+});
+
+// Front turn signals (left & right)
+const geomFrontInd = new THREE.BoxGeometry(0.10, 0.07, 0.22);
+const indFL = new THREE.Mesh(geomFrontInd, indicatorMat);
+indFL.position.set(2.46, 0.79, 0.68);
+returnCar.add(indFL);
+
+const indFR = new THREE.Mesh(geomFrontInd, indicatorMat);
+indFR.position.set(2.46, 0.79, -0.68);
+returnCar.add(indFR);
+
+// Rear turn signals (left & right)
+const geomRearInd = new THREE.BoxGeometry(0.10, 0.07, 0.22);
+const indRL = new THREE.Mesh(geomRearInd, indicatorMat);
+indRL.position.set(-2.50, 0.88, 0.70);
+returnCar.add(indRL);
+
+const indRR = new THREE.Mesh(geomRearInd, indicatorMat);
+indRR.position.set(-2.50, 0.88, -0.70);
+returnCar.add(indRR);
+
+// Side mirror repeater indicators
+const geomMirrorInd = new THREE.BoxGeometry(0.12, 0.035, 0.045);
+const indML = new THREE.Mesh(geomMirrorInd, indicatorMat);
+indML.position.set(0.72, 1.09, 1.02);
+returnCar.add(indML);
+
+const indMR = new THREE.Mesh(geomMirrorInd, indicatorMat);
+indMR.position.set(0.72, 1.09, -1.02);
+returnCar.add(indMR);
+
+// Flashing amber point lights for realistic reflection and parking lot cast
+const hazardLightF = new THREE.PointLight(0xff9900, 2.5, 9.0, 1.8);
+hazardLightF.position.set(2.6, 0.82, 0);
+returnCar.add(hazardLightF);
+
+const hazardLightR = new THREE.PointLight(0xff7700, 2.5, 9.0, 1.8);
+hazardLightR.position.set(-2.6, 0.90, 0);
+returnCar.add(hazardLightR);
+
+// Subtle pulsing ground waypoint ring around the return car
+const returnCarRingMat = new THREE.MeshBasicMaterial({
+  color: 0x5fd7ff,
+  transparent: true,
+  opacity: 0.35,
+  side: THREE.DoubleSide,
+});
+const returnCarRing = new THREE.Mesh(new THREE.RingGeometry(2.4, 2.7, 36), returnCarRingMat);
+returnCarRing.rotation.x = -Math.PI / 2;
+returnCarRing.position.set(RETURN_CAR_X, 0.12, RETURN_CAR_Z);
+world.add(returnCarRing);
 
 const returnCarBounds = carBounds('sedan');
 const returnCarInteraction = {
@@ -1380,6 +1482,16 @@ function animate() {
 
   // Animate falling sakura petals
   tickSakuraPetals(dt);
+
+  // Animate blinking hazard lights (clignotants) and beacon on the return car
+  const hazardOn = (t % 0.85) < 0.45;
+  if (indicatorMat) {
+    indicatorMat.emissiveIntensity = hazardOn ? 4.2 : 0.04;
+    indicatorMat.color.setHex(hazardOn ? 0xffaa22 : 0x331800);
+  }
+  if (hazardLightF) hazardLightF.intensity = hazardOn ? 2.5 : 0;
+  if (hazardLightR) hazardLightR.intensity = hazardOn ? 2.5 : 0;
+  if (returnCarRingMat) returnCarRingMat.opacity = 0.22 + 0.15 * Math.sin(t * 3.8);
 
   if (flightLandingActive) {
     updateFlightLanding(dt);
