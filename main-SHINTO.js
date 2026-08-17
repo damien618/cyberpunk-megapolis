@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Player } from './player.js?v=72';
+import { Player } from './player.js?v=74';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=5';
@@ -2507,11 +2507,19 @@ function girlMatFor(name) {
   }
   const n = name.toLowerCase();
   // Tee and trousers are the nagajuban under the kimono, so they are the
-  // undyed silk white one shows at the collar — not a pink bib.
+  // undyed silk white one shows at the collar — not a pink bib. The trousers
+  // are pitched at the silk's own ground and left matt: no skirt keeps a
+  // sprinting leg in for the whole stride, so what matters is that the moment
+  // it does show it reads as the under-layer rather than as a white flash.
   if (n.includes('tshirt')) { m.map = null; m.color.set('#f7f2e8'); }
-  else if (n.includes('pants')) { m.map = null; m.color.set('#efe6d4'); }
+  else if (n.includes('pants')) {
+    m.map = null;
+    m.color.set('#e3d9c3');
+    m.roughness = 0.92;
+    m.metalness = 0;
+  }
   else if (n.includes('hat') && !n.includes('that')) { m.map = null; m.color.set('#fff4b0'); }
-  else if (n.includes('shoes')) { m.map = null; m.color.set('#f4efe4'); }
+  else if (n.includes('shoes')) { m.map = null; m.color.set('#e7dfcd'); }
   else if (n.includes('backpack')) { m.map = null; m.color.set('#ffe27a'); }
   m.needsUpdate = true;
   return m;

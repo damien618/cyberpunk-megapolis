@@ -325,9 +325,13 @@ function solidMaterial(color, { rough = 0.55, metal = 0.04, lining = false } = {
 // in the middle of the floral.
 const ROBE_PROFILE = [
   // u,    lat,    med,    ant,    post
-  [0.00, 0.100, 0.100, 0.090, 0.086],
-  [0.08, 0.220, 0.220, 0.152, 0.132],
-  [0.20, 0.206, 0.206, 0.174, 0.134],
+  // Flares onto the shoulders within a few centimetres of the collar, the way
+  // a kimono runs straight out from the neck. Reached gradually, the shell was
+  // still inside the body at shoulder height and the tee showed over the top.
+  [0.00, 0.114, 0.114, 0.098, 0.092],
+  [0.04, 0.186, 0.186, 0.130, 0.114],
+  [0.09, 0.228, 0.228, 0.156, 0.134],
+  [0.20, 0.210, 0.210, 0.176, 0.136],
   [0.38, 0.178, 0.178, 0.170, 0.130],
   [0.55, 0.168, 0.168, 0.160, 0.128],
   // Below the obi the robe is swallowed by the skirt, so it has to stay
@@ -353,24 +357,28 @@ const SKIRT_PROFILE = [
   [1.00, 0.286, 0.286, 0.268, 0.254],
 ];
 
-// The tube that clothes the arm itself. It is deliberately slim: the sleeve
-// volume belongs to the hanging panel below, which swallows this whole tube.
-// Cut at sleeve width, the two sat side by side and she grew a second pair of
-// sleeves.
+// The whole sleeve, and the only piece on the arm. A furisode's hanging panel
+// was once its own loft ridden on the spine, but the spine does not swing and
+// the arm does: the moment she ran, the two came apart and she had a sleeve on
+// each arm and a second pair hanging off her ribs. One tube bound to the arm
+// can never do that.
+//
+// It reads as furisode by widening all the way down instead of hanging: with
+// the arm at her side, a cone opening toward the wrist puts the bell of cloth
+// exactly where the drape of a furisode falls.
 const SLEEVE_PROFILE = [
-  // Runs well inboard of the shoulder joint and caps it. The robe leaves the
-  // neck as a narrow ring, so nothing else covers the top of the deltoid, and
-  // starting this at the joint let the nagajuban surface as a white epaulette.
-  [-0.24, 0.092, 0.078, 0.086, 0.092],
-  [-0.10, 0.098, 0.082, 0.090, 0.098],
-  [0.00, 0.100, 0.082, 0.090, 0.100],
-  [0.35, 0.086, 0.074, 0.076, 0.090],
-  [0.90, 0.076, 0.068, 0.066, 0.082],
-  [1.40, 0.072, 0.066, 0.062, 0.080],
-  [1.90, 0.066, 0.062, 0.058, 0.072],
-  // Drawn in to the wrist. Left open at sleeve width, the cuff was a hoop we
-  // looked straight down, and its red lining read as a plate stuck on her hip.
-  [2.08, 0.056, 0.052, 0.050, 0.058],
+  // Runs inboard of the shoulder joint to cap it. The robe leaves the neck as
+  // a narrow ring, so nothing else covers the top of the deltoid, and cut at
+  // the joint this let the nagajuban surface as a white epaulette.
+  [-0.15, 0.096, 0.082, 0.090, 0.096],
+  [0.00, 0.104, 0.088, 0.098, 0.106],
+  [0.50, 0.128, 0.110, 0.118, 0.132],
+  [1.00, 0.152, 0.130, 0.140, 0.158],
+  [1.55, 0.178, 0.150, 0.162, 0.186],
+  [1.92, 0.186, 0.156, 0.170, 0.194],
+  // Drawn in at the wrist. Left open at full sleeve width, the cuff was a hoop
+  // we looked straight down, and its red lining read as a plate on her hip.
+  [2.08, 0.104, 0.092, 0.098, 0.108],
 ];
 
 // Barely a scoop. The V of a kimono is drawn by the crossed collar lying on
@@ -508,78 +516,20 @@ function buildSleeves(root, material) {
     ]);
     loftShell({
       points: [
-        shoulder.clone().addScaledVector(inward, 0.24 * upper),
+        shoulder.clone().addScaledVector(inward, 0.15 * upper),
         shoulder,
         elbow,
         wrist,
         wrist.clone().addScaledVector(outward, 0.05),
       ],
-      pathU: [-0.24, 0, 1, 2, 2.08],
+      pathU: [-0.15, 0, 1, 2, 2.08],
       profile: SLEEVE_PROFILE,
-      rings: ringParams(-0.24, 2.08, u => u < 0.2 ? 0.05 : 0.08),
+      rings: ringParams(-0.15, 2.08, u => u < 0.2 ? 0.05 : 0.08),
       weights, radial: SLEEVE_RADIAL, tile: TILE,
       lateral: Math.sign(shoulder.x) || 1,
     }, out);
   }
   return finish(out, rig, material, 'Wardrobe_KimonoSleeves');
-}
-
-// The hanging half of a furisode sleeve — the panel that swings free below
-// the arm. It rides the spine, not the arm: the rig binds in an A-pose with
-// the arms out at 45°, so anything weighted to upperarm gets swung that same
-// 45° inward when the arms drop, which buried the whole panel inside the
-// skirt. On the spine it simply hangs, and the arm's own sleeve tube passes
-// through it exactly the way an arm passes through a sleeve.
-// Wide enough on both flanks to keep the arm tube inside it for the whole
-// swing, so the two read as one sleeve rather than as two.
-const FURISODE_PROFILE = [
-  [0.00, 0.092, 0.086, 0.098, 0.102],
-  [0.30, 0.116, 0.106, 0.130, 0.138],
-  [0.72, 0.124, 0.110, 0.142, 0.152],
-  [0.92, 0.118, 0.104, 0.136, 0.146],
-  [1.00, 0.098, 0.086, 0.114, 0.122],
-];
-
-function buildFurisode(root, material) {
-  const bones = ['upperarm_l', 'upperarm_r', 'spine_01', 'spine_02'];
-  const rig = findRig(root, bones);
-  if (!rig) return null;
-  const { indexOf, pos } = restReader(rig);
-  const b = { s1: indexOf('spine_01'), s2: indexOf('spine_02') };
-  const out = { pos: [], tri: [], idx: [], wgt: [], uv: [] };
-  const ss = THREE.MathUtils.smoothstep;
-  // Hem on spine_01 rather than spine_02 so it does not drift forward with
-  // the chest when she leans into a walk.
-  const weights = u => mixBones([
-    [b.s2, 1 - ss(u, 0.25, 0.80)],
-    [b.s1, ss(u, 0.25, 0.80)],
-  ]);
-
-  for (const side of ['l', 'r']) {
-    const shoulder = pos(`upperarm_${side}`);
-    const sign = Math.sign(shoulder.x) || 1;
-    // Centred on the arm, not stood off beside it: the tube has to sit inside
-    // this panel or the pair reads as two sleeves. Far enough out that the
-    // inboard face still overlaps the skirt — both are silk, so the contact
-    // reads as a fold, where a gap would show daylight at the waist.
-    const x = shoulder.x + 0.042 * sign;
-    const top = 1.512;
-    const hem = 0.740;
-    loftShell({
-      points: [
-        new THREE.Vector3(x, top, -0.050),
-        new THREE.Vector3(x, top - (top - hem) * 0.34, -0.038),
-        new THREE.Vector3(x, top - (top - hem) * 0.70, -0.028),
-        new THREE.Vector3(x, hem, -0.022),
-      ],
-      pathU: [0, 0.34, 0.70, 1],
-      profile: FURISODE_PROFILE,
-      rings: ringParams(0, 1, () => 0.075),
-      weights, radial: SLEEVE_RADIAL, tile: TILE,
-      lateral: sign,
-    }, out);
-  }
-  return finish(out, rig, material, 'Wardrobe_KimonoFurisode');
 }
 
 function buildBand(root, material, { y0, y1, radius, name, uvU = 2.4, uvV = 0.45, tile = null }) {
@@ -778,7 +728,6 @@ export function buildKimono(root) {
   const robe = buildRobe(root, silk);
   const skirt = buildSkirt(root, silk);
   const sleeves = buildSleeves(root, silk);
-  const furisode = buildFurisode(root, silk);
   // A formal obi is a hand's span of brocade carried high, from the waist to
   // just under the bust — the narrow belt it used to be read as a bathrobe tie.
   const obi = buildBand(root, brocade, {
@@ -795,7 +744,7 @@ export function buildKimono(root) {
   });
   const bow = buildBow(root, brocade);
   const collar = buildCollar(root, cream, pink);
-  for (const m of [robe, skirt, sleeves, furisode, obi, obiage, obijime, bow, ...collar]) {
+  for (const m of [robe, skirt, sleeves, obi, obiage, obijime, bow, ...collar]) {
     if (m) parts.push(m);
   }
   return parts;
