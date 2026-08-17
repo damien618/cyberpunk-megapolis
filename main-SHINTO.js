@@ -897,15 +897,15 @@ function buildStoneLantern(x, y, z, scale = 1, ry = 0) {
   const hw = 0.30 * S;
   for (const dx of [-hw, hw]) {
     for (const dz of [-hw, hw]) {
-      box(M.stoneLantern, x + dx, y + 2.25 * S, z + dz, 0.13 * S, 0.65 * S, 0.13 * S, ry, 0, 0, true);
+      box(M.stoneLantern, x + dx, y + 2.22 * S, z + dz, 0.13 * S, 0.65 * S, 0.13 * S, ry, 0, 0, true);
     }
   }
-  box(M.stoneLantern, x, y + 2.54 * S, z, 0.74 * S, 0.08 * S, 0.74 * S, ry, 0, 0, true);
+  box(M.stoneLantern, x, y + 2.51 * S, z, 0.74 * S, 0.08 * S, 0.74 * S, ry, 0, 0, true);
   // Roof cap (Kasa) with flared corners
-  box(M.stoneLantern, x, y + 2.7 * S, z, 1.2 * S, 0.28 * S, 1.2 * S, ry, 0, 0, true);
-  box(M.stoneLantern, x, y + 2.9 * S, z, 0.8 * S, 0.16 * S, 0.8 * S, ry, 0, 0, true);
+  box(M.stoneLantern, x, y + 2.67 * S, z, 1.2 * S, 0.28 * S, 1.2 * S, ry, 0, 0, true);
+  box(M.stoneLantern, x, y + 2.87 * S, z, 0.8 * S, 0.16 * S, 0.8 * S, ry, 0, 0, true);
   // Jewel finial (Hōju)
-  cylinder(M.stoneLantern, x, y + 3.12 * S, z, 0.16 * S, 0.32 * S, ry, 0, 0, true);
+  cylinder(M.stoneLantern, x, y + 3.09 * S, z, 0.16 * S, 0.32 * S, ry, 0, 0, true);
 }
 
 // ---------------------------------------------------------------------------
