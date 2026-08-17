@@ -159,6 +159,10 @@ const SEATED_HAND_TARGETS = {
   l: new THREE.Vector3(0.127, 1.049, 0.217),
   r: new THREE.Vector3(-0.127, 1.049, 0.217),
 };
+const KNEELING_HAND_TARGETS = {
+  l: new THREE.Vector3(0.118, 1.025, 0.195),
+  r: new THREE.Vector3(-0.118, 1.025, 0.195),
+};
 
 const CLOTHING_PARTS = {
   hat: 'hat',
@@ -1110,6 +1114,21 @@ export class Player {
     this.applyHeldArmPose('lying', LYING_HAND_TARGETS);
   }
 
+  applyKneelingPose(floorY) {
+    this.resetHeldPose();
+    for (const side of ['l', 'r']) {
+      this.bones[`thigh_${side}`]?.rotateZ(1.52);
+      this.bones[`calf_${side}`]?.rotateZ(-2.48);
+      this.bones[`foot_${side}`]?.rotateZ(-0.82);
+    }
+    this.bones.spine_01?.rotateZ(THREE.MathUtils.degToRad(8));
+    this.bones.neck_01?.rotateZ(THREE.MathUtils.degToRad(10));
+    this.bones.head?.rotateZ(THREE.MathUtils.degToRad(6));
+    this.applyHeldArmPose('kneeling', KNEELING_HAND_TARGETS);
+    this.poseRoot.position.y = -0.52;
+    this.poseRoot.position.z = -0.06;
+  }
+
   // ---------- visual update driven by controller ----------
   update(ctx) {
     const { dt, mode, pos, vel, posture, facingYaw } = ctx;
@@ -1131,7 +1150,7 @@ export class Player {
     this.group.rotation.y = this.yaw;
 
     // animation mapping
-    if (posture === 'sit' || posture === 'lie') {
+    if (posture === 'sit' || posture === 'lie' || posture === 'kneel') {
       this.landTimer = 0;
       this.play('idle', 0.2);
     } else if (this.landTimer > 0) {
@@ -1146,11 +1165,13 @@ export class Player {
       this.play('fall', 0.3);   // wallrun / zip
     }
     this.mixer.update(dt);
-    this.setEyesClosed(posture === 'lie');
+    this.setEyesClosed(posture === 'lie' || posture === 'kneel');
     if (posture === 'sit') {
       this.applySeatedPose(ctx.floorY);
     } else if (posture === 'lie') {
       this.applyLyingPose();
+    } else if (posture === 'kneel') {
+      this.applyKneelingPose(ctx.floorY);
     }
 
     // web rope

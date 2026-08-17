@@ -535,14 +535,14 @@
   .lie-prompt:hover, .lie-prompt:focus-visible {
     background: #f1f1f1; outline: 2px solid #fff; outline-offset: 2px;
   }
-  #liePromptGroup, #travelPromptGroup, #planePromptGroup {
+  #liePromptGroup, #travelPromptGroup, #planePromptGroup, #kneelPromptGroup {
     position: fixed; left: 50%; top: calc(50% + 42px); z-index: 9;
     transform: translate(-50%, 8px); display: flex; flex-direction: column; gap: 9px;
     width: min(470px, calc(100vw - 32px));
     opacity: 0; visibility: hidden; pointer-events: none;
     transition: opacity .14s ease, transform .14s ease, visibility .14s;
   }
-  #liePromptGroup.show, #travelPromptGroup.show, #planePromptGroup.show {
+  #liePromptGroup.show, #travelPromptGroup.show, #planePromptGroup.show, #kneelPromptGroup.show {
     transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto;
   }
   .lie-prompt { width: 100%; }
@@ -558,6 +558,7 @@
   html:not([data-engine="world"]) #liePromptGroup,
   html:not([data-engine="world"]) #travelPromptGroup,
   html:not([data-engine="world"]) #planePromptGroup,
+  html:not([data-engine="world"]) #kneelPromptGroup,
   html:not([data-engine="world"]) #hud { display: none !important; }
 
   html[data-engine="world"] #loader,
@@ -768,8 +769,12 @@
       <h1>Visite d'un temple shinto (Japon)</h1>
       <p>Sanctuaire shinto traditionnel niché au cœur d'un jardin japonais d'un réalisme saisissant : grand Torii vermillon, allée pavée bordée de lanternes de pierre (tōrō), pavillon de purification (chōzuya), pont voûté en bois laqué rouge (taiko-bashi) enjambant un étang aux carpes koï, pavillon principal (honden/haiden) aux toitures courbées et ornements sacrés (shimenawa & shide), forêt de bambous géants et cerisiers en fleurs (sakura) dont les pétales voltigent dans l'air.</p>
       <p>Vous arrivez sur le parking en bordure du sanctuaire, face au Torii d'entrée.</p>
-      <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter, <b>Shift</b> sprint, <b>R</b> reset. Approchez-vous de la voiture pour retourner à l'aéroport de L.A., ou des bancs pour vous asseoir.</p>
+      <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter, <b>Shift</b> sprint, <b>R</b> reset. Approchez-vous de l'autel pour vous agenouiller et choisir le jour ou la nuit, de la voiture pour retourner à l'aéroport de L.A., ou des bancs pour vous asseoir.</p>
       <p class="credit">Sanctuaire Shinto & Jardin Zen — Cyberpunk Megapolis</p>
+      <div id="timeToggle">
+        <button class="tt-btn active" data-time="day">☀ Day</button>
+        <button class="tt-btn" data-time="night">🌙 Night</button>
+      </div>
     </div>
     <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span><span class="brief-airport">Entrer dans l'aéroport</span><span class="brief-shinto">Entrer dans le temple</span></button>
   </div>
@@ -778,6 +783,10 @@
 <div id="liePromptGroup" role="group" aria-label="Choisir l'heure du réveil" aria-hidden="true">
   <button id="lieDayPrompt" class="lie-prompt" type="button">S'allonger et se réveiller le jour</button>
   <button id="lieNightPrompt" class="lie-prompt" type="button">S'allonger et se réveiller la nuit</button>
+</div>
+<div id="kneelPromptGroup" role="group" aria-label="Choisir le moment de la prière" aria-hidden="true">
+  <button id="kneelDayPrompt" class="lie-prompt" type="button">S'agenouiller et se relever le jour</button>
+  <button id="kneelNightPrompt" class="lie-prompt" type="button">S'agenouiller et se relever la nuit</button>
 </div>
 <div id="travelPromptGroup" role="group" aria-label="Choisir une destination" aria-hidden="true">
   <button id="travelCyberpunkPrompt" class="lie-prompt" type="button">Voyager à Cyberpunk Megapolis</button>
@@ -1057,7 +1066,7 @@
     la: './main-LA.js?v=202608141500',
     zoo: './main-ZOO.js?v=202608141500',
     airport: './main-AIRPORT.js?v=202608170015',
-    shinto: './main-SHINTO.js?v=202608162410',
+    shinto: './main-SHINTO.js?v=202608180007',
   };
   import(ENGINES[document.documentElement.dataset.mode] ?? './main.js?v=24');
 </script>

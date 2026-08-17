@@ -58,9 +58,7 @@ export class CameraRig {
     }
 
     _look.copy(ctrl.pos);
-    // Sit look-at used to be the forehead (hip + 1.0 m), which pinned the
-    // HUD crosshair on the face. Aim just over the crown instead.
-    _look.y += ctrl.mode === 'lie' ? 0.35 : ctrl.mode === 'sit' ? 1.28 : 1.35;
+    _look.y += ctrl.mode === 'lie' ? 0.35 : (ctrl.mode === 'sit' || ctrl.mode === 'kneel') ? 1.05 : 1.35;
     _lat.copy(ctrl.vel).multiplyScalar(0.16);
     if (_lat.length() > 4.5) _lat.setLength(4.5);
     _look.add(_lat);
@@ -74,6 +72,7 @@ export class CameraRig {
 
     let targetDist = 4.2 + speedN * 3.6 + (ctrl.mode === 'swing' ? 1.1 : 0);
     if (ctrl.mode === 'sit') targetDist = 1.72;
+    else if (ctrl.mode === 'kneel') targetDist = 2.4;
     else if (ctrl.mode === 'lie') targetDist = 2.35;
     this.dist += (targetDist - this.dist) * (1 - Math.exp(-4 * dt));
 

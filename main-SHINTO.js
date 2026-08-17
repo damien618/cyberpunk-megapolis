@@ -8,6 +8,10 @@ import { buildCityBoxes } from './cityBoxes.js?v=5';
 import { buildCar, carBounds } from './cars.js?v=4';
 import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=18';
 import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=31';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 // ---------------------------------------------------------------------------
 // Visit to a Shinto shrine (Japan) — an authentic Japanese sacred precinct
@@ -30,6 +34,9 @@ const hudMode = document.getElementById('mode');
 const hudSpeed = document.getElementById('speed');
 const hudHeight = document.getElementById('height');
 const furniturePrompt = document.getElementById('furniturePrompt');
+const kneelPromptGroup = document.getElementById('kneelPromptGroup');
+const kneelDayPrompt = document.getElementById('kneelDayPrompt');
+const kneelNightPrompt = document.getElementById('kneelNightPrompt');
 const fadeEl = document.getElementById('fade');
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -53,21 +60,127 @@ camera.position.set(0, 8, -50);
 const hemi = new THREE.HemisphereLight(0xe4f2ff, 0x7a8366, 0.85);
 scene.add(hemi);
 
+// The shadow frustum follows the player instead of covering the whole precinct:
+// 2048² over a 110 m box is denser (≈19 texels/m) than 3072² over 220 m was
+// (≈14), so the shadows are both sharper and cheaper to render.
+const SUN_DIR = new THREE.Vector3(-80, 130, -70).normalize();
+const SUN_DIST = 170;
+const SHADOW_HALF = 55;
 const sun = new THREE.DirectionalLight(0xfff5e6, 2.7);
-sun.position.set(-80, 130, -70);
+sun.position.copy(SUN_DIR).multiplyScalar(SUN_DIST);
 sun.castShadow = true;
-sun.shadow.mapSize.set(3072, 3072);
-sun.shadow.camera.left = -110;
-sun.shadow.camera.right = 110;
-sun.shadow.camera.top = 110;
-sun.shadow.camera.bottom = -110;
-sun.shadow.camera.near = 20;
-sun.shadow.camera.far = 380;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -SHADOW_HALF;
+sun.shadow.camera.right = SHADOW_HALF;
+sun.shadow.camera.top = SHADOW_HALF;
+sun.shadow.camera.bottom = -SHADOW_HALF;
+sun.shadow.camera.near = SUN_DIST - 90;
+sun.shadow.camera.far = SUN_DIST + 130;
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.035;
+sun.shadow.camera.updateProjectionMatrix();
 scene.add(sun);
-sun.target.position.set(0, 4, 30);
+sun.target.position.set(0, 0, 30);
 scene.add(sun.target);
+
+// Re-centre the shadow box on the player, snapped to whole shadow texels so the
+// shadow edges stop crawling as we walk.
+const SHADOW_TEXEL = (SHADOW_HALF * 2) / sun.shadow.mapSize.x;
+function updateSunShadow(focus) {
+  if (!sun.visible) return;
+  const fx = Math.round(focus.x / SHADOW_TEXEL) * SHADOW_TEXEL;
+  const fz = Math.round(focus.z / SHADOW_TEXEL) * SHADOW_TEXEL;
+  sun.target.position.set(fx, 0, fz);
+  sun.position.set(fx, 0, fz).addScaledVector(SUN_DIR, SUN_DIST);
+  sun.target.updateMatrixWorld();
+}
+
+// Cool silver-blue Moonlight for authentic Japanese night ambiance
+const moon = new THREE.DirectionalLight(0x9bc8f5, 0.85);
+moon.position.set(70, 130, 90);
+moon.target.position.set(0, 4, 35);
+scene.add(moon);
+scene.add(moon.target);
+moon.visible = false;
+
+// ---------------------------------------------------------------------------
+// Post-processing: HDR render target + bloom. The precinct is lit almost
+// entirely by small emissive sources (candles, chōchin, sky lanterns,
+// fireflies); bloom is what makes them read as light rather than as bright
+// paint. Strength and threshold are re-tuned per time of day.
+// ---------------------------------------------------------------------------
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
+  window.innerWidth, window.innerHeight, { samples: 4, type: THREE.HalfFloatType }));
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.24, 0.6, 0.9);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ---------------------------------------------------------------------------
+// Sky dome
+//
+// A flat background colour gives the precinct a dead white ceiling. This is a
+// gradient from horizon to zenith with a glow around whichever luminary is up,
+// so the sky reads as depth by day and as a moonlit dome at night. The horizon
+// colour is kept in step with the fog so distant geometry dissolves into it.
+// ---------------------------------------------------------------------------
+const skyUniforms = {
+  uHorizon: { value: new THREE.Color(0xd8e6ee) },
+  uZenith: { value: new THREE.Color(0x6f9fd8) },
+  uGlow: { value: new THREE.Color(0xfff0d0) },
+  uGlowDir: { value: SUN_DIR.clone() },
+  uGlowStrength: { value: 0.5 },
+  uGlowTightness: { value: 12.0 },
+};
+const skyDome = new THREE.Mesh(
+  new THREE.SphereGeometry(1700, 32, 18),
+  new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+    uniforms: skyUniforms,
+    vertexShader: `
+      varying vec3 vDir;
+      void main() {
+        vDir = normalize( position );
+        gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+      }`,
+    fragmentShader: `
+      uniform vec3 uHorizon, uZenith, uGlow, uGlowDir;
+      uniform float uGlowStrength, uGlowTightness;
+      varying vec3 vDir;
+      void main() {
+        vec3 d = normalize( vDir );
+        float h = clamp( d.y * 0.5 + 0.5, 0.0, 1.0 );
+        vec3 col = mix( uHorizon, uZenith, pow( smoothstep( 0.5, 1.0, h ), 0.8 ) );
+        float g = pow( max( dot( d, normalize( uGlowDir ) ), 0.0 ), uGlowTightness );
+        col += uGlow * g * uGlowStrength;
+        gl_FragColor = vec4( col, 1.0 );
+      }`,
+  })
+);
+skyDome.frustumCulled = false;
+skyDome.renderOrder = -1;
+scene.add(skyDome);
+
+const DAY_SKY = {
+  horizon: 0xdfe9f0, zenith: 0x5b8fd0, glow: 0xffeccc,
+  dir: SUN_DIR.clone(), strength: 0.55, tightness: 9.0,
+};
+const NIGHT_SKY = {
+  horizon: 0x0b1526, zenith: 0x02040c, glow: 0x8fb4e8,
+  dir: new THREE.Vector3(70, 130, 90).normalize(), strength: 0.22, tightness: 26.0,
+};
+function applySky(s) {
+  skyUniforms.uHorizon.value.setHex(s.horizon);
+  skyUniforms.uZenith.value.setHex(s.zenith);
+  skyUniforms.uGlow.value.setHex(s.glow);
+  skyUniforms.uGlowDir.value.copy(s.dir);
+  skyUniforms.uGlowStrength.value = s.strength;
+  skyUniforms.uGlowTightness.value = s.tightness;
+}
+applySky(DAY_SKY);
 
 const loader = new THREE.TextureLoader();
 const maxAniso = renderer.capabilities.getMaxAnisotropy();
@@ -101,83 +214,373 @@ function ntex(url, rx = 1, ry = 1) {
 // ---------------------------------------------------------------------------
 // Textures & Material Library
 // ---------------------------------------------------------------------------
-const woodDiff = tex('./textures/nature/wood_diff.jpg', 2, 6);
-const woodN = ntex('./textures/nature/wood_n.jpg', 2, 6);
-const woodR = tex('./textures/nature/wood_r.jpg', 2, 6);
+// Repeats stay at 1×1 for everything that goes through worldUV() below: those
+// materials get their tiling from the prop's real dimensions instead.
+const woodDiff = tex('./textures/nature/wood_diff.jpg');
+const woodN = ntex('./textures/nature/wood_n.jpg');
+const woodR = tex('./textures/nature/wood_r.jpg');
 
-const barkDiff = tex('./textures/nature/bark_diff.jpg', 1, 4);
-const barkN = ntex('./textures/nature/bark_n.jpg', 1, 4);
+const barkDiff = tex('./textures/nature/bark_diff.jpg');
+const barkN = ntex('./textures/nature/bark_n.jpg');
 
-const shingleDiff = tex('./textures/nature/shingle_diff.jpg', 6, 6);
-const shingleN = ntex('./textures/nature/shingle_n.jpg', 6, 6);
-const shingleRedDiff = tex('./textures/nature/shingle_red_diff.jpg', 4, 4);
-const shingleRedN = ntex('./textures/nature/shingle_red_n.jpg', 4, 4);
+const shingleDiff = tex('./textures/nature/shingle_diff.jpg');
+const shingleN = ntex('./textures/nature/shingle_n.jpg');
+const shingleRedDiff = tex('./textures/nature/shingle_red_diff.jpg');
+const shingleRedN = ntex('./textures/nature/shingle_red_n.jpg');
 
-const paverDiff = tex('./textures/nature/paver_diff.jpg', 12, 12);
-const paverN = ntex('./textures/nature/paver_n.jpg', 12, 12);
-const paverR = tex('./textures/nature/paver_r.jpg', 12, 12);
+const paverDiff = tex('./textures/nature/paver_diff.jpg');
+const paverN = ntex('./textures/nature/paver_n.jpg');
+const paverR = tex('./textures/nature/paver_r.jpg');
 
-const dirtDiff = tex('./textures/nature/dirt_diff.jpg', 10, 10);
-const dirtN = ntex('./textures/nature/dirt_n.jpg', 10, 10);
+const dirtDiff = tex('./textures/nature/dirt_diff.jpg');
+const dirtN = ntex('./textures/nature/dirt_n.jpg');
 
-const grassDiff = tex('./textures/la/grass_diffuse.jpg', 16, 16);
+// The lawn and the car park are single fixed-size planes, so they carry their
+// own explicit tiling rather than going through worldUV().
+const grassDiff = tex('./textures/la/grass_diffuse.jpg', 4, 4);
 const waterN = ntex('./textures/la/water_normal.jpg', 8, 8);
 
-const foliageDiff = tex('./textures/nature/foliage_diff.jpg', 4, 4);
-const foliageN = ntex('./textures/nature/foliage_n.jpg', 4, 4);
+const asphaltA = tex('./textures/CP_Asphalt_A.webp', 40, 23);
+const asphaltN = ntex('./textures/CP_Asphalt_N.webp', 40, 23);
 
-const asphaltA = tex('./textures/CP_Asphalt_A.webp', 12, 12);
-const asphaltN = ntex('./textures/CP_Asphalt_N.webp', 12, 12);
+// ---------------------------------------------------------------------------
+// Procedural textures
+//
+// The bundled nature pack has no foliage sheet at all: foliage_diff.jpg and
+// canopy_diff.jpg are both photographs of leaf litter lying on the ground,
+// which is exactly why every canopy in the precinct read as a brown blob. The
+// same goes for the washi panels, the rice-straw shimenawa and the raked
+// karesansui gravel — none of them exist in the pack. They are painted onto a
+// canvas here instead: no new files to ship, tileable by construction, and
+// re-tintable per species.
+// ---------------------------------------------------------------------------
+function mulberry32(a) {
+  return () => {
+    a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function makeCanvas(size) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  return c;
+}
+
+function canvasTexture(canvas, { srgb = true, rx = 1, ry = 1 } = {}) {
+  const t = new THREE.CanvasTexture(canvas);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry);
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.anisotropy = maxAniso;
+  return t;
+}
+
+// Sobel the luminance of a painted canvas into a tangent-space normal map, so
+// each procedural surface gets relief that matches its own artwork instead of
+// borrowing an unrelated one. Sampling wraps, so the result tiles like the
+// source does.
+function normalFromCanvas(src, strength = 2.0) {
+  const size = src.width;
+  const px = src.getContext('2d').getImageData(0, 0, size, size).data;
+  const h = new Float32Array(size * size);
+  for (let i = 0; i < size * size; i++) {
+    h[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114) / 255;
+  }
+  const at = (x, y) => h[((y + size) % size) * size + ((x + size) % size)];
+  const out = makeCanvas(size);
+  const og = out.getContext('2d');
+  const img = og.createImageData(size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const nx = -(at(x + 1, y) - at(x - 1, y)) * strength;
+      const ny = -(at(x, y + 1) - at(x, y - 1)) * strength;
+      const len = Math.hypot(nx, ny, 1);
+      const i = (y * size + x) * 4;
+      img.data[i] = (nx / len * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (ny / len * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (1 / len * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  og.putImageData(img, 0, 0);
+  return out;
+}
+
+// Overlapping leaf blades. Anything drawn within a leaf's reach of an edge is
+// repeated on the opposite side so the sheet stays seamless.
+function makeLeafCanvas(base, tones, { size = 512, count = 2600, leaf = 13, seed = 7 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(seed);
+  g.fillStyle = base;
+  g.fillRect(0, 0, size, size);
+  const reach = leaf * 2;
+  for (let i = 0; i < count; i++) {
+    const x = rnd() * size, y = rnd() * size;
+    const rx = leaf * (0.5 + rnd() * 0.9);
+    const ry = rx * (0.35 + rnd() * 0.4);
+    const rot = rnd() * Math.PI;
+    g.fillStyle = tones[(rnd() * tones.length) | 0];
+    g.globalAlpha = 0.5 + rnd() * 0.5;
+    const wrapX = x < reach ? 1 : x > size - reach ? -1 : 0;
+    const wrapY = y < reach ? 1 : y > size - reach ? -1 : 0;
+    for (const ox of wrapX ? [0, wrapX] : [0]) {
+      for (const oy of wrapY ? [0, wrapY] : [0]) {
+        g.save();
+        g.translate(x + ox * size, y + oy * size);
+        g.rotate(rot);
+        g.beginPath();
+        g.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+        g.fill();
+        g.restore();
+      }
+    }
+  }
+  g.globalAlpha = 1;
+  return c;
+}
+
+// Washi: long paper fibres caught in the pulp, plus a faint cloudiness.
+function makeWashiCanvas({ size = 512, seed = 3 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(seed);
+  g.fillStyle = '#f7f3e8';
+  g.fillRect(0, 0, size, size);
+  for (let i = 0; i < 260; i++) {
+    g.globalAlpha = 0.03 + rnd() * 0.05;
+    g.fillStyle = rnd() < 0.5 ? '#ffffff' : '#ded5c0';
+    const r = 30 + rnd() * 90;
+    g.beginPath();
+    g.ellipse(rnd() * size, rnd() * size, r, r * (0.5 + rnd()), rnd() * Math.PI, 0, Math.PI * 2);
+    g.fill();
+  }
+  for (let i = 0; i < 900; i++) {
+    const x = rnd() * size, y = rnd() * size;
+    const len = 12 + rnd() * 48;
+    const rot = rnd() * Math.PI;
+    g.globalAlpha = 0.10 + rnd() * 0.22;
+    g.strokeStyle = rnd() < 0.6 ? '#cdc2a6' : '#ffffff';
+    g.lineWidth = 0.6 + rnd() * 1.0;
+    g.save();
+    g.translate(x, y);
+    g.rotate(rot);
+    g.beginPath();
+    g.moveTo(-len / 2, 0);
+    g.lineTo(len / 2, 0);
+    g.stroke();
+    g.restore();
+  }
+  g.globalAlpha = 1;
+  return c;
+}
+
+// Shimenawa: two rice-straw strands laid up into a left-hand twist.
+function makeRopeCanvas({ size = 512, seed = 11 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(seed);
+  g.fillStyle = '#8f7a4e';
+  g.fillRect(0, 0, size, size);
+  const strands = 5;
+  for (let s = 0; s < strands; s++) {
+    for (let k = 0; k < 90; k++) {
+      const t = k / 90;
+      const y = t * size;
+      const x = ((s / strands + t * 0.62) % 1) * size;
+      g.globalAlpha = 0.5 + rnd() * 0.4;
+      g.strokeStyle = ['#cbb681', '#b7a068', '#a68e58', '#dcc994'][(rnd() * 4) | 0];
+      g.lineWidth = size / strands * (0.5 + rnd() * 0.35);
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + size * 0.09, y + size / 90 + 2);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(x - size, y);
+      g.lineTo(x - size + size * 0.09, y + size / 90 + 2);
+      g.stroke();
+    }
+  }
+  // Individual straws catching the light along the lay of the rope.
+  for (let i = 0; i < 1500; i++) {
+    const x = rnd() * size, y = rnd() * size;
+    g.globalAlpha = 0.10 + rnd() * 0.3;
+    g.strokeStyle = rnd() < 0.5 ? '#e3d3a4' : '#7d683f';
+    g.lineWidth = 0.7;
+    g.save();
+    g.translate(x, y);
+    g.rotate(1.05);
+    g.beginPath();
+    g.moveTo(-14, 0);
+    g.lineTo(14, 0);
+    g.stroke();
+    g.restore();
+  }
+  g.globalAlpha = 1;
+  return c;
+}
+
+// Karesansui: raked furrows in fine white gravel.
+function makeRakedGravelCanvas({ size = 512, seed = 19 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(seed);
+  g.fillStyle = '#dedbd2';
+  g.fillRect(0, 0, size, size);
+  for (let i = 0; i < 60000; i++) {
+    g.fillStyle = rnd() < 0.5 ? 'rgba(255,255,255,0.35)' : 'rgba(120,116,104,0.30)';
+    g.fillRect(rnd() * size, rnd() * size, 1.6, 1.6);
+  }
+  const furrows = 8;
+  for (let f = 0; f < furrows; f++) {
+    const y = (f + 0.5) * size / furrows;
+    const grad = g.createLinearGradient(0, y - size / furrows / 2, 0, y + size / furrows / 2);
+    grad.addColorStop(0, 'rgba(90,86,76,0.34)');
+    grad.addColorStop(0.42, 'rgba(255,255,255,0.30)');
+    grad.addColorStop(0.6, 'rgba(255,255,255,0.22)');
+    grad.addColorStop(1, 'rgba(90,86,76,0.34)');
+    g.fillStyle = grad;
+    g.fillRect(0, y - size / furrows / 2, size, size / furrows);
+  }
+  return c;
+}
+
+// Bamboo culm: waxy vertical striation broken by a node ring per tile.
+function makeBambooCanvas({ size = 512, seed = 23 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(seed);
+  const grad = g.createLinearGradient(0, 0, size, 0);
+  grad.addColorStop(0, '#4a6f2c');
+  grad.addColorStop(0.35, '#86ab52');
+  grad.addColorStop(0.6, '#9cbb63');
+  grad.addColorStop(1, '#41631f');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  for (let i = 0; i < 700; i++) {
+    g.globalAlpha = 0.05 + rnd() * 0.14;
+    g.strokeStyle = rnd() < 0.5 ? '#c6dc92' : '#3d5c1e';
+    g.lineWidth = 0.8 + rnd() * 2.2;
+    const x = rnd() * size;
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.lineTo(x, size);
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+  // Node ring, with the pale collar the culm grows above each joint.
+  g.fillStyle = '#6d8c38';
+  g.fillRect(0, size - 16, size, 12);
+  g.fillStyle = 'rgba(226,236,190,0.75)';
+  g.fillRect(0, size - 22, size, 6);
+  g.fillStyle = 'rgba(40,58,20,0.5)';
+  g.fillRect(0, size - 4, size, 4);
+  return c;
+}
+
+const pineLeafC = makeLeafCanvas('#1b3520', ['#2c5230', '#22421f', '#37663a', '#152b18', '#41764a'],
+  { count: 3000, leaf: 10, seed: 5 });
+const sakuraLeafC = makeLeafCanvas('#e9a3bd', ['#ffd3e2', '#ffbcd4', '#f6c2d6', '#e087a8', '#fff2f7'],
+  { count: 2400, leaf: 14, seed: 13 });
+const sakuraWhiteLeafC = makeLeafCanvas('#e6dade', ['#ffffff', '#fff6f9', '#f4e7eb', '#e2ced5', '#fffafc'],
+  { count: 2400, leaf: 14, seed: 17 });
+const momijiLeafC = makeLeafCanvas('#8b2416', ['#c8351f', '#a72a19', '#df512c', '#761c11', '#e07a44'],
+  { count: 2400, leaf: 13, seed: 29 });
+const bambooLeafC = makeLeafCanvas('#3f6a24', ['#5f8f33', '#4d7a28', '#79a845', '#365c1e'],
+  { count: 2600, leaf: 16, seed: 31 });
+
+const pineLeafT = canvasTexture(pineLeafC, { rx: 3, ry: 2 });
+const pineLeafN = canvasTexture(normalFromCanvas(pineLeafC, 3.0), { srgb: false, rx: 3, ry: 2 });
+const sakuraLeafT = canvasTexture(sakuraLeafC, { rx: 3, ry: 2 });
+const sakuraLeafN = canvasTexture(normalFromCanvas(sakuraLeafC, 2.4), { srgb: false, rx: 3, ry: 2 });
+const sakuraWhiteLeafT = canvasTexture(sakuraWhiteLeafC, { rx: 3, ry: 2 });
+const sakuraWhiteLeafN = canvasTexture(normalFromCanvas(sakuraWhiteLeafC, 2.4), { srgb: false, rx: 3, ry: 2 });
+const momijiLeafT = canvasTexture(momijiLeafC, { rx: 3, ry: 2 });
+const momijiLeafN = canvasTexture(normalFromCanvas(momijiLeafC, 2.4), { srgb: false, rx: 3, ry: 2 });
+const bambooLeafT = canvasTexture(bambooLeafC, { rx: 2, ry: 2 });
+const bambooLeafN = canvasTexture(normalFromCanvas(bambooLeafC, 2.6), { srgb: false, rx: 2, ry: 2 });
+
+const washiC = makeWashiCanvas();
+const washiT = canvasTexture(washiC);
+const washiN = canvasTexture(normalFromCanvas(washiC, 1.1), { srgb: false });
+
+const ropeC = makeRopeCanvas();
+const ropeT = canvasTexture(ropeC, { rx: 1, ry: 8 });
+const ropeN = canvasTexture(normalFromCanvas(ropeC, 3.2), { srgb: false, rx: 1, ry: 8 });
+
+const gravelC = makeRakedGravelCanvas();
+const gravelT = canvasTexture(gravelC);
+const gravelN = canvasTexture(normalFromCanvas(gravelC, 2.2), { srgb: false });
+
+const bambooSkinC = makeBambooCanvas();
+const bambooSkinT = canvasTexture(bambooSkinC);
+const bambooSkinN = canvasTexture(normalFromCanvas(bambooSkinC, 2.0), { srgb: false });
 
 const M = {
-  toriiRed: new THREE.MeshStandardMaterial({
-    color: 0xd63426, roughness: 0.38, metalness: 0.05,
-    map: woodDiff, normalMap: woodN, normalScale: new THREE.Vector2(0.35, 0.35),
+  // Vermilion torii are lacquered, so the grain shows only as a faint relief
+  // under a clear coat rather than as brown wood colour.
+  // Vermilion torii are lacquered: the grain survives only as a faint relief
+  // under the clear coat, so this takes the normal map but not the brown
+  // diffuse that was dragging the red down into mud.
+  toriiRed: new THREE.MeshPhysicalMaterial({
+    color: 0xd93a29, roughness: 0.44, metalness: 0.0,
+    clearcoat: 0.85, clearcoatRoughness: 0.18,
+    normalMap: woodN, normalScale: new THREE.Vector2(0.3, 0.3),
   }),
   toriiBlack: new THREE.MeshStandardMaterial({
     color: 0x18191c, roughness: 0.45, metalness: 0.15,
   }),
+  // Metalness stays at 0 on every dielectric here: a non-zero value on stone,
+  // timber or tarmac only steals from the diffuse and leaves the surface
+  // looking muddy.
   templeWood: new THREE.MeshStandardMaterial({
-    color: 0x5a3d2c, roughness: 0.65, metalness: 0.05,
+    color: 0x8a6242, roughness: 0.68, metalness: 0.0,
     map: woodDiff, normalMap: woodN, roughnessMap: woodR,
+    normalScale: new THREE.Vector2(0.9, 0.9),
   }),
   templeWoodLight: new THREE.MeshStandardMaterial({
-    color: 0x9a6b4a, roughness: 0.55, metalness: 0.04,
+    color: 0xc09068, roughness: 0.58, metalness: 0.0,
     map: woodDiff, normalMap: woodN, roughnessMap: woodR,
+    normalScale: new THREE.Vector2(0.9, 0.9),
   }),
   shingleDark: new THREE.MeshStandardMaterial({
-    color: 0x2c333a, roughness: 0.72, metalness: 0.1,
-    map: shingleDiff, normalMap: shingleN, normalScale: new THREE.Vector2(0.8, 0.8),
+    color: 0x4c565f, roughness: 0.78, metalness: 0.0,
+    map: shingleDiff, normalMap: shingleN, normalScale: new THREE.Vector2(1.4, 1.4),
   }),
   shingleRed: new THREE.MeshStandardMaterial({
-    color: 0xa83428, roughness: 0.68, metalness: 0.08,
-    map: shingleRedDiff, normalMap: shingleRedN,
+    color: 0xb03c2c, roughness: 0.7, metalness: 0.0,
+    map: shingleRedDiff, normalMap: shingleRedN, normalScale: new THREE.Vector2(1.2, 1.2),
   }),
   stonePaver: new THREE.MeshStandardMaterial({
-    color: 0x9fa4a8, roughness: 0.85, metalness: 0.05,
+    color: 0xb2b7bb, roughness: 0.87, metalness: 0.0,
     map: paverDiff, normalMap: paverN, roughnessMap: paverR,
+    normalScale: new THREE.Vector2(1.2, 1.2),
   }),
   stoneLantern: new THREE.MeshStandardMaterial({
-    color: 0x8a9094, roughness: 0.9, metalness: 0.04,
-    map: paverDiff, normalMap: paverN,
+    color: 0x9aa0a4, roughness: 0.9, metalness: 0.0,
+    map: paverDiff, normalMap: paverN, normalScale: new THREE.Vector2(1.1, 1.1),
   }),
   zenGravel: new THREE.MeshStandardMaterial({
-    color: 0xdedcd6, roughness: 0.95, metalness: 0.02,
-    map: dirtDiff, normalMap: dirtN,
+    color: 0xf0eee7, roughness: 0.96, metalness: 0.02,
+    map: gravelT, normalMap: gravelN, normalScale: new THREE.Vector2(1.4, 1.4),
   }),
   mossGrass: new THREE.MeshStandardMaterial({
-    color: 0x587842, roughness: 0.92, metalness: 0.02,
+    color: 0x5d8047, roughness: 0.94, metalness: 0.0,
     map: grassDiff,
   }),
   water: new THREE.MeshPhysicalMaterial({
-    color: 0x234a42, roughness: 0.08, metalness: 0.1,
+    color: 0x234a42, roughness: 0.08, metalness: 0.0,
     transmission: 0.75, ior: 1.333, thickness: 1.8,
     transparent: true, opacity: 0.88,
     normalMap: waterN, normalScale: new THREE.Vector2(0.4, 0.4),
   }),
-  bridgeRed: new THREE.MeshStandardMaterial({
-    color: 0xcc2a1f, roughness: 0.32, metalness: 0.08,
-    map: woodDiff, normalMap: woodN,
+  bridgeRed: new THREE.MeshPhysicalMaterial({
+    color: 0xcf3324, roughness: 0.4, metalness: 0.0,
+    clearcoat: 0.8, clearcoatRoughness: 0.2,
+    normalMap: woodN, normalScale: new THREE.Vector2(0.35, 0.35),
   }),
   goldGiboshi: new THREE.MeshStandardMaterial({
     color: 0xe6b840, roughness: 0.22, metalness: 0.88,
@@ -187,9 +590,11 @@ const M = {
   }),
   shojiPaper: new THREE.MeshStandardMaterial({
     color: 0xf6f3ea, roughness: 0.92, metalness: 0.0,
+    map: washiT, normalMap: washiN, normalScale: new THREE.Vector2(0.5, 0.5),
   }),
   shimenawa: new THREE.MeshStandardMaterial({
     color: 0xb59e6f, roughness: 0.95, metalness: 0.0,
+    map: ropeT, normalMap: ropeN, normalScale: new THREE.Vector2(1.1, 1.1),
   }),
   shideWhite: new THREE.MeshStandardMaterial({
     color: 0xffffff, roughness: 0.85, metalness: 0.0,
@@ -198,40 +603,142 @@ const M = {
   lanternGlow: new THREE.MeshStandardMaterial({
     color: 0xfff3d0, emissive: 0xffaa44, emissiveIntensity: 2.4, roughness: 0.4,
   }),
+  candleWax: new THREE.MeshStandardMaterial({
+    color: 0xfaf6ea, roughness: 0.35, metalness: 0.05,
+    emissive: 0x000000, emissiveIntensity: 0,
+  }),
+  candleFlame: new THREE.MeshBasicMaterial({
+    color: 0xfffaaa,
+  }),
+  chochinPaper: new THREE.MeshStandardMaterial({
+    color: 0xfff5e6, emissive: 0xff8822, emissiveIntensity: 2.8,
+    roughness: 0.85, metalness: 0.0,
+  }),
+  chochinRed: new THREE.MeshStandardMaterial({
+    color: 0xbb2015, emissive: 0x550a00, emissiveIntensity: 0.8,
+    roughness: 0.6, metalness: 0.1,
+  }),
+  skyLanternPaper: new THREE.MeshStandardMaterial({
+    color: 0xfffaea, emissive: 0xff8818, emissiveIntensity: 3.8,
+    roughness: 0.75, metalness: 0.0, transparent: true, opacity: 0.94,
+    side: THREE.DoubleSide,
+  }),
+  waterLanternWood: new THREE.MeshStandardMaterial({
+    color: 0x4a2e1e, roughness: 0.8, metalness: 0.05,
+  }),
   sakuraBlossom: new THREE.MeshStandardMaterial({
-    color: 0xffc4d8, roughness: 0.75, metalness: 0.0,
-    map: foliageDiff, normalMap: foliageN,
+    color: 0xffffff, roughness: 0.82, metalness: 0.0,
+    map: sakuraLeafT, normalMap: sakuraLeafN, normalScale: new THREE.Vector2(1.2, 1.2),
     side: THREE.DoubleSide,
   }),
   sakuraBlossomWhite: new THREE.MeshStandardMaterial({
-    color: 0xffe8f0, roughness: 0.75, metalness: 0.0,
-    map: foliageDiff, normalMap: foliageN,
+    color: 0xffffff, roughness: 0.82, metalness: 0.0,
+    map: sakuraWhiteLeafT, normalMap: sakuraWhiteLeafN, normalScale: new THREE.Vector2(1.2, 1.2),
     side: THREE.DoubleSide,
   }),
   pineFoliage: new THREE.MeshStandardMaterial({
-    color: 0x2a4e32, roughness: 0.82, metalness: 0.0,
-    map: foliageDiff, normalMap: foliageN,
+    color: 0xffffff, roughness: 0.88, metalness: 0.0,
+    map: pineLeafT, normalMap: pineLeafN, normalScale: new THREE.Vector2(1.5, 1.5),
   }),
   momijiRed: new THREE.MeshStandardMaterial({
-    color: 0xc22b18, roughness: 0.78, metalness: 0.0,
-    map: foliageDiff, normalMap: foliageN,
+    color: 0xffffff, roughness: 0.8, metalness: 0.0,
+    map: momijiLeafT, normalMap: momijiLeafN, normalScale: new THREE.Vector2(1.2, 1.2),
     side: THREE.DoubleSide,
   }),
   bambooGreen: new THREE.MeshStandardMaterial({
-    color: 0x4f7d36, roughness: 0.48, metalness: 0.08,
+    color: 0xdfe6cf, roughness: 0.42, metalness: 0.05,
+    map: bambooSkinT, normalMap: bambooSkinN, normalScale: new THREE.Vector2(0.7, 0.7),
+  }),
+  bambooLeaf: new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.8, metalness: 0.0,
+    map: bambooLeafT, normalMap: bambooLeafN, normalScale: new THREE.Vector2(1.3, 1.3),
   }),
   treeTrunk: new THREE.MeshStandardMaterial({
     color: 0x4e3828, roughness: 0.88, metalness: 0.05,
     map: barkDiff, normalMap: barkN,
   }),
   asphalt: new THREE.MeshStandardMaterial({
-    color: 0x32353b, roughness: 0.86, metalness: 0.12,
+    color: 0x646a72, roughness: 0.92, metalness: 0.0,
     map: asphaltA, normalMap: asphaltN,
   }),
   parkingLine: new THREE.MeshStandardMaterial({
     color: 0xffffff, roughness: 0.7, metalness: 0.05,
   }),
+  pondBed: new THREE.MeshStandardMaterial({
+    color: 0x4a4437, roughness: 0.96, metalness: 0.02,
+    map: dirtDiff, normalMap: dirtN,
+  }),
 };
+
+// ---------------------------------------------------------------------------
+// World-scaled UVs
+//
+// Every prop in the precinct shares one unit cube (or unit cylinder) and is
+// stretched to size by its instance matrix — so the 130 m sando slab and a 1 m
+// lantern base were handed the same 0..1 UV span, and the stone texture smeared
+// into metre-long "planks". Rebuild the UVs in the vertex shader from the
+// instance's own dimensions, read straight off instanceMatrix so no extra
+// attribute is needed, at a density given in texture tiles per metre.
+//
+// The unit cube's faces are axis-aligned, so choosing the projection plane from
+// the vertex normal is exact rather than approximate, and it costs one texture
+// sample — unlike triplanar blending, which would cost three.
+// ---------------------------------------------------------------------------
+function worldUV(mat, tilesPerMetre) {
+  const d = tilesPerMetre.toFixed(4);
+  mat.onBeforeCompile = shader => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <uv_vertex>',
+      `#include <uv_vertex>
+      vec3 wsz = vec3( 1.0 );
+      #ifdef USE_INSTANCING
+        wsz = vec3( length( instanceMatrix[ 0 ].xyz ),
+                    length( instanceMatrix[ 1 ].xyz ),
+                    length( instanceMatrix[ 2 ].xyz ) );
+      #endif
+      vec3 an = abs( normal );
+      vec2 span = ( an.y > an.x && an.y > an.z ) ? wsz.xz
+                : ( an.x > an.z ) ? wsz.zy
+                : wsz.xy;
+      // On a cylinder's flank u wraps the circumference, not the diameter.
+      span.x *= mix( 1.0, 3.14159, step( 0.03, min( an.x, an.z ) ) );
+      vec2 wUv = uv * span * ${d};
+      #ifdef USE_MAP
+        vMapUv = ( mapTransform * vec3( wUv, 1 ) ).xy;
+      #endif
+      #ifdef USE_NORMALMAP
+        vNormalMapUv = ( normalMapTransform * vec3( wUv, 1 ) ).xy;
+      #endif
+      #ifdef USE_ROUGHNESSMAP
+        vRoughnessMapUv = ( roughnessMapTransform * vec3( wUv, 1 ) ).xy;
+      #endif
+      #ifdef USE_METALNESSMAP
+        vMetalnessMapUv = ( metalnessMapTransform * vec3( wUv, 1 ) ).xy;
+      #endif
+      #ifdef USE_EMISSIVEMAP
+        vEmissiveMapUv = ( emissiveMapTransform * vec3( wUv, 1 ) ).xy;
+      #endif`
+    );
+  };
+  // The density is baked into the source, so variants must not share a program.
+  mat.customProgramCacheKey = () => `worldUV${d}`;
+  return mat;
+}
+
+// Densities read off the source images: cobbles ≈ 35 cm, wood planks ≈ 18 cm,
+// shingle courses ≈ 12 cm, bark ≈ 1.5 m per tile.
+worldUV(M.stonePaver, 0.29);
+worldUV(M.stoneLantern, 0.55);
+worldUV(M.templeWood, 0.42);
+worldUV(M.templeWoodLight, 0.42);
+worldUV(M.toriiRed, 0.34);
+worldUV(M.bridgeRed, 0.4);
+worldUV(M.shingleDark, 0.3);
+worldUV(M.shingleRed, 0.3);
+worldUV(M.zenGravel, 0.55);
+worldUV(M.treeTrunk, 0.65);
+// One node ring per tile, so the culms joint roughly every 40 cm.
+worldUV(M.bambooGreen, 2.4);
 
 // ---------------------------------------------------------------------------
 // Groups & Instancing Kit
@@ -280,13 +787,47 @@ function flushKits() {
 // ---------------------------------------------------------------------------
 // Shared Geometries
 // ---------------------------------------------------------------------------
+// A canopy built on a plain sphere reads as a balloon however well it is
+// textured. Pushing the shell out along a handful of random lobes gives each
+// crown a lopsided silhouette while keeping it a single cheap instance.
+function makeCanopyGeometry(seed) {
+  const geo = new THREE.SphereGeometry(0.5, 20, 14);
+  const pos = geo.attributes.position;
+  const rnd = mulberry32(seed);
+  const lobes = [];
+  for (let i = 0; i < 8; i++) {
+    lobes.push({
+      dir: new THREE.Vector3(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1).normalize(),
+      amp: 0.1 + rnd() * 0.2,
+    });
+  }
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const n = v.clone().normalize();
+    let d = 0.9;
+    for (const l of lobes) {
+      const k = Math.max(0, n.dot(l.dir));
+      d += l.amp * k * k;
+    }
+    v.multiplyScalar(d);
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
 const G = {
   box: new THREE.BoxGeometry(1, 1, 1),
   cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 16),
   cyl8: new THREE.CylinderGeometry(0.5, 0.5, 1, 8),
   sphere: new THREE.SphereGeometry(0.5, 16, 12),
   cone: new THREE.ConeGeometry(0.5, 1, 16),
+  canopy: [makeCanopyGeometry(101), makeCanopyGeometry(202), makeCanopyGeometry(303)],
 };
+let canopyPick = 0;
+const nextCanopy = () => G.canopy[canopyPick++ % G.canopy.length];
 
 function box(mat, x, y, z, sx, sy, sz, ry = 0, rx = 0, rz = 0, prop = false) {
   emit(G.box, mat, x, y, z, sx, sy, sz, rx, ry, rz, prop);
@@ -341,18 +882,25 @@ function buildTorii(x, y, z, scale = 1, ry = 0) {
 // ---------------------------------------------------------------------------
 // 2. Stone Lantern (Kasuga Tōrō 石灯籠)
 // ---------------------------------------------------------------------------
+const stoneLanternSpots = [];
 function buildStoneLantern(x, y, z, scale = 1, ry = 0) {
   const S = scale;
+  stoneLanternSpots.push({ x, y, z, scale: S, ry });
   // Stepped stone base (Kiso)
   box(M.stoneLantern, x, y + 0.12 * S, z, 1.0 * S, 0.24 * S, 1.0 * S, ry, 0, 0, true);
   box(M.stoneLantern, x, y + 0.32 * S, z, 0.8 * S, 0.20 * S, 0.8 * S, ry, 0, 0, true);
   // Column shaft (Sao)
   cylinder(M.stoneLantern, x, y + 1.05 * S, z, 0.24 * S, 1.3 * S, ry, 0, 0, true);
-  // Middle platform (Chūdai)
+  // Middle platform (Chūdai) — candle sits on this
   box(M.stoneLantern, x, y + 1.8 * S, z, 0.95 * S, 0.22 * S, 0.95 * S, ry, 0, 0, true);
-  // Light chamber (Hibukuro) with glowing window
-  box(M.stoneLantern, x, y + 2.25 * S, z, 0.7 * S, 0.65 * S, 0.7 * S, ry, 0, 0, true);
-  box(M.lanternGlow, x, y + 2.25 * S, z, 0.52 * S, 0.48 * S, 0.52 * S, ry, 0, 0, false);
+  // Light chamber (Hibukuro): corner posts + lintel, four faces open so the candle shows
+  const hw = 0.30 * S;
+  for (const dx of [-hw, hw]) {
+    for (const dz of [-hw, hw]) {
+      box(M.stoneLantern, x + dx, y + 2.25 * S, z + dz, 0.13 * S, 0.65 * S, 0.13 * S, ry, 0, 0, true);
+    }
+  }
+  box(M.stoneLantern, x, y + 2.54 * S, z, 0.74 * S, 0.08 * S, 0.74 * S, ry, 0, 0, true);
   // Roof cap (Kasa) with flared corners
   box(M.stoneLantern, x, y + 2.7 * S, z, 1.2 * S, 0.28 * S, 1.2 * S, ry, 0, 0, true);
   box(M.stoneLantern, x, y + 2.9 * S, z, 0.8 * S, 0.16 * S, 0.8 * S, ry, 0, 0, true);
@@ -404,44 +952,134 @@ function buildChozuya(x, y, z) {
 }
 
 // ---------------------------------------------------------------------------
+// Sacred axis layout (sando · pond · taiko-bashi)
+// Shared by builders and groundFn so the walkable surface cannot drift.
+// ---------------------------------------------------------------------------
+const SANDO_X = 0;
+const SANDO_W = 5.2;
+const SANDO_Y = 0.12;
+const SANDO_H = 0.22;
+const SANDO_TOP = SANDO_Y + SANDO_H / 2;
+const SANDO_AXIS_Z0 = -30;
+const SANDO_AXIS_Z1 = 110;
+
+const POND_Z = 32;
+const POND_W = 36;
+const POND_D = 26;
+const POND_WATER_Y = 0.48;
+const POND_Z0 = POND_Z - POND_D / 2;
+const POND_Z1 = POND_Z + POND_D / 2;
+
+const BRIDGE_X = 0;
+const BRIDGE_Y = 0.45;
+const BRIDGE_Z = 32;
+const BRIDGE_SPAN = 16;
+const BRIDGE_W = 3.8;
+const BRIDGE_ARCH_H = 2.4;
+const BRIDGE_Z0 = BRIDGE_Z - BRIDGE_SPAN / 2;
+const BRIDGE_Z1 = BRIDGE_Z + BRIDGE_SPAN / 2;
+const DECK_TOP = BRIDGE_Y + 0.09;
+
+const LANDING_W = 5.6;
+const LANDING_D = 2.7;
+const STEP_D = 0.68;
+const STEP0_TOP = SANDO_TOP + (DECK_TOP - SANDO_TOP) * 0.5;
+const STEP1_TOP = DECK_TOP;
+
+// South bank (parking side) then north bank (haiden), mirrored on POND_Z.
+const SOUTH_STEP0_Z = 16.58;
+const SOUTH_STEP1_Z = 17.26;
+const SOUTH_LAND_Z = 18.85;
+const SOUTH_WOOD_Z0 = 19.85;
+const SANDO_SOUTH_Z1 = SOUTH_STEP0_Z - STEP_D / 2;
+
+const NORTH_WOOD_Z1 = 44.15;
+const NORTH_LAND_Z = 45.15;
+const NORTH_STEP1_Z = 46.74;
+const NORTH_STEP0_Z = 47.42;
+const SANDO_NORTH_Z0 = NORTH_STEP0_Z + STEP_D / 2;
+
+// Cosine drum: flat derivative at the arch ends, so the timber approaches meet it.
+function crossingDeckY(z) {
+  if (z < BRIDGE_Z0 || z > BRIDGE_Z1) return BRIDGE_Y;
+  const t = ((z - BRIDGE_Z0) / BRIDGE_SPAN - 0.5) * 2;
+  return BRIDGE_Y + BRIDGE_ARCH_H * 0.5 * (1 + Math.cos(Math.PI * t));
+}
+function crossingPitch(z) {
+  if (z <= BRIDGE_Z0 || z >= BRIDGE_Z1) return 0;
+  const t = ((z - BRIDGE_Z0) / BRIDGE_SPAN - 0.5) * 2;
+  const dydz = -(BRIDGE_ARCH_H * Math.PI / BRIDGE_SPAN) * Math.sin(Math.PI * t);
+  return Math.atan(dydz);
+}
+function crossingTop(z) {
+  return crossingDeckY(z) + 0.09;
+}
+
+// ---------------------------------------------------------------------------
 // 4. Arched Red Wooden Bridge (Taiko-bashi 太鼓橋)
 // ---------------------------------------------------------------------------
+function bridgeRails(x, py, pz, width, plankD, pitch, withGiboshi) {
+  const leftX = x - width / 2 + 0.12;
+  const rightX = x + width / 2 - 0.12;
+  box(M.bridgeRed, leftX, py + 0.5, pz, 0.12, 0.85, 0.12, 0, pitch, 0, true);
+  box(M.bridgeRed, rightX, py + 0.5, pz, 0.12, 0.85, 0.12, 0, pitch, 0, true);
+  box(M.bridgeRed, leftX, py + 0.95, pz, 0.16, 0.12, plankD, 0, pitch, 0, true);
+  box(M.bridgeRed, rightX, py + 0.95, pz, 0.16, 0.12, plankD, 0, pitch, 0, true);
+  if (withGiboshi) {
+    cylinder(M.goldGiboshi, leftX, py + 1.12, pz, 0.14, 0.22, 0, 0, 0, true);
+    cylinder(M.goldGiboshi, rightX, py + 1.12, pz, 0.14, 0.22, 0, 0, 0, true);
+  }
+}
+
+function buildStonePier(x, landZ, waterDir) {
+  box(M.stoneLantern, x, 0.14, landZ, LANDING_W + 0.55, 0.62, LANDING_D + 0.28, 0, 0, 0, false);
+  box(M.stonePaver, x, BRIDGE_Y, landZ, LANDING_W, 0.18, LANDING_D, 0, 0, 0, false);
+
+  const cheekX = LANDING_W / 2 - 0.14;
+  const cheekY = DECK_TOP + 0.26;
+  box(M.stoneLantern, x - cheekX, cheekY, landZ, 0.28, 0.52, LANDING_D - 0.2, 0, 0, 0, true);
+  box(M.stoneLantern, x + cheekX, cheekY, landZ, 0.28, 0.52, LANDING_D - 0.2, 0, 0, 0, true);
+
+  // Short returns on the outer shoulders only — keep the sando width clear.
+  const mouth = SANDO_W / 2 + 0.15;
+  const capW = Math.max(0.2, cheekX - mouth);
+  const capZ = landZ + waterDir * (LANDING_D / 2 - 0.12);
+  const capY = DECK_TOP + 0.22;
+  box(M.stoneLantern, x - (mouth + capW / 2), capY, capZ, capW, 0.44, 0.24, 0, 0, 0, true);
+  box(M.stoneLantern, x + (mouth + capW / 2), capY, capZ, capW, 0.44, 0.24, 0, 0, 0, true);
+  cylinder(M.goldGiboshi, x - cheekX, DECK_TOP + 0.58, capZ, 0.11, 0.18, 0, 0, 0, true);
+  cylinder(M.goldGiboshi, x + cheekX, DECK_TOP + 0.58, capZ, 0.11, 0.18, 0, 0, 0, true);
+}
+
+function buildApproachSteps(x, step0Z, step1Z) {
+  box(M.stonePaver, x, STEP0_TOP - 0.08, step0Z, SANDO_W, 0.16, STEP_D, 0, 0, 0, false);
+  box(M.stonePaver, x, STEP1_TOP - 0.08, step1Z, SANDO_W + 0.14, 0.16, STEP_D, 0, 0, 0, false);
+}
+
 function buildTaikoBashi(x, y, z, span = 14, width = 3.6) {
-  const steps = 18;
-  const halfSpan = span / 2;
-  const archHeight = 2.4;
+  const woodZ0 = SOUTH_WOOD_Z0;
+  const woodZ1 = NORTH_WOOD_Z1;
+  const woodLen = woodZ1 - woodZ0;
+  const n = 28;
+  const plankD = woodLen / n + 0.08;
 
-  for (let i = 0; i <= steps; i++) {
-    const u = i / steps;
-    const t = (u - 0.5) * 2; // -1 to 1
-    const pz = z - halfSpan + u * span;
-    const py = y + (1 - t * t) * archHeight;
-    const pitch = -t * 0.34;
-
-    // Plank deck (walkable — not a prop wall)
-    box(M.templeWood, x, py, pz, width, 0.18, span / steps + 0.08, 0, pitch, 0, false);
-
-    // Left and right red lacquer railings & balustrades
-    const leftX = x - width / 2 + 0.12;
-    const rightX = x + width / 2 - 0.12;
-
-    box(M.bridgeRed, leftX, py + 0.5, pz, 0.12, 0.85, 0.12, 0, pitch, 0, true);
-    box(M.bridgeRed, rightX, py + 0.5, pz, 0.12, 0.85, 0.12, 0, pitch, 0, true);
-
-    // Handrails
-    box(M.bridgeRed, leftX, py + 0.95, pz, 0.16, 0.12, span / steps + 0.1, 0, pitch, 0, true);
-    box(M.bridgeRed, rightX, py + 0.95, pz, 0.16, 0.12, span / steps + 0.1, 0, pitch, 0, true);
-
-    // Golden giboshi finials on posts
-    if (i % 4 === 0) {
-      cylinder(M.goldGiboshi, leftX, py + 1.12, pz, 0.14, 0.22, 0, 0, 0, true);
-      cylinder(M.goldGiboshi, rightX, py + 1.12, pz, 0.14, 0.22, 0, 0, 0, true);
+  const railZ0 = SOUTH_LAND_Z + LANDING_D / 2 + 0.25;
+  const railZ1 = NORTH_LAND_Z - LANDING_D / 2 - 0.25;
+  for (let i = 0; i <= n; i++) {
+    const pz = woodZ0 + (i / n) * woodLen;
+    const py = crossingDeckY(pz);
+    const pitch = crossingPitch(pz);
+    box(M.templeWood, x, py, pz, width, 0.18, plankD, 0, pitch, 0, false);
+    if (pz > railZ0 && pz < railZ1) {
+      bridgeRails(x, py, pz, width, plankD, pitch, i % 4 === 0);
     }
   }
 
-  // Stone abutments at bridge ends
-  box(M.stonePaver, x, y + 0.2, z - halfSpan - 0.8, width + 0.8, 0.6, 1.8, 0, 0, 0, true);
-  box(M.stonePaver, x, y + 0.2, z + halfSpan + 0.8, width + 0.8, 0.6, 1.8, 0, 0, 0, true);
+  // Stone piers sit in the pond banks and receive the timber deck.
+  buildStonePier(x, SOUTH_LAND_Z, +1);
+  buildStonePier(x, NORTH_LAND_Z, -1);
+  buildApproachSteps(x, SOUTH_STEP0_Z, SOUTH_STEP1_Z);
+  buildApproachSteps(x, NORTH_STEP0_Z, NORTH_STEP1_Z);
 }
 
 // ---------------------------------------------------------------------------
@@ -517,6 +1155,45 @@ function buildMainShrine(x, y, z) {
   // Wooden coin offering box (Saisen-bako 賽銭箱)
   box(M.templeWoodLight, x, y + 1.9, z - D / 2 + 0.8, 2.6, 0.9, 1.4, 0, 0, 0, true);
   box(M.goldGiboshi, x, y + 2.38, z - D / 2 + 0.8, 2.4, 0.04, 1.2, 0, 0, 0, true);
+
+  // Hanging Japanese Chōchin lanterns under the Haiden front eaves
+  for (let i = -3.5; i <= 3.5; i += 1.0) {
+    const cx = x + i * 1.8;
+    const cy = y + 1.4 + H - 0.2;
+    const cz = z - D / 2 - 0.25;
+    cylinder(M.templeWood, cx, cy + 0.35, cz, 0.015, 0.7, 0, 0, 0, true);
+    cylinder(M.chochinRed, cx, cy + 0.18, cz, 0.26, 0.08, 0, 0, 0, true);
+    cylinder(M.chochinPaper, cx, cy - 0.15, cz, 0.28, 0.62, 0, 0, 0, true);
+    cylinder(M.chochinRed, cx, cy - 0.48, cz, 0.26, 0.08, 0, 0, 0, true);
+  }
+
+  // Altar Candlesticks (Shokudai & Warisōsoku) flanking the Saisen-bako offering box
+  for (const ox of [-1.8, -0.9, 0.9, 1.8]) {
+    const cy = y + 1.45;
+    const cz = z - D / 2 + 0.8;
+    // Brass candlestick stand
+    cylinder(M.brassBell, x + ox, cy + 0.15, cz, 0.08, 0.3, 0, 0, 0, true);
+    cylinder(M.goldGiboshi, x + ox, cy + 0.32, cz, 0.14, 0.05, 0, 0, 0, true);
+    // White wax candle
+    cylinder(M.candleWax, x + ox, cy + 0.58, cz, 0.04, 0.48, 0, 0, 0, true);
+    // Candle flame
+    cylinder(M.candleFlame, x + ox, cy + 0.88, cz, 0.025, 0.14, 0, 0, 0, false);
+  }
+
+  // Altar prayer kneeling spot: "S'agenouiller et se relever le jour" / "S'agenouiller et se relever la nuit"
+  furnitureInteractions.push({
+    type: 'kneel',
+    labelDay: "S'agenouiller et se relever le jour",
+    labelNight: "S'agenouiller et se relever la nuit",
+    label: "S'agenouiller devant l'autel",
+    x: x, y: y + 0.15, z: z - D / 2 - 3.4,
+    centerX: x, centerZ: z - D / 2 - 3.4,
+    approachY: y + 0.15,
+    yaw: 0, // facing north towards the altar
+    halfWidth: 3.0, halfDepth: 1.8,
+    triggerDistance: 2.2,
+    occupied: false,
+  });
 
   // Veranda benches for player to sit & meditate
   furnitureInteractions.push({
@@ -676,7 +1353,7 @@ function buildSakuraTree(x, y, z, scale = 1, isWhite = false) {
   ];
 
   for (const c of clusters) {
-    emit(G.sphere, mat, x + c.dx * S, y + c.dy * S, z + c.dz * S, c.sx * S, c.sy * S, c.sz * S, 0, 0, 0, false);
+    emit(nextCanopy(), mat, x + c.dx * S, y + c.dy * S, z + c.dz * S, c.sx * S, c.sy * S, c.sz * S, 0, 0, 0, false);
   }
 }
 
@@ -694,7 +1371,7 @@ function buildJapanesePine(x, y, z, scale = 1) {
     { dx: 0.2, dy: 5.2, dz: 0.2, sx: 2.8, sy: 0.8, sz: 2.6 },
   ];
   for (const p of pads) {
-    emit(G.sphere, M.pineFoliage, x + p.dx * S, y + p.dy * S, z + p.dz * S, p.sx * S, p.sy * S, p.sz * S, 0, 0, 0, false);
+    emit(nextCanopy(), M.pineFoliage, x + p.dx * S, y + p.dy * S, z + p.dz * S, p.sx * S, p.sy * S, p.sz * S, 0, 0, 0, false);
   }
 }
 
@@ -707,7 +1384,7 @@ function buildMomijiMaple(x, y, z, scale = 1) {
     { dx: 1.3, dy: 3.4, dz: -0.9, sx: 2.8, sy: 1.8, sz: 2.8 },
   ];
   for (const c of clusters) {
-    emit(G.sphere, M.momijiRed, x + c.dx * S, y + c.dy * S, z + c.dz * S, c.sx * S, c.sy * S, c.sz * S, 0, 0, 0, false);
+    emit(nextCanopy(), M.momijiRed, x + c.dx * S, y + c.dy * S, z + c.dz * S, c.sx * S, c.sy * S, c.sz * S, 0, 0, 0, false);
   }
 }
 
@@ -721,7 +1398,7 @@ function buildBambooGrove(centerX, centerY, centerZ, count = 25, radius = 6) {
     const tilt = (Math.random() - 0.5) * 0.06;
 
     cylinder(M.bambooGreen, bx, centerY + bh / 2, bz, 0.08, bh, 0, tilt, tilt, true);
-    emit(G.sphere, M.bambooGreen, bx, centerY + bh - 0.4, bz, 1.4, 2.2, 1.4, 0, 0, 0, false);
+    emit(nextCanopy(), M.bambooLeaf, bx, centerY + bh - 0.4, bz, 1.4, 2.2, 1.4, 0, 0, 0, false);
   }
 }
 
@@ -788,19 +1465,33 @@ function tickSakuraPetals(dt) {
 // 11. Sacred Koi Pond (神池)
 // ---------------------------------------------------------------------------
 const pondMesh = new THREE.Mesh(
-  new THREE.PlaneGeometry(36, 26, 32, 32),
+  new THREE.PlaneGeometry(POND_W, POND_D, 32, 32),
   M.water
 );
 pondMesh.rotation.x = -Math.PI / 2;
-pondMesh.position.set(0, 0.48, 32);
+pondMesh.position.set(0, POND_WATER_Y, POND_Z);
 scenery.add(pondMesh);
 
-// Pond bed & stone borders
-box(M.stoneLantern, 0, -0.6, 32, 38, 1.2, 28, 0, 0, 0, true);
-box(M.stonePaver, 0, 0.42, 32 - 13.5, 38, 0.4, 1.8, 0, 0, 0, true);
-box(M.stonePaver, 0, 0.42, 32 + 13.5, 38, 0.4, 1.8, 0, 0, 0, true);
-box(M.stonePaver, -18.5, 0.42, 32, 1.8, 0.4, 28, 0, 0, 0, true);
-box(M.stonePaver, 18.5, 0.42, 32, 1.8, 0.4, 28, 0, 0, 0, true);
+// Pond bed is scenery only. As a kit prop it is a 38×28 m wall: resolveWalls
+// has no "standing above" test, so anyone on the pier/bridge is shoved back.
+{
+  const pondBed = new THREE.Mesh(new THREE.BoxGeometry(38, 1.2, 28), M.pondBed);
+  pondBed.position.set(0, -0.6, POND_Z);
+  pondBed.receiveShadow = true;
+  scenery.add(pondBed);
+}
+{
+  const rimGap = LANDING_W / 2 + 0.1;
+  const rimHalf = 19;
+  const segW = rimHalf - rimGap;
+  const segX = rimGap + segW / 2;
+  box(M.stonePaver, -segX, 0.42, POND_Z0 - 0.5, segW, 0.4, 1.8, 0, 0, 0, true);
+  box(M.stonePaver,  segX, 0.42, POND_Z0 - 0.5, segW, 0.4, 1.8, 0, 0, 0, true);
+  box(M.stonePaver, -segX, 0.42, POND_Z1 + 0.5, segW, 0.4, 1.8, 0, 0, 0, true);
+  box(M.stonePaver,  segX, 0.42, POND_Z1 + 0.5, segW, 0.4, 1.8, 0, 0, 0, true);
+}
+box(M.stonePaver, -18.5, 0.42, POND_Z, 1.8, 0.4, 28, 0, 0, 0, true);
+box(M.stonePaver, 18.5, 0.42, POND_Z, 1.8, 0.4, 28, 0, 0, 0, true);
 
 // Stepping stones and water lily pads
 const lilyMat = new THREE.MeshStandardMaterial({ color: 0x366838, roughness: 0.6 });
@@ -819,31 +1510,41 @@ for (let l = 0; l < 24; l++) {
 // 12. Main Ground, Sando Path & Parking Lot
 // ---------------------------------------------------------------------------
 // Main garden lawn terrain
+// The lawn is one 280×320 m plane: it needs its own tiling (≈2.8 m per tile),
+// far denser than the moss caps that share M.mossGrass' texture.
+const lawnGrass = grassDiff.clone();
+lawnGrass.repeat.set(100, 114);
+lawnGrass.needsUpdate = true;
 const mainGround = new THREE.Mesh(
   new THREE.PlaneGeometry(280, 320),
-  M.mossGrass
+  new THREE.MeshStandardMaterial({
+    color: 0x5f7d46, roughness: 0.94, metalness: 0.02, map: lawnGrass,
+  })
 );
 mainGround.rotation.x = -Math.PI / 2;
 mainGround.position.set(0, 0, 50);
 mainGround.receiveShadow = true;
 scenery.add(mainGround);
 
-// Sando Slate Approach Path (from Torii to Haiden).
-// Not a prop: a 140 m slab is a floor, and groundFn stands the player on SANDO_TOP.
-const SANDO_X = 0, SANDO_Z = 40, SANDO_W = 5.2, SANDO_D = 140;
-const SANDO_Y = 0.12, SANDO_H = 0.22;
-const SANDO_TOP = SANDO_Y + SANDO_H / 2;
-box(M.stonePaver, SANDO_X, SANDO_Y, SANDO_Z, SANDO_W, SANDO_H, SANDO_D, 0, 0, 0, false);
-// Flanking dark stone borders
-box(M.stoneLantern, -2.9, 0.14, 40, 0.5, 0.26, 140, 0, 0, 0, true);
-box(M.stoneLantern, 2.9, 0.14, 40, 0.5, 0.26, 140, 0, 0, 0, true);
+// Sando split around the pond: the 140 m slab used to run underwater.
+function sandoRun(z0, z1) {
+  const z = (z0 + z1) / 2;
+  const d = z1 - z0;
+  box(M.stonePaver, SANDO_X, SANDO_Y, z, SANDO_W, SANDO_H, d, 0, 0, 0, false);
+  box(M.stoneLantern, -2.9, 0.14, z, 0.5, 0.26, d, 0, 0, 0, true);
+  box(M.stoneLantern, 2.9, 0.14, z, 0.5, 0.26, d, 0, 0, 0, true);
+}
+sandoRun(SANDO_AXIS_Z0, SANDO_SOUTH_Z1);
+sandoRun(SANDO_NORTH_Z0, SANDO_AXIS_Z1);
 
 // Double row of stone lanterns along the Sando
 for (let z = -20; z <= 90; z += 9) {
-  if (z > 24 && z < 42) continue; // bridge zone
+  if (z > 16 && z < 50) continue; // pond + bridge crossing
   buildStoneLantern(-3.8, 0.15, z, 1.0, 0);
   buildStoneLantern(3.8, 0.15, z, 1.0, Math.PI);
 }
+buildStoneLantern(-3.8, 0.15, 48.2, 1.0, 0);
+buildStoneLantern(3.8, 0.15, 48.2, 1.0, Math.PI);
 
 // Parking lot (Z: -100 to -24). Perpendicular stalls: dividers run along Z
 // (stall depth), 4.2 m apart on X. buildCar is +X-forward, so yaw π/2 puts
@@ -880,7 +1581,7 @@ buildTorii(0, 0.1, -22, 1.15, 0);
 buildChozuya(-9.5, 0.15, 12);
 
 // Taiko-bashi Arched Red Bridge across pond
-buildTaikoBashi(0, 0.45, 32, 16, 3.8);
+buildTaikoBashi(BRIDGE_X, BRIDGE_Y, BRIDGE_Z, BRIDGE_SPAN, BRIDGE_W);
 
 // Main Haiden Shrine Hall
 buildMainShrine(0, 0.15, 95);
@@ -1098,7 +1799,617 @@ const returnCarInteraction = {
 };
 
 // ---------------------------------------------------------------------------
-// 15. Flush Kits & Collision World
+// 15. Night Mode Scene Architecture (Lights, Candles, Sky Lanterns, Fireflies, Moon & Stars)
+// ---------------------------------------------------------------------------
+const nightGroup = new THREE.Group();
+scene.add(nightGroup);
+nightGroup.visible = false;
+
+function makeGlowTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 2, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  grad.addColorStop(0.35, 'rgba(255, 220, 140, 0.75)');
+  grad.addColorStop(0.70, 'rgba(255, 140, 30, 0.25)');
+  grad.addColorStop(1, 'rgba(255, 80, 10, 0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const glowTex = makeGlowTexture();
+
+function makeFireflyTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 1, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  grad.addColorStop(0.3, 'rgba(230, 255, 100, 0.9)');
+  grad.addColorStop(0.65, 'rgba(180, 255, 50, 0.35)');
+  grad.addColorStop(1, 'rgba(120, 255, 20, 0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const fireflyTex = makeFireflyTexture();
+
+// Starfield & Moon
+const STAR_COUNT = 750;
+const starGeo = new THREE.PlaneGeometry(0.55, 0.55);
+const starMat = new THREE.MeshBasicMaterial({
+  map: glowTex,
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.85,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+const starMesh = new THREE.InstancedMesh(starGeo, starMat, STAR_COUNT);
+const starData = [];
+{
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const radius = 180 + Math.random() * 220;
+    const phi = Math.random() * Math.PI * 0.44;
+    const theta = Math.random() * Math.PI * 2;
+    const x = radius * Math.sin(phi) * Math.cos(theta);
+    const y = radius * Math.cos(phi) + 20;
+    const z = radius * Math.sin(phi) * Math.sin(theta) + 40;
+    const baseScale = 0.6 + Math.random() * 1.4;
+    const twinkleSpeed = 1.2 + Math.random() * 3.5;
+    const phase = Math.random() * Math.PI * 2;
+    starData.push({ x, y, z, baseScale, twinkleSpeed, phase });
+
+    _p.set(x, y, z);
+    _s.set(baseScale, baseScale, baseScale);
+    _m.compose(_p, _q, _s);
+    starMesh.setMatrixAt(i, _m);
+  }
+  starMesh.instanceMatrix.needsUpdate = true;
+  nightGroup.add(starMesh);
+}
+
+// Full Glowing Moon
+{
+  const moonMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(7.5, 24, 24),
+    new THREE.MeshBasicMaterial({ color: 0xf4f9ff })
+  );
+  moonMesh.position.set(-65, 130, 240);
+  nightGroup.add(moonMesh);
+
+  const moonHalo = new THREE.Mesh(
+    new THREE.PlaneGeometry(42, 42),
+    new THREE.MeshBasicMaterial({
+      map: glowTex,
+      color: 0xb5d8ff,
+      transparent: true,
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+  moonHalo.position.copy(moonMesh.position);
+  moonHalo.position.z -= 1.0;
+  nightGroup.add(moonHalo);
+}
+
+// Strategic light sources throughout the Shrine Precinct.
+//
+// These are declared as *emitters*, not as real lights. The precinct wants ~31
+// of them (22 lantern candles + 9 landmarks), but WebGL shades every fragment
+// against every visible light in the scene: past roughly 16 the standard
+// material shaders spill registers and the frame rate collapses — measured at
+// 13 fps with all of them lit, against 60 with eight. So a fixed-size pool of
+// real PointLights is re-targeted every frame onto the emitters that matter
+// from where the camera stands. Keeping the pool size constant is what avoids
+// a shader recompile storm: three.js rebuilds every program whenever the
+// number of visible lights changes.
+const NIGHT_POOL_SIZE = 8;
+const nightEmitters = [];
+function addNightLight(x, y, z, color, intensity, distance, decay = 1.8) {
+  const e = {
+    pos: new THREE.Vector3(x, y, z),
+    color: new THREE.Color(color),
+    base: intensity,
+    intensity,
+    distance,
+    decay,
+    key: 0,
+    active: false,
+  };
+  nightEmitters.push(e);
+  return e;
+}
+
+const nightPool = [];
+for (let i = 0; i < NIGHT_POOL_SIZE; i++) {
+  const light = new THREE.PointLight(0xffffff, 0, 10, 1.8);
+  nightGroup.add(light);
+  nightPool.push({ light, emitter: null, fade: 0 });
+}
+
+const _nightCam = new THREE.Vector3();
+let nightSelectTimer = 0;
+function updateNightLights(dt) {
+  if (!nightGroup.visible) return;
+  camera.getWorldPosition(_nightCam);
+
+  nightSelectTimer -= dt;
+  if (nightSelectTimer <= 0) {
+    nightSelectTimer = 0.1;
+    // Rank by signed distance to each source's sphere of influence, so a candle
+    // you are standing next to outranks the pagoda floodlight until you get
+    // near the pagoda. Sources beyond their own reach light nothing visible;
+    // their additive glow sprites keep carrying them at a distance.
+    for (const e of nightEmitters) e.key = e.pos.distanceTo(_nightCam) - e.distance * 1.15;
+    nightEmitters.sort((a, b) => a.key - b.key);
+    for (let i = 0; i < nightEmitters.length; i++) nightEmitters[i].active = i < NIGHT_POOL_SIZE;
+
+    // Emitters that stay in range keep the slot they already hold, so only the
+    // genuinely new ones have to fade in.
+    const held = new Set();
+    for (const slot of nightPool) {
+      if (slot.emitter && slot.emitter.active) held.add(slot.emitter);
+      else slot.emitter = null;
+    }
+    let next = 0;
+    for (const slot of nightPool) {
+      if (slot.emitter) continue;
+      while (next < nightEmitters.length
+        && (!nightEmitters[next].active || held.has(nightEmitters[next]))) next++;
+      if (next >= nightEmitters.length) break;
+      slot.emitter = nightEmitters[next];
+      slot.fade = 0;
+      held.add(nightEmitters[next]);
+      next++;
+    }
+  }
+
+  for (const slot of nightPool) {
+    if (!slot.emitter) { slot.light.intensity = 0; continue; }
+    slot.fade = Math.min(1, slot.fade + dt * 3.5);
+    slot.light.position.copy(slot.emitter.pos);
+    slot.light.color.copy(slot.emitter.color);
+    slot.light.distance = slot.emitter.distance;
+    slot.light.decay = slot.emitter.decay;
+    slot.light.intensity = slot.emitter.intensity * slot.fade;
+  }
+}
+
+// Stone lanterns: a candle in every hibukuro, lighting the sando warm and low.
+const sandoCandleLights = [];
+{
+  const n = stoneLanternSpots.length;
+  const discGeo = new THREE.PlaneGeometry(2.6, 2.6).rotateX(-Math.PI / 2);
+  const discMat = new THREE.MeshBasicMaterial({
+    map: glowTex,
+    color: 0xb83a0e,
+    transparent: true,
+    opacity: 0.4,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const lanternDiscMesh = new THREE.InstancedMesh(discGeo, discMat, n);
+
+  const dishMesh = new THREE.InstancedMesh(G.cyl, M.brassBell, n);
+  const waxMesh = new THREE.InstancedMesh(G.cyl, M.candleWax, n);
+  const flameGeo = new THREE.ConeGeometry(0.03, 0.14, 8);
+  const flameMesh = new THREE.InstancedMesh(flameGeo, M.candleFlame, n);
+
+  const haloGeo = new THREE.PlaneGeometry(0.62, 0.78);
+  const haloMat = new THREE.MeshBasicMaterial({
+    map: glowTex,
+    color: 0xc44812,
+    transparent: true,
+    opacity: 0.7,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const haloMesh = new THREE.InstancedMesh(haloGeo, haloMat, n);
+
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3();
+  const _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+  const _qy = new THREE.Quaternion();
+  stoneLanternSpots.forEach((sp, i) => {
+    const S = sp.scale;
+    const r = 3.1 * S;
+    _p.set(sp.x, sp.y + 0.04, sp.z);
+    _q.identity();
+    _s.set(r, 1, r);
+    _m.compose(_p, _q, _s);
+    lanternDiscMesh.setMatrixAt(i, _m);
+
+    // Brass dish on the chūdai
+    _p.set(sp.x, sp.y + 1.96 * S, sp.z);
+    _s.set(0.17 * S, 0.035 * S, 0.17 * S);
+    _m.compose(_p, _q, _s);
+    dishMesh.setMatrixAt(i, _m);
+
+    // White wax
+    _p.set(sp.x, sp.y + 2.12 * S, sp.z);
+    _s.set(0.068 * S, 0.26 * S, 0.068 * S);
+    _m.compose(_p, _q, _s);
+    waxMesh.setMatrixAt(i, _m);
+
+    // Flame
+    _p.set(sp.x, sp.y + 2.30 * S, sp.z);
+    _s.set(S, S, S);
+    _m.compose(_p, _q, _s);
+    flameMesh.setMatrixAt(i, _m);
+
+    // Halo facing the sando so the flame reads from the path
+    _qy.setFromAxisAngle(_p.set(0, 1, 0), sp.x > 0 ? -Math.PI / 2 : Math.PI / 2);
+    _p.set(sp.x, sp.y + 2.32 * S, sp.z);
+    _s.set(S, S, S);
+    _m.compose(_p, _qy, _s);
+    haloMesh.setMatrixAt(i, _m);
+
+    const toward = sp.x > 0 ? -0.3 : 0.3;
+    const emitter = addNightLight(
+      sp.x + toward, sp.y + 2.28 * S, sp.z,
+      0xb83a0e, 6.4, 9.2, 1.9
+    );
+    sandoCandleLights.push({
+      emitter,
+      base: 6.4,
+      phase: i * 0.73,
+      speed: 5.4 + (i % 5) * 0.85,
+    });
+  });
+  lanternDiscMesh.instanceMatrix.needsUpdate = true;
+  dishMesh.instanceMatrix.needsUpdate = true;
+  waxMesh.instanceMatrix.needsUpdate = true;
+  flameMesh.instanceMatrix.needsUpdate = true;
+  haloMesh.instanceMatrix.needsUpdate = true;
+  nightGroup.add(lanternDiscMesh, dishMesh, waxMesh, flameMesh, haloMesh);
+}
+
+// Altar & Saisen-bako warm radiance
+addNightLight(0, 2.6, 88.5, 0xff8824, 24, 15);
+addNightLight(0, 3.8, 92.0, 0xff9430, 20, 16);
+
+// Chōzuya Water Pavilion
+addNightLight(-9.5, 1.8, 12, 0xff9a40, 16, 12);
+
+// Taiko-bashi Bridge Piers & Waters
+addNightLight(0, 3.4, 24, 0xff7c20, 18, 14);
+addNightLight(0, 3.4, 40, 0xff7c20, 18, 14);
+
+// Five-Story Pagoda
+addNightLight(-26, 2.8, 82, 0xff8c2c, 22, 18);
+
+// Zen Rock Garden
+addNightLight(28, 2.2, 87.8, 0xff9a38, 14, 12);
+
+// Grand Torii Gate Dramatic Uplights
+addNightLight(-3.6, 0.4, -22, 0xff3814, 28, 18);
+addNightLight(3.6, 0.4, -22, 0xff3814, 28, 18);
+
+// ---------------------------------------------------------------------------
+// Floating Sky Lanterns (Tōrō Nagashi / Bougies dans des petits cartons qui s'envolent)
+// ---------------------------------------------------------------------------
+const SKY_LANTERN_COUNT = 85;
+const skyBoxGeo = new THREE.BoxGeometry(0.44, 0.62, 0.44);
+const skyBoxMesh = new THREE.InstancedMesh(skyBoxGeo, M.skyLanternPaper, SKY_LANTERN_COUNT);
+
+const skyFlameGeo = new THREE.SphereGeometry(0.12, 8, 8);
+const skyFlameMesh = new THREE.InstancedMesh(skyFlameGeo, M.candleFlame, SKY_LANTERN_COUNT);
+
+const skyHaloGeo = new THREE.PlaneGeometry(1.6, 1.6);
+const skyHaloMat = new THREE.MeshBasicMaterial({
+  map: glowTex,
+  color: 0xff9922,
+  transparent: true,
+  opacity: 0.55,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+const skyHaloMesh = new THREE.InstancedMesh(skyHaloGeo, skyHaloMat, SKY_LANTERN_COUNT);
+
+const skyLanternData = [];
+{
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3();
+  for (let i = 0; i < SKY_LANTERN_COUNT; i++) {
+    const x = (Math.random() - 0.5) * 140;
+    const y = 1.0 + Math.random() * 56;
+    const z = (Math.random() - 0.5) * 170 + 40;
+    const speedY = 0.5 + Math.random() * 0.7;
+    const speedX = 0.15 + (Math.random() - 0.5) * 0.4;
+    const speedZ = 0.12 + (Math.random() - 0.5) * 0.35;
+    const swayAmp = 0.08 + Math.random() * 0.14;
+    const swayFreq = 1.0 + Math.random() * 1.6;
+    const phase = Math.random() * Math.PI * 2;
+    const rotY = Math.random() * Math.PI * 2;
+    const rotSpeed = (Math.random() - 0.5) * 0.35;
+    const scale = 0.85 + Math.random() * 0.45;
+
+    skyLanternData.push({ x, y, z, speedY, speedX, speedZ, swayAmp, swayFreq, phase, rotY, rotSpeed, scale });
+
+    _p.set(x, y, z);
+    _e.set(0, rotY, 0);
+    _q.setFromEuler(_e);
+    _s.set(scale, scale, scale);
+    _m.compose(_p, _q, _s);
+    skyBoxMesh.setMatrixAt(i, _m);
+    skyFlameMesh.setMatrixAt(i, _m);
+    skyHaloMesh.setMatrixAt(i, _m);
+  }
+  skyBoxMesh.instanceMatrix.needsUpdate = true;
+  skyFlameMesh.instanceMatrix.needsUpdate = true;
+  skyHaloMesh.instanceMatrix.needsUpdate = true;
+  nightGroup.add(skyBoxMesh, skyFlameMesh, skyHaloMesh);
+}
+
+function tickSkyLanterns(dt, t) {
+  if (!nightGroup.visible) return;
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3();
+  for (let i = 0; i < SKY_LANTERN_COUNT; i++) {
+    const p = skyLanternData[i];
+    p.y += p.speedY * dt;
+    p.x += (p.speedX + Math.sin(t * p.swayFreq + p.phase) * p.swayAmp) * dt;
+    p.z += (p.speedZ + Math.cos(t * p.swayFreq * 0.8 + p.phase) * p.swayAmp) * dt;
+    p.rotY += p.rotSpeed * dt;
+
+    if (p.y > 60) {
+      p.y = 0.8 + Math.random() * 2.5;
+      p.x = (Math.random() - 0.5) * 120;
+      p.z = (Math.random() - 0.5) * 140 + 40;
+    }
+
+    _p.set(p.x, p.y, p.z);
+    _e.set(Math.sin(t * p.swayFreq + p.phase) * 0.1, p.rotY, Math.cos(t * p.swayFreq + p.phase) * 0.1);
+    _q.setFromEuler(_e);
+    _s.set(p.scale, p.scale, p.scale);
+    _m.compose(_p, _q, _s);
+    skyBoxMesh.setMatrixAt(i, _m);
+    skyFlameMesh.setMatrixAt(i, _m);
+
+    // Halo faces camera roughly
+    _s.set(p.scale * 1.5, p.scale * 1.5, p.scale * 1.5);
+    _m.compose(_p, _q, _s);
+    skyHaloMesh.setMatrixAt(i, _m);
+  }
+  skyBoxMesh.instanceMatrix.needsUpdate = true;
+  skyFlameMesh.instanceMatrix.needsUpdate = true;
+  skyHaloMesh.instanceMatrix.needsUpdate = true;
+}
+
+// ---------------------------------------------------------------------------
+// Floating Water Lanterns on the Sacred Koi Pond (Shōrō Nagashi)
+// ---------------------------------------------------------------------------
+const WATER_LANTERN_COUNT = 18;
+const waterBoxGeo = new THREE.BoxGeometry(0.38, 0.46, 0.38);
+const waterBoxMesh = new THREE.InstancedMesh(waterBoxGeo, M.skyLanternPaper, WATER_LANTERN_COUNT);
+const waterFloatGeo = new THREE.BoxGeometry(0.52, 0.06, 0.52);
+const waterFloatMesh = new THREE.InstancedMesh(waterFloatGeo, M.waterLanternWood, WATER_LANTERN_COUNT);
+
+const waterLanternData = [];
+{
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(1, 1, 1);
+  for (let i = 0; i < WATER_LANTERN_COUNT; i++) {
+    const angle = (i / WATER_LANTERN_COUNT) * Math.PI * 2 + Math.random() * 0.3;
+    const rx = 4.0 + Math.random() * 11.0;
+    const rz = 3.0 + Math.random() * 7.5;
+    const origX = (i % 2 === 0 ? 1 : -1) * rx;
+    const origZ = POND_Z + Math.sin(angle) * rz;
+    const phase = Math.random() * Math.PI * 2;
+    const rotSpeed = (Math.random() - 0.5) * 0.2;
+    waterLanternData.push({ origX, origZ, x: origX, z: origZ, phase, rotSpeed, rotY: Math.random() * Math.PI * 2 });
+
+    _p.set(origX, POND_WATER_Y + 0.26, origZ);
+    _m.compose(_p, _q, _s);
+    waterBoxMesh.setMatrixAt(i, _m);
+
+    _p.set(origX, POND_WATER_Y + 0.03, origZ);
+    _m.compose(_p, _q, _s);
+    waterFloatMesh.setMatrixAt(i, _m);
+  }
+  waterBoxMesh.instanceMatrix.needsUpdate = true;
+  waterFloatMesh.instanceMatrix.needsUpdate = true;
+  nightGroup.add(waterBoxMesh, waterFloatMesh);
+}
+
+function tickWaterLanterns(dt, t) {
+  if (!nightGroup.visible) return;
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(1, 1, 1);
+  for (let i = 0; i < WATER_LANTERN_COUNT; i++) {
+    const p = waterLanternData[i];
+    p.rotY += p.rotSpeed * dt;
+    const curX = p.origX + Math.sin(t * 0.4 + p.phase) * 1.2;
+    const curZ = p.origZ + Math.cos(t * 0.35 + p.phase) * 1.2;
+    const curY = POND_WATER_Y + Math.sin(t * 1.6 + p.phase) * 0.015;
+
+    _p.set(curX, curY + 0.26, curZ);
+    _e.set(Math.sin(t * 1.5 + p.phase) * 0.04, p.rotY, Math.cos(t * 1.5 + p.phase) * 0.04);
+    _q.setFromEuler(_e);
+    _m.compose(_p, _q, _s);
+    waterBoxMesh.setMatrixAt(i, _m);
+
+    _p.set(curX, curY + 0.03, curZ);
+    _m.compose(_p, _q, _s);
+    waterFloatMesh.setMatrixAt(i, _m);
+  }
+  waterBoxMesh.instanceMatrix.needsUpdate = true;
+  waterFloatMesh.instanceMatrix.needsUpdate = true;
+}
+
+// ---------------------------------------------------------------------------
+// Fireflies Particle Swarm (Lucioles / Hotaru 蛍)
+// ---------------------------------------------------------------------------
+const FIREFLY_COUNT = 240;
+const fireflyGeo = new THREE.PlaneGeometry(0.36, 0.36);
+const fireflyMat = new THREE.MeshBasicMaterial({
+  map: fireflyTex,
+  color: 0xd4ff44,
+  transparent: true,
+  opacity: 0.95,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+const fireflyMesh = new THREE.InstancedMesh(fireflyGeo, fireflyMat, FIREFLY_COUNT);
+const fireflyData = [];
+{
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+  const clusters = [
+    { cx: 28, cy: 1.2, cz: 78, rx: 11, rz: 9, h: 3.5, weight: 0.25 },     // Zen garden
+    { cx: 0, cy: 0.9, cz: 32, rx: 18, rz: 12, h: 3.0, weight: 0.25 },     // Sacred Koi pond
+    { cx: -45, cy: 1.5, cz: 42, rx: 12, rz: 12, h: 5.5, weight: 0.18 },   // West Bamboo grove
+    { cx: 45, cy: 1.5, cz: 45, rx: 12, rz: 12, h: 5.5, weight: 0.18 },    // East Bamboo grove
+    { cx: 0, cy: 1.8, cz: 88, rx: 8, rz: 8, h: 3.2, weight: 0.14 },       // Haiden Altar steps
+  ];
+
+  for (let i = 0; i < FIREFLY_COUNT; i++) {
+    const c = clusters[i % clusters.length];
+    const angle = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(Math.random());
+    const x = c.cx + Math.cos(angle) * (r * c.rx);
+    const z = c.cz + Math.sin(angle) * (r * c.rz);
+    const y = c.cy + Math.random() * c.h;
+    const speed = 0.4 + Math.random() * 0.6;
+    const blinkFreq = 1.8 + Math.random() * 3.2;
+    const phase = Math.random() * Math.PI * 2;
+    const baseScale = 0.75 + Math.random() * 0.55;
+    const driftX = (Math.random() - 0.5) * 2;
+    const driftZ = (Math.random() - 0.5) * 2;
+    fireflyData.push({ x, y, z, origX: x, origY: y, origZ: z, speed, blinkFreq, phase, baseScale, driftX, driftZ });
+
+    _p.set(x, y, z);
+    _s.set(baseScale, baseScale, baseScale);
+    _m.compose(_p, _q, _s);
+    fireflyMesh.setMatrixAt(i, _m);
+  }
+  fireflyMesh.instanceMatrix.needsUpdate = true;
+  nightGroup.add(fireflyMesh);
+}
+
+function tickFireflies(dt, t) {
+  if (!nightGroup.visible) return;
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+  for (let i = 0; i < FIREFLY_COUNT; i++) {
+    const f = fireflyData[i];
+    const curX = f.origX + Math.sin(t * f.speed + f.phase) * 1.8 + Math.sin(t * 0.5 + f.driftX) * 0.8;
+    const curY = f.origY + Math.sin(t * (f.speed * 1.3) + f.phase) * 0.6 + Math.cos(t * 0.8 + f.phase) * 0.3;
+    const curZ = f.origZ + Math.cos(t * (f.speed * 0.9) + f.phase) * 1.8 + Math.cos(t * 0.4 + f.driftZ) * 0.8;
+
+    // Bioluminescent pulsation
+    const pulse = Math.pow(Math.max(0, Math.sin(t * f.blinkFreq + f.phase)), 4.0);
+    const scale = f.baseScale * (0.08 + pulse * 1.35);
+
+    _p.set(curX, Math.max(0.4, curY), curZ);
+    _s.set(scale, scale, scale);
+    _m.compose(_p, _q, _s);
+    fireflyMesh.setMatrixAt(i, _m);
+  }
+  fireflyMesh.instanceMatrix.needsUpdate = true;
+}
+
+// ---------------------------------------------------------------------------
+// Day & Night Cycle Management
+// ---------------------------------------------------------------------------
+function syncWorldTimeButtons(night) {
+  document.querySelectorAll('.tt-btn').forEach(btn =>
+    btn.classList.toggle('active', night ? btn.dataset.time === 'night' : btn.dataset.time === 'day'));
+}
+
+const DAY_LIGHT_STATE = {
+  sky: 0xcfe0ea,
+  fogColor: 0xd8e6ee,
+  fogNear: 120,
+  fogFar: 750,
+  exposure: 1.05,
+  hemi: { sky: 0xe4f2ff, ground: 0x7a8366, intensity: 0.85 },
+  sun: { intensity: 2.7, visible: true },
+  envIntensity: 0.65,
+  lanternGlow: { emissive: 0xffaa44, emissiveIntensity: 2.4 },
+  candleWax: { emissive: 0x000000, emissiveIntensity: 0 },
+  water: { color: 0x234a42, roughness: 0.08, opacity: 0.88 },
+  // Daylight only wants a whisper of bloom on the brightest speculars.
+  bloom: { strength: 0.22, radius: 0.55, threshold: 0.92 },
+};
+
+const NIGHT_LIGHT_STATE = {
+  sky: 0x050814,
+  fogColor: 0x070e1c,
+  fogNear: 45,
+  fogFar: 580,
+  exposure: 0.94,
+  hemi: { sky: 0x182844, ground: 0x080c14, intensity: 0.45 },
+  moon: { intensity: 0.85, visible: true },
+  envIntensity: 0.20,
+  lanternGlow: { emissive: 0xff8820, emissiveIntensity: 5.8 },
+  candleWax: { emissive: 0x5a1c08, emissiveIntensity: 0.55 },
+  water: { color: 0x0c1e28, roughness: 0.04, opacity: 0.92 },
+  // Flames, chōchin and fireflies should bleed into the air, but the threshold
+  // stays above the lit shoji panels — catch those too and the haiden washes
+  // out into a white slab at close range.
+  bloom: { strength: 0.62, radius: 0.72, threshold: 0.75 },
+};
+
+function setShintoTime(night, smooth = false) {
+  window.__nightMode = night;
+  syncWorldTimeButtons(night);
+
+  const applyState = () => {
+    scene.background.setHex(night ? NIGHT_LIGHT_STATE.sky : DAY_LIGHT_STATE.sky);
+    scene.fog.color.setHex(night ? NIGHT_LIGHT_STATE.fogColor : DAY_LIGHT_STATE.fogColor);
+    scene.fog.near = night ? NIGHT_LIGHT_STATE.fogNear : DAY_LIGHT_STATE.fogNear;
+    scene.fog.far = night ? NIGHT_LIGHT_STATE.fogFar : DAY_LIGHT_STATE.fogFar;
+    renderer.toneMappingExposure = night ? NIGHT_LIGHT_STATE.exposure : DAY_LIGHT_STATE.exposure;
+
+    sun.visible = !night;
+    sun.intensity = night ? 0 : DAY_LIGHT_STATE.sun.intensity;
+    moon.visible = night;
+    moon.intensity = night ? NIGHT_LIGHT_STATE.moon.intensity : 0;
+
+    hemi.color.setHex(night ? NIGHT_LIGHT_STATE.hemi.sky : DAY_LIGHT_STATE.hemi.sky);
+    hemi.groundColor.setHex(night ? NIGHT_LIGHT_STATE.hemi.ground : DAY_LIGHT_STATE.hemi.ground);
+    hemi.intensity = night ? NIGHT_LIGHT_STATE.hemi.intensity : DAY_LIGHT_STATE.hemi.intensity;
+    scene.environmentIntensity = night ? NIGHT_LIGHT_STATE.envIntensity : DAY_LIGHT_STATE.envIntensity;
+
+    M.lanternGlow.emissive.setHex(night ? NIGHT_LIGHT_STATE.lanternGlow.emissive : DAY_LIGHT_STATE.lanternGlow.emissive);
+    M.lanternGlow.emissiveIntensity = night ? NIGHT_LIGHT_STATE.lanternGlow.emissiveIntensity : DAY_LIGHT_STATE.lanternGlow.emissiveIntensity;
+    M.candleWax.emissive.setHex(night ? NIGHT_LIGHT_STATE.candleWax.emissive : DAY_LIGHT_STATE.candleWax.emissive);
+    M.candleWax.emissiveIntensity = night ? NIGHT_LIGHT_STATE.candleWax.emissiveIntensity : DAY_LIGHT_STATE.candleWax.emissiveIntensity;
+    M.shojiPaper.emissive = night ? new THREE.Color(0xff8833) : new THREE.Color(0x000000);
+    M.shojiPaper.emissiveIntensity = night ? 0.35 : 0;
+    M.water.color.setHex(night ? NIGHT_LIGHT_STATE.water.color : DAY_LIGHT_STATE.water.color);
+    M.water.roughness = night ? NIGHT_LIGHT_STATE.water.roughness : DAY_LIGHT_STATE.water.roughness;
+
+    applySky(night ? NIGHT_SKY : DAY_SKY);
+
+    const b = night ? NIGHT_LIGHT_STATE.bloom : DAY_LIGHT_STATE.bloom;
+    bloom.strength = b.strength;
+    bloom.radius = b.radius;
+    bloom.threshold = b.threshold;
+
+    nightGroup.visible = night;
+  };
+
+  if (smooth && fadeEl) {
+    fadeEl.style.opacity = '1';
+    setTimeout(() => {
+      applyState();
+      fadeEl.style.opacity = '0';
+    }, 280);
+  } else {
+    applyState();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 16. Flush Kits & Collision World
 // ---------------------------------------------------------------------------
 flushKits();
 
@@ -1223,21 +2534,37 @@ function groundFn(x, z) {
       }
     }
   }
-  // Taiko-bashi deck — buildTaikoBashi(0, 0.45, 32, 16, 3.8)
-  {
-    const bx = 0, by = 0.45, bz = 32, span = 16, width = 3.8, archH = 2.4;
-    if (Math.abs(x - bx) <= width / 2 && z >= bz - span / 2 && z <= bz + span / 2) {
-      const t = ((z - (bz - span / 2)) / span - 0.5) * 2;
-      return by + (1 - t * t) * archH + 0.09;
+  // Timber crossing (flat approaches + cosine drum)
+  if (Math.abs(x - BRIDGE_X) <= BRIDGE_W / 2 &&
+      z >= SOUTH_WOOD_Z0 && z <= NORTH_WOOD_Z1) {
+    return crossingTop(z);
+  }
+  // Stone piers at the pond banks
+  if (Math.abs(x - BRIDGE_X) <= LANDING_W / 2) {
+    if (Math.abs(z - SOUTH_LAND_Z) <= LANDING_D / 2 ||
+        Math.abs(z - NORTH_LAND_Z) <= LANDING_D / 2) {
+      return DECK_TOP;
+    }
+  }
+  // Two-step climb from the sando onto each pier
+  if (Math.abs(x - SANDO_X) <= SANDO_W / 2 + 0.12) {
+    if (Math.abs(z - SOUTH_STEP0_Z) <= STEP_D / 2 + 0.04 ||
+        Math.abs(z - NORTH_STEP0_Z) <= STEP_D / 2 + 0.04) {
+      return STEP0_TOP;
+    }
+    if (Math.abs(z - SOUTH_STEP1_Z) <= STEP_D / 2 + 0.04 ||
+        Math.abs(z - NORTH_STEP1_Z) <= STEP_D / 2 + 0.04) {
+      return STEP1_TOP;
     }
   }
   // Chōzuya paved floor — buildChozuya(-9.5, 0.15, 12)
   if (Math.abs(x + 9.5) <= 3 && Math.abs(z - 12) <= 2.5) return 0.45;
   // Zen garden viewing platform — buildZenGarden(28, 0.15, 78, 22, 16)
   if (Math.abs(x - 28) <= 4 && Math.abs(z - 87.8) <= 1.6) return 0.75;
-  // Central sando (and its overlap with the parking at the torii)
+  // Split sando (does not cross the pond)
   if (Math.abs(x - SANDO_X) <= SANDO_W / 2 &&
-      z >= SANDO_Z - SANDO_D / 2 && z <= SANDO_Z + SANDO_D / 2) {
+      ((z >= SANDO_AXIS_Z0 && z <= SANDO_SOUTH_Z1) ||
+       (z >= SANDO_NORTH_Z0 && z <= SANDO_AXIS_Z1))) {
     return SANDO_TOP;
   }
   return BASE_GROUND;
@@ -1286,9 +2613,11 @@ let activeFurnitureInteraction = null;
 let furnitureInteractionCooldown = 0;
 let promptedFurniture = null;
 let furnitureActionRequested = false;
+let choosingFurniturePrompt = false;
+let choosingKneelMode = false;
+let kneelModeRequested = null;
 let travelInProgress = false;
 let releasedSpot = null;
-let choosingFurniturePrompt = false;
 const RELEASE_RADIUS = 1.2;
 const interactionExitKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyE'];
 const interactionInputHeld = () => interactionExitKeys.some(code => input.down(code));
@@ -1318,15 +2647,26 @@ function setFurniturePrompt(spot) {
   if (promptedFurniture === spot) return;
   promptedFurniture = spot;
   furnitureActionRequested = false;
-  const show = Boolean(spot);
-  furniturePrompt.textContent = show ? (spot.label || "S'asseoir") : '';
-  furniturePrompt.classList.toggle('show', show);
-  furniturePrompt.setAttribute('aria-hidden', show ? 'false' : 'true');
-  const stealLock = show && !spot.keepLock;
-  choosingFurniturePrompt = stealLock;
+  kneelModeRequested = null;
+  const isKneel = spot?.type === 'kneel';
+  const showSingle = Boolean(spot) && !isKneel;
+
+  furniturePrompt.textContent = showSingle ? (spot.label || "S'asseoir") : '';
+  furniturePrompt.classList.toggle('show', showSingle);
+  furniturePrompt.setAttribute('aria-hidden', showSingle ? 'false' : 'true');
+
+  if (kneelPromptGroup) {
+    kneelPromptGroup.classList.toggle('show', isKneel);
+    kneelPromptGroup.setAttribute('aria-hidden', isKneel ? 'false' : 'true');
+  }
+
+  const stealLock = (showSingle && !spot.keepLock) || isKneel;
+  choosingFurniturePrompt = showSingle;
+  choosingKneelMode = isKneel;
+
   if (stealLock) {
     if (document.pointerLockElement === renderer.domElement) document.exitPointerLock?.();
-  } else if (started && !paused && !show) {
+  } else if (started && !paused && !showSingle && !isKneel) {
     requestGamePointerLock();
   }
 }
@@ -1339,22 +2679,41 @@ furniturePrompt.addEventListener('click', event => {
   requestGamePointerLock();
 });
 
+function requestKneelMode(mode, event) {
+  event?.stopPropagation();
+  if (promptedFurniture?.type !== 'kneel') return;
+  kneelModeRequested = mode;
+  choosingKneelMode = false;
+  requestGamePointerLock();
+}
+kneelDayPrompt?.addEventListener('click', event => requestKneelMode('day', event));
+kneelNightPrompt?.addEventListener('click', event => requestKneelMode('night', event));
+
 renderer.domElement.addEventListener('click', () => {
-  if (started && !paused && !choosingFurniturePrompt
+  if (started && !paused && !choosingFurniturePrompt && !choosingKneelMode
     && document.pointerLockElement !== renderer.domElement) {
     requestGamePointerLock();
   }
 });
 
-function enterFurnitureInteraction(spot) {
+function enterFurnitureInteraction(spot, wakeMode = null) {
   setFurniturePrompt(null);
-  activeFurnitureInteraction = { ...spot, source: spot, returnPosition: parkingSpawnPoint.clone(), readyToExit: false };
+  activeFurnitureInteraction = {
+    ...spot,
+    source: spot,
+    returnPosition: ctrl.pos.clone(),
+    readyToExit: false,
+    wakeMode,
+  };
   ctrl.pos.set(spot.x, spot.y, spot.z);
   ctrl.prevY = spot.y;
   ctrl.vel.set(0, 0, 0);
   ctrl.mode = spot.type;
   ctrl.webOn = false;
-  if (Number.isFinite(spot.yaw)) input.yaw = spot.yaw + Math.PI;
+  if (Number.isFinite(spot.yaw)) {
+    input.yaw = spot.type === 'kneel' ? Math.PI : spot.yaw + Math.PI;
+    input.pitch = spot.type === 'kneel' ? 0.05 : 0;
+  }
 }
 
 function leaveFurnitureInteraction() {
@@ -1364,18 +2723,42 @@ function leaveFurnitureInteraction() {
   ctrl.prevY = ctrl.pos.y;
   ctrl.vel.set(0, 0, 0);
   ctrl.mode = 'ground';
+  if (interaction.type === 'kneel' && interaction.wakeMode) {
+    setShintoTime(interaction.wakeMode === 'night', true);
+    const msg = document.getElementById('msg');
+    if (msg) {
+      msg.textContent = interaction.wakeMode === 'night'
+        ? "Nuit sacrée — Les lanternes et bougies s'illuminent sous les étoiles"
+        : "Aube sereine — Le sanctuaire s'éveille dans la lumière du matin";
+      msg.style.opacity = '1';
+      setTimeout(() => { if (msg) msg.style.opacity = '0'; }, 4000);
+    }
+  }
   releasedSpot = interaction.source;
   activeFurnitureInteraction = null;
-  furnitureInteractionCooldown = 0.5;
+  furnitureInteractionCooldown = 0.65;
 }
 
 function updateFurnitureInteraction(dt) {
   if (travelInProgress) return true;
   if (furnitureInteractionCooldown > 0) furnitureInteractionCooldown -= dt;
   if (activeFurnitureInteraction) {
-    const held = interactionInputHeld();
-    if (!held) activeFurnitureInteraction.readyToExit = true;
-    if (held && activeFurnitureInteraction.readyToExit) {
+    setFurniturePrompt(null);
+    activeFurnitureInteraction.time = (activeFurnitureInteraction.time || 0) + dt;
+    if (input.pressed('KeyR')) {
+      if (activeFurnitureInteraction.type === 'kneel' && activeFurnitureInteraction.wakeMode) {
+        setShintoTime(activeFurnitureInteraction.wakeMode === 'night', false);
+      }
+      activeFurnitureInteraction = null;
+      furnitureInteractionCooldown = 0.65;
+      ctrl.rescueTo(parkingSpawnPoint);
+      return true;
+    }
+    const inputHeld = interactionExitKeys.some(code => input.down(code) || input.pressed(code)) || input.pressed('LMB');
+    if (!inputHeld && activeFurnitureInteraction.time > 0.1) {
+      activeFurnitureInteraction.readyToExit = true;
+    }
+    if (inputHeld && (activeFurnitureInteraction.readyToExit || activeFurnitureInteraction.time > 0.4)) {
       leaveFurnitureInteraction();
       return false;
     }
@@ -1389,7 +2772,7 @@ function updateFurnitureInteraction(dt) {
   let nearest = null, nearestDistance = Infinity;
   for (const spot of [returnCarInteraction, ...furnitureInteractions]) {
     if (spot === releasedSpot || spot.occupied) continue;
-    if (Math.abs(ctrl.pos.y - spot.approachY) > (spot.type === 'travel' ? 1.4 : 0.8)) continue;
+    if (Math.abs(ctrl.pos.y - spot.approachY) > (spot.type === 'travel' ? 1.4 : (spot.type === 'kneel' ? 1.2 : 0.8))) continue;
     const distance = distanceToFurniture(spot, ctrl.pos);
     if (distance < (spot.triggerDistance ?? 0.6) && distance < nearestDistance) {
       nearest = spot;
@@ -1397,18 +2780,27 @@ function updateFurnitureInteraction(dt) {
     }
   }
   setFurniturePrompt(nearest);
-  if (nearest && (furnitureActionRequested || input.pressed('LMB') || input.pressed('KeyE'))) {
-    furnitureActionRequested = false;
-    if (nearest.type === 'travel') {
-      travelInProgress = true;
-      setFurniturePrompt(null);
-      if (fadeEl) fadeEl.style.opacity = '1';
-      setTimeout(() => {
-        location.href = 'index.html?map=airport&arrival=japan';
-      }, 400);
-      return true;
+  if (nearest) {
+    if (nearest.type === 'kneel') {
+      if (kneelModeRequested) {
+        const mode = kneelModeRequested;
+        kneelModeRequested = null;
+        enterFurnitureInteraction(nearest, mode);
+        return true;
+      }
+    } else if (furnitureActionRequested || input.pressed('LMB') || input.pressed('KeyE')) {
+      furnitureActionRequested = false;
+      if (nearest.type === 'travel') {
+        travelInProgress = true;
+        setFurniturePrompt(null);
+        if (fadeEl) fadeEl.style.opacity = '1';
+        setTimeout(() => {
+          location.href = 'index.html?map=airport&arrival=japan';
+        }, 400);
+        return true;
+      }
+      enterFurnitureInteraction(nearest);
     }
-    enterFurnitureInteraction(nearest);
   }
   return activeFurnitureInteraction !== null;
 }
@@ -1422,8 +2814,7 @@ function updateFlightLanding(dt) {
   const t = flightLandingTimer;
 
   if (t < 3.2) {
-    // Phase 1 (0 to 3.2s): distant airliner over the Japanese countryside —
-    // it never reaches the shrine parking, which is far from the airport.
+    // Phase 1 (0 to 3.2s): distant airliner over the Japanese countryside
     const u = t / 3.2;
     const descent = 1 - u;
     landingPlane.position.set(-80, 18 + descent * descent * 50, -320 + u * 80);
@@ -1471,6 +2862,37 @@ function updateAvatar(dt) {
   });
 }
 
+function tickSandoCandles(t) {
+  if (!nightGroup.visible) return;
+  for (const c of sandoCandleLights) {
+    const flick = 0.84 + 0.16 * Math.sin(t * c.speed + c.phase)
+      + 0.07 * Math.sin(t * c.speed * 2.15 + c.phase * 1.4);
+    c.emitter.intensity = c.base * flick;
+  }
+}
+
+function tickStarTwinkle(dt, t) {
+  if (!nightGroup.visible) return;
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const st = starData[i];
+    const twinkle = 0.55 + 0.45 * Math.sin(t * st.twinkleSpeed + st.phase);
+    const s = st.baseScale * twinkle;
+    _p.set(st.x, st.y, st.z);
+    _s.set(s, s, s);
+    _m.compose(_p, _q, _s);
+    starMesh.setMatrixAt(i, _m);
+  }
+  starMesh.instanceMatrix.needsUpdate = true;
+}
+
+// Both the shadow box and the night light pool are keyed off where the camera
+// ends up this frame, so they are refreshed right before the draw.
+function preRender(dt) {
+  updateSunShadow(camera.position);
+  updateNightLights(dt);
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.033, clock.getDelta());
@@ -1482,6 +2904,15 @@ function animate() {
 
   // Animate falling sakura petals
   tickSakuraPetals(dt);
+
+  // Animate night visual systems (Sky lanterns, water lanterns, fireflies, stars)
+  if (nightGroup.visible) {
+    tickSkyLanterns(dt, t);
+    tickWaterLanterns(dt, t);
+    tickFireflies(dt, t);
+    tickStarTwinkle(dt, t);
+    tickSandoCandles(t);
+  }
 
   // Animate blinking hazard lights (clignotants) and beacon on the return car
   const hazardOn = (t % 0.85) < 0.45;
@@ -1495,7 +2926,8 @@ function animate() {
 
   if (flightLandingActive) {
     updateFlightLanding(dt);
-    renderer.render(scene, camera);
+    preRender(dt);
+    composer.render();
     input.endFrame();
     return;
   }
@@ -1515,7 +2947,8 @@ function animate() {
   updateAvatar(dt);
   rig.update(dt, input, ctrl);
   updateHud();
-  renderer.render(scene, camera);
+  preRender(dt);
+  composer.render();
   input.endFrame();
 }
 animate();
@@ -1529,6 +2962,7 @@ function startShinto() {
   if (started) { resumePlay(); return; }
   setFurniturePrompt(null);
   started = true;
+  setShintoTime(window.__nightMode === true);
   resumePlay();
 }
 window.__startShinto = startShinto;
@@ -1539,6 +2973,11 @@ window.addEventListener('keydown', e => {
   }
 });
 
+// If initial night mode set in query params
+if (params.get('night') === '1' || window.__nightMode === true) {
+  setShintoTime(true);
+}
+
 if (arrivedByFlight || window.__startRequested) {
   startShinto();
 }
@@ -1546,7 +2985,7 @@ if (arrivedByFlight || window.__startRequested) {
 document.addEventListener('pointerlockchange', () => {
   const hasLock = document.pointerLockElement !== null;
   usedLock = usedLock || hasLock;
-  if (choosingFurniturePrompt && !hasLock) {
+  if ((choosingFurniturePrompt || choosingKneelMode) && !hasLock) {
     paused = false;
     overlay.style.display = 'none';
     return;
@@ -1566,9 +3005,11 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+  bloom.setSize(window.innerWidth, window.innerHeight);
 });
 
 window.__shinto = {
-  THREE, scene, camera, renderer, world, ctrl, rig, input, player, spawnPoint,
-  furnitureInteractions,
+  THREE, scene, camera, renderer, composer, bloom, sun, world, ctrl, rig, input, player, spawnPoint,
+  furnitureInteractions, setShintoTime, enterFurnitureInteraction, leaveFurnitureInteraction,
 };
