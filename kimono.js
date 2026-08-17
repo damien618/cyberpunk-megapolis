@@ -326,8 +326,8 @@ function solidMaterial(color, { rough = 0.55, metal = 0.04, lining = false } = {
 const ROBE_PROFILE = [
   // u,    lat,    med,    ant,    post
   [0.00, 0.100, 0.100, 0.090, 0.086],
-  [0.08, 0.198, 0.198, 0.152, 0.132],
-  [0.20, 0.192, 0.192, 0.174, 0.134],
+  [0.08, 0.220, 0.220, 0.152, 0.132],
+  [0.20, 0.206, 0.206, 0.174, 0.134],
   [0.38, 0.178, 0.178, 0.170, 0.130],
   [0.55, 0.168, 0.168, 0.160, 0.128],
   // Below the obi the robe is swallowed by the skirt, so it has to stay
@@ -349,20 +349,28 @@ const SKIRT_PROFILE = [
   [0.00, 0.192, 0.192, 0.194, 0.188],
   [0.18, 0.230, 0.230, 0.236, 0.220],
   [0.42, 0.244, 0.244, 0.246, 0.228],
-  [0.68, 0.246, 0.246, 0.238, 0.220],
-  [1.00, 0.252, 0.252, 0.234, 0.218],
+  [0.68, 0.264, 0.264, 0.252, 0.238],
+  [1.00, 0.286, 0.286, 0.268, 0.254],
 ];
 
+// The tube that clothes the arm itself. It is deliberately slim: the sleeve
+// volume belongs to the hanging panel below, which swallows this whole tube.
+// Cut at sleeve width, the two sat side by side and she grew a second pair of
+// sleeves.
 const SLEEVE_PROFILE = [
-  [-0.10, 0.058, 0.048, 0.055, 0.058],
-  [0.00, 0.092, 0.072, 0.078, 0.090],
-  [0.35, 0.128, 0.108, 0.098, 0.132],
-  [0.90, 0.148, 0.128, 0.108, 0.168],
-  [1.40, 0.142, 0.128, 0.100, 0.188],
-  [1.90, 0.120, 0.114, 0.090, 0.152],
+  // Runs well inboard of the shoulder joint and caps it. The robe leaves the
+  // neck as a narrow ring, so nothing else covers the top of the deltoid, and
+  // starting this at the joint let the nagajuban surface as a white epaulette.
+  [-0.24, 0.092, 0.078, 0.086, 0.092],
+  [-0.10, 0.098, 0.082, 0.090, 0.098],
+  [0.00, 0.100, 0.082, 0.090, 0.100],
+  [0.35, 0.086, 0.074, 0.076, 0.090],
+  [0.90, 0.076, 0.068, 0.066, 0.082],
+  [1.40, 0.072, 0.066, 0.062, 0.080],
+  [1.90, 0.066, 0.062, 0.058, 0.072],
   // Drawn in to the wrist. Left open at sleeve width, the cuff was a hoop we
   // looked straight down, and its red lining read as a plate stuck on her hip.
-  [2.08, 0.080, 0.076, 0.070, 0.088],
+  [2.08, 0.056, 0.052, 0.050, 0.058],
 ];
 
 // Barely a scoop. The V of a kimono is drawn by the crossed collar lying on
@@ -438,8 +446,16 @@ function buildSkirt(root, material) {
   // bell wide enough to hide it.
   const weights = (u, cs) => {
     const left = ss(cs, -0.30, 0.30);
-    const thigh = ss(u, 0.22, 0.62) * 0.34;
-    const calf = ss(u, 0.66, 0.98) * 0.20;
+    // Only the flanks follow a leg. Front and back sit at cs ≈ 0, where `left`
+    // is a half, so they used to take half of each calf — and the average of
+    // two legs stood apart is the midline, which sucked the front and back of
+    // the hem in against the shins and opened it onto the nagajuban.
+    // Token shares only. Weighted any harder, the flanks get dragged from the
+    // hem line onto the calves themselves — which is the collision it was
+    // meant to prevent, not avoid. Clearance is the profile's job.
+    const flank = Math.abs(cs);
+    const thigh = ss(u, 0.22, 0.62) * 0.14 * flank;
+    const calf = ss(u, 0.66, 0.98) * 0.06 * flank;
     return mixBones([
       [b.s1, (1 - ss(u, 0.00, 0.18)) * 0.35],
       [b.pelvis, 1 - thigh - calf],
@@ -492,15 +508,15 @@ function buildSleeves(root, material) {
     ]);
     loftShell({
       points: [
-        shoulder.clone().addScaledVector(inward, 0.10 * upper),
+        shoulder.clone().addScaledVector(inward, 0.24 * upper),
         shoulder,
         elbow,
         wrist,
         wrist.clone().addScaledVector(outward, 0.05),
       ],
-      pathU: [-0.10, 0, 1, 2, 2.08],
+      pathU: [-0.24, 0, 1, 2, 2.08],
       profile: SLEEVE_PROFILE,
-      rings: ringParams(-0.10, 2.08, u => u < 0.2 ? 0.05 : 0.08),
+      rings: ringParams(-0.24, 2.08, u => u < 0.2 ? 0.05 : 0.08),
       weights, radial: SLEEVE_RADIAL, tile: TILE,
       lateral: Math.sign(shoulder.x) || 1,
     }, out);
@@ -514,12 +530,14 @@ function buildSleeves(root, material) {
 // 45° inward when the arms drop, which buried the whole panel inside the
 // skirt. On the spine it simply hangs, and the arm's own sleeve tube passes
 // through it exactly the way an arm passes through a sleeve.
+// Wide enough on both flanks to keep the arm tube inside it for the whole
+// swing, so the two read as one sleeve rather than as two.
 const FURISODE_PROFILE = [
-  [0.00, 0.062, 0.058, 0.098, 0.102],
-  [0.30, 0.082, 0.060, 0.130, 0.138],
-  [0.72, 0.090, 0.060, 0.142, 0.152],
-  [0.92, 0.086, 0.058, 0.136, 0.146],
-  [1.00, 0.070, 0.050, 0.114, 0.122],
+  [0.00, 0.092, 0.086, 0.098, 0.102],
+  [0.30, 0.116, 0.106, 0.130, 0.138],
+  [0.72, 0.124, 0.110, 0.142, 0.152],
+  [0.92, 0.118, 0.104, 0.136, 0.146],
+  [1.00, 0.098, 0.086, 0.114, 0.122],
 ];
 
 function buildFurisode(root, material) {
@@ -540,11 +558,12 @@ function buildFurisode(root, material) {
   for (const side of ['l', 'r']) {
     const shoulder = pos(`upperarm_${side}`);
     const sign = Math.sign(shoulder.x) || 1;
-    // Stood off the shoulder far enough to clear the skirt wall, but close
-    // enough that the inboard face still overlaps it — a gap between the two
-    // would show daylight through the waist.
-    const x = shoulder.x + 0.080 * sign;
-    const top = 1.450;
+    // Centred on the arm, not stood off beside it: the tube has to sit inside
+    // this panel or the pair reads as two sleeves. Far enough out that the
+    // inboard face still overlaps the skirt — both are silk, so the contact
+    // reads as a fold, where a gap would show daylight at the waist.
+    const x = shoulder.x + 0.042 * sign;
+    const top = 1.512;
     const hem = 0.740;
     loftShell({
       points: [
