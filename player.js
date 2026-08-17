@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { buildBareLegs, buildFlipFlops, buildSleeves } from './limbs.js?v=38';
+import { buildKimono } from './kimono.js?v=18';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
 
@@ -619,9 +620,14 @@ export class Player {
       )
       : null;
 
+    let kimonoParts = [];
+    try { kimonoParts = buildKimono(this.model) ?? []; }
+    catch (err) { console.warn('[wardrobe] kimono', err); }
+
     this.wardrobe = {
       sleeves, swimLegs, swimShorts, nightTop, nightShorts,
       denimShorts, flipFlops, vest, zooTrousers, hairCrown: null,
+      kimonoParts,
     };
   }
 
@@ -654,6 +660,7 @@ export class Player {
       swim: options.swim === true,
       night: options.night === true,
       zoo: options.zoo === true,
+      kimono: options.kimono === true,
     };
     const key = JSON.stringify(outfit);
     if (key === this.outfitKey || !this.wardrobe) return;
@@ -666,15 +673,18 @@ export class Player {
     // for the bare feet coming out from under them.
     const legs = outfit.swim || outfit.night || outfit.zoo;
     const noTrousers = outfit.swim || outfit.night;
-    const dressed = !outfit.night && !outfit.zoo;
+    const dressed = !outfit.night && !outfit.zoo && !outfit.kimono;
     const hat = outfit.hat && dressed;
     this.setPartVisible('hat', hat);
     this.setPartVisible('backpack', outfit.backpack && dressed);
-    this.setPartVisible('tshirt', outfit.tshirt && !outfit.night);
-    this.setPartVisible('pants', outfit.pants && !noTrousers && !outfit.zoo);
+    // Kimono keeps the tee and trousers on as the nagajuban: the lofted
+    // robe sits over them, and they plug any hole the shells leave at the
+    // collar or the stride.
+    this.setPartVisible('tshirt', (outfit.tshirt && !outfit.night) || outfit.kimono);
+    this.setPartVisible('pants', (outfit.pants && !noTrousers && !outfit.zoo) || outfit.kimono);
     this.setPartVisible('shoes', outfit.shoes && !legs);
     if (this.wardrobe.sleeves) this.wardrobe.sleeves.visible = outfit.longSleeves && dressed;
-    if (this.armsMesh) this.armsMesh.visible = !(outfit.longSleeves && dressed);
+    if (this.armsMesh) this.armsMesh.visible = !((outfit.longSleeves && dressed) || outfit.kimono);
     if (this.wardrobe.swimLegs) this.wardrobe.swimLegs.visible = legs;
     if (this.wardrobe.swimShorts) this.wardrobe.swimShorts.visible = outfit.swim && dressed;
     if (this.wardrobe.nightTop) this.wardrobe.nightTop.visible = outfit.night;
@@ -683,6 +693,9 @@ export class Player {
     if (this.wardrobe.zooTrousers) this.wardrobe.zooTrousers.visible = outfit.zoo;
     if (this.wardrobe.vest) this.wardrobe.vest.visible = outfit.zoo;
     if (this.wardrobe.flipFlops) this.wardrobe.flipFlops.visible = outfit.zoo;
+    for (const mesh of this.wardrobe.kimonoParts ?? []) {
+      if (mesh) mesh.visible = outfit.kimono;
+    }
     // Strictly the cap's understudy. The crown stands a centimetre off the
     // skull, which is inside Hat02 — worn together, it punches through the cap.
     if (this.wardrobe.hairCrown) this.wardrobe.hairCrown.visible = !hat;
