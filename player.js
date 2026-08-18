@@ -1142,6 +1142,28 @@ export class Player {
     this.poseRoot.position.z = -0.06;
   }
 
+  // The furisode's skirt is a fixed tube around the pelvis (kimono.js keeps it
+  // one volume rather than splitting into floral trousers), so a leg swung out
+  // at the pack's normal walk/run amplitude punches its shin straight through
+  // the hem every stride. Pulling the thigh and calf back most of the way
+  // toward their bind pose after the clip has run shortens the stride into a
+  // shuffle that stays inside the skirt without touching the clips themselves.
+  dampKimonoStride() {
+    // A fixed fraction of the clip's own swing (the first cut of this) still
+    // scaled with it: sprint drives the calf past 1 rad, and 40% of that is
+    // still enough to clear the skirt's rear wall, which is where it kept
+    // showing up — the camera sits behind her, not in front. Capping the
+    // absolute angle instead holds the same small shuffle at every speed.
+    const maxAngle = 0.12;
+    for (const name of ['thigh_l', 'thigh_r', 'calf_l', 'calf_r']) {
+      const bone = this.bones[name];
+      const rest = this.restRotation.get(name);
+      if (!bone || !rest) continue;
+      const angle = bone.quaternion.angleTo(rest);
+      if (angle > maxAngle) bone.quaternion.slerp(rest, 1 - maxAngle / angle);
+    }
+  }
+
   // ---------- visual update driven by controller ----------
   update(ctx) {
     const { dt, mode, pos, vel, posture, facingYaw } = ctx;
@@ -1178,6 +1200,9 @@ export class Player {
       this.play('fall', 0.3);   // wallrun / zip
     }
     this.mixer.update(dt);
+    if (this.outfit?.kimono && posture !== 'sit' && posture !== 'lie' && posture !== 'kneel') {
+      this.dampKimonoStride();
+    }
     this.setEyesClosed(posture === 'lie' || posture === 'kneel');
     if (posture === 'sit') {
       this.applySeatedPose(ctx.floorY);

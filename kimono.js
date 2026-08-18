@@ -349,12 +349,16 @@ const ROBE_PROFILE = [
 // The hip row is set off the trousers underneath, which reach 0.247 there —
 // anything tighter and the nagajuban surfaces as a pale stripe down the front
 // of the floral, in the idle pose, every time.
+// The camera sits behind the player, not in front of her, so post needs the
+// same clearance as ant — a back-heavier stride (the leg swinging backward on
+// push-off) put the trousers through the rear wall while the front stayed
+// clean, the moment post trailed ant by even a centimetre.
 const SKIRT_PROFILE = [
   [0.00, 0.192, 0.192, 0.194, 0.188],
-  [0.18, 0.230, 0.230, 0.236, 0.220],
-  [0.42, 0.244, 0.244, 0.246, 0.228],
-  [0.68, 0.264, 0.264, 0.252, 0.238],
-  [1.00, 0.286, 0.286, 0.268, 0.254],
+  [0.18, 0.252, 0.252, 0.256, 0.256],
+  [0.42, 0.258, 0.258, 0.260, 0.260],
+  [0.68, 0.270, 0.270, 0.262, 0.262],
+  [1.00, 0.286, 0.286, 0.268, 0.268],
 ];
 
 // The whole sleeve, and the only piece on the arm. A furisode's hanging panel
