@@ -309,38 +309,318 @@ function normalFromCanvas(src, strength = 2.0) {
   return out;
 }
 
-// Overlapping leaf blades. Anything drawn within a leaf's reach of an edge is
-// repeated on the opposite side so the sheet stays seamless.
-function makeLeafCanvas(base, tones, { size = 512, count = 2600, leaf = 13, seed = 7 } = {}) {
+// Leaf silhouettes for alpha-tested cards. Ellipses on an opaque sheet
+// wrapped a sphere and read as painted cloth; these are real blades with
+// a transparent field so the crown silhouette is ragged.
+function drawMapleLeaf(g, scale, fill, vein) {
+  const lobes = [
+    { a: -1.18, len: 0.64, w: 0.24 },
+    { a: -0.58, len: 0.86, w: 0.20 },
+    { a:  0.00, len: 1.00, w: 0.17 },
+    { a:  0.58, len: 0.86, w: 0.20 },
+    { a:  1.18, len: 0.64, w: 0.24 },
+  ];
+  const pt = (a, r) => [Math.sin(a) * scale * r, -Math.cos(a) * scale * r];
+  g.beginPath();
+  g.moveTo(0, scale * 0.14);
+  for (let i = 0; i < lobes.length; i++) {
+    const L = lobes[i];
+    const [sx, sy] = pt(L.a - L.w, L.len * 0.40);
+    const [tx, ty] = pt(L.a, L.len);
+    const [ex, ey] = pt(L.a + L.w, L.len * 0.40);
+    if (i > 0) {
+      const mid = (lobes[i - 1].a + L.a) / 2;
+      const [ix, iy] = pt(mid, 0.20);
+      g.quadraticCurveTo(ix, iy, sx, sy);
+    } else {
+      g.lineTo(sx, sy);
+    }
+    g.quadraticCurveTo(
+      Math.sin(L.a - L.w * 0.32) * scale * L.len * 0.78,
+      -Math.cos(L.a - L.w * 0.32) * scale * L.len * 0.78,
+      tx, ty);
+    g.quadraticCurveTo(
+      Math.sin(L.a + L.w * 0.32) * scale * L.len * 0.78,
+      -Math.cos(L.a + L.w * 0.32) * scale * L.len * 0.78,
+      ex, ey);
+  }
+  g.closePath();
+  g.fillStyle = fill;
+  g.fill();
+  g.strokeStyle = vein;
+  g.lineWidth = Math.max(1.1, scale * 0.034);
+  g.lineCap = 'round';
+  g.globalAlpha *= 0.5;
+  g.beginPath();
+  g.moveTo(0, scale * 0.12);
+  g.lineTo(0, -scale * 0.82);
+  g.stroke();
+  for (const L of lobes) {
+    if (L.a === 0) continue;
+    g.beginPath();
+    g.moveTo(0, scale * 0.04);
+    g.lineTo(Math.sin(L.a) * scale * L.len * 0.7, -Math.cos(L.a) * scale * L.len * 0.7);
+    g.stroke();
+  }
+  g.globalAlpha /= 0.5;
+}
+
+function drawPineTuft(g, scale, fill, vein) {
+  g.strokeStyle = fill;
+  g.lineCap = 'round';
+  const n = 16;
+  for (let i = 0; i < n; i++) {
+    const a = -1.15 + (i / (n - 1)) * 2.3;
+    const len = scale * (0.72 + (i % 3) * 0.12);
+    g.lineWidth = Math.max(1.2, scale * 0.045);
+    g.beginPath();
+    g.moveTo(0, scale * 0.08);
+    g.quadraticCurveTo(
+      Math.sin(a) * scale * 0.28, -Math.cos(a) * scale * 0.35,
+      Math.sin(a) * len, -Math.cos(a) * len);
+    g.stroke();
+  }
+  g.fillStyle = vein;
+  g.beginPath();
+  g.ellipse(0, scale * 0.06, scale * 0.08, scale * 0.1, 0, 0, Math.PI * 2);
+  g.fill();
+}
+
+function drawSakuraPetal(g, len, w, fill1, fill2) {
+  g.save();
+  const grad = g.createLinearGradient(0, 0, 0, -len);
+  grad.addColorStop(0, fill1);
+  grad.addColorStop(0.55, fill2);
+  // A pure white tip drained the hue out of the canopy once a few hundred petals
+  // overlapped; lightening the petal's own colour keeps the mass pink.
+  grad.addColorStop(1, mixHex(fill2, '#ffffff', 0.6));
+  g.fillStyle = grad;
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.bezierCurveTo(-w * 0.75, -len * 0.35, -w, -len * 0.82, -w * 0.35, -len);
+  g.quadraticCurveTo(0, -len * 0.88, w * 0.35, -len);
+  g.bezierCurveTo(w, -len * 0.82, w * 0.75, -len * 0.35, 0, 0);
+  g.fill();
+  g.restore();
+}
+
+function drawSakuraBlossom(g, scale, fillBase, fillEdge, centerColor = '#e2487a') {
+  g.save();
+  // Calyx / depth shadow at the blossom center
+  g.fillStyle = 'rgba(90, 30, 42, 0.45)';
+  g.beginPath();
+  g.arc(0, 0, scale * 0.22, 0, Math.PI * 2);
+  g.fill();
+
+  // 5 notched petals
+  const pLen = scale * 0.65;
+  const pW = scale * 0.38;
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+    g.save();
+    g.rotate(a);
+    drawSakuraPetal(g, pLen, pW, fillBase, fillEdge);
+    g.restore();
+  }
+
+  // Soft rosy central glow
+  const gradCenter = g.createRadialGradient(0, 0, 0, 0, 0, scale * 0.28);
+  gradCenter.addColorStop(0, centerColor);
+  gradCenter.addColorStop(0.5, 'rgba(235, 70, 120, 0.65)');
+  gradCenter.addColorStop(1, 'rgba(255, 180, 200, 0)');
+  g.fillStyle = gradCenter;
+  g.beginPath();
+  g.arc(0, 0, scale * 0.28, 0, Math.PI * 2);
+  g.fill();
+
+  // Stamens and golden anther tips
+  const stamenCount = 8;
+  g.strokeStyle = 'rgba(215, 80, 115, 0.85)';
+  g.lineWidth = Math.max(1, scale * 0.025);
+  for (let s = 0; s < stamenCount; s++) {
+    const sa = (s / stamenCount) * Math.PI * 2;
+    const sl = scale * (0.13 + (s % 3) * 0.04);
+    const sx = Math.cos(sa) * sl;
+    const sy = Math.sin(sa) * sl;
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.lineTo(sx, sy);
+    g.stroke();
+    g.fillStyle = '#ffde59';
+    g.beginPath();
+    g.arc(sx, sy, Math.max(1.1, scale * 0.034), 0, Math.PI * 2);
+    g.fill();
+  }
+
+  // Central pistil
+  g.fillStyle = '#6e9828';
+  g.beginPath();
+  g.arc(0, 0, Math.max(1, scale * 0.038), 0, Math.PI * 2);
+  g.fill();
+
+  g.restore();
+}
+
+function drawBambooBlade(g, scale, fill, vein) {
+  g.beginPath();
+  g.moveTo(0, -scale);
+  g.quadraticCurveTo(scale * 0.22, 0, 0, scale);
+  g.quadraticCurveTo(-scale * 0.22, 0, 0, -scale);
+  g.fillStyle = fill;
+  g.fill();
+  g.strokeStyle = vein;
+  g.lineWidth = Math.max(1, scale * 0.03);
+  g.globalAlpha *= 0.45;
+  g.beginPath();
+  g.moveTo(0, -scale * 0.9);
+  g.lineTo(0, scale * 0.9);
+  g.stroke();
+  g.globalAlpha /= 0.45;
+}
+
+function drawLeafKind(g, kind, scale, fill, vein, fillEdge) {
+  if (kind === 'pine') drawPineTuft(g, scale, fill, vein);
+  else if (kind === 'sakura' || kind === 'sakuraWhite') drawSakuraBlossom(g, scale, fill, fillEdge || fill, vein);
+  else if (kind === 'bamboo') drawBambooBlade(g, scale, fill, vein);
+  else drawMapleLeaf(g, scale, fill, vein);
+}
+
+// Blend two hex colours. The shaded understorey tones are derived from the
+// species palette this way rather than hand-listed a second time.
+function mixHex(a, b, t) {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const ch = sh => Math.round((pa >> sh & 255) * (1 - t) + (pb >> sh & 255) * t);
+  return `#${((1 << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).slice(1)}`;
+}
+
+// One card = a clump of blossoms/leaves. Two things stop a canopy of these from
+// reading as stamped plates. The silhouette has to stop at a torn contour well
+// inside the UV square, or every card shows its own rectangle; and the depth
+// behind the blossoms has to be made of more blossoms, because alphaTest slices
+// a soft gradient into a hard-edged disc — the plate artefact the old volume
+// layer was meant to hide, and the one it actually produced.
+function makeFoliageClump(kind, tones, vein, {
+  size = 512, count = 38, seed = 7, scaleMin = 0.06, scaleMax = 0.13, spray = false,
+} = {}) {
   const c = makeCanvas(size);
   const g = c.getContext('2d');
   const rnd = mulberry32(seed);
-  g.fillStyle = base;
-  g.fillRect(0, 0, size, size);
-  const reach = leaf * 2;
-  for (let i = 0; i < count; i++) {
-    const x = rnd() * size, y = rnd() * size;
-    const rx = leaf * (0.5 + rnd() * 0.9);
-    const ry = rx * (0.35 + rnd() * 0.4);
-    const rot = rnd() * Math.PI;
-    g.fillStyle = tones[(rnd() * tones.length) | 0];
-    g.globalAlpha = 0.5 + rnd() * 0.5;
-    const wrapX = x < reach ? 1 : x > size - reach ? -1 : 0;
-    const wrapY = y < reach ? 1 : y > size - reach ? -1 : 0;
-    for (const ox of wrapX ? [0, wrapX] : [0]) {
-      for (const oy of wrapY ? [0, wrapY] : [0]) {
-        g.save();
-        g.translate(x + ox * size, y + oy * size);
-        g.rotate(rot);
-        g.beginPath();
-        g.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
-        g.fill();
-        g.restore();
-      }
+  g.clearRect(0, 0, size, size);
+  const cx = size / 2, cy = spray ? size * 0.22 : size / 2;
+
+  const stamp = (x, y, sc, rot, palette, alpha) => {
+    g.save();
+    g.translate(x, y);
+    g.rotate(rot);
+    g.globalAlpha = alpha;
+    drawLeafKind(g, kind, sc,
+      palette[(rnd() * palette.length) | 0], vein,
+      palette[(rnd() * palette.length) | 0]);
+    g.restore();
+  };
+
+  // Understorey: the same blades one size up, shaded, packed into the core.
+  if (!spray) {
+    // Shade toward a deeper tone of the species' own hue — a neutral grey here
+    // turns the understorey muddy the moment it sits in the tree's shadow.
+    const shade = kind === 'pine' ? '#0c1a0b' : kind === 'maple' ? '#4a1208' : '#c2547d';
+    const backTones = tones.map(t => mixHex(t, shade, 0.5));
+    const backCount = Math.round(count * 0.6);
+    for (let i = 0; i < backCount; i++) {
+      const ang = rnd() * Math.PI * 2;
+      const rad = Math.pow(rnd(), 0.5) * size * 0.28;
+      stamp(cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad,
+        size * (scaleMin + rnd() * (scaleMax - scaleMin)) * 1.4,
+        rnd() * Math.PI * 2, backTones, 1);
     }
   }
-  g.globalAlpha = 1;
+
+  // Crisp foreground floral/leaf detail layer
+  for (let i = 0; i < count; i++) {
+    const ang = spray ? (rnd() - 0.5) * 1.6 + Math.PI / 2 : rnd() * Math.PI * 2;
+    const rad = Math.pow(rnd(), spray ? 0.45 : 0.52) * size * (spray ? 0.42 : 0.34);
+    const x = cx + Math.cos(ang) * rad * (spray ? 0.55 : 1);
+    const y = cy + Math.sin(ang) * rad;
+    const sc = size * (scaleMin + rnd() * (scaleMax - scaleMin));
+    const rot = spray ? ang + (rnd() - 0.5) * 0.35 : rnd() * Math.PI * 2;
+    stamp(x, y, sc, rot, tones, 0.88 + rnd() * 0.12);
+  }
+
+  // Torn silhouette. The lobes accumulate on their own sheet so they add up
+  // instead of erasing one another, then punch through the artwork in one pass.
+  // Overlapping falloffs put the alphaTest cut on an irregular contour, so the
+  // card ends in a ragged rim rather than at the edge of its own square.
+  if (!spray) {
+    const maskC = makeCanvas(size);
+    const mg = maskC.getContext('2d');
+    mg.globalCompositeOperation = 'lighter';
+    const lobes = 7;
+    for (let i = 0; i < lobes; i++) {
+      const ang = (i / lobes) * Math.PI * 2 + rnd() * 1.5;
+      const off = size * (0.06 + rnd() * 0.22);
+      const lx = cx + Math.cos(ang) * off;
+      const ly = cy + Math.sin(ang) * off;
+      const lr = size * (0.11 + rnd() * 0.20);
+      const grad = mg.createRadialGradient(lx, ly, 0, lx, ly, lr);
+      grad.addColorStop(0, 'rgba(255,255,255,1)');
+      grad.addColorStop(0.55, 'rgba(255,255,255,1)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      mg.fillStyle = grad;
+      mg.beginPath();
+      mg.arc(lx, ly, lr, 0, Math.PI * 2);
+      mg.fill();
+    }
+    // Bite a couple of gaps out of the mass so daylight gets through it.
+    mg.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 2; i++) {
+      const ang = rnd() * Math.PI * 2;
+      const off = size * (0.10 + rnd() * 0.18);
+      const hx = cx + Math.cos(ang) * off;
+      const hy = cy + Math.sin(ang) * off;
+      const hr = size * (0.035 + rnd() * 0.04);
+      const hole = mg.createRadialGradient(hx, hy, 0, hx, hy, hr);
+      hole.addColorStop(0, 'rgba(0,0,0,1)');
+      hole.addColorStop(0.6, 'rgba(0,0,0,1)');
+      hole.addColorStop(1, 'rgba(0,0,0,0)');
+      mg.fillStyle = hole;
+      mg.beginPath();
+      mg.arc(hx, hy, hr, 0, Math.PI * 2);
+      mg.fill();
+    }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'destination-in';
+    g.drawImage(maskC, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+
+    // Loose blossoms scattered past the mask, drawn after it so they keep their
+    // own outline. Without them the mask contour is what the eye reads, and a
+    // crown of masked cards turns into a heap of soft round bubbles.
+    const rimCount = Math.round(count * 0.3);
+    for (let i = 0; i < rimCount; i++) {
+      const ang = rnd() * Math.PI * 2;
+      const rad = size * (0.27 + Math.pow(rnd(), 0.7) * 0.19);
+      stamp(cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad,
+        size * (scaleMin + rnd() * (scaleMax - scaleMin)) * 0.85,
+        rnd() * Math.PI * 2, tones, 1);
+    }
+  }
   return c;
+}
+
+// A canopy built from one sheet repeats that sheet a few hundred times, and the
+// eye picks the repeat out immediately. Several sheets per species, chosen per
+// card, is what breaks the pattern up.
+function foliageSheets(n, kind, tones, vein, opts = {}) {
+  return Array.from({ length: n }, (_, i) =>
+    canvasTexture(makeFoliageClump(kind, tones, vein, { ...opts, seed: (opts.seed ?? 7) + i * 101 })));
+}
+
+function foliageMats(texes, { alphaTest = 0.3, roughness = 0.78 } = {}) {
+  return texes.map(map => new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness, metalness: 0.0,
+    map, alphaTest, alphaToCoverage: true,
+    side: THREE.DoubleSide,
+  }));
 }
 
 // Washi: long paper fibres caught in the pulp, plus a faint cloudiness.
@@ -481,27 +761,23 @@ function makeBambooCanvas({ size = 512, seed = 23 } = {}) {
   return c;
 }
 
-const pineLeafC = makeLeafCanvas('#1b3520', ['#2c5230', '#22421f', '#37663a', '#152b18', '#41764a'],
-  { count: 3000, leaf: 10, seed: 5 });
-const sakuraLeafC = makeLeafCanvas('#e9a3bd', ['#ffd3e2', '#ffbcd4', '#f6c2d6', '#e087a8', '#fff2f7'],
-  { count: 2400, leaf: 14, seed: 13 });
-const sakuraWhiteLeafC = makeLeafCanvas('#e6dade', ['#ffffff', '#fff6f9', '#f4e7eb', '#e2ced5', '#fffafc'],
-  { count: 2400, leaf: 14, seed: 17 });
-const momijiLeafC = makeLeafCanvas('#8b2416', ['#c8351f', '#a72a19', '#df512c', '#761c11', '#e07a44'],
-  { count: 2400, leaf: 13, seed: 29 });
-const bambooLeafC = makeLeafCanvas('#3f6a24', ['#5f8f33', '#4d7a28', '#79a845', '#365c1e'],
-  { count: 2600, leaf: 16, seed: 31 });
+const pineLeafTs = foliageSheets(2, 'pine',
+  ['#1b3819', '#244820', '#2d5828', '#1a3318', '#3d6c34'], '#0f200e',
+  { count: 46, seed: 5, scaleMin: 0.10, scaleMax: 0.18 });
+const sakuraLeafTs = foliageSheets(3, 'sakura',
+  ['#ff9dbf', '#ff86ad', '#ffb6d2', '#f97ba6', '#ffcede'], '#e85d88',
+  { count: 88, seed: 13, scaleMin: 0.075, scaleMax: 0.14 });
+const sakuraWhiteLeafTs = foliageSheets(3, 'sakuraWhite',
+  ['#ffffff', '#fff5f8', '#f8edf2', '#fff0f4', '#ffffff'], '#df9bb4',
+  { count: 88, seed: 17, scaleMin: 0.075, scaleMax: 0.14 });
+const momijiLeafTs = foliageSheets(3, 'maple',
+  ['#c92a2a', '#e03131', '#e8590c', '#f76707', '#a61e1e', '#d9480f'], '#491212',
+  { count: 54, seed: 29, scaleMin: 0.085, scaleMax: 0.16 });
+const bambooLeafC = makeFoliageClump('bamboo',
+  ['#5f8f33', '#4d7a28', '#79a845', '#365c1e', '#6b9a3a'], '#2a4416',
+  { count: 20, seed: 31, scaleMin: 0.10, scaleMax: 0.20, spray: true });
 
-const pineLeafT = canvasTexture(pineLeafC, { rx: 3, ry: 2 });
-const pineLeafN = canvasTexture(normalFromCanvas(pineLeafC, 3.0), { srgb: false, rx: 3, ry: 2 });
-const sakuraLeafT = canvasTexture(sakuraLeafC, { rx: 3, ry: 2 });
-const sakuraLeafN = canvasTexture(normalFromCanvas(sakuraLeafC, 2.4), { srgb: false, rx: 3, ry: 2 });
-const sakuraWhiteLeafT = canvasTexture(sakuraWhiteLeafC, { rx: 3, ry: 2 });
-const sakuraWhiteLeafN = canvasTexture(normalFromCanvas(sakuraWhiteLeafC, 2.4), { srgb: false, rx: 3, ry: 2 });
-const momijiLeafT = canvasTexture(momijiLeafC, { rx: 3, ry: 2 });
-const momijiLeafN = canvasTexture(normalFromCanvas(momijiLeafC, 2.4), { srgb: false, rx: 3, ry: 2 });
-const bambooLeafT = canvasTexture(bambooLeafC, { rx: 2, ry: 2 });
-const bambooLeafN = canvasTexture(normalFromCanvas(bambooLeafC, 2.6), { srgb: false, rx: 2, ry: 2 });
+const bambooLeafT = canvasTexture(bambooLeafC);
 
 const washiC = makeWashiCanvas();
 const washiT = canvasTexture(washiC);
@@ -626,36 +902,23 @@ const M = {
   waterLanternWood: new THREE.MeshStandardMaterial({
     color: 0x4a2e1e, roughness: 0.8, metalness: 0.05,
   }),
-  sakuraBlossom: new THREE.MeshStandardMaterial({
-    color: 0xffffff, roughness: 0.82, metalness: 0.0,
-    map: sakuraLeafT, normalMap: sakuraLeafN, normalScale: new THREE.Vector2(1.2, 1.2),
-    side: THREE.DoubleSide,
-  }),
-  sakuraBlossomWhite: new THREE.MeshStandardMaterial({
-    color: 0xffffff, roughness: 0.82, metalness: 0.0,
-    map: sakuraWhiteLeafT, normalMap: sakuraWhiteLeafN, normalScale: new THREE.Vector2(1.2, 1.2),
-    side: THREE.DoubleSide,
-  }),
-  pineFoliage: new THREE.MeshStandardMaterial({
-    color: 0xffffff, roughness: 0.88, metalness: 0.0,
-    map: pineLeafT, normalMap: pineLeafN, normalScale: new THREE.Vector2(1.5, 1.5),
-  }),
-  momijiRed: new THREE.MeshStandardMaterial({
-    color: 0xffffff, roughness: 0.8, metalness: 0.0,
-    map: momijiLeafT, normalMap: momijiLeafN, normalScale: new THREE.Vector2(1.2, 1.2),
-    side: THREE.DoubleSide,
-  }),
+  sakuraBlossom: foliageMats(sakuraLeafTs, { alphaTest: 0.4, roughness: 0.76 }),
+  sakuraBlossomWhite: foliageMats(sakuraWhiteLeafTs, { alphaTest: 0.4, roughness: 0.76 }),
+  pineFoliage: foliageMats(pineLeafTs, { alphaTest: 0.4, roughness: 0.84 }),
+  momijiRed: foliageMats(momijiLeafTs, { alphaTest: 0.4, roughness: 0.78 }),
   bambooGreen: new THREE.MeshStandardMaterial({
     color: 0xdfe6cf, roughness: 0.42, metalness: 0.05,
     map: bambooSkinT, normalMap: bambooSkinN, normalScale: new THREE.Vector2(0.7, 0.7),
   }),
   bambooLeaf: new THREE.MeshStandardMaterial({
-    color: 0xffffff, roughness: 0.8, metalness: 0.0,
-    map: bambooLeafT, normalMap: bambooLeafN, normalScale: new THREE.Vector2(1.3, 1.3),
+    color: 0xffffff, roughness: 0.88, metalness: 0.0,
+    map: bambooLeafT, alphaTest: 0.34, alphaToCoverage: true,
+    side: THREE.DoubleSide,
   }),
   treeTrunk: new THREE.MeshStandardMaterial({
-    color: 0x4e3828, roughness: 0.88, metalness: 0.05,
+    color: 0xd8c8b8, roughness: 0.82, metalness: 0.02,
     map: barkDiff, normalMap: barkN,
+    normalScale: new THREE.Vector2(1.2, 1.2),
   }),
   asphalt: new THREE.MeshStandardMaterial({
     color: 0x646a72, roughness: 0.92, metalness: 0.0,
@@ -822,18 +1085,124 @@ const G = {
   box: new THREE.BoxGeometry(1, 1, 1),
   cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 16),
   cyl8: new THREE.CylinderGeometry(0.5, 0.5, 1, 8),
+  taperCyl: new THREE.CylinderGeometry(0.38, 0.5, 1, 12),
   sphere: new THREE.SphereGeometry(0.5, 16, 12),
   cone: new THREE.ConeGeometry(0.5, 1, 16),
   canopy: [makeCanopyGeometry(101), makeCanopyGeometry(202), makeCanopyGeometry(303)],
+  card: new THREE.PlaneGeometry(1, 1),
 };
 let canopyPick = 0;
 const nextCanopy = () => G.canopy[canopyPick++ % G.canopy.length];
+
+// Leaf cards live in `scenery`, not `world`, so they never become collision
+// AABBs. Crossed planes break the cloth shading a closed canopy sphere has.
+const foliageCards = [];
+function puffFoliage(mats, cx, cy, cz, rx, ry, rz, {
+  seed = 1, count = 9, flatten = 0, cardScale = 0.55, pair = true,
+} = {}) {
+  const rnd = mulberry32(seed >>> 0);
+  // Each card draws its own sheet and its own mirroring, so two neighbours never
+  // show the same stamp in the same orientation.
+  const pickMat = () => Array.isArray(mats) ? mats[(rnd() * mats.length) | 0] : mats;
+  for (let i = 0; i < count; i++) {
+    let dx, dy, dz, len;
+    do {
+      dx = rnd() * 2 - 1;
+      dy = rnd() * 2 - 1;
+      dz = rnd() * 2 - 1;
+      len = Math.hypot(dx, dy, dz);
+    } while (len < 0.12 || len > 1);
+    dx = (dx / len) * rx * (0.12 + rnd() * 0.78);
+    dy = (dy / len) * ry * (0.12 + rnd() * 0.78) * (1 - flatten * 0.82);
+    dz = (dz / len) * rz * (0.12 + rnd() * 0.78);
+    const yaw = Math.atan2(dx, dz) + (rnd() - 0.5) * 0.85;
+    const pitch = flatten > 0.45
+      ? -1.12 + (rnd() - 0.5) * 0.4
+      : (rnd() - 0.5) * 0.95;
+    const roll = (rnd() - 0.5) * 0.4;
+    const cs = cardScale * (0.72 + rnd() * 0.5);
+    const sx = Math.max(rx, rz) * cs;
+    const sy = Math.max(ry, Math.max(rx, rz) * 0.7) * cs;
+    const push = extraYaw => foliageCards.push({
+      mat: pickMat(), x: cx + dx, y: cy + dy, z: cz + dz,
+      sx: rnd() < 0.5 ? -sx : sx, sy, rx: pitch, ry: yaw + extraYaw, rz: roll,
+    });
+    push(0);
+    if (pair) push(Math.PI / 2);
+  }
+}
+
+function flushFoliageCards() {
+  const byMat = new Map();
+  for (const it of foliageCards) {
+    (byMat.get(it.mat) ?? byMat.set(it.mat, []).get(it.mat)).push(it);
+  }
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+  const e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3();
+  for (const [mat, items] of byMat) {
+    const im = new THREE.InstancedMesh(G.card, mat, items.length);
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      p.set(it.x, it.y, it.z);
+      e.set(it.rx || 0, it.ry || 0, it.rz || 0, 'YXZ');
+      q.setFromEuler(e);
+      s.set(it.sx, it.sy, 1);
+      m.compose(p, q, s);
+      im.setMatrixAt(i, m);
+    }
+    im.castShadow = true;
+    im.receiveShadow = true;
+    im.frustumCulled = false;
+    im.instanceMatrix.needsUpdate = true;
+    scenery.add(im);
+  }
+}
+
+function seedAt(x, z, k = 0) {
+  return (Math.abs(x * 173.1 + z * 97.7 + k * 31.3) * 1000 | 0) >>> 0;
+}
 
 function box(mat, x, y, z, sx, sy, sz, ry = 0, rx = 0, rz = 0, prop = false) {
   emit(G.box, mat, x, y, z, sx, sy, sz, rx, ry, rz, prop);
 }
 function cylinder(mat, x, y, z, radius, height, ry = 0, rx = 0, rz = 0, prop = false) {
   emit(G.cyl, mat, x, y, z, radius * 2, height, radius * 2, rx, ry, rz, prop);
+}
+
+const _branchDir = new THREE.Vector3();
+const _branchUp = new THREE.Vector3(0, 1, 0);
+const _branchQuat = new THREE.Quaternion();
+const _branchEuler = new THREE.Euler();
+
+function branch(mat, x1, y1, z1, x2, y2, z2, r1, r2, isProp = true) {
+  const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
+  const len = Math.hypot(dx, dy, dz);
+  if (len < 0.001) return;
+  const mx = (x1 + x2) * 0.5;
+  const my = (y1 + y2) * 0.5;
+  const mz = (z1 + z2) * 0.5;
+  
+  _branchDir.set(dx / len, dy / len, dz / len);
+  _branchQuat.setFromUnitVectors(_branchUp, _branchDir);
+  _branchEuler.setFromQuaternion(_branchQuat, 'YXZ');
+  
+  const d = r1 * 2;
+  emit(G.taperCyl, mat, mx, my, mz, d, len, d, _branchEuler.x, _branchEuler.y, _branchEuler.z, isProp);
+}
+
+function treeRootFlairs(mat, x, y, z, S, count = 5) {
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2 + 0.35;
+    const rStart = 0.38 * S;
+    const rEnd = 0.75 * S;
+    const x1 = x + Math.cos(a) * rStart;
+    const z1 = z + Math.sin(a) * rStart;
+    const y1 = y + 0.55 * S;
+    const x2 = x + Math.cos(a) * rEnd;
+    const z2 = z + Math.sin(a) * rEnd;
+    const y2 = y + 0.05 * S;
+    branch(mat, x1, y1, z1, x2, y2, z2, 0.20 * S, 0.08 * S, true);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -962,6 +1331,21 @@ const SANDO_H = 0.22;
 const SANDO_TOP = SANDO_Y + SANDO_H / 2;
 const SANDO_AXIS_Z0 = -30;
 const SANDO_AXIS_Z1 = 110;
+
+// Zen garden — shared by the builder and groundFn so the raked bed stays
+// walkable at the same height it is drawn.
+const ZEN_X = 28;
+const ZEN_Y = 0.15;
+const ZEN_Z = 78;
+const ZEN_W = 22;
+const ZEN_D = 16;
+const ZEN_SAND_H = 0.2;
+const ZEN_SAND_Y = ZEN_Y + 0.1;
+const ZEN_SAND_TOP = ZEN_SAND_Y + ZEN_SAND_H / 2;
+const ZEN_SAND_HALF_W = (ZEN_W - 0.4) / 2;
+const ZEN_SAND_HALF_D = (ZEN_D - 0.4) / 2;
+const ZEN_DECK_Z = ZEN_Z + ZEN_D / 2 + 1.8;
+const ZEN_DECK_TOP = ZEN_Y + 0.45 + 0.15;
 
 const POND_Z = 32;
 const POND_W = 36;
@@ -1270,14 +1654,16 @@ function buildPagoda(x, y, z) {
 // 7. Zen Rock Garden (枯山水 Karesansui)
 // ---------------------------------------------------------------------------
 function buildZenGarden(x, y, z, width = 24, depth = 18) {
-  // Low dark cedar frame border
-  box(M.templeWood, x, y + 0.2, z - depth / 2, width + 0.4, 0.4, 0.4, 0, 0, 0, true);
-  box(M.templeWood, x, y + 0.2, z + depth / 2, width + 0.4, 0.4, 0.4, 0, 0, 0, true);
-  box(M.templeWood, x - width / 2, y + 0.2, z, 0.4, 0.4, depth + 0.4, 0, 0, 0, true);
-  box(M.templeWood, x + width / 2, y + 0.2, z, 0.4, 0.4, depth + 0.4, 0, 0, 0, true);
+  // Low dark cedar frame — visual coping only. A kit prop here is a 22 m
+  // wall: resolveWalls has no "standing above" test, so the lawn around the
+  // bed would shove you back (same trap as the pond bed).
+  box(M.templeWood, x, y + 0.2, z - depth / 2, width + 0.4, 0.4, 0.4, 0, 0, 0, false);
+  box(M.templeWood, x, y + 0.2, z + depth / 2, width + 0.4, 0.4, 0.4, 0, 0, 0, false);
+  box(M.templeWood, x - width / 2, y + 0.2, z, 0.4, 0.4, depth + 0.4, 0, 0, 0, false);
+  box(M.templeWood, x + width / 2, y + 0.2, z, 0.4, 0.4, depth + 0.4, 0, 0, 0, false);
 
-  // Raked white sand bed
-  box(M.zenGravel, x, y + 0.1, z, width - 0.4, 0.2, depth - 0.4, 0, 0, 0, true);
+  // Raked white sand bed — walkable park floor, not a prop wall.
+  box(M.zenGravel, x, y + 0.1, z, width - 0.4, 0.2, depth - 0.4, 0, 0, 0, false);
 
   // Traditional stone arrangements with moss bases
   const rockPlacements = [
@@ -1336,56 +1722,198 @@ function buildEmaRack(x, y, z, ry = 0) {
 function buildSakuraTree(x, y, z, scale = 1, isWhite = false) {
   const S = scale;
   const mat = isWhite ? M.sakuraBlossomWhite : M.sakuraBlossom;
+  const bMat = M.treeTrunk;
 
-  // Twisted dark trunk
-  cylinder(M.treeTrunk, x, y + 2.0 * S, z, 0.35 * S, 4.0 * S, 0.2, 0.08, -0.05, true);
-  cylinder(M.treeTrunk, x - 0.4 * S, y + 3.8 * S, z + 0.3 * S, 0.22 * S, 2.6 * S, 0.8, -0.25, 0.2, true);
-  cylinder(M.treeTrunk, x + 0.5 * S, y + 3.9 * S, z - 0.4 * S, 0.22 * S, 2.6 * S, -0.6, 0.2, -0.2, true);
+  // Root flares anchoring trunk into the ground
+  treeRootFlairs(bMat, x, y, z, S, 5);
 
-  // Soft lush blossom canopy clusters
+  // Main Trunk (multi-segment continuous curved trunk tapering upwards)
+  const p0 = [x, y, z];
+  const p1 = [x + 0.08 * S, y + 1.2 * S, z - 0.05 * S];
+  const p2 = [x - 0.06 * S, y + 2.4 * S, z + 0.07 * S];
+  const p3 = [x + 0.03 * S, y + 3.5 * S, z + 0.02 * S];
+
+  branch(bMat, p0[0], p0[1], p0[2], p1[0], p1[1], p1[2], 0.44 * S, 0.36 * S);
+  branch(bMat, p1[0], p1[1], p1[2], p2[0], p2[1], p2[2], 0.36 * S, 0.29 * S);
+  branch(bMat, p2[0], p2[1], p2[2], p3[0], p3[1], p3[2], 0.29 * S, 0.23 * S);
+
+  // Major Boughs & Sub-branches
+  // 1. East/North-East Bough (Sweeping outwards and upwards)
+  const b1_1 = [x + 1.2 * S, y + 4.3 * S, z - 0.9 * S];
+  const b1_2 = [x + 2.3 * S, y + 4.9 * S, z - 1.6 * S];
+  const b1_3 = [x + 1.5 * S, y + 5.5 * S, z - 0.4 * S];
+  const b1_4 = [x + 2.8 * S, y + 5.2 * S, z - 2.2 * S];
+  branch(bMat, p3[0], p3[1], p3[2], b1_1[0], b1_1[1], b1_1[2], 0.22 * S, 0.16 * S);
+  branch(bMat, b1_1[0], b1_1[1], b1_1[2], b1_2[0], b1_2[1], b1_2[2], 0.16 * S, 0.11 * S);
+  branch(bMat, b1_1[0], b1_1[1], b1_1[2], b1_3[0], b1_3[1], b1_3[2], 0.14 * S, 0.09 * S);
+  branch(bMat, b1_2[0], b1_2[1], b1_2[2], b1_4[0], b1_4[1], b1_4[2], 0.10 * S, 0.06 * S);
+
+  // 2. West/South-West Bough (Sweeping low and wide)
+  const b2_1 = [x - 1.3 * S, y + 4.1 * S, z + 0.9 * S];
+  const b2_2 = [x - 2.4 * S, y + 4.6 * S, z + 1.5 * S];
+  const b2_3 = [x - 1.7 * S, y + 5.2 * S, z + 0.2 * S];
+  const b2_4 = [x - 3.0 * S, y + 4.8 * S, z + 1.9 * S];
+  branch(bMat, p3[0], p3[1], p3[2], b2_1[0], b2_1[1], b2_1[2], 0.22 * S, 0.16 * S);
+  branch(bMat, b2_1[0], b2_1[1], b2_1[2], b2_2[0], b2_2[1], b2_2[2], 0.16 * S, 0.11 * S);
+  branch(bMat, b2_1[0], b2_1[1], b2_1[2], b2_3[0], b2_3[1], b2_3[2], 0.14 * S, 0.09 * S);
+  branch(bMat, b2_2[0], b2_2[1], b2_2[2], b2_4[0], b2_4[1], b2_4[2], 0.10 * S, 0.06 * S);
+
+  // 3. South-East Bough (Spreading sideways)
+  const b3_1 = [x + 1.0 * S, y + 4.2 * S, z + 1.2 * S];
+  const b3_2 = [x + 1.9 * S, y + 4.7 * S, z + 2.0 * S];
+  const b3_3 = [x + 2.4 * S, y + 5.0 * S, z + 2.6 * S];
+  branch(bMat, p3[0], p3[1], p3[2], b3_1[0], b3_1[1], b3_1[2], 0.19 * S, 0.14 * S);
+  branch(bMat, b3_1[0], b3_1[1], b3_1[2], b3_2[0], b3_2[1], b3_2[2], 0.14 * S, 0.09 * S);
+  branch(bMat, b3_2[0], b3_2[1], b3_2[2], b3_3[0], b3_3[1], b3_3[2], 0.09 * S, 0.06 * S);
+
+  // 4. North-West Bough (Upper reach)
+  const b4_1 = [x - 0.9 * S, y + 4.6 * S, z - 1.1 * S];
+  const b4_2 = [x - 1.6 * S, y + 5.4 * S, z - 1.7 * S];
+  const b4_3 = [x - 2.1 * S, y + 5.8 * S, z - 2.2 * S];
+  branch(bMat, p3[0], p3[1], p3[2], b4_1[0], b4_1[1], b4_1[2], 0.18 * S, 0.13 * S);
+  branch(bMat, b4_1[0], b4_1[1], b4_1[2], b4_2[0], b4_2[1], b4_2[2], 0.13 * S, 0.08 * S);
+  branch(bMat, b4_2[0], b4_2[1], b4_2[2], b4_3[0], b4_3[1], b4_3[2], 0.08 * S, 0.05 * S);
+
+  // 5. Central Crown Apex
+  const b5_1 = [x + 0.1 * S, y + 4.8 * S, z + 0.1 * S];
+  const b5_2 = [x - 0.2 * S, y + 5.8 * S, z + 0.3 * S];
+  const b5_3 = [x + 0.2 * S, y + 6.6 * S, z - 0.1 * S];
+  branch(bMat, p3[0], p3[1], p3[2], b5_1[0], b5_1[1], b5_1[2], 0.19 * S, 0.14 * S);
+  branch(bMat, b5_1[0], b5_1[1], b5_1[2], b5_2[0], b5_2[1], b5_2[2], 0.14 * S, 0.09 * S);
+  branch(bMat, b5_2[0], b5_2[1], b5_2[2], b5_3[0], b5_3[1], b5_3[2], 0.09 * S, 0.05 * S);
+
+  // Blossom Cloud Clusters (Dense, lush, voluminous foliage puffs attached directly to branches)
   const clusters = [
-    { dx: 0, dy: 4.8, dz: 0, sx: 4.8, sy: 2.8, sz: 4.8 },
-    { dx: -1.6, dy: 4.2, dz: 1.2, sx: 3.4, sy: 2.4, sz: 3.4 },
-    { dx: 1.8, dy: 4.4, dz: -1.4, sx: 3.6, sy: 2.5, sz: 3.6 },
-    { dx: 1.2, dy: 4.1, dz: 1.6, sx: 3.2, sy: 2.2, sz: 3.2 },
-    { dx: -1.4, dy: 4.3, dz: -1.5, sx: 3.2, sy: 2.2, sz: 3.2 },
-    { dx: 0, dy: 6.0, dz: 0, sx: 3.6, sy: 2.2, sz: 3.6 },
+    // Center & Apex
+    { dx: 0, dy: 5.0, dz: 0, sx: 4.8, sy: 3.2, sz: 4.8, count: 18, cardScale: 0.72 },
+    { dx: 0, dy: 6.3, dz: 0, sx: 4.0, sy: 2.8, sz: 4.0, count: 16, cardScale: 0.70 },
+    // East / NE branch clusters
+    { dx: 1.8, dy: 4.7, dz: -1.3, sx: 3.8, sy: 2.6, sz: 3.8, count: 16, cardScale: 0.68 },
+    { dx: 2.6, dy: 5.1, dz: -1.9, sx: 3.4, sy: 2.4, sz: 3.4, count: 14, cardScale: 0.65 },
+    { dx: 1.6, dy: 5.6, dz: -0.4, sx: 3.2, sy: 2.2, sz: 3.2, count: 14, cardScale: 0.65 },
+    // West / SW branch clusters
+    { dx: -1.8, dy: 4.4, dz: 1.2, sx: 3.8, sy: 2.6, sz: 3.8, count: 16, cardScale: 0.68 },
+    { dx: -2.7, dy: 4.7, dz: 1.7, sx: 3.4, sy: 2.4, sz: 3.4, count: 14, cardScale: 0.65 },
+    { dx: -1.8, dy: 5.3, dz: 0.2, sx: 3.2, sy: 2.2, sz: 3.2, count: 14, cardScale: 0.65 },
+    // South-East
+    { dx: 1.6, dy: 4.5, dz: 1.8, sx: 3.6, sy: 2.4, sz: 3.6, count: 15, cardScale: 0.66 },
+    { dx: 2.3, dy: 4.9, dz: 2.4, sx: 3.0, sy: 2.2, sz: 3.0, count: 13, cardScale: 0.64 },
+    // North-West
+    { dx: -1.3, dy: 4.9, dz: -1.4, sx: 3.6, sy: 2.5, sz: 3.6, count: 15, cardScale: 0.66 },
+    { dx: -1.9, dy: 5.6, dz: -2.0, sx: 3.0, sy: 2.2, sz: 3.0, count: 13, cardScale: 0.64 },
   ];
 
-  for (const c of clusters) {
-    emit(nextCanopy(), mat, x + c.dx * S, y + c.dy * S, z + c.dz * S, c.sx * S, c.sy * S, c.sz * S, 0, 0, 0, false);
-  }
+  clusters.forEach((c, i) => {
+    puffFoliage(mat, x + c.dx * S, y + c.dy * S, z + c.dz * S,
+      c.sx * S * 0.5, c.sy * S * 0.5, c.sz * S * 0.5,
+      { seed: seedAt(x, z, i + 1), count: c.count, cardScale: c.cardScale });
+  });
 }
 
 function buildJapanesePine(x, y, z, scale = 1) {
   const S = scale;
-  // Windswept trunk
-  cylinder(M.treeTrunk, x, y + 1.8 * S, z, 0.38 * S, 3.6 * S, 0, 0.15, 0.12, true);
-  cylinder(M.treeTrunk, x + 0.6 * S, y + 3.4 * S, z + 0.5 * S, 0.25 * S, 2.4 * S, 0.5, -0.2, 0.35, true);
+  const bMat = M.treeTrunk;
 
-  // Horizontal cloud-like pine needle pads
+  // Root flares
+  treeRootFlairs(bMat, x, y, z, S, 4);
+
+  // Windswept, sinuous trunk
+  const p0 = [x, y, z];
+  const p1 = [x + 0.25 * S, y + 1.2 * S, z + 0.15 * S];
+  const p2 = [x + 0.55 * S, y + 2.4 * S, z + 0.35 * S];
+  const p3 = [x + 0.35 * S, y + 3.5 * S, z + 0.20 * S];
+  const p4 = [x - 0.10 * S, y + 4.4 * S, z - 0.10 * S];
+
+  branch(bMat, p0[0], p0[1], p0[2], p1[0], p1[1], p1[2], 0.45 * S, 0.38 * S);
+  branch(bMat, p1[0], p1[1], p1[2], p2[0], p2[1], p2[2], 0.38 * S, 0.31 * S);
+  branch(bMat, p2[0], p2[1], p2[2], p3[0], p3[1], p3[2], 0.31 * S, 0.24 * S);
+  branch(bMat, p3[0], p3[1], p3[2], p4[0], p4[1], p4[2], 0.24 * S, 0.17 * S);
+
+  // Lateral boughs supporting horizontal cloud pads (Niwaki style)
+  // Low right bough
+  const r1 = [x + 1.4 * S, y + 2.8 * S, z + 0.7 * S];
+  const r2 = [x + 2.2 * S, y + 3.0 * S, z + 1.0 * S];
+  branch(bMat, p2[0], p2[1], p2[2], r1[0], r1[1], r1[2], 0.20 * S, 0.13 * S);
+  branch(bMat, r1[0], r1[1], r1[2], r2[0], r2[1], r2[2], 0.13 * S, 0.08 * S);
+
+  // Mid left bough
+  const l1 = [x - 0.9 * S, y + 3.7 * S, z - 0.3 * S];
+  const l2 = [x - 1.8 * S, y + 3.8 * S, z - 0.6 * S];
+  branch(bMat, p3[0], p3[1], p3[2], l1[0], l1[1], l1[2], 0.19 * S, 0.12 * S);
+  branch(bMat, l1[0], l1[1], l1[2], l2[0], l2[1], l2[2], 0.12 * S, 0.07 * S);
+
+  // Upper right bough
+  const u1 = [x + 1.2 * S, y + 4.3 * S, z + 0.8 * S];
+  const u2 = [x + 1.9 * S, y + 4.5 * S, z + 1.1 * S];
+  branch(bMat, p4[0], p4[1], p4[2], u1[0], u1[1], u1[2], 0.16 * S, 0.10 * S);
+  branch(bMat, u1[0], u1[1], u1[2], u2[0], u2[1], u2[1], 0.10 * S, 0.06 * S);
+
+  // Apex bough
+  const t1 = [x - 0.3 * S, y + 5.1 * S, z - 0.1 * S];
+  branch(bMat, p4[0], p4[1], p4[2], t1[0], t1[1], t1[2], 0.15 * S, 0.08 * S);
+
+  // Horizontal niwaki pine needle pads
   const pads = [
-    { dx: 0.8, dy: 3.0, dz: 0.6, sx: 3.4, sy: 0.8, sz: 2.8 },
-    { dx: -1.2, dy: 3.8, dz: -0.4, sx: 3.6, sy: 0.85, sz: 3.0 },
-    { dx: 1.6, dy: 4.4, dz: 1.2, sx: 3.2, sy: 0.75, sz: 2.6 },
-    { dx: 0.2, dy: 5.2, dz: 0.2, sx: 2.8, sy: 0.8, sz: 2.6 },
+    { dx: 2.2, dy: 3.1, dz: 1.0, sx: 3.6, sy: 0.9, sz: 3.0 },
+    { dx: -1.8, dy: 3.9, dz: -0.6, sx: 3.8, sy: 0.95, sz: 3.2 },
+    { dx: 1.9, dy: 4.6, dz: 1.1, sx: 3.4, sy: 0.85, sz: 2.8 },
+    { dx: -0.3, dy: 5.3, dz: -0.1, sx: 3.0, sy: 0.9, sz: 2.8 },
   ];
-  for (const p of pads) {
-    emit(nextCanopy(), M.pineFoliage, x + p.dx * S, y + p.dy * S, z + p.dz * S, p.sx * S, p.sy * S, p.sz * S, 0, 0, 0, false);
-  }
+  pads.forEach((p, i) => {
+    puffFoliage(M.pineFoliage, x + p.dx * S, y + p.dy * S, z + p.dz * S,
+      p.sx * S * 0.5, p.sy * S * 0.5, p.sz * S * 0.5,
+      { seed: seedAt(x, z, i + 20), count: 18, flatten: 0.82, cardScale: 0.75 });
+  });
 }
 
 function buildMomijiMaple(x, y, z, scale = 1) {
   const S = scale;
-  cylinder(M.treeTrunk, x, y + 1.6 * S, z, 0.26 * S, 3.2 * S, 0.3, 0.1, -0.1, true);
+  const bMat = M.treeTrunk;
+
+  // Root flares
+  treeRootFlairs(bMat, x, y, z, S, 4);
+
+  // Delicate curving trunk with graceful arching stems
+  const p0 = [x, y, z];
+  const p1 = [x + 0.12 * S, y + 1.1 * S, z - 0.08 * S];
+  const p2 = [x - 0.05 * S, y + 2.2 * S, z + 0.06 * S];
+  const p3 = [x + 0.08 * S, y + 3.1 * S, z - 0.02 * S];
+
+  branch(bMat, p0[0], p0[1], p0[2], p1[0], p1[1], p1[2], 0.32 * S, 0.25 * S);
+  branch(bMat, p1[0], p1[1], p1[2], p2[0], p2[1], p2[2], 0.25 * S, 0.20 * S);
+  branch(bMat, p2[0], p2[1], p2[2], p3[0], p3[1], p3[2], 0.20 * S, 0.15 * S);
+
+  // Arching branches
+  // Branch A
+  const a1 = [x - 1.2 * S, y + 3.3 * S, z + 0.7 * S];
+  const a2 = [x - 2.0 * S, y + 3.6 * S, z + 1.1 * S];
+  branch(bMat, p2[0], p2[1], p2[2], a1[0], a1[1], a1[2], 0.16 * S, 0.10 * S);
+  branch(bMat, a1[0], a1[1], a1[2], a2[0], a2[1], a2[2], 0.10 * S, 0.06 * S);
+
+  // Branch B
+  const b1 = [x + 1.3 * S, y + 3.5 * S, z - 0.8 * S];
+  const b2 = [x + 2.1 * S, y + 3.8 * S, z - 1.2 * S];
+  branch(bMat, p3[0], p3[1], p3[2], b1[0], b1[1], b1[2], 0.15 * S, 0.09 * S);
+  branch(bMat, b1[0], b1[1], b1[2], b2[0], b2[1], b2[2], 0.09 * S, 0.05 * S);
+
+  // Branch C (Crown)
+  const c1 = [x - 0.2 * S, y + 4.1 * S, z + 0.1 * S];
+  const c2 = [x + 0.1 * S, y + 4.7 * S, z - 0.1 * S];
+  branch(bMat, p3[0], p3[1], p3[2], c1[0], c1[1], c1[2], 0.14 * S, 0.08 * S);
+  branch(bMat, c1[0], c1[1], c1[2], c2[0], c2[1], c2[2], 0.08 * S, 0.05 * S);
+
+  // Vibrant foliage clouds
   const clusters = [
-    { dx: 0, dy: 3.6, dz: 0, sx: 3.6, sy: 2.2, sz: 3.6 },
-    { dx: -1.2, dy: 3.2, dz: 0.8, sx: 2.6, sy: 1.8, sz: 2.6 },
-    { dx: 1.3, dy: 3.4, dz: -0.9, sx: 2.8, sy: 1.8, sz: 2.8 },
+    { dx: 0, dy: 4.2, dz: 0, sx: 3.8, sy: 2.4, sz: 3.8, count: 18, cardScale: 0.72 },
+    { dx: -1.7, dy: 3.6, dz: 0.9, sx: 3.2, sy: 2.0, sz: 3.2, count: 16, cardScale: 0.70 },
+    { dx: 1.8, dy: 3.8, dz: -1.0, sx: 3.4, sy: 2.1, sz: 3.4, count: 16, cardScale: 0.70 },
+    { dx: 0.1, dy: 4.8, dz: -0.1, sx: 3.0, sy: 1.9, sz: 3.0, count: 14, cardScale: 0.68 },
   ];
-  for (const c of clusters) {
-    emit(nextCanopy(), M.momijiRed, x + c.dx * S, y + c.dy * S, z + c.dz * S, c.sx * S, c.sy * S, c.sz * S, 0, 0, 0, false);
-  }
+  clusters.forEach((c, i) => {
+    puffFoliage(M.momijiRed, x + c.dx * S, y + c.dy * S, z + c.dz * S,
+      c.sx * S * 0.5, c.sy * S * 0.5, c.sz * S * 0.5,
+      { seed: seedAt(x, z, i + 40), count: c.count, cardScale: c.cardScale });
+  });
 }
 
 function buildBambooGrove(centerX, centerY, centerZ, count = 25, radius = 6) {
@@ -1398,7 +1926,22 @@ function buildBambooGrove(centerX, centerY, centerZ, count = 25, radius = 6) {
     const tilt = (Math.random() - 0.5) * 0.06;
 
     cylinder(M.bambooGreen, bx, centerY + bh / 2, bz, 0.08, bh, 0, tilt, tilt, true);
-    emit(nextCanopy(), M.bambooLeaf, bx, centerY + bh - 0.4, bz, 1.4, 2.2, 1.4, 0, 0, 0, false);
+    const leafSeed = seedAt(bx, bz, 70);
+    const lr = mulberry32(leafSeed);
+    for (let k = 0; k < 6; k++) {
+      const yaw = (k / 6) * Math.PI * 2 + lr() * 0.4;
+      foliageCards.push({
+        mat: M.bambooLeaf,
+        x: bx + Math.cos(yaw) * 0.25,
+        y: centerY + bh - 0.15 - lr() * 0.35,
+        z: bz + Math.sin(yaw) * 0.25,
+        sx: 0.55 + lr() * 0.25,
+        sy: 1.15 + lr() * 0.35,
+        rx: 0.85 + lr() * 0.35,
+        ry: yaw,
+        rz: (lr() - 0.5) * 0.25,
+      });
+    }
   }
 }
 
@@ -1406,12 +1949,24 @@ function buildBambooGrove(centerX, centerY, centerZ, count = 25, radius = 6) {
 // 10. Sakura Falling Petals Particle System
 // ---------------------------------------------------------------------------
 const PETAL_COUNT = 450;
-const petalGeo = new THREE.PlaneGeometry(0.14, 0.22);
+const petalGeo = new THREE.PlaneGeometry(0.16, 0.20);
+// Untextured, these quads read as pink confetti rectangles the moment one drifts
+// close to the camera. Same petal the blossoms are built from, alpha-tested down
+// to its own outline.
+const petalT = canvasTexture((() => {
+  const c = makeCanvas(64);
+  const g = c.getContext('2d');
+  g.translate(32, 58);
+  drawSakuraPetal(g, 52, 24, '#ff9dbb', '#ffd0e0');
+  return c;
+})());
 const petalMat = new THREE.MeshBasicMaterial({
-  color: 0xffbccc,
+  color: 0xffffff,
+  map: petalT,
   side: THREE.DoubleSide,
   transparent: true,
-  opacity: 0.82,
+  opacity: 0.92,
+  alphaTest: 0.35,
   depthWrite: false,
 });
 const petalMesh = new THREE.InstancedMesh(petalGeo, petalMat, PETAL_COUNT);
@@ -1531,8 +2086,10 @@ function sandoRun(z0, z1) {
   const z = (z0 + z1) / 2;
   const d = z1 - z0;
   box(M.stonePaver, SANDO_X, SANDO_Y, z, SANDO_W, SANDO_H, d, 0, 0, 0, false);
-  box(M.stoneLantern, -2.9, 0.14, z, 0.5, 0.26, d, 0, 0, 0, true);
-  box(M.stoneLantern, 2.9, 0.14, z, 0.5, 0.26, d, 0, 0, 0, true);
+  // Ishidatami kerbs. Flagged as props they become a pair of 50–60 m walls
+  // that trap you on the sando — you cannot step onto the lawn at all.
+  box(M.stoneLantern, -2.9, 0.14, z, 0.5, 0.26, d, 0, 0, 0, false);
+  box(M.stoneLantern, 2.9, 0.14, z, 0.5, 0.26, d, 0, 0, 0, false);
 }
 sandoRun(SANDO_AXIS_Z0, SANDO_SOUTH_Z1);
 sandoRun(SANDO_NORTH_Z0, SANDO_AXIS_Z1);
@@ -1590,7 +2147,7 @@ buildMainShrine(0, 0.15, 95);
 buildPagoda(-26, 0.15, 82);
 
 // Zen Rock Garden
-buildZenGarden(28, 0.15, 78, 22, 16);
+buildZenGarden(ZEN_X, ZEN_Y, ZEN_Z, ZEN_W, ZEN_D);
 
 // Ema rack
 buildEmaRack(8.5, 0.15, 65, -0.4);
@@ -1626,6 +2183,7 @@ buildBambooGrove(48, 0.1, 45, 35, 12);
 buildBambooGrove(-45, 0.1, 100, 30, 10);
 buildBambooGrove(45, 0.1, 100, 30, 10);
 buildBambooGrove(0, 0.1, 135, 45, 16);
+flushFoliageCards();
 
 // ---------------------------------------------------------------------------
 // 14. Vehicles & Return Car on Parking Lot
@@ -2569,8 +3127,12 @@ function groundFn(x, z) {
   }
   // Chōzuya paved floor — buildChozuya(-9.5, 0.15, 12)
   if (Math.abs(x + 9.5) <= 3 && Math.abs(z - 12) <= 2.5) return 0.45;
-  // Zen garden viewing platform — buildZenGarden(28, 0.15, 78, 22, 16)
-  if (Math.abs(x - 28) <= 4 && Math.abs(z - 87.8) <= 1.6) return 0.75;
+  // Zen garden viewing platform
+  if (Math.abs(x - ZEN_X) <= 4 && Math.abs(z - ZEN_DECK_Z) <= 1.6) return ZEN_DECK_TOP;
+  // Raked sand bed — walk across the lawn and onto the white park
+  if (Math.abs(x - ZEN_X) <= ZEN_SAND_HALF_W && Math.abs(z - ZEN_Z) <= ZEN_SAND_HALF_D) {
+    return ZEN_SAND_TOP;
+  }
   // Split sando (does not cross the pond)
   if (Math.abs(x - SANDO_X) <= SANDO_W / 2 &&
       ((z >= SANDO_AXIS_Z0 && z <= SANDO_SOUTH_Z1) ||
