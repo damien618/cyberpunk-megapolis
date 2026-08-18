@@ -1032,8 +1032,11 @@ function flushKits() {
       for (let i = 0; i < data.items.length; i++) {
         const it = data.items[i];
         p.set(it.x, it.y, it.z);
-        e.set(it.rx || 0, it.ry || 0, it.rz || 0, 'YXZ');
-        q.setFromEuler(e);
+        if (it.qw !== undefined) q.set(it.qx, it.qy, it.qz, it.qw);
+        else {
+          e.set(it.rx || 0, it.ry || 0, it.rz || 0, 'YXZ');
+          q.setFromEuler(e);
+        }
         s.set(it.sx ?? 1, it.sy ?? 1, it.sz ?? 1);
         m.compose(p, q, s);
         im.setMatrixAt(i, m);
@@ -1172,22 +1175,29 @@ function cylinder(mat, x, y, z, radius, height, ry = 0, rx = 0, rz = 0, prop = f
 const _branchDir = new THREE.Vector3();
 const _branchUp = new THREE.Vector3(0, 1, 0);
 const _branchQuat = new THREE.Quaternion();
-const _branchEuler = new THREE.Euler();
 
 function branch(mat, x1, y1, z1, x2, y2, z2, r1, r2, isProp = true) {
   const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
-  const len = Math.hypot(dx, dy, dz);
+  let len = Math.hypot(dx, dy, dz);
   if (len < 0.001) return;
+  // A swapped axis (y used as z) turns a 1 m twig into a 50 m pole across
+  // the precinct. Drop anything that long — real boughs stay under ~8 m.
+  if (len > 8) return;
   const mx = (x1 + x2) * 0.5;
   const my = (y1 + y2) * 0.5;
   const mz = (z1 + z2) * 0.5;
-  
+
   _branchDir.set(dx / len, dy / len, dz / len);
   _branchQuat.setFromUnitVectors(_branchUp, _branchDir);
-  _branchEuler.setFromQuaternion(_branchQuat, 'YXZ');
-  
+
   const d = r1 * 2;
-  emit(G.taperCyl, mat, mx, my, mz, d, len, d, _branchEuler.x, _branchEuler.y, _branchEuler.z, isProp);
+  emit(G.taperCyl, mat, mx, my, mz, d, len, d, 0, 0, 0, isProp);
+  const items = kits.get(mat).get(G.taperCyl).items;
+  const last = items[items.length - 1];
+  last.qx = _branchQuat.x;
+  last.qy = _branchQuat.y;
+  last.qz = _branchQuat.z;
+  last.qw = _branchQuat.w;
 }
 
 function treeRootFlairs(mat, x, y, z, S, count = 5) {
@@ -1846,7 +1856,7 @@ function buildJapanesePine(x, y, z, scale = 1) {
   const u1 = [x + 1.2 * S, y + 4.3 * S, z + 0.8 * S];
   const u2 = [x + 1.9 * S, y + 4.5 * S, z + 1.1 * S];
   branch(bMat, p4[0], p4[1], p4[2], u1[0], u1[1], u1[2], 0.16 * S, 0.10 * S);
-  branch(bMat, u1[0], u1[1], u1[2], u2[0], u2[1], u2[1], 0.10 * S, 0.06 * S);
+  branch(bMat, u1[0], u1[1], u1[2], u2[0], u2[1], u2[2], 0.10 * S, 0.06 * S);
 
   // Apex bough
   const t1 = [x - 0.3 * S, y + 5.1 * S, z - 0.1 * S];
