@@ -39,7 +39,11 @@ const kneelDayPrompt = document.getElementById('kneelDayPrompt');
 const kneelNightPrompt = document.getElementById('kneelNightPrompt');
 const fadeEl = document.getElementById('fade');
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+// The sky palace sits at y=180 under the same near=0.25/far=2200 camera used
+// at ground level; a linear depth buffer spends most of its precision near
+// the camera, so coincident surfaces 200 units out flicker as you walk
+// across them. main.js hit the same wall at city scale — same fix here.
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', logarithmicDepthBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
@@ -761,6 +765,106 @@ function makeBambooCanvas({ size = 512, seed = 23 } = {}) {
   return c;
 }
 
+// Checkered Marble Plaza: alternating polished white marble and deep obsidian tiles
+function makeCheckeredFloorCanvas({ size = 512, seed = 7, tiles = 8 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const tileSize = size / tiles;
+  const rnd = mulberry32(seed);
+  for (let y = 0; y < tiles; y++) {
+    for (let x = 0; x < tiles; x++) {
+      const isWhite = (x + y) % 2 === 0;
+      g.fillStyle = isWhite ? '#fcfbf7' : '#1e2428';
+      g.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+      
+      // Marble veining
+      g.save();
+      g.beginPath();
+      g.rect(x * tileSize + 1, y * tileSize + 1, tileSize - 2, tileSize - 2);
+      g.clip();
+      
+      const veins = isWhite ? 6 : 4;
+      for (let v = 0; v < veins; v++) {
+        g.strokeStyle = isWhite ? 'rgba(180, 175, 165, 0.25)' : 'rgba(255, 255, 255, 0.12)';
+        g.lineWidth = 0.8 + rnd() * 1.5;
+        g.beginPath();
+        let vx = x * tileSize + rnd() * tileSize;
+        let vy = y * tileSize + rnd() * tileSize;
+        g.moveTo(vx, vy);
+        for (let s = 0; s < 4; s++) {
+          vx += (rnd() - 0.5) * tileSize * 0.6;
+          vy += (rnd() - 0.5) * tileSize * 0.6;
+          g.lineTo(vx, vy);
+        }
+        g.stroke();
+      }
+      
+      // Tile bevel / border
+      g.strokeStyle = isWhite ? 'rgba(140, 135, 125, 0.45)' : 'rgba(0, 0, 0, 0.6)';
+      g.lineWidth = 2;
+      g.strokeRect(x * tileSize + 1, y * tileSize + 1, tileSize - 2, tileSize - 2);
+      
+      // Specular rim
+      g.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(x * tileSize + 2, (y + 1) * tileSize - 2);
+      g.lineTo(x * tileSize + 2, y * tileSize + 2);
+      g.lineTo((x + 1) * tileSize - 2, y * tileSize + 2);
+      g.stroke();
+      
+      g.restore();
+    }
+  }
+  return c;
+}
+
+// Gilded floor marble: the throne dais and the reflection-pool coping are flat
+// walkable discs several metres across, close enough to the camera that a bare
+// metal MeshStandardMaterial colour reads as an untextured plastic disc. Same
+// veined-tile construction as the checkerboard plaza, one warm gold tone.
+function makeGoldMarbleCanvas({ size = 512, seed = 41, tiles = 4 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const tileSize = size / tiles;
+  const rnd = mulberry32(seed);
+  for (let y = 0; y < tiles; y++) {
+    for (let x = 0; x < tiles; x++) {
+      g.fillStyle = '#c89a3c';
+      g.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+      g.save();
+      g.beginPath();
+      g.rect(x * tileSize + 1, y * tileSize + 1, tileSize - 2, tileSize - 2);
+      g.clip();
+
+      for (let v = 0; v < 5; v++) {
+        g.strokeStyle = rnd() < 0.5 ? 'rgba(255, 235, 175, 0.4)' : 'rgba(110, 76, 16, 0.35)';
+        g.lineWidth = 0.8 + rnd() * 1.6;
+        g.beginPath();
+        let vx = x * tileSize + rnd() * tileSize;
+        let vy = y * tileSize + rnd() * tileSize;
+        g.moveTo(vx, vy);
+        for (let s = 0; s < 4; s++) {
+          vx += (rnd() - 0.5) * tileSize * 0.65;
+          vy += (rnd() - 0.5) * tileSize * 0.65;
+          g.lineTo(vx, vy);
+        }
+        g.stroke();
+      }
+      for (let f = 0; f < 34; f++) {
+        g.fillStyle = `rgba(255, 245, 210, ${0.15 + rnd() * 0.25})`;
+        g.fillRect(x * tileSize + rnd() * tileSize, y * tileSize + rnd() * tileSize,
+          1 + rnd() * 1.5, 1 + rnd() * 1.5);
+      }
+      g.strokeStyle = 'rgba(80, 55, 10, 0.55)';
+      g.lineWidth = 2;
+      g.strokeRect(x * tileSize + 1, y * tileSize + 1, tileSize - 2, tileSize - 2);
+      g.restore();
+    }
+  }
+  return c;
+}
+
 const pineLeafTs = foliageSheets(2, 'pine',
   ['#1b3819', '#244820', '#2d5828', '#1a3318', '#3d6c34'], '#0f200e',
   { count: 46, seed: 5, scaleMin: 0.10, scaleMax: 0.18 });
@@ -794,6 +898,14 @@ const gravelN = canvasTexture(normalFromCanvas(gravelC, 2.2), { srgb: false });
 const bambooSkinC = makeBambooCanvas();
 const bambooSkinT = canvasTexture(bambooSkinC);
 const bambooSkinN = canvasTexture(normalFromCanvas(bambooSkinC, 2.0), { srgb: false });
+
+const checkerC = makeCheckeredFloorCanvas();
+const checkerT = canvasTexture(checkerC);
+const checkerN = canvasTexture(normalFromCanvas(checkerC, 2.0), { srgb: false });
+
+const goldMarbleC = makeGoldMarbleCanvas();
+const goldMarbleT = canvasTexture(goldMarbleC);
+const goldMarbleN = canvasTexture(normalFromCanvas(goldMarbleC, 1.6), { srgb: false });
 
 const M = {
   // Vermilion torii are lacquered, so the grain shows only as a faint relief
@@ -931,6 +1043,29 @@ const M = {
     color: 0x4a4437, roughness: 0.96, metalness: 0.02,
     map: dirtDiff, normalMap: dirtN,
   }),
+  checkerPlaza: new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.22, metalness: 0.06,
+    map: checkerT, normalMap: checkerN, normalScale: new THREE.Vector2(0.8, 0.8),
+  }),
+  palaceWhite: new THREE.MeshStandardMaterial({
+    color: 0xfbf9f4, roughness: 0.38, metalness: 0.02,
+  }),
+  palaceGold: new THREE.MeshStandardMaterial({
+    color: 0xf2c238, roughness: 0.22, metalness: 0.88,
+  }),
+  palaceGoldFloor: new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.32, metalness: 0.5,
+    map: goldMarbleT, normalMap: goldMarbleN, normalScale: new THREE.Vector2(0.6, 0.6),
+  }),
+  towerIvory: new THREE.MeshStandardMaterial({
+    color: 0xf6f0e6, roughness: 0.52, metalness: 0.04,
+    map: woodDiff, normalMap: woodN, normalScale: new THREE.Vector2(0.6, 0.6),
+  }),
+  cloudFluff: new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.95, metalness: 0.0,
+    transparent: true, opacity: 0.70, depthWrite: false,
+    side: THREE.DoubleSide,
+  }),
 };
 
 // ---------------------------------------------------------------------------
@@ -1000,6 +1135,9 @@ worldUV(M.shingleDark, 0.3);
 worldUV(M.shingleRed, 0.3);
 worldUV(M.zenGravel, 0.55);
 worldUV(M.treeTrunk, 0.65);
+worldUV(M.checkerPlaza, 0.125);
+worldUV(M.palaceGoldFloor, 0.25);
+worldUV(M.towerIvory, 0.32);
 // One node ring per tile, so the culms joint roughly every 40 cm.
 worldUV(M.bambooGreen, 2.4);
 
@@ -1091,6 +1229,8 @@ const G = {
   taperCyl: new THREE.CylinderGeometry(0.38, 0.5, 1, 12),
   sphere: new THREE.SphereGeometry(0.5, 16, 12),
   cone: new THREE.ConeGeometry(0.5, 1, 16),
+  dome: new THREE.SphereGeometry(0.5, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.5),
+  invDome: new THREE.SphereGeometry(0.5, 24, 16, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5),
   canopy: [makeCanopyGeometry(101), makeCanopyGeometry(202), makeCanopyGeometry(303)],
   card: new THREE.PlaneGeometry(1, 1),
 };
@@ -1956,7 +2096,346 @@ function buildBambooGrove(centerX, centerY, centerZ, count = 25, radius = 6) {
 }
 
 // ---------------------------------------------------------------------------
-// 10. Sakura Falling Petals Particle System
+// 10. Celestial Tower & Cloud Sanctuary (Tour Céleste & Palais Blanc des Nuages)
+// ---------------------------------------------------------------------------
+function buildSkyClouds(centerX, centerZ, altitude = 180, count = 22, radius = 42) {
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + (Math.sin(i * 3.7) * 0.35);
+    const r = radius * (0.65 + (i % 4) * 0.18);
+    const cx = centerX + Math.cos(angle) * r;
+    const cz = centerZ + Math.sin(angle) * r;
+    const cy = altitude - 6 + (Math.sin(i * 2.1) * 5);
+    
+    // Cluster of 4 overlapping cloud spheres
+    for (let p = 0; p < 4; p++) {
+      const px = cx + Math.cos(p * 1.5) * 5.5;
+      const pz = cz + Math.sin(p * 1.5) * 5.5;
+      const py = cy + (p % 2) * 1.8;
+      const sx = 16 + (p % 3) * 5;
+      const sy = 4.5 + (p % 2) * 2;
+      const sz = 14 + ((p + 1) % 3) * 5;
+      emit(G.sphere, M.cloudFluff, px, py, pz, sx, sy, sz, 0, p * 0.6, 0, false);
+    }
+  }
+}
+
+function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
+  const SUMMIT_Y = 180.0;
+  const TOWER_R = 3.2;
+  const PLATFORM_R = 26.0;
+
+  // 1. Earth Plinth & Grand Approach Gateway
+  // Octagonal base plinth
+  cylinder(M.stonePaver, x, y + 0.3, z, 9.0, 0.6, 0, 0, 0, false);
+  cylinder(M.stonePaver, x, y + 0.7, z, 7.5, 0.4, 0, 0, 0, false);
+  
+  // Decorative stone lanterns and incense braziers
+  for (let a = 0; a < 8; a++) {
+    const ang = (a / 8) * Math.PI * 2;
+    const px = x + Math.cos(ang) * 8.2;
+    const pz = z + Math.sin(ang) * 8.2;
+    cylinder(M.stoneLantern, px, y + 1.2, pz, 0.45, 1.8, 0, 0, 0, true);
+    cylinder(M.goldGiboshi, px, y + 2.2, pz, 0.25, 0.4, 0, 0, 0, false);
+  }
+
+  // Grand Entrance Torii Arch / Portal facing South
+  cylinder(M.toriiRed, x - 3.2, y + 3.0, z + 7.5, 0.35, 5.0, 0, 0, 0, true);
+  cylinder(M.toriiRed, x + 3.2, y + 3.0, z + 7.5, 0.35, 5.0, 0, 0, 0, true);
+  box(M.toriiRed, x, y + 5.5, z + 7.5, 8.4, 0.4, 0.45, 0, 0, 0, true);
+  box(M.toriiBlack, x, y + 6.0, z + 7.5, 9.2, 0.35, 0.6, 0, 0, 0, true);
+
+  // 2. Tower Shaft (Rising from y + 0.8 to SUMMIT_Y - 5)
+  const shaftH = SUMMIT_Y - y - 6;
+  cylinder(M.towerIvory, x, y + shaftH / 2 + 0.8, z, TOWER_R, shaftH, 0, 0, 0, true);
+
+  // 4 Fluted decorative pilasters along cardinal directions
+  for (let i = 0; i < 4; i++) {
+    const ang = (i / 4) * Math.PI * 2;
+    const px = x + Math.cos(ang) * (TOWER_R + 0.15);
+    const pz = z + Math.sin(ang) * (TOWER_R + 0.15);
+    box(M.towerIvory, px, y + shaftH / 2 + 0.8, pz, 0.6, shaftH, 0.6, ang, 0, 0, true);
+  }
+
+  // Ornamental Golden Rings every 14 meters
+  for (let hy = y + 14; hy < SUMMIT_Y - 10; hy += 14) {
+    cylinder(M.palaceGold, x, hy, z, TOWER_R + 0.35, 0.6, 0, 0, 0, true);
+    // 4 glowing lanterns around each ring
+    for (let la = 0; la < 4; la++) {
+      const lang = (la / 4) * Math.PI * 2 + (hy * 0.1);
+      const lx = x + Math.cos(lang) * (TOWER_R + 0.6);
+      const lz = z + Math.sin(lang) * (TOWER_R + 0.6);
+      cylinder(M.lanternGlow, lx, hy, lz, 0.22, 0.45, 0, 0, 0, false);
+    }
+  }
+
+  // Exterior Spiral Steps wrapping around the shaft for physical climbing
+  const totalSteps = 120;
+  for (let s = 0; s < totalSteps; s++) {
+    const t = s / totalSteps;
+    const sy = y + 1.2 + t * (SUMMIT_Y - 12);
+    const sa = t * Math.PI * 18;
+    const sx = x + Math.cos(sa) * (TOWER_R + 0.7);
+    const sz = z + Math.sin(sa) * (TOWER_R + 0.7);
+    box(M.stonePaver, sx, sy, sz, 1.6, 0.18, 0.75, -sa, 0, 0, false);
+    box(M.palaceGold, sx + Math.cos(sa) * 0.8, sy + 0.5, sz + Math.sin(sa) * 0.8, 0.08, 0.9, 0.08, -sa, 0, 0, false);
+  }
+
+  // 3. Intermediate Cloud Pagoda / Mid-Way Rest Station (Altitude 85m)
+  const MID_Y = 85.0;
+  cylinder(M.templeWood, x, MID_Y - 0.5, z, 9.5, 0.8, 0, 0, 0, false);
+  cylinder(M.shingleDark, x, MID_Y + 3.8, z, 10.5, 0.45, 0, 0, 0, false);
+  // Red perimeter railing and bells
+  for (let a = 0; a < 16; a++) {
+    const ang = (a / 16) * Math.PI * 2;
+    const px = x + Math.cos(ang) * 9.0;
+    const pz = z + Math.sin(ang) * 9.0;
+    cylinder(M.bridgeRed, px, MID_Y + 0.5, pz, 0.1, 1.0, 0, 0, 0, false);
+    cylinder(M.brassBell, px, MID_Y + 3.5, pz, 0.08, 0.2, 0, 0, 0, false);
+  }
+  // Mid-way rest benches
+  box(M.templeWoodLight, x + 4.5, MID_Y + 0.4, z, 2.4, 0.4, 0.8, 0, 0, 0, true);
+  box(M.templeWoodLight, x - 4.5, MID_Y + 0.4, z, 2.4, 0.4, 0.8, 0, 0, 0, true);
+
+  // 4. Summit Floating Sanctuary (Altitude 180m)
+  // Inverted Hemisphere Bowl underneath
+  emit(G.invDome, M.towerIvory, x, SUMMIT_Y - 0.2, z, PLATFORM_R * 2 + 1, 18, PLATFORM_R * 2 + 1, 0, 0, 0, false);
+  // Gold lotus cantilever ribs supporting the bowl
+  for (let r = 0; r < 8; r++) {
+    const rang = (r / 8) * Math.PI * 2;
+    const rx = x + Math.cos(rang) * 14.0;
+    const rz = z + Math.sin(rang) * 14.0;
+    box(M.palaceGold, rx, SUMMIT_Y - 6.0, rz, 1.2, 11.0, 1.2, rang, 0.35, 0, false);
+  }
+
+  // Main Checkerboard Plaza Floor (Sol en Damier - Top exactly at 180.20m)
+  // A single cylinder: the box once stacked here duplicated the cylinder's own
+  // top face exactly (same y, same 0.4 height, and fully inside its radius),
+  // so the GPU depth test had two coincident faces to arbitrate on every
+  // frame — the flicker underfoot walking across it.
+  cylinder(M.checkerPlaza, x, SUMMIT_Y, z, PLATFORM_R, 0.4, 0, 0, 0, false);
+
+  // Perimeter Golden Balustrade & Pillars — posts alone, ~5m apart, read as
+  // lamp posts with the void wide open between them at 180m up. A connecting
+  // rail turns them into an actual railing without boxing in the view.
+  const balustradeCount = 28;
+  let prevRailX = null, prevRailZ = null;
+  for (let b = 0; b <= balustradeCount; b++) {
+    const bang = (b / balustradeCount) * Math.PI * 2;
+    const bx = x + Math.cos(bang) * (PLATFORM_R - 0.6);
+    const bz = z + Math.sin(bang) * (PLATFORM_R - 0.6);
+    if (b < balustradeCount) {
+      cylinder(M.palaceWhite, bx, SUMMIT_Y + 0.7, bz, 0.35, 1.2, 0, 0, 0, false);
+      cylinder(M.palaceGold, bx, SUMMIT_Y + 1.4, bz, 0.22, 0.3, 0, 0, 0, false);
+      // Glowing orbs on lookout pillars
+      if (b % 2 === 0) {
+        cylinder(M.lanternGlow, bx, SUMMIT_Y + 1.7, bz, 0.18, 0.3, 0, 0, 0, false);
+      }
+    }
+    if (prevRailX !== null) {
+      branch(M.palaceGold, prevRailX, SUMMIT_Y + 1.5, prevRailZ, bx, SUMMIT_Y + 1.5, bz, 0.05, 0.05, false);
+      branch(M.palaceWhite, prevRailX, SUMMIT_Y + 0.55, prevRailZ, bx, SUMMIT_Y + 0.55, bz, 0.045, 0.045, false);
+    }
+    prevRailX = bx; prevRailZ = bz;
+  }
+
+  // Sacred Reflection Pool at South Entrance of Plaza
+  cylinder(M.palaceGoldFloor, x, SUMMIT_Y + 0.30, z + 16, 5.2, 0.35, 0, 0, 0, false);
+  cylinder(M.water, x, SUMMIT_Y + 0.32, z + 16, 4.8, 0.2, 0, 0, 0, false);
+  cylinder(M.goldGiboshi, x, SUMMIT_Y + 1.0, z + 16, 0.6, 1.2, 0, 0, 0, false);
+
+  // 8 Sculpted Planters with Celestial Dwarf Trees around the plaza
+  for (let p = 0; p < 8; p++) {
+    const pang = (p / 8) * Math.PI * 2 + 0.4;
+    const px = x + Math.cos(pang) * 20.5;
+    const pz = z + Math.sin(pang) * 20.5;
+    // Planter urn
+    cylinder(M.palaceWhite, px, SUMMIT_Y + 0.6, pz, 1.1, 0.8, 0, 0, 0, false);
+    cylinder(M.palaceGold, px, SUMMIT_Y + 1.05, pz, 1.2, 0.12, 0, 0, 0, false);
+    // Miniature celestial sakura / bamboo
+    if (p % 2 === 0) {
+      cylinder(M.treeTrunk, px, SUMMIT_Y + 1.9, pz, 0.14, 1.8, 0, 0, 0, false);
+      puffFoliage(M.sakuraBlossom, px, SUMMIT_Y + 2.9, pz, 1.8, 1.2, 1.8, { seed: p * 17, count: 12, cardScale: 0.6 });
+    } else {
+      cylinder(M.bambooGreen, px, SUMMIT_Y + 2.3, pz, 0.09, 2.6, 0, 0, 0, false);
+      puffFoliage(M.bambooLeaf, px, SUMMIT_Y + 3.3, pz, 1.5, 1.5, 1.5, { seed: p * 23, count: 10, cardScale: 0.65 });
+    }
+  }
+
+  // 5. The Rounded White Palace (Palais Blanc aux dômes - Accessible & Walkable!)
+  const PALACE_Z = z - 8.0;
+  
+  // Palace Podium Base (Flush with plaza top at 180.20m)
+  box(M.palaceWhite, x, SUMMIT_Y, PALACE_Z, 28.0, 0.4, 19.0, 0, 0, 0, false);
+  box(M.checkerPlaza, x, SUMMIT_Y + 0.005, PALACE_Z, 27.0, 0.4, 18.0, 0, 0, 0, false);
+
+  // --- Central Rotunda (Hollow Room, Radius 7.0m) ---
+  // Perimeter Curved Wall Columns & Arch Panels
+  const rotSegments = 16;
+  for (let s = 0; s < rotSegments; s++) {
+    const ang = (s / rotSegments) * Math.PI * 2;
+    // Open doorways:
+    // South doorway: s = 3, 4, 5 (wide open entrance facing the checkered plaza)
+    if (s >= 3 && s <= 5) continue;
+    // West archway: s = 8 (link to West Wing)
+    if (s === 8) continue;
+    // East archway: s = 0 (link to East Wing)
+    if (s === 0) continue;
+
+    const wx = x + Math.cos(ang) * 7.0;
+    const wz = PALACE_Z + Math.sin(ang) * 7.0;
+    // Wall column / pillar
+    cylinder(M.palaceWhite, wx, SUMMIT_Y + 2.8, wz, 0.55, 5.2, 0, 0, 0, false);
+    cylinder(M.palaceGold, wx, SUMMIT_Y + 5.2, wz, 0.65, 0.35, 0, 0, 0, false);
+    // Wall panel between columns
+    const nextAng = ((s + 1) / rotSegments) * Math.PI * 2;
+    if (s !== 2 && s !== 7 && s !== 15) {
+      const midAng = (ang + nextAng) / 2;
+      const mx = x + Math.cos(midAng) * 7.0;
+      const mz = PALACE_Z + Math.sin(midAng) * 7.0;
+      box(M.palaceWhite, mx, SUMMIT_Y + 2.8, mz, 2.6, 5.0, 0.4, -midAng, 0, 0, false);
+    }
+  }
+
+  // Grand Arched South Entrance Portal (Width ~5.6m, Height ~5.2m - Open & Walkable)
+  box(M.palaceWhite, x - 2.8, SUMMIT_Y + 2.8, PALACE_Z + 6.8, 0.8, 5.2, 0.8, 0, 0, 0, false);
+  box(M.palaceWhite, x + 2.8, SUMMIT_Y + 2.8, PALACE_Z + 6.8, 0.8, 5.2, 0.8, 0, 0, 0, false);
+  box(M.palaceGold, x, SUMMIT_Y + 5.2, PALACE_Z + 6.8, 6.8, 0.5, 1.2, 0, 0, 0, false);
+  // Rounded Arch Hood atop the entrance
+  emit(G.dome, M.palaceWhite, x, SUMMIT_Y + 5.2, PALACE_Z + 6.8, 5.8, 2.8, 2.0, 0, 0, 0, false);
+
+  // Crescent Colonnade Portico on the Plaza (Welcoming Curved Entrance).
+  // Bare columns ~1.8m apart left the sky showing clean through every gap —
+  // the naked-pole look the shrine visit was flagged for. A close-packed row
+  // of uprights between each pair reads as an actual wall, and a cornice
+  // spanning column to column ties the row together, both without the
+  // rotation math a flat panel would need to sit tangent to this radius.
+  const crescentCols = [];
+  for (let c = -3; c <= 3; c++) {
+    if (Math.abs(c) < 1) continue; // Keep center wide open
+    const ca = (c / 4) * 0.75;
+    const cx = x + Math.sin(ca) * 9.5;
+    const cz = PALACE_Z + Math.cos(ca) * 9.5;
+    cylinder(M.palaceWhite, cx, SUMMIT_Y + 2.5, cz, 0.38, 4.6, 0, 0, 0, false);
+    cylinder(M.palaceGold, cx, SUMMIT_Y + 4.7, cz, 0.48, 0.25, 0, 0, 0, false);
+    crescentCols.push({ c, ca, x: cx, z: cz });
+  }
+  for (let i = 0; i < crescentCols.length - 1; i++) {
+    const a = crescentCols[i], b = crescentCols[i + 1];
+    if (b.c - a.c !== 1) continue; // straddles the open centre gap
+    for (let t = 0.2; t < 0.99; t += 0.2) {
+      const sa = a.ca + (b.ca - a.ca) * t;
+      const sx = x + Math.sin(sa) * 9.5;
+      const sz = PALACE_Z + Math.cos(sa) * 9.5;
+      cylinder(M.palaceWhite, sx, SUMMIT_Y + 2.3, sz, 0.22, 4.2, 0, 0, 0, false);
+    }
+    branch(M.palaceGold, a.x, SUMMIT_Y + 4.7, a.z, b.x, SUMMIT_Y + 4.7, b.z, 0.16, 0.16, false);
+  }
+
+  // Vaulted Dome Ceiling atop Central Rotunda (High above at Y = 185.5m - Hollow Interior!)
+  emit(G.dome, M.palaceWhite, x, SUMMIT_Y + 5.4, PALACE_Z, 14.4, 8.2, 14.4, 0, 0, 0, false);
+  // Golden Needle Spire atop Main Dome
+  cylinder(M.palaceGold, x, SUMMIT_Y + 11.5, PALACE_Z, 0.35, 4.5, 0, 0, 0, false);
+  cylinder(M.goldGiboshi, x, SUMMIT_Y + 14.0, PALACE_Z, 0.65, 0.9, 0, 0, 0, false);
+
+  // Interior Celestial Chandelier / Glow Ring in the Dome
+  cylinder(M.palaceGold, x, SUMMIT_Y + 6.8, PALACE_Z, 3.5, 0.25, 0, 0, 0, false);
+  cylinder(M.lanternGlow, x, SUMMIT_Y + 6.6, PALACE_Z, 3.2, 0.2, 0, 0, 0, false);
+
+  // Interior Throne / Meditation Dais at North Rear of Hall
+  cylinder(M.palaceGoldFloor, x, SUMMIT_Y + 0.4, PALACE_Z - 3.2, 3.2, 0.4, 0, 0, 0, false);
+  box(M.palaceWhite, x, SUMMIT_Y + 0.8, PALACE_Z - 3.2, 2.4, 0.45, 1.4, 0, 0, 0, false);
+  cylinder(M.goldGiboshi, x - 1.6, SUMMIT_Y + 1.2, PALACE_Z - 3.2, 0.25, 0.8, 0, 0, 0, false);
+  cylinder(M.goldGiboshi, x + 1.6, SUMMIT_Y + 1.2, PALACE_Z - 3.2, 0.25, 0.8, 0, 0, 0, false);
+  // Golden Incense Urn in Hall Center
+  cylinder(M.palaceGold, x, SUMMIT_Y + 0.7, PALACE_Z + 1.0, 0.65, 1.0, 0, 0, 0, false);
+  cylinder(M.lanternGlow, x, SUMMIT_Y + 1.3, PALACE_Z + 1.0, 0.35, 0.25, 0, 0, 0, false);
+
+  // --- Flanking West Wing Pavilion (Walkable Room, R = 4.2m) ---
+  const WEST_X = x - 10.5;
+  for (let w = 0; w < 8; w++) {
+    const wa = (w / 8) * Math.PI * 2;
+    if (w === 0) continue; // Open east doorway connecting to corridor
+    const wx = WEST_X + Math.cos(wa) * 4.2;
+    const wz = PALACE_Z + Math.sin(wa) * 4.2;
+    cylinder(M.palaceWhite, wx, SUMMIT_Y + 2.2, wz, 0.45, 4.0, 0, 0, 0, false);
+    box(M.palaceWhite, wx, SUMMIT_Y + 2.2, wz, 1.8, 3.8, 0.35, -wa, 0, 0, false);
+  }
+  emit(G.dome, M.palaceWhite, WEST_X, SUMMIT_Y + 4.2, PALACE_Z, 8.6, 4.8, 8.6, 0, 0, 0, false);
+  cylinder(M.palaceGold, WEST_X, SUMMIT_Y + 7.5, PALACE_Z, 0.22, 2.2, 0, 0, 0, false);
+  // West Room Celestial Star Globe
+  cylinder(M.palaceGold, WEST_X, SUMMIT_Y + 0.6, PALACE_Z, 0.8, 0.8, 0, 0, 0, false);
+  cylinder(M.goldGiboshi, WEST_X, SUMMIT_Y + 1.5, PALACE_Z, 0.55, 0.8, 0, 0, 0, false);
+
+  // --- Flanking East Wing Pavilion (Walkable Room, R = 4.2m) ---
+  const EAST_X = x + 10.5;
+  for (let e = 0; e < 8; e++) {
+    const ea = (e / 8) * Math.PI * 2;
+    if (e === 4) continue; // Open west doorway connecting to corridor
+    const ex = EAST_X + Math.cos(ea) * 4.2;
+    const ez = PALACE_Z + Math.sin(ea) * 4.2;
+    cylinder(M.palaceWhite, ex, SUMMIT_Y + 2.2, ez, 0.45, 4.0, 0, 0, 0, false);
+    box(M.palaceWhite, ex, SUMMIT_Y + 2.2, ez, 1.8, 3.8, 0.35, -ea, 0, 0, false);
+  }
+  emit(G.dome, M.palaceWhite, EAST_X, SUMMIT_Y + 4.2, PALACE_Z, 8.6, 4.8, 8.6, 0, 0, 0, false);
+  cylinder(M.palaceGold, EAST_X, SUMMIT_Y + 7.5, PALACE_Z, 0.22, 2.2, 0, 0, 0, false);
+  // East Room Celestial Water Font
+  cylinder(M.palaceGold, EAST_X, SUMMIT_Y + 0.6, PALACE_Z, 1.2, 0.6, 0, 0, 0, false);
+  cylinder(M.water, EAST_X, SUMMIT_Y + 0.85, PALACE_Z, 1.0, 0.15, 0, 0, 0, false);
+
+  // Open Covered Corridors connecting Rotunda to Wings
+  // West Corridor (Open Walkway)
+  box(M.palaceWhite, (x + WEST_X) / 2, SUMMIT_Y + 4.2, PALACE_Z, 3.5, 0.4, 3.0, 0, 0, 0, false);
+  cylinder(M.palaceWhite, (x + WEST_X) / 2, SUMMIT_Y + 2.0, PALACE_Z + 1.4, 0.3, 3.8, 0, 0, 0, false);
+  cylinder(M.palaceWhite, (x + WEST_X) / 2, SUMMIT_Y + 2.0, PALACE_Z - 1.4, 0.3, 3.8, 0, 0, 0, false);
+
+  // East Corridor (Open Walkway)
+  box(M.palaceWhite, (x + EAST_X) / 2, SUMMIT_Y + 4.2, PALACE_Z, 3.5, 0.4, 3.0, 0, 0, 0, false);
+  cylinder(M.palaceWhite, (x + EAST_X) / 2, SUMMIT_Y + 2.0, PALACE_Z + 1.4, 0.3, 3.8, 0, 0, 0, false);
+  cylinder(M.palaceWhite, (x + EAST_X) / 2, SUMMIT_Y + 2.0, PALACE_Z - 1.4, 0.3, 3.8, 0, 0, 0, false);
+
+  // 6. Floating Cloud Layers in the Sky
+  buildSkyClouds(x, z, SUMMIT_Y - 2, 22, 42);
+
+  // 7. Register Interactive Climbing & Teleport Spots
+  furnitureInteractions.push({
+    type: 'towerAscent',
+    label: "Escalader la Tour Céleste vers le Paradis  (E)",
+    x: x, y: 1.2, z: z + 8.5,
+    centerX: x, centerZ: z + 8.5,
+    approachY: 0.85,
+    yaw: 0,
+    halfWidth: 3.5, halfDepth: 3.5,
+    triggerDistance: 3.2,
+    occupied: false,
+  });
+
+  furnitureInteractions.push({
+    type: 'towerDescent',
+    label: "Redescendre sur Terre au Sanctuaire  (E)",
+    x: x, y: SUMMIT_Y + 0.7, z: z + 24.5,
+    centerX: x, centerZ: z + 24.5,
+    approachY: 180.20,
+    yaw: Math.PI,
+    halfWidth: 3.5, halfDepth: 3.5,
+    triggerDistance: 3.2,
+    occupied: false,
+  });
+
+  furnitureInteractions.push({
+    type: 'sit',
+    label: "Méditer dans le Palais Céleste  (E)",
+    x: x, y: 181.1, z: PALACE_Z - 3.2,
+    centerX: x, centerZ: PALACE_Z - 3.2,
+    approachY: 180.20,
+    yaw: Math.PI,
+    halfWidth: 1.5, halfDepth: 1.5,
+    triggerDistance: 1.5,
+    occupied: false,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 11. Sakura Falling Petals Particle System
 // ---------------------------------------------------------------------------
 const PETAL_COUNT = 450;
 const petalGeo = new THREE.PlaneGeometry(0.16, 0.20);
@@ -2194,6 +2673,9 @@ buildBambooGrove(-45, 0.1, 100, 30, 10);
 buildBambooGrove(45, 0.1, 100, 30, 10);
 buildBambooGrove(0, 0.1, 135, 45, 16);
 flushFoliageCards();
+
+// Celestial Cloud Tower & White Palace Sanctuary (Ascension to Heaven)
+buildCelestialTowerAndSanctuary(55, 0.15, 15);
 
 // ---------------------------------------------------------------------------
 // 14. Vehicles & Return Car on Parking Lot
@@ -3098,7 +3580,35 @@ let player = null;
 // other slabs stand proud of that — a constant groundY left the feet
 // buried in the raised central alley (and anywhere else the stone is higher).
 const BASE_GROUND = 0.1;
-function groundFn(x, z) {
+function groundFn(x, z, yFrom, feetY) {
+  const curY = feetY ?? (ctrl ? ctrl.pos.y : 0);
+
+  // Celestial Tower & Cloud Sanctuary
+  const TOWER_X = 55, TOWER_Z = 15;
+  const distTower = Math.hypot(x - TOWER_X, z - TOWER_Z);
+
+  // 1. Summit Floating Sanctuary (Altitude ~180m)
+  if (curY > 120) {
+    if (distTower <= 26.5) {
+      // Throne dais inside the palace
+      if (Math.hypot(x - TOWER_X, z - (TOWER_Z - 11.2)) <= 2.5) {
+        return 180.50;
+      }
+      // Entire checkerboard plaza, esplanade, and palace interior
+      return 180.20;
+    }
+  } else if (curY > 40 && curY <= 120) {
+    // 2. Intermediate Cloud Pagoda Station (Altitude 85m)
+    if (distTower <= 9.5) {
+      return 85.0;
+    }
+  }
+
+  // 3. Base Tower Plaza Plinth (Ground level)
+  if (distTower <= 9.0) {
+    return 0.85;
+  }
+
   // Main shrine deck & stairs — buildMainShrine(0, 0.15, 95)
   {
     const sx = 0, sy = 0.15, sz = 95, W = 18, D = 14;
@@ -3354,7 +3864,7 @@ function updateFurnitureInteraction(dt) {
   let nearest = null, nearestDistance = Infinity;
   for (const spot of [returnCarInteraction, ...furnitureInteractions]) {
     if (spot === releasedSpot || spot.occupied) continue;
-    if (Math.abs(ctrl.pos.y - spot.approachY) > (spot.type === 'travel' ? 1.4 : (spot.type === 'kneel' ? 1.2 : 0.8))) continue;
+    if (Math.abs(ctrl.pos.y - spot.approachY) > (spot.type === 'travel' ? 1.4 : (spot.type === 'towerAscent' || spot.type === 'towerDescent' ? 2.5 : (spot.type === 'kneel' ? 1.2 : 0.8)))) continue;
     const distance = distanceToFurniture(spot, ctrl.pos);
     if (distance < (spot.triggerDistance ?? 0.6) && distance < nearestDistance) {
       nearest = spot;
@@ -3379,6 +3889,50 @@ function updateFurnitureInteraction(dt) {
         setTimeout(() => {
           location.href = 'index.html?map=airport&arrival=japan';
         }, 400);
+        return true;
+      }
+      if (nearest.type === 'towerAscent') {
+        setFurniturePrompt(null);
+        if (fadeEl) {
+          fadeEl.style.opacity = '1';
+          setTimeout(() => {
+            ctrl.rescueTo(new THREE.Vector3(55, 180.20, 32));
+            input.yaw = Math.PI; // Face north towards the checkered plaza and white palace
+            input.pitch = 0;
+            const msg = document.getElementById('msg');
+            if (msg) {
+              msg.textContent = "Sanctuaire Céleste — Vous atteignez le Palais Blanc au-dessus des nuages";
+              msg.style.opacity = '1';
+              setTimeout(() => { if (msg) msg.style.opacity = '0'; }, 5000);
+            }
+            fadeEl.style.opacity = '0';
+          }, 450);
+        } else {
+          ctrl.rescueTo(new THREE.Vector3(55, 180.20, 32));
+        }
+        furnitureInteractionCooldown = 1.0;
+        return true;
+      }
+      if (nearest.type === 'towerDescent') {
+        setFurniturePrompt(null);
+        if (fadeEl) {
+          fadeEl.style.opacity = '1';
+          setTimeout(() => {
+            ctrl.rescueTo(new THREE.Vector3(55, 0.85, 26));
+            input.yaw = 0;
+            input.pitch = 0;
+            const msg = document.getElementById('msg');
+            if (msg) {
+              msg.textContent = "Sanctuaire Shinto — Vous voilà de retour sur Terre";
+              msg.style.opacity = '1';
+              setTimeout(() => { if (msg) msg.style.opacity = '0'; }, 5000);
+            }
+            fadeEl.style.opacity = '0';
+          }, 450);
+        } else {
+          ctrl.rescueTo(new THREE.Vector3(55, 0.85, 26));
+        }
+        furnitureInteractionCooldown = 1.0;
         return true;
       }
       enterFurnitureInteraction(nearest);
