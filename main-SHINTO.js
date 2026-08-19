@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Player } from './player.js?v=74';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
-import { Controller } from './controller.js?v=5';
+import { Controller } from './controller.js?v=6';
 import { CameraRig } from './cameraRig.js?v=6';
 import { buildCityBoxes } from './cityBoxes.js?v=5';
 import { buildCar, carBounds } from './cars.js?v=4';
@@ -2624,16 +2624,16 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
     const bx = x + Math.cos(bang) * (PLATFORM_R - 0.6);
     const bz = z + Math.sin(bang) * (PLATFORM_R - 0.6);
     if (b < balustradeCount) {
-      cylinder(M.palaceWhite, bx, SUMMIT_Y + 0.7, bz, 0.35, 1.2, 0, 0, 0, false);
-      cylinder(M.palaceGold, bx, SUMMIT_Y + 1.4, bz, 0.22, 0.3, 0, 0, 0, false);
+      cylinder(M.palaceWhite, bx, SUMMIT_Y + 0.7, bz, 0.35, 1.2, 0, 0, 0, true);
+      cylinder(M.palaceGold, bx, SUMMIT_Y + 1.4, bz, 0.22, 0.3, 0, 0, 0, true);
       // Glowing orbs on lookout pillars
       if (b % 2 === 0) {
         cylinder(M.lanternGlow, bx, SUMMIT_Y + 1.7, bz, 0.18, 0.3, 0, 0, 0, false);
       }
     }
     if (prevRailX !== null) {
-      branch(M.palaceGold, prevRailX, SUMMIT_Y + 1.5, prevRailZ, bx, SUMMIT_Y + 1.5, bz, 0.05, 0.05, false);
-      branch(M.palaceWhite, prevRailX, SUMMIT_Y + 0.55, prevRailZ, bx, SUMMIT_Y + 0.55, bz, 0.045, 0.045, false);
+      branch(M.palaceGold, prevRailX, SUMMIT_Y + 1.5, prevRailZ, bx, SUMMIT_Y + 1.5, bz, 0.05, 0.05, true);
+      branch(M.palaceWhite, prevRailX, SUMMIT_Y + 0.55, prevRailZ, bx, SUMMIT_Y + 0.55, bz, 0.045, 0.045, true);
     }
     prevRailX = bx; prevRailZ = bz;
   }
@@ -2641,7 +2641,7 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   // Sacred Reflection Pool at South Entrance of Plaza
   cylinder(M.palaceGoldFloor, x, SUMMIT_Y + 0.30, z + 16, 5.2, 0.35, 0, 0, 0, false);
   cylinder(M.water, x, SUMMIT_Y + 0.32, z + 16, 4.8, 0.2, 0, 0, 0, false);
-  cylinder(M.goldGiboshi, x, SUMMIT_Y + 1.0, z + 16, 0.6, 1.2, 0, 0, 0, false);
+  cylinder(M.goldGiboshi, x, SUMMIT_Y + 1.0, z + 16, 0.6, 1.2, 0, 0, 0, true);
 
   // 8 Sculpted Planters with Celestial Dwarf Trees around the plaza
   for (let p = 0; p < 8; p++) {
@@ -2649,14 +2649,14 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
     const px = x + Math.cos(pang) * 20.5;
     const pz = z + Math.sin(pang) * 20.5;
     // Planter urn
-    cylinder(M.palaceWhite, px, SUMMIT_Y + 0.6, pz, 1.1, 0.8, 0, 0, 0, false);
-    cylinder(M.palaceGold, px, SUMMIT_Y + 1.05, pz, 1.2, 0.12, 0, 0, 0, false);
+    cylinder(M.palaceWhite, px, SUMMIT_Y + 0.6, pz, 1.1, 0.8, 0, 0, 0, true);
+    cylinder(M.palaceGold, px, SUMMIT_Y + 1.05, pz, 1.2, 0.12, 0, 0, 0, true);
     // Miniature celestial sakura / bamboo
     if (p % 2 === 0) {
-      cylinder(M.treeTrunk, px, SUMMIT_Y + 1.9, pz, 0.14, 1.8, 0, 0, 0, false);
+      cylinder(M.treeTrunk, px, SUMMIT_Y + 1.9, pz, 0.14, 1.8, 0, 0, 0, true);
       puffFoliage(M.sakuraBlossom, px, SUMMIT_Y + 2.9, pz, 1.8, 1.2, 1.8, { seed: p * 17, count: 12, cardScale: 0.6 });
     } else {
-      cylinder(M.bambooGreen, px, SUMMIT_Y + 2.3, pz, 0.09, 2.6, 0, 0, 0, false);
+      cylinder(M.bambooGreen, px, SUMMIT_Y + 2.3, pz, 0.09, 2.6, 0, 0, 0, true);
       puffFoliage(M.bambooLeaf, px, SUMMIT_Y + 3.3, pz, 1.5, 1.5, 1.5, { seed: p * 23, count: 10, cardScale: 0.65 });
     }
   }
@@ -2717,8 +2717,8 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
     if (!openCol.has(s)) {
       const wx = x + Math.cos(ang) * ROT_R;
       const wz = PALACE_Z + Math.sin(ang) * ROT_R;
-      cylinder(M.palaceWhite, wx, SUMMIT_Y + 2.7, wz, 0.55, 5.4, 0, 0, 0, false);
-      cylinder(M.palaceGold, wx, FLOOR_Y + 0.22, wz, 0.68, 0.44, 0, 0, 0, false);
+      cylinder(M.palaceWhite, wx, SUMMIT_Y + 2.7, wz, 0.55, 5.4, 0, 0, 0, true);
+      cylinder(M.palaceGold, wx, FLOOR_Y + 0.22, wz, 0.68, 0.44, 0, 0, 0, true);
       cylinder(M.palaceGold, wx, SUMMIT_Y + 5.2, wz, 0.65, 0.35, 0, 0, 0, false);
     }
     if (openBay.has(s)) continue;
@@ -2726,9 +2726,9 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
     const midAng = ((s + 0.5) / rotSegments) * Math.PI * 2;
     const mx = x + Math.cos(midAng) * ROT_R;
     const mz = PALACE_Z + Math.sin(midAng) * ROT_R;
-    emit(rotPanelGeo, M.palaceWhite, mx, WALL_Y, mz, 1, 1, 1, 0, Math.PI / 2 - midAng, 0, false);
+    emit(rotPanelGeo, M.palaceWhite, mx, WALL_Y, mz, 1, 1, 1, 0, Math.PI / 2 - midAng, 0, true);
     // Gilt skirting and frieze, so the bay reads as masonry rather than as a slab.
-    box(M.palaceGold, mx, FLOOR_Y + 0.30, mz, WALL_T + 0.16, 0.60, 3.02, -midAng, 0, 0, false);
+    box(M.palaceGold, mx, FLOOR_Y + 0.30, mz, WALL_T + 0.16, 0.60, 3.02, -midAng, 0, 0, true);
     box(M.palaceGold, mx, SUMMIT_Y + 5.10, mz, WALL_T + 0.16, 0.34, 3.02, -midAng, 0, 0, false);
     roundWindow(mx, WALL_Y, mz, 0.62, midAng);
   }
@@ -2736,8 +2736,8 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   // Grand Arched South Entrance Portal (clear opening ~5.4m under a 5.2m head)
   const DOOR_Z = PALACE_Z + 6.8;
   for (const side of [-1, 1]) {
-    box(M.palaceWhite, x + side * 2.9, SUMMIT_Y + 2.7, DOOR_Z, 0.9, 5.4, 0.9, 0, 0, 0, false);
-    box(M.palaceGold, x + side * 2.9, FLOOR_Y + 0.28, DOOR_Z, 1.1, 0.56, 1.1, 0, 0, 0, false);
+    box(M.palaceWhite, x + side * 2.9, SUMMIT_Y + 2.7, DOOR_Z, 0.9, 5.4, 0.9, 0, 0, 0, true);
+    box(M.palaceGold, x + side * 2.9, FLOOR_Y + 0.28, DOOR_Z, 1.1, 0.56, 1.1, 0, 0, 0, true);
     box(M.palaceGold, x + side * 2.9, SUMMIT_Y + 5.05, DOOR_Z, 1.1, 0.4, 1.1, 0, 0, 0, false);
   }
   box(M.palaceGold, x, SUMMIT_Y + 5.2, DOOR_Z, 6.8, 0.5, 1.2, 0, 0, 0, false);
@@ -2763,14 +2763,14 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
     const at = (t, u = 0) => [hingeX + dx * t + nx * u, DOOR_Z + dz * t + nz * u];
 
     const [lx, lz] = at(DOOR_W / 2);
-    box(M.palaceDoorWood, lx, DOOR_Y, lz, DOOR_W, DOOR_H, 0.16, yaw, 0, 0, false);
+    box(M.palaceDoorWood, lx, DOOR_Y, lz, DOOR_W, DOOR_H, 0.16, yaw, 0, 0, true);
     // Gilt stiles at the hinge and the free edge, and three cross rails.
     for (const t of [0.11, DOOR_W - 0.11]) {
       const [sx2, sz2] = at(t);
-      box(M.palaceGold, sx2, DOOR_Y, sz2, 0.22, DOOR_H, 0.22, yaw, 0, 0, false);
+      box(M.palaceGold, sx2, DOOR_Y, sz2, 0.22, DOOR_H, 0.22, yaw, 0, 0, true);
     }
     for (const h of [0.28, DOOR_H / 2, DOOR_H - 0.28]) {
-      box(M.palaceGold, lx, FLOOR_Y + h, lz, DOOR_W, 0.17, 0.22, yaw, 0, 0, false);
+      box(M.palaceGold, lx, FLOOR_Y + h, lz, DOOR_W, 0.17, 0.22, yaw, 0, 0, true);
     }
     // Boss studs, four courses of three, on the face that shows from the plaza.
     for (let r = 0; r < 4; r++) {
@@ -2804,8 +2804,8 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
     const ca = (c / 4) * 0.75;
     const cx = x + Math.sin(ca) * 9.5;
     const cz = PALACE_Z + Math.cos(ca) * 9.5;
-    cylinder(M.palaceWhite, cx, SUMMIT_Y + 2.5, cz, 0.38, 4.6, 0, 0, 0, false);
-    cylinder(M.palaceGold, cx, SUMMIT_Y + 4.7, cz, 0.48, 0.25, 0, 0, 0, false);
+    cylinder(M.palaceWhite, cx, SUMMIT_Y + 2.5, cz, 0.38, 4.6, 0, 0, 0, true);
+    cylinder(M.palaceGold, cx, SUMMIT_Y + 4.7, cz, 0.48, 0.25, 0, 0, 0, true);
     crescentCols.push({ c, ca, x: cx, z: cz });
   }
   for (let i = 0; i < crescentCols.length - 1; i++) {
@@ -2815,7 +2815,7 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
       const sa = a.ca + (b.ca - a.ca) * t;
       const sx = x + Math.sin(sa) * 9.5;
       const sz = PALACE_Z + Math.cos(sa) * 9.5;
-      cylinder(M.palaceWhite, sx, SUMMIT_Y + 2.3, sz, 0.22, 4.2, 0, 0, 0, false);
+      cylinder(M.palaceWhite, sx, SUMMIT_Y + 2.3, sz, 0.22, 4.2, 0, 0, 0, true);
     }
     branch(M.palaceGold, a.x, SUMMIT_Y + 4.7, a.z, b.x, SUMMIT_Y + 4.7, b.z, 0.16, 0.16, false);
   }
@@ -2900,27 +2900,25 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   const VEST_HALF = Math.sqrt(ROT_R * ROT_R - 4.6 * 4.6);   // chord at that depth
   for (const side of [-1, 1]) {
     const bx = x + side * (1.7 + VEST_HALF) / 2;
-    emit(screenPanelGeo, M.palaceWhite, bx, WALL_Y, VEST_Z, 1, 1, 1, 0, 0, 0, false);
-    box(M.palaceGold, bx, FLOOR_Y + 0.30, VEST_Z, 3.6, 0.60, 0.56, 0, 0, 0, false);
+    emit(screenPanelGeo, M.palaceWhite, bx, WALL_Y, VEST_Z, 1, 1, 1, 0, 0, 0, true);
+    box(M.palaceGold, bx, FLOOR_Y + 0.30, VEST_Z, 3.6, 0.60, 0.56, 0, 0, 0, true);
     box(M.palaceGold, bx, SUMMIT_Y + 5.10, VEST_Z, 3.6, 0.34, 0.56, 0, 0, 0, false);
     roundWindow(bx, WALL_Y, VEST_Z, 0.60, Math.PI / 2);
-    box(M.palaceGold, x + side * 1.7, WALL_Y, VEST_Z, 0.32, WALL_H, 0.56, 0, 0, 0, false);
+    box(M.palaceGold, x + side * 1.7, WALL_Y, VEST_Z, 0.32, WALL_H, 0.56, 0, 0, 0, true);
   }
   // Head of the vestibule doorway: 3.4m wide, 3.6m clear.
   box(M.palaceWhite, x, SUMMIT_Y + 4.62, VEST_Z, 3.4, 1.36, 0.40, 0, 0, 0, false);
   box(M.palaceGold, x, SUMMIT_Y + 3.86, VEST_Z, 3.9, 0.28, 0.54, 0, 0, 0, false);
 
-  const SANC_Z = PALACE_Z + 0.5;
-  // Stops 5.2 m out rather than running to the wall: carried the full chord it
-  // would plug straight into the east and west doorways. Ending it short leaves
-  // an aisle round each end, which is also how you reach the wings.
-  const SANC_HALF = 5.2;
+  const SANC_Z = PALACE_Z - 0.5;
+  // Stops 4.6 m out leaving clear aisle to each wing
+  const SANC_HALF = 4.6;
   for (const side of [-1, 1]) {
     const w = SANC_HALF - 2.1;
     const bx = x + side * (2.1 + SANC_HALF) / 2;
-    box(M.palaceWhite, bx, FLOOR_Y + 0.55, SANC_Z, w, 1.10, 0.34, 0, 0, 0, false);
-    box(M.palaceGold, bx, FLOOR_Y + 1.16, SANC_Z, w, 0.13, 0.44, 0, 0, 0, false);
-    box(M.shojiPaper, bx, FLOOR_Y + 2.28, SANC_Z, w - 0.22, 2.10, 0.10, 0, 0, 0, false);
+    box(M.palaceWhite, bx, FLOOR_Y + 0.55, SANC_Z, w, 1.10, 0.34, 0, 0, 0, true);
+    box(M.palaceGold, bx, FLOOR_Y + 1.16, SANC_Z, w, 0.13, 0.44, 0, 0, 0, true);
+    box(M.shojiPaper, bx, FLOOR_Y + 2.28, SANC_Z, w - 0.22, 2.10, 0.10, 0, 0, 0, true);
     box(M.palaceGold, bx, FLOOR_Y + 3.44, SANC_Z, w, 0.22, 0.46, 0, 0, 0, false);
     // Kumiko grid over the paper.
     const bars = Math.max(2, Math.round(w / 0.62));
@@ -2931,19 +2929,18 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
     for (const h of [1.62, 2.28, 2.94]) {
       box(M.palaceGold, bx, FLOOR_Y + h, SANC_Z, w - 0.22, 0.06, 0.17, 0, 0, 0, false);
     }
-    // Gilt posts on the sanctuary doorway's jamb and on the free end, finialled
-    // like the plaza balustrade.
+    // Gilt posts on the sanctuary doorway's jamb and on the free end
     for (const px2 of [x + side * 2.1, x + side * SANC_HALF]) {
-      cylinder(M.palaceGold, px2, FLOOR_Y + 1.78, SANC_Z, 0.17, 3.56, 0, 0, 0, false);
+      cylinder(M.palaceGold, px2, FLOOR_Y + 1.78, SANC_Z, 0.17, 3.56, 0, 0, 0, true);
       cylinder(M.goldGiboshi, px2, FLOOR_Y + 3.72, SANC_Z, 0.23, 0.36, 0, 0, 0, false);
     }
   }
 
   // Interior Throne / Meditation Dais at North Rear of Hall
   cylinder(M.palaceGoldFloor, x, SUMMIT_Y + 0.4, PALACE_Z - 3.2, 3.2, 0.4, 0, 0, 0, false);
-  box(M.palaceWhite, x, SUMMIT_Y + 0.8, PALACE_Z - 3.2, 2.4, 0.45, 1.4, 0, 0, 0, false);
-  cylinder(M.goldGiboshi, x - 1.6, SUMMIT_Y + 1.2, PALACE_Z - 3.2, 0.25, 0.8, 0, 0, 0, false);
-  cylinder(M.goldGiboshi, x + 1.6, SUMMIT_Y + 1.2, PALACE_Z - 3.2, 0.25, 0.8, 0, 0, 0, false);
+  box(M.palaceWhite, x, SUMMIT_Y + 0.8, PALACE_Z - 3.2, 2.4, 0.45, 1.4, 0, 0, 0, true);
+  cylinder(M.goldGiboshi, x - 1.6, SUMMIT_Y + 1.2, PALACE_Z - 3.2, 0.25, 0.8, 0, 0, 0, true);
+  cylinder(M.goldGiboshi, x + 1.6, SUMMIT_Y + 1.2, PALACE_Z - 3.2, 0.25, 0.8, 0, 0, 0, true);
 
   // --- Celestial Carpets ---
   //
@@ -2970,7 +2967,7 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   for (const side of [-1, 1]) {
     roundRug(x + side * 4.2, PALACE_Z + 2.55, 1.6);
     // Golden incense urns off the axis, one at each flanking medallion's centre.
-    cylinder(M.palaceGold, x + side * 4.2, SUMMIT_Y + 0.7, PALACE_Z + 2.55, 0.65, 1.0, 0, 0, 0, false);
+    cylinder(M.palaceGold, x + side * 4.2, SUMMIT_Y + 0.7, PALACE_Z + 2.55, 0.65, 1.0, 0, 0, 0, true);
     cylinder(M.lanternGlow, x + side * 4.2, SUMMIT_Y + 1.3, PALACE_Z + 2.55, 0.35, 0.25, 0, 0, 0, false);
     runnerRug(x + side * 5.25, PALACE_Z, 3.6, 2.4);              // passage to the wing
   }
@@ -2987,16 +2984,16 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
       if (w !== openIdx) {
         const wx = WX + Math.cos(wa) * 4.2;
         const wz = PALACE_Z + Math.sin(wa) * 4.2;
-        cylinder(M.palaceWhite, wx, SUMMIT_Y + 2.1, wz, 0.45, 4.2, 0, 0, 0, false);
-        cylinder(M.palaceGold, wx, SUMMIT_Y + 4.15, wz, 0.55, 0.3, 0, 0, 0, false);
+        cylinder(M.palaceWhite, wx, SUMMIT_Y + 2.1, wz, 0.45, 4.2, 0, 0, 0, true);
+        cylinder(M.palaceGold, wx, SUMMIT_Y + 4.15, wz, 0.55, 0.3, 0, 0, 0, true);
       }
       // Skip the two bays flanking the doorway, so the opening is a full 90°.
       if (w === openIdx || w === (openIdx + 7) % 8) continue;
       const ma = ((w + 0.5) / 8) * Math.PI * 2;
       const mx = WX + Math.cos(ma) * 4.2;
       const mz = PALACE_Z + Math.sin(ma) * 4.2;
-      emit(wingPanelGeo, M.palaceWhite, mx, SUMMIT_Y + 2.05, mz, 1, 1, 1, 0, Math.PI / 2 - ma, 0, false);
-      box(M.palaceGold, mx, FLOOR_Y + 0.26, mz, 0.5, 0.52, 3.5, -ma, 0, 0, false);
+      emit(wingPanelGeo, M.palaceWhite, mx, SUMMIT_Y + 2.05, mz, 1, 1, 1, 0, Math.PI / 2 - ma, 0, true);
+      box(M.palaceGold, mx, FLOOR_Y + 0.26, mz, 0.5, 0.52, 3.5, -ma, 0, 0, true);
       box(M.palaceGold, mx, SUMMIT_Y + 3.94, mz, 0.5, 0.28, 3.5, -ma, 0, 0, false);
       roundWindow(mx, SUMMIT_Y + 2.1, mz, 0.44, ma);
     }
@@ -3017,10 +3014,8 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   buildWing(WEST_X, 0);   // doorway faces east, back to the rotunda
   buildWing(EAST_X, 4);   // doorway faces west
 
-  // West Room Celestial Star Globe. The gilt drum that stood in for the globe
-  // read as a brown barrel indoors — unlit metal has no environment to mirror —
-  // so the sphere it is named for now sits on it, lit from within.
-  cylinder(M.palaceGold, WEST_X, SUMMIT_Y + 0.6, PALACE_Z, 0.8, 0.8, 0, 0, 0, false);
+  // West Room Celestial Star Globe
+  cylinder(M.palaceGold, WEST_X, SUMMIT_Y + 0.6, PALACE_Z, 0.8, 0.8, 0, 0, 0, true);
   cylinder(M.palaceGoldFloor, WEST_X, SUMMIT_Y + 1.05, PALACE_Z, 0.62, 0.16, 0, 0, 0, false);
   emit(G.sphere, M.chandelierGlow, WEST_X, SUMMIT_Y + 1.85, PALACE_Z, 1.5, 1.5, 1.5, 0, 0, 0, false);
   for (let i = 0; i < 3; i++) {
@@ -3029,19 +3024,17 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   }
 
   // East Room Celestial Water Font
-  cylinder(M.palaceGold, EAST_X, SUMMIT_Y + 0.6, PALACE_Z, 1.2, 0.6, 0, 0, 0, false);
+  cylinder(M.palaceGold, EAST_X, SUMMIT_Y + 0.6, PALACE_Z, 1.2, 0.6, 0, 0, 0, true);
   cylinder(M.water, EAST_X, SUMMIT_Y + 0.85, PALACE_Z, 1.0, 0.15, 0, 0, 0, false);
 
-  // Covered passages joining the rotunda to the wings. Their posts stood at
-  // ±1.4 m, narrowing a doorway that is now a 5.4 m opening in a real wall;
-  // moved out to ±2.3 they frame the passage instead of blocking it.
+  // Covered passages joining the rotunda to the wings
   for (const WX of [WEST_X, EAST_X]) {
     const px = (x + WX) / 2;
     box(M.palaceWhite, px, SUMMIT_Y + 4.2, PALACE_Z, 3.5, 0.4, 5.2, 0, 0, 0, false);
     box(M.palaceGold, px, SUMMIT_Y + 4.44, PALACE_Z, 3.7, 0.16, 5.4, 0, 0, 0, false);
     for (const side of [-1, 1]) {
-      cylinder(M.palaceWhite, px, SUMMIT_Y + 2.0, PALACE_Z + side * 2.3, 0.3, 3.8, 0, 0, 0, false);
-      cylinder(M.palaceGold, px, SUMMIT_Y + 3.95, PALACE_Z + side * 2.3, 0.38, 0.26, 0, 0, 0, false);
+      cylinder(M.palaceWhite, px, SUMMIT_Y + 2.0, PALACE_Z + side * 2.3, 0.3, 3.8, 0, 0, 0, true);
+      cylinder(M.palaceGold, px, SUMMIT_Y + 3.95, PALACE_Z + side * 2.3, 0.38, 0.26, 0, 0, 0, true);
     }
   }
 
@@ -4570,7 +4563,7 @@ function updateFurnitureInteraction(dt) {
         if (fadeEl) {
           fadeEl.style.opacity = '1';
           setTimeout(() => {
-            ctrl.rescueTo(new THREE.Vector3(55, 180.20, 32));
+            ctrl.rescueTo(new THREE.Vector3(55, 180.20, 24));
             input.yaw = Math.PI; // Face north towards the checkered plaza and white palace
             input.pitch = 0;
             const msg = document.getElementById('msg');
@@ -4582,7 +4575,7 @@ function updateFurnitureInteraction(dt) {
             fadeEl.style.opacity = '0';
           }, 450);
         } else {
-          ctrl.rescueTo(new THREE.Vector3(55, 180.20, 32));
+          ctrl.rescueTo(new THREE.Vector3(55, 180.20, 24));
         }
         furnitureInteractionCooldown = 1.0;
         return true;

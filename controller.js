@@ -513,10 +513,12 @@ export class Controller {
     for (const idx of ids) {
       const b = this.bw.aabbs[idx];
       if (!b.collide) continue;
+      // Skip if the player is entirely above or entirely below the box
+      if (this.pos.y >= b.y1) continue;
+      if (this.pos.y + BODY_H <= b.y0) continue;
       // steppable — ground snap raises us. Props are the exception: the ground
       // ray refuses to stand on them, so nothing would catch the player here.
       if (!b.prop && b.y1 - this.pos.y < STEP_H) continue;
-      if (this.pos.y + BODY_H <= b.y0) continue;
       const inX = this.pos.x > b.x0 - R && this.pos.x < b.x1 + R;
       const inZ = this.pos.z > b.z0 - R && this.pos.z < b.z1 + R;
       if (!inX || !inZ) continue;
