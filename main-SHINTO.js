@@ -2663,14 +2663,14 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
 
   // 5. The Rounded White Palace (Palais Blanc aux dômes - Accessible & Walkable!)
   const PALACE_Z = z - 8.0;
-  
-  // Palace Podium Base (Flush with plaza top at 180.20m)
-  box(M.palaceWhite, x, SUMMIT_Y, PALACE_Z, 28.0, 0.4, 19.0, 0, 0, 0, false);
-  box(M.checkerPlaza, x, SUMMIT_Y + 0.005, PALACE_Z, 27.0, 0.4, 18.0, 0, 0, 0, false);
 
-  // Floor plane the interior is dressed against: the checkerboard slab's top
-  // face. The ground snap walks you at 180.20, five millimetres under it.
-  const FLOOR_Y = SUMMIT_Y + 0.205;
+  // The plaza cylinder already *is* the hall floor. A white podium and a second
+  // checker slab used to sit 5 mm over it; at y=180 those three coplanar tops
+  // z-fought as you walked — same stacking that used to flicker the plaza
+  // itself, which is why the plaza is a single cylinder now.
+
+  // Floor plane the interior is dressed against: the plaza cylinder's top.
+  const FLOOR_Y = SUMMIT_Y + 0.20;
   const ROT_R = 7.0;
   const WALL_T = 0.44;
   const WALL_H = 5.2;
@@ -2936,8 +2936,9 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
     }
   }
 
-  // Interior Throne / Meditation Dais at North Rear of Hall
-  cylinder(M.palaceGoldFloor, x, SUMMIT_Y + 0.4, PALACE_Z - 3.2, 3.2, 0.4, 0, 0, 0, false);
+  // Interior Throne / Meditation Dais at North Rear of Hall.
+  // Bottom is 2 cm into the plaza so this disc and the damier never share a plane.
+  cylinder(M.palaceGoldFloor, x, SUMMIT_Y + 0.38, PALACE_Z - 3.2, 3.2, 0.4, 0, 0, 0, false);
   box(M.palaceWhite, x, SUMMIT_Y + 0.8, PALACE_Z - 3.2, 2.4, 0.45, 1.4, 0, 0, 0, true);
   cylinder(M.goldGiboshi, x - 1.6, SUMMIT_Y + 1.2, PALACE_Z - 3.2, 0.25, 0.8, 0, 0, 0, true);
   cylinder(M.goldGiboshi, x + 1.6, SUMMIT_Y + 1.2, PALACE_Z - 3.2, 0.25, 0.8, 0, 0, 0, true);
