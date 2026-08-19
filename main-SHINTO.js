@@ -865,6 +865,313 @@ function makeGoldMarbleCanvas({ size = 512, seed = 41, tiles = 4 } = {}) {
   return c;
 }
 
+// Celestial carpets for the sky palace. Unlike every other surface here these
+// are *not* run through worldUV: a rug is one composition, not a tiling, so it
+// wants exactly one stamp. A cylinder cap's UVs are already a disc inscribed in
+// 0..1 and a box's top face is already the full 0..1 square, so a round rug and
+// a rectangular one can each take their whole design straight off the canvas.
+function starSparkle(g, cx, cy, s, fill) {
+  g.save();
+  g.translate(cx, cy);
+  g.fillStyle = fill;
+  g.beginPath();
+  g.moveTo(0, -s);
+  g.quadraticCurveTo(s * 0.15, -s * 0.15, s, 0);
+  g.quadraticCurveTo(s * 0.15, s * 0.15, 0, s);
+  g.quadraticCurveTo(-s * 0.15, s * 0.15, -s, 0);
+  g.quadraticCurveTo(-s * 0.15, -s * 0.15, 0, -s);
+  g.fill();
+  g.restore();
+}
+
+// Scattered pinpricks plus a few bright sparkles, over whatever ground the
+// caller has already laid down. Shared by both rug designs so the two read as
+// pieces of one set.
+function paintStarField(g, rnd, x0, y0, w, h, density, maxSparkle) {
+  const n = Math.round(w * h * density);
+  for (let i = 0; i < n; i++) {
+    const sx = x0 + rnd() * w, sy = y0 + rnd() * h;
+    g.fillStyle = `rgba(255, 246, 214, ${0.18 + rnd() * 0.55})`;
+    g.beginPath();
+    g.arc(sx, sy, 0.5 + rnd() * 1.5, 0, Math.PI * 2);
+    g.fill();
+  }
+  for (let i = 0; i < maxSparkle; i++) {
+    starSparkle(g, x0 + rnd() * w, y0 + rnd() * h, 3 + rnd() * 5,
+      `rgba(255, 236, 176, ${0.55 + rnd() * 0.4})`);
+  }
+}
+
+// Round medallion rug: a mandala of lotus petals, concentric gold bands and a
+// constellation wheel on a midnight ground.
+function makeCelestialRugCanvas({ size = 512, seed = 61 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(seed);
+  const R = size / 2;
+
+  // Deepest at the rim so the gilt centre lifts off the ground.
+  const ground = g.createRadialGradient(R, R, size * 0.03, R, R, R);
+  ground.addColorStop(0.00, '#33468f');
+  ground.addColorStop(0.42, '#1c2a64');
+  ground.addColorStop(0.82, '#111a44');
+  ground.addColorStop(1.00, '#080d26');
+  g.fillStyle = ground;
+  g.fillRect(0, 0, size, size);
+
+  paintStarField(g, rnd, 0, 0, size, size, 0.0016, 26);
+
+  const ring = (r, w, stroke) => {
+    g.strokeStyle = stroke;
+    g.lineWidth = w;
+    g.beginPath();
+    g.arc(R, R, r, 0, Math.PI * 2);
+    g.stroke();
+  };
+
+  // Outer selvedge and the woven gold border band.
+  g.fillStyle = '#0a1030';
+  g.beginPath();
+  g.arc(R, R, R * 0.995, 0, Math.PI * 2);
+  g.arc(R, R, R * 0.90, 0, Math.PI * 2, true);
+  g.fill();
+  ring(R * 0.945, R * 0.052, 'rgba(206, 160, 60, 0.55)');
+  ring(R * 0.90, 3, '#e8c463');
+  ring(R * 0.985, 3, '#e8c463');
+
+  // Seigaiha wave crests running the border.
+  for (let i = 0; i < 64; i++) {
+    const a = (i / 64) * Math.PI * 2;
+    const bx = R + Math.cos(a) * R * 0.943;
+    const by = R + Math.sin(a) * R * 0.943;
+    g.save();
+    g.translate(bx, by);
+    g.rotate(a + Math.PI / 2);
+    g.strokeStyle = 'rgba(255, 226, 150, 0.75)';
+    g.lineWidth = 1.6;
+    for (let k = 1; k <= 3; k++) {
+      g.beginPath();
+      g.arc(0, R * 0.022, k * R * 0.011, Math.PI, 0);
+      g.stroke();
+    }
+    g.restore();
+  }
+
+  // Constellation wheel: 12 anchor stars joined into a closed circuit, with
+  // spurs, so the field reads as a chart rather than as random speckle.
+  const anchors = [];
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2 + rnd() * 0.22;
+    const r = R * (0.55 + rnd() * 0.28);
+    anchors.push({ x: R + Math.cos(a) * r, y: R + Math.sin(a) * r });
+  }
+  g.strokeStyle = 'rgba(228, 198, 128, 0.42)';
+  g.lineWidth = 1.4;
+  g.beginPath();
+  anchors.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
+  g.closePath();
+  g.stroke();
+  for (const p of anchors) {
+    g.beginPath();
+    g.moveTo(p.x, p.y);
+    g.lineTo(R + (p.x - R) * 1.22, R + (p.y - R) * 1.22);
+    g.stroke();
+    starSparkle(g, p.x, p.y, 6.5, 'rgba(255, 242, 196, 0.95)');
+  }
+
+  // Lotus petal corona around the centre.
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    g.save();
+    g.translate(R, R);
+    g.rotate(a);
+    const petal = g.createLinearGradient(0, -R * 0.14, 0, -R * 0.46);
+    petal.addColorStop(0, 'rgba(233, 196, 108, 0.92)');
+    petal.addColorStop(1, 'rgba(150, 112, 46, 0.30)');
+    g.fillStyle = petal;
+    g.beginPath();
+    g.moveTo(0, -R * 0.14);
+    g.quadraticCurveTo(R * 0.10, -R * 0.30, 0, -R * 0.47);
+    g.quadraticCurveTo(-R * 0.10, -R * 0.30, 0, -R * 0.14);
+    g.fill();
+    g.strokeStyle = 'rgba(255, 232, 168, 0.7)';
+    g.lineWidth = 1.2;
+    g.stroke();
+    g.restore();
+  }
+
+  ring(R * 0.50, 2.5, 'rgba(240, 206, 130, 0.85)');
+  ring(R * 0.34, 2.0, 'rgba(240, 206, 130, 0.6)');
+
+  // Central sun-disc with rays.
+  const core = g.createRadialGradient(R, R, 2, R, R, R * 0.20);
+  core.addColorStop(0, '#fff4cd');
+  core.addColorStop(0.55, '#e6bd63');
+  core.addColorStop(1, '#8a6321');
+  g.fillStyle = core;
+  g.beginPath();
+  g.arc(R, R, R * 0.20, 0, Math.PI * 2);
+  g.fill();
+  g.strokeStyle = 'rgba(255, 240, 190, 0.8)';
+  g.lineWidth = 1.8;
+  for (let i = 0; i < 32; i++) {
+    const a = (i / 32) * Math.PI * 2;
+    g.beginPath();
+    g.moveTo(R + Math.cos(a) * R * 0.21, R + Math.sin(a) * R * 0.21);
+    g.lineTo(R + Math.cos(a) * R * (i % 2 ? 0.26 : 0.31), R + Math.sin(a) * R * (i % 2 ? 0.26 : 0.31));
+    g.stroke();
+  }
+  // Waxing crescent bitten out of the sun's face. Kept small and half-veiled:
+  // a wide opaque bite reads from standing height as a hole in the rug.
+  g.globalCompositeOperation = 'source-atop';
+  g.fillStyle = 'rgba(38, 52, 108, 0.55)';
+  g.beginPath();
+  g.arc(R - R * 0.075, R, R * 0.115, 0, Math.PI * 2);
+  g.fill();
+  g.globalCompositeOperation = 'source-over';
+
+  return c;
+}
+
+// Rectangular rug: a key-fret border framing a constellation field. Runners are
+// laid as a row of these squares, so the medallions repeat down their length
+// the way a woven runner's do.
+function makeCelestialPanelCanvas({ size = 512, seed = 83 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(seed);
+
+  const ground = g.createLinearGradient(0, 0, size, size);
+  ground.addColorStop(0, '#1d2a63');
+  ground.addColorStop(0.5, '#141d4c');
+  ground.addColorStop(1, '#0d1436');
+  g.fillStyle = ground;
+  g.fillRect(0, 0, size, size);
+
+  const b = size * 0.10;
+  paintStarField(g, rnd, b, b, size - b * 2, size - b * 2, 0.0022, 14);
+
+  // Border: a dark selvedge, a gold key-fret band, gold rules either side.
+  g.fillStyle = '#0a1030';
+  g.fillRect(0, 0, size, b);
+  g.fillRect(0, size - b, size, b);
+  g.fillRect(0, 0, b, size);
+  g.fillRect(size - b, 0, b, size);
+
+  g.strokeStyle = '#e8c463';
+  g.lineWidth = 3;
+  g.strokeRect(b * 0.28, b * 0.28, size - b * 0.56, size - b * 0.56);
+  g.strokeRect(b, b, size - b * 2, size - b * 2);
+
+  // Sayagata fret marching around the band, drawn once per edge and rotated.
+  g.strokeStyle = 'rgba(255, 228, 154, 0.9)';
+  g.lineWidth = 2.2;
+  const fret = b * 0.44;
+  for (let e = 0; e < 4; e++) {
+    g.save();
+    g.translate(size / 2, size / 2);
+    g.rotate((e * Math.PI) / 2);
+    g.translate(-size / 2, -size / 2);
+    for (let px = b * 0.6; px < size - b * 0.6; px += fret * 1.6) {
+      g.beginPath();
+      g.moveTo(px, b * 0.64 - fret * 0.30);
+      g.lineTo(px + fret * 0.62, b * 0.64 - fret * 0.30);
+      g.lineTo(px + fret * 0.62, b * 0.64 + fret * 0.30);
+      g.lineTo(px + fret * 1.24, b * 0.64 + fret * 0.30);
+      g.stroke();
+    }
+    g.restore();
+  }
+
+  // Corner cloud (kumo) scrolls.
+  for (let e = 0; e < 4; e++) {
+    g.save();
+    g.translate(size / 2, size / 2);
+    g.rotate((e * Math.PI) / 2);
+    g.translate(-size / 2, -size / 2);
+    g.strokeStyle = 'rgba(226, 192, 122, 0.55)';
+    g.lineWidth = 2.4;
+    for (let k = 0; k < 3; k++) {
+      const r = b * (0.7 + k * 0.42);
+      g.beginPath();
+      g.arc(b * 1.25, b * 1.25, r, Math.PI * 0.95, Math.PI * 1.85);
+      g.stroke();
+    }
+    g.restore();
+  }
+
+  // Field: a constellation strung across the centre with a lozenge medallion.
+  const m = size / 2, span = size * 0.30;
+  g.save();
+  g.translate(m, m);
+  g.rotate(Math.PI / 4);
+  g.strokeStyle = 'rgba(240, 206, 130, 0.85)';
+  g.lineWidth = 2.6;
+  g.strokeRect(-span * 0.62, -span * 0.62, span * 1.24, span * 1.24);
+  g.strokeStyle = 'rgba(240, 206, 130, 0.45)';
+  g.lineWidth = 1.6;
+  g.strokeRect(-span * 0.78, -span * 0.78, span * 1.56, span * 1.56);
+  g.restore();
+
+  const chart = [];
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + 0.4;
+    const r = span * (0.30 + rnd() * 0.52);
+    chart.push({ x: m + Math.cos(a) * r, y: m + Math.sin(a) * r * 0.9 });
+  }
+  g.strokeStyle = 'rgba(232, 202, 134, 0.5)';
+  g.lineWidth = 1.4;
+  g.beginPath();
+  chart.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
+  g.stroke();
+  for (const p of chart) starSparkle(g, p.x, p.y, 5.5, 'rgba(255, 242, 196, 0.95)');
+  starSparkle(g, m, m, 13, 'rgba(255, 246, 210, 0.95)');
+
+  return c;
+}
+
+// Seamless night vault for the inside of the domes. Tiles, unlike the two rugs:
+// a sphere's UVs wrap, so this is a pattern rather than a composition.
+function makeCelestialVaultCanvas({ size = 512, seed = 97 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(seed);
+
+  g.fillStyle = '#131c46';
+  g.fillRect(0, 0, size, size);
+  // Nebulous drift, kept off the seams so the tile stays continuous.
+  for (let i = 0; i < 26; i++) {
+    const nx = rnd() * size, ny = rnd() * size, nr = size * (0.06 + rnd() * 0.16);
+    const neb = g.createRadialGradient(nx, ny, 0, nx, ny, nr);
+    neb.addColorStop(0, `rgba(74, 96, 176, ${0.10 + rnd() * 0.12})`);
+    neb.addColorStop(1, 'rgba(74, 96, 176, 0)');
+    g.fillStyle = neb;
+    g.fillRect(nx - nr, ny - nr, nr * 2, nr * 2);
+  }
+
+  paintStarField(g, rnd, 0, 0, size, size, 0.0034, 22);
+
+  // Constellation strands. Wrapped with a modulo so a line leaving one edge
+  // arrives back on the other, which is what keeps the seams invisible.
+  g.strokeStyle = 'rgba(226, 198, 132, 0.34)';
+  g.lineWidth = 1.3;
+  for (let k = 0; k < 9; k++) {
+    let px = rnd() * size, py = rnd() * size;
+    for (let j = 0; j < 4; j++) {
+      const qx = px + (rnd() - 0.5) * size * 0.3;
+      const qy = py + (rnd() - 0.5) * size * 0.3;
+      g.beginPath();
+      g.moveTo(((px % size) + size) % size, ((py % size) + size) % size);
+      g.lineTo(((qx % size) + size) % size, ((qy % size) + size) % size);
+      g.stroke();
+      starSparkle(g, ((qx % size) + size) % size, ((qy % size) + size) % size, 4.5,
+        'rgba(255, 240, 190, 0.9)');
+      px = qx; py = qy;
+    }
+  }
+  return c;
+}
+
 const pineLeafTs = foliageSheets(2, 'pine',
   ['#1b3819', '#244820', '#2d5828', '#1a3318', '#3d6c34'], '#0f200e',
   { count: 46, seed: 5, scaleMin: 0.10, scaleMax: 0.18 });
@@ -906,6 +1213,18 @@ const checkerN = canvasTexture(normalFromCanvas(checkerC, 2.0), { srgb: false })
 const goldMarbleC = makeGoldMarbleCanvas();
 const goldMarbleT = canvasTexture(goldMarbleC);
 const goldMarbleN = canvasTexture(normalFromCanvas(goldMarbleC, 1.6), { srgb: false });
+
+const rugRoundC = makeCelestialRugCanvas();
+const rugRoundT = canvasTexture(rugRoundC);
+const rugRoundN = canvasTexture(normalFromCanvas(rugRoundC, 1.3), { srgb: false });
+
+const rugPanelC = makeCelestialPanelCanvas();
+const rugPanelT = canvasTexture(rugPanelC);
+const rugPanelN = canvasTexture(normalFromCanvas(rugPanelC, 1.3), { srgb: false });
+
+const vaultC = makeCelestialVaultCanvas();
+const vaultT = canvasTexture(vaultC, { rx: 5, ry: 2 });
+const vaultSmallT = canvasTexture(vaultC, { rx: 3, ry: 1 });
 
 const M = {
   // Vermilion torii are lacquered, so the grain shows only as a faint relief
@@ -991,6 +1310,13 @@ const M = {
   lanternGlow: new THREE.MeshStandardMaterial({
     color: 0xfff3d0, emissive: 0xffaa44, emissiveIntensity: 2.4, roughness: 0.4,
   }),
+  // The chandelier's own glass. lanternGlow is pitched for chōchin read from
+  // across the precinct, and at its night value of 5.8 a hoop of them four
+  // metres over your head sits so far above the bloom threshold that the whole
+  // vault washes white. Same warmth, a third of the drive.
+  chandelierGlow: new THREE.MeshStandardMaterial({
+    color: 0xfff6df, emissive: 0xffb45c, emissiveIntensity: 0.9, roughness: 0.36,
+  }),
   candleWax: new THREE.MeshStandardMaterial({
     color: 0xfaf6ea, roughness: 0.35, metalness: 0.05,
     emissive: 0x000000, emissiveIntensity: 0,
@@ -1056,6 +1382,42 @@ const M = {
   palaceGoldFloor: new THREE.MeshStandardMaterial({
     color: 0xffffff, roughness: 0.32, metalness: 0.5,
     map: goldMarbleT, normalMap: goldMarbleN, normalScale: new THREE.Vector2(0.6, 0.6),
+  }),
+  // Palace door leaves: keyaki lacquered near-black-brown, so the gold studs
+  // and the pull rings are what the eye lands on rather than the timber.
+  palaceDoorWood: new THREE.MeshPhysicalMaterial({
+    color: 0x54291a, roughness: 0.38, metalness: 0.0,
+    clearcoat: 0.72, clearcoatRoughness: 0.24,
+    map: woodDiff, normalMap: woodN, normalScale: new THREE.Vector2(0.8, 0.8),
+  }),
+  // Round-window glazing. Emissive rather than transmissive: a transmission
+  // pass for eight portholes costs a whole extra render target, and what the
+  // panes have to do is read as lit from the side you are not on.
+  palaceGlass: new THREE.MeshStandardMaterial({
+    color: 0xfff6e4, roughness: 0.16, metalness: 0.0,
+    emissive: 0xffd08c, emissiveIntensity: 0.5,
+    transparent: true, opacity: 0.52, side: THREE.DoubleSide,
+  }),
+  // Ceiling shells hung inside the domes. A hemisphere's normals face outward,
+  // so from under one you were looking straight through it at the sky — these
+  // are the same shell flipped, and they turn the vault into a night sky.
+  palaceVault: new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.88, metalness: 0.06,
+    emissive: 0x1a2350, emissiveIntensity: 0.5,
+    map: vaultT, side: THREE.BackSide,
+  }),
+  palaceVaultSmall: new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.88, metalness: 0.06,
+    emissive: 0x1a2350, emissiveIntensity: 0.5,
+    map: vaultSmallT, side: THREE.BackSide,
+  }),
+  carpetRound: new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.94, metalness: 0.02,
+    map: rugRoundT, normalMap: rugRoundN, normalScale: new THREE.Vector2(0.45, 0.45),
+  }),
+  carpetPanel: new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.94, metalness: 0.02,
+    map: rugPanelT, normalMap: rugPanelN, normalScale: new THREE.Vector2(0.45, 0.45),
   }),
   towerIvory: new THREE.MeshStandardMaterial({
     color: 0xf6f0e6, roughness: 0.52, metalness: 0.04,
@@ -1137,6 +1499,9 @@ worldUV(M.zenGravel, 0.55);
 worldUV(M.treeTrunk, 0.65);
 worldUV(M.checkerPlaza, 0.125);
 worldUV(M.palaceGoldFloor, 0.25);
+worldUV(M.palaceDoorWood, 0.42);
+// M.carpetRound / M.carpetPanel are deliberately left out: a rug is a single
+// composition, and worldUV would tile it into wallpaper.
 worldUV(M.towerIvory, 0.32);
 // One node ring per tile, so the culms joint roughly every 40 cm.
 worldUV(M.bambooGreen, 2.4);
@@ -1233,7 +1598,37 @@ const G = {
   invDome: new THREE.SphereGeometry(0.5, 24, 16, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5),
   canopy: [makeCanopyGeometry(101), makeCanopyGeometry(202), makeCanopyGeometry(303)],
   card: new THREE.PlaneGeometry(1, 1),
+  // Axis is +Z, so a ring lies flat in the XY plane: yaw alone aims it at a wall.
+  // A torus scales its tube along with its radius, so window frames and pull
+  // rings take `ring` while the metre-scale chandelier hoops take `hoop` —
+  // ring's 0.15 tube ratio would put a half-metre doughnut on a 3 m circle.
+  ring: new THREE.TorusGeometry(0.5, 0.075, 8, 28),
+  hoop: new THREE.TorusGeometry(0.5, 0.018, 7, 44),
+  // The 16-sided G.cyl reads as a polygon once a disc is several metres across,
+  // which a rug is. Cap UVs stay a disc inscribed in 0..1 at any segment count,
+  // so the medallion still lands centred.
+  disc: new THREE.CylinderGeometry(0.5, 0.5, 1, 48),
 };
+
+// A wall with a porthole cut clean through it. Boxes cannot do this — four
+// boxes around a square gap leave the corners open behind a round frame — so
+// the panel is an extruded shape carrying a circular hole, built once at each
+// size the palace needs and then instanced like any other piece.
+function piercedWall(w, h, holeR, holeY = 0, t = 0.4) {
+  const s = new THREE.Shape();
+  s.moveTo(-w / 2, -h / 2);
+  s.lineTo(w / 2, -h / 2);
+  s.lineTo(w / 2, h / 2);
+  s.lineTo(-w / 2, h / 2);
+  s.closePath();
+  const hole = new THREE.Path();
+  hole.absarc(0, holeY, holeR, 0, Math.PI * 2, true);
+  s.holes.push(hole);
+  const geo = new THREE.ExtrudeGeometry(s, { depth: t, bevelEnabled: false, curveSegments: 20 });
+  // Extrusion runs 0..t along +Z; centre it so the panel straddles its own wall line.
+  geo.translate(0, 0, -t / 2);
+  return geo;
+}
 let canopyPick = 0;
 const nextCanopy = () => G.canopy[canopyPick++ % G.canopy.length];
 
@@ -2119,6 +2514,11 @@ function buildSkyClouds(centerX, centerZ, altitude = 180, count = 22, radius = 4
   }
 }
 
+// The palace chandelier's real PointLight, kept out here so the day/night
+// switch can reach it. Declared before the builder runs: a `let` further down
+// the module would still be in its temporal dead zone when it is assigned.
+let palaceChandelierLight = null;
+
 function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   const SUMMIT_Y = 180.0;
   const TOWER_R = 3.2;
@@ -2268,40 +2668,129 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   box(M.palaceWhite, x, SUMMIT_Y, PALACE_Z, 28.0, 0.4, 19.0, 0, 0, 0, false);
   box(M.checkerPlaza, x, SUMMIT_Y + 0.005, PALACE_Z, 27.0, 0.4, 18.0, 0, 0, 0, false);
 
-  // --- Central Rotunda (Hollow Room, Radius 7.0m) ---
-  // Perimeter Curved Wall Columns & Arch Panels
+  // Floor plane the interior is dressed against: the checkerboard slab's top
+  // face. The ground snap walks you at 180.20, five millimetres under it.
+  const FLOOR_Y = SUMMIT_Y + 0.205;
+  const ROT_R = 7.0;
+  const WALL_T = 0.44;
+  const WALL_H = 5.2;
+  const WALL_Y = SUMMIT_Y + 2.7;   // wall centre — and the porthole centreline
+
+  // Panels are extruded once per size and then instanced, so the ten bays of
+  // the rotunda, the six of each wing and the two flanks of the south screen
+  // cost three geometries between them.
+  const rotPanelGeo = piercedWall(2.98, WALL_H, 0.62, 0, WALL_T);
+  const wingPanelGeo = piercedWall(3.45, 4.1, 0.44, 0.05, 0.36);
+  const screenPanelGeo = piercedWall(3.58, WALL_H, 0.60, 0, 0.40);
+
+  // A porthole's furniture: gilt hoop, glazing, and the two crossed bars.
+  // `ang` is the direction the wall faces, so its outward normal is
+  // (cos ang, 0, sin ang). A torus points along its local +Z, which Ry sends to
+  // (sin ry, 0, cos ry) — hence PI/2 - ang. A box's local +X goes to
+  // (cos ry, 0, -sin ry), so yaw -ang puts local X on the normal and leaves
+  // local Z running along the wall; the cylinder rides that same frame once rz
+  // has tipped its axis off +Y onto local +X.
+  const roundWindow = (px, py, pz, r, ang) => {
+    emit(G.ring, M.palaceGold, px, py, pz, r * 2 + 0.08, r * 2 + 0.08, r * 2 + 0.08,
+      0, Math.PI / 2 - ang, 0, false);
+    cylinder(M.palaceGlass, px, py, pz, r * 0.97, 0.12, -ang, 0, -Math.PI / 2, false);
+    box(M.palaceGold, px, py, pz, 0.07, 0.07, r * 1.94, -ang, 0, 0, false);
+    box(M.palaceGold, px, py, pz, 0.07, r * 1.94, 0.07, -ang, 0, 0, false);
+  };
+
+  // --- Central Rotunda (Enclosed Hall, Radius 7.0m) ---
+  //
+  // The bays between the columns were handed (2.6, 5.0, 0.4) at a yaw of
+  // -midAng, which lays their 2.6 m span along the *radius*: sixteen thin fins
+  // pointing outward with 2.3 m of open sky between each pair, which is why the
+  // hall had no walls to speak of. Under the 'YXZ' compose a yaw of -a sends
+  // local X to the outward normal, so the tangent chord is local Z — the panel
+  // geometry is built with its width on X and its thickness on Z instead, and
+  // aimed with PI/2 - a.
   const rotSegments = 16;
+  // Doorways: east (0), south (4), west (8) — each widened by dropping the bay
+  // on either side of it, which leaves a 5.4 m opening under a 45° arc.
+  const openCol = new Set([0, 4, 8]);
+  const openBay = new Set([15, 0, 3, 4, 7, 8]);
   for (let s = 0; s < rotSegments; s++) {
     const ang = (s / rotSegments) * Math.PI * 2;
-    // Open doorways:
-    // South doorway: s = 3, 4, 5 (wide open entrance facing the checkered plaza)
-    if (s >= 3 && s <= 5) continue;
-    // West archway: s = 8 (link to West Wing)
-    if (s === 8) continue;
-    // East archway: s = 0 (link to East Wing)
-    if (s === 0) continue;
-
-    const wx = x + Math.cos(ang) * 7.0;
-    const wz = PALACE_Z + Math.sin(ang) * 7.0;
-    // Wall column / pillar
-    cylinder(M.palaceWhite, wx, SUMMIT_Y + 2.8, wz, 0.55, 5.2, 0, 0, 0, false);
-    cylinder(M.palaceGold, wx, SUMMIT_Y + 5.2, wz, 0.65, 0.35, 0, 0, 0, false);
-    // Wall panel between columns
-    const nextAng = ((s + 1) / rotSegments) * Math.PI * 2;
-    if (s !== 2 && s !== 7 && s !== 15) {
-      const midAng = (ang + nextAng) / 2;
-      const mx = x + Math.cos(midAng) * 7.0;
-      const mz = PALACE_Z + Math.sin(midAng) * 7.0;
-      box(M.palaceWhite, mx, SUMMIT_Y + 2.8, mz, 2.6, 5.0, 0.4, -midAng, 0, 0, false);
+    if (!openCol.has(s)) {
+      const wx = x + Math.cos(ang) * ROT_R;
+      const wz = PALACE_Z + Math.sin(ang) * ROT_R;
+      cylinder(M.palaceWhite, wx, SUMMIT_Y + 2.7, wz, 0.55, 5.4, 0, 0, 0, false);
+      cylinder(M.palaceGold, wx, FLOOR_Y + 0.22, wz, 0.68, 0.44, 0, 0, 0, false);
+      cylinder(M.palaceGold, wx, SUMMIT_Y + 5.2, wz, 0.65, 0.35, 0, 0, 0, false);
     }
+    if (openBay.has(s)) continue;
+
+    const midAng = ((s + 0.5) / rotSegments) * Math.PI * 2;
+    const mx = x + Math.cos(midAng) * ROT_R;
+    const mz = PALACE_Z + Math.sin(midAng) * ROT_R;
+    emit(rotPanelGeo, M.palaceWhite, mx, WALL_Y, mz, 1, 1, 1, 0, Math.PI / 2 - midAng, 0, false);
+    // Gilt skirting and frieze, so the bay reads as masonry rather than as a slab.
+    box(M.palaceGold, mx, FLOOR_Y + 0.30, mz, WALL_T + 0.16, 0.60, 3.02, -midAng, 0, 0, false);
+    box(M.palaceGold, mx, SUMMIT_Y + 5.10, mz, WALL_T + 0.16, 0.34, 3.02, -midAng, 0, 0, false);
+    roundWindow(mx, WALL_Y, mz, 0.62, midAng);
   }
 
-  // Grand Arched South Entrance Portal (Width ~5.6m, Height ~5.2m - Open & Walkable)
-  box(M.palaceWhite, x - 2.8, SUMMIT_Y + 2.8, PALACE_Z + 6.8, 0.8, 5.2, 0.8, 0, 0, 0, false);
-  box(M.palaceWhite, x + 2.8, SUMMIT_Y + 2.8, PALACE_Z + 6.8, 0.8, 5.2, 0.8, 0, 0, 0, false);
-  box(M.palaceGold, x, SUMMIT_Y + 5.2, PALACE_Z + 6.8, 6.8, 0.5, 1.2, 0, 0, 0, false);
+  // Grand Arched South Entrance Portal (clear opening ~5.4m under a 5.2m head)
+  const DOOR_Z = PALACE_Z + 6.8;
+  for (const side of [-1, 1]) {
+    box(M.palaceWhite, x + side * 2.9, SUMMIT_Y + 2.7, DOOR_Z, 0.9, 5.4, 0.9, 0, 0, 0, false);
+    box(M.palaceGold, x + side * 2.9, FLOOR_Y + 0.28, DOOR_Z, 1.1, 0.56, 1.1, 0, 0, 0, false);
+    box(M.palaceGold, x + side * 2.9, SUMMIT_Y + 5.05, DOOR_Z, 1.1, 0.4, 1.1, 0, 0, 0, false);
+  }
+  box(M.palaceGold, x, SUMMIT_Y + 5.2, DOOR_Z, 6.8, 0.5, 1.2, 0, 0, 0, false);
   // Rounded Arch Hood atop the entrance
-  emit(G.dome, M.palaceWhite, x, SUMMIT_Y + 5.2, PALACE_Z + 6.8, 5.8, 2.8, 2.0, 0, 0, 0, false);
+  emit(G.dome, M.palaceWhite, x, SUMMIT_Y + 5.2, DOOR_Z, 5.8, 2.8, 2.0, 0, 0, 0, false);
+
+  // --- Noble-timber Doors, Thrown Open ---
+  //
+  // Two keyaki leaves on the jambs, swung ~70° so they stand almost along the
+  // approach and leave 3.3 m of clear walking between their free edges. Each
+  // leaf is built in its own frame: `dir` runs hinge → free edge, `nrm` is the
+  // face it presents, and every stud and band is placed as hinge + dir·t + nrm·u.
+  const DOOR_W = 2.25, DOOR_H = 4.3, DOOR_SWING = 1.22;
+  const DOOR_Y = FLOOR_Y + DOOR_H / 2;
+  // Timber sill across the threshold. Nine centimetres proud, well under the
+  // half-metre the ground snap steps over, so it is trim and not a kerb.
+  box(M.palaceDoorWood, x, FLOOR_Y + 0.09, DOOR_Z, 6.0, 0.18, 0.6, 0, 0, 0, false);
+  for (const side of [-1, 1]) {
+    const hingeX = x + side * 2.45;
+    const yaw = side < 0 ? -DOOR_SWING : DOOR_SWING - Math.PI;
+    const dx = Math.cos(yaw), dz = -Math.sin(yaw);   // local +X under Ry(yaw)
+    const nx = Math.sin(yaw), nz = Math.cos(yaw);    // local +Z under Ry(yaw)
+    const at = (t, u = 0) => [hingeX + dx * t + nx * u, DOOR_Z + dz * t + nz * u];
+
+    const [lx, lz] = at(DOOR_W / 2);
+    box(M.palaceDoorWood, lx, DOOR_Y, lz, DOOR_W, DOOR_H, 0.16, yaw, 0, 0, false);
+    // Gilt stiles at the hinge and the free edge, and three cross rails.
+    for (const t of [0.11, DOOR_W - 0.11]) {
+      const [sx2, sz2] = at(t);
+      box(M.palaceGold, sx2, DOOR_Y, sz2, 0.22, DOOR_H, 0.22, yaw, 0, 0, false);
+    }
+    for (const h of [0.28, DOOR_H / 2, DOOR_H - 0.28]) {
+      box(M.palaceGold, lx, FLOOR_Y + h, lz, DOOR_W, 0.17, 0.22, yaw, 0, 0, false);
+    }
+    // Boss studs, four courses of three, on the face that shows from the plaza.
+    for (let r = 0; r < 4; r++) {
+      for (let cI = 0; cI < 3; cI++) {
+        const [bx, bz] = at(0.5 + cI * 0.62, side * 0.1);
+        cylinder(M.goldGiboshi, bx, FLOOR_Y + 0.85 + r * 0.85, bz, 0.11, 0.12,
+          yaw - Math.PI / 2, 0, -Math.PI / 2, false);
+      }
+    }
+    // Pull ring, lying flat on the leaf.
+    const [px2, pz2] = at(DOOR_W - 0.45, side * 0.12);
+    emit(G.ring, M.goldGiboshi, px2, FLOOR_Y + 1.95, pz2, 0.62, 0.62, 0.62, 0, yaw, 0, false);
+  }
+  // Kumiko transom filling the head of the portal above the open leaves.
+  box(M.palaceDoorWood, x, FLOOR_Y + DOOR_H + 0.06, DOOR_Z, 5.4, 0.13, 0.32, 0, 0, 0, false);
+  box(M.palaceDoorWood, x, SUMMIT_Y + 4.86, DOOR_Z, 5.4, 0.13, 0.32, 0, 0, 0, false);
+  for (let i = 0; i <= 12; i++) {
+    box(M.palaceGold, x - 2.55 + i * 0.425, FLOOR_Y + DOOR_H + 0.22, DOOR_Z,
+      0.07, 0.42, 0.16, 0, 0, 0, false);
+  }
 
   // Crescent Colonnade Portico on the Plaza (Welcoming Curved Entrance).
   // Bare columns ~1.8m apart left the sky showing clean through every gap —
@@ -2333,65 +2822,228 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
 
   // Vaulted Dome Ceiling atop Central Rotunda (High above at Y = 185.5m - Hollow Interior!)
   emit(G.dome, M.palaceWhite, x, SUMMIT_Y + 5.4, PALACE_Z, 14.4, 8.2, 14.4, 0, 0, 0, false);
+  // Night-sky vault just inside it, plus gilt meridian ribs springing from the
+  // wall head. Without the inner shell the hall looked up at bare sky: the outer
+  // dome's normals point away, so it draws nothing at all from underneath.
+  emit(G.dome, M.palaceVault, x, SUMMIT_Y + 5.32, PALACE_Z, 13.9, 7.9, 13.9, 0, 0, 0, false);
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    for (let k = 0; k < 6; k++) {
+      const t0 = k / 6, t1 = (k + 1) / 6;
+      const p = tt => [
+        x + Math.cos(a) * 6.9 * Math.cos(tt * Math.PI / 2),
+        SUMMIT_Y + 5.32 + 3.9 * Math.sin(tt * Math.PI / 2),
+        PALACE_Z + Math.sin(a) * 6.9 * Math.cos(tt * Math.PI / 2),
+      ];
+      const [ax, ay, az] = p(t0), [bx2, by2, bz2] = p(t1);
+      branch(M.palaceGold, ax, ay, az, bx2, by2, bz2, 0.055, 0.055, false);
+    }
+  }
   // Golden Needle Spire atop Main Dome
   cylinder(M.palaceGold, x, SUMMIT_Y + 11.5, PALACE_Z, 0.35, 4.5, 0, 0, 0, false);
   cylinder(M.goldGiboshi, x, SUMMIT_Y + 14.0, PALACE_Z, 0.65, 0.9, 0, 0, 0, false);
 
-  // Interior Celestial Chandelier / Glow Ring in the Dome
-  cylinder(M.palaceGold, x, SUMMIT_Y + 6.8, PALACE_Z, 3.5, 0.25, 0, 0, 0, false);
-  cylinder(M.lanternGlow, x, SUMMIT_Y + 6.6, PALACE_Z, 3.2, 0.2, 0, 0, 0, false);
+  // --- Celestial Chandelier (Lustre) hanging in the Dome ---
+  //
+  // Two gilt hoops on chains, ringed with hanging lanterns around a luminous
+  // core. The hoops take G.hoop rather than G.ring: a torus scales its tube
+  // with its radius, and G.ring's 0.15 tube ratio would put a half-metre-thick
+  // doughnut on a three-metre hoop.
+  const CHAND_Y = SUMMIT_Y + 6.3;
+  cylinder(M.palaceGold, x, SUMMIT_Y + 8.9, PALACE_Z, 0.10, 3.6, 0, 0, 0, false);
+  emit(G.dome, M.palaceGold, x, SUMMIT_Y + 10.6, PALACE_Z, 1.7, 0.8, 1.7, 0, 0, 0, false);
+  emit(G.hoop, M.palaceGold, x, CHAND_Y + 1.15, PALACE_Z, 3.6, 3.6, 3.6, Math.PI / 2, 0, 0, false);
+  emit(G.hoop, M.palaceGold, x, CHAND_Y, PALACE_Z, 6.4, 6.4, 6.4, Math.PI / 2, 0, 0, false);
+
+  const hangLantern = (hx, hy, hz, s) => {
+    cylinder(M.palaceGold, hx, hy + 0.34 * s, hz, 0.035, 0.7 * s, 0, 0, 0, false);
+    cylinder(M.palaceGold, hx, hy - 0.02 * s, hz, 0.20 * s, 0.10 * s, 0, 0, 0, false);
+    cylinder(M.chandelierGlow, hx, hy - 0.30 * s, hz, 0.24 * s, 0.56 * s, 0, 0, 0, false);
+    cylinder(M.goldGiboshi, hx, hy - 0.64 * s, hz, 0.11 * s, 0.20 * s, 0, 0, 0, false);
+  };
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const hx = x + Math.cos(a) * 3.2, hz = PALACE_Z + Math.sin(a) * 3.2;
+    hangLantern(hx, CHAND_Y - 0.12, hz, 1.0);
+    // Chain up to the inner hoop, and a droplet under the rim.
+    branch(M.palaceGold, hx, CHAND_Y + 0.22, hz,
+      x + Math.cos(a) * 1.8, CHAND_Y + 1.15, PALACE_Z + Math.sin(a) * 1.8, 0.026, 0.026, false);
+    emit(G.cone, M.chandelierGlow, x + Math.cos(a + 0.26) * 3.2, CHAND_Y - 0.34,
+      PALACE_Z + Math.sin(a + 0.26) * 3.2, 0.22, 0.5, 0.22, Math.PI, 0, 0, false);
+  }
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + 0.5;
+    hangLantern(x + Math.cos(a) * 1.8, CHAND_Y + 1.0, PALACE_Z + Math.sin(a) * 1.8, 0.78);
+    branch(M.palaceGold, x + Math.cos(a) * 1.8, CHAND_Y + 1.38, PALACE_Z + Math.sin(a) * 1.8,
+      x, SUMMIT_Y + 8.0, PALACE_Z, 0.026, 0.026, false);
+  }
+  // Luminous core in a gilt cage.
+  emit(G.sphere, M.chandelierGlow, x, CHAND_Y + 0.35, PALACE_Z, 0.95, 0.95, 0.95, 0, 0, 0, false);
+  emit(G.hoop, M.palaceGold, x, CHAND_Y + 0.35, PALACE_Z, 1.5, 1.5, 1.5, Math.PI / 2, 0, 0, false);
+  emit(G.hoop, M.palaceGold, x, CHAND_Y + 0.35, PALACE_Z, 1.5, 1.5, 1.5, 0, 0, 0, false);
+  emit(G.hoop, M.palaceGold, x, CHAND_Y + 0.35, PALACE_Z, 1.5, 1.5, 1.5, 0, Math.PI / 2, 0, false);
+  cylinder(M.goldGiboshi, x, CHAND_Y - 0.55, PALACE_Z, 0.20, 0.55, 0, 0, 0, false);
+
+  // The one real light inside: the emissive lanterns above only paint themselves,
+  // and now that the rotunda has walls the sun no longer reaches the floor.
+  palaceChandelierLight = new THREE.PointLight(0xffd9a4, 20, 32, 1.5);
+  palaceChandelierLight.position.set(x, CHAND_Y - 0.9, PALACE_Z);
+  scene.add(palaceChandelierLight);
+
+  // --- Interior Partitions (Cloisons) ---
+  //
+  // Two screens across the round hall: a full-height wall that cuts off an
+  // entrance vestibule behind the doors, and a low shoji partition that closes
+  // the throne off as a sanctuary. Both leave a wide central opening, so the
+  // axis from the door to the dais stays walkable end to end.
+  const VEST_Z = PALACE_Z + 4.6;
+  const VEST_HALF = Math.sqrt(ROT_R * ROT_R - 4.6 * 4.6);   // chord at that depth
+  for (const side of [-1, 1]) {
+    const bx = x + side * (1.7 + VEST_HALF) / 2;
+    emit(screenPanelGeo, M.palaceWhite, bx, WALL_Y, VEST_Z, 1, 1, 1, 0, 0, 0, false);
+    box(M.palaceGold, bx, FLOOR_Y + 0.30, VEST_Z, 3.6, 0.60, 0.56, 0, 0, 0, false);
+    box(M.palaceGold, bx, SUMMIT_Y + 5.10, VEST_Z, 3.6, 0.34, 0.56, 0, 0, 0, false);
+    roundWindow(bx, WALL_Y, VEST_Z, 0.60, Math.PI / 2);
+    box(M.palaceGold, x + side * 1.7, WALL_Y, VEST_Z, 0.32, WALL_H, 0.56, 0, 0, 0, false);
+  }
+  // Head of the vestibule doorway: 3.4m wide, 3.6m clear.
+  box(M.palaceWhite, x, SUMMIT_Y + 4.62, VEST_Z, 3.4, 1.36, 0.40, 0, 0, 0, false);
+  box(M.palaceGold, x, SUMMIT_Y + 3.86, VEST_Z, 3.9, 0.28, 0.54, 0, 0, 0, false);
+
+  const SANC_Z = PALACE_Z + 0.5;
+  // Stops 5.2 m out rather than running to the wall: carried the full chord it
+  // would plug straight into the east and west doorways. Ending it short leaves
+  // an aisle round each end, which is also how you reach the wings.
+  const SANC_HALF = 5.2;
+  for (const side of [-1, 1]) {
+    const w = SANC_HALF - 2.1;
+    const bx = x + side * (2.1 + SANC_HALF) / 2;
+    box(M.palaceWhite, bx, FLOOR_Y + 0.55, SANC_Z, w, 1.10, 0.34, 0, 0, 0, false);
+    box(M.palaceGold, bx, FLOOR_Y + 1.16, SANC_Z, w, 0.13, 0.44, 0, 0, 0, false);
+    box(M.shojiPaper, bx, FLOOR_Y + 2.28, SANC_Z, w - 0.22, 2.10, 0.10, 0, 0, 0, false);
+    box(M.palaceGold, bx, FLOOR_Y + 3.44, SANC_Z, w, 0.22, 0.46, 0, 0, 0, false);
+    // Kumiko grid over the paper.
+    const bars = Math.max(2, Math.round(w / 0.62));
+    for (let i = 1; i < bars; i++) {
+      box(M.palaceGold, bx - w / 2 + (w * i) / bars, FLOOR_Y + 2.28, SANC_Z,
+        0.07, 2.10, 0.17, 0, 0, 0, false);
+    }
+    for (const h of [1.62, 2.28, 2.94]) {
+      box(M.palaceGold, bx, FLOOR_Y + h, SANC_Z, w - 0.22, 0.06, 0.17, 0, 0, 0, false);
+    }
+    // Gilt posts on the sanctuary doorway's jamb and on the free end, finialled
+    // like the plaza balustrade.
+    for (const px2 of [x + side * 2.1, x + side * SANC_HALF]) {
+      cylinder(M.palaceGold, px2, FLOOR_Y + 1.78, SANC_Z, 0.17, 3.56, 0, 0, 0, false);
+      cylinder(M.goldGiboshi, px2, FLOOR_Y + 3.72, SANC_Z, 0.23, 0.36, 0, 0, 0, false);
+    }
+  }
 
   // Interior Throne / Meditation Dais at North Rear of Hall
   cylinder(M.palaceGoldFloor, x, SUMMIT_Y + 0.4, PALACE_Z - 3.2, 3.2, 0.4, 0, 0, 0, false);
   box(M.palaceWhite, x, SUMMIT_Y + 0.8, PALACE_Z - 3.2, 2.4, 0.45, 1.4, 0, 0, 0, false);
   cylinder(M.goldGiboshi, x - 1.6, SUMMIT_Y + 1.2, PALACE_Z - 3.2, 0.25, 0.8, 0, 0, 0, false);
   cylinder(M.goldGiboshi, x + 1.6, SUMMIT_Y + 1.2, PALACE_Z - 3.2, 0.25, 0.8, 0, 0, 0, false);
-  // Golden Incense Urn in Hall Center
-  cylinder(M.palaceGold, x, SUMMIT_Y + 0.7, PALACE_Z + 1.0, 0.65, 1.0, 0, 0, 0, false);
-  cylinder(M.lanternGlow, x, SUMMIT_Y + 1.3, PALACE_Z + 1.0, 0.35, 0.25, 0, 0, 0, false);
 
-  // --- Flanking West Wing Pavilion (Walkable Room, R = 4.2m) ---
+  // --- Celestial Carpets ---
+  //
+  // Twelve millimetres proud of the checker slab: clear of its top face so the
+  // depth test never has to arbitrate, and far under the half-metre ledge the
+  // ground snap steps onto, so a rug stays something you walk over.
+  const RUG_T = 0.05;
+  const rugY = FLOOR_Y + 0.012 - RUG_T / 2;
+  const roundRug = (rx2, rz2, r, y0 = rugY) =>
+    emit(G.disc, M.carpetRound, rx2, y0, rz2, r * 2, RUG_T, r * 2, 0, 0, 0, false);
+  // A runner is a row of square stamps, the way a woven one repeats its medallion.
+  const runnerRug = (rx2, rz2, w, d) => {
+    const n = Math.max(1, Math.round(Math.max(w, d) / Math.min(w, d)));
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n - 0.5;
+      if (w >= d) box(M.carpetPanel, rx2 + t * w, rugY, rz2, w / n, RUG_T, d, 0, 0, 0, false);
+      else box(M.carpetPanel, rx2, rugY, rz2 + t * d, w, RUG_T, d / n, 0, 0, 0, false);
+    }
+  };
+
+  runnerRug(x, PALACE_Z + 5.85, 4.6, 2.0);                       // vestibule
+  roundRug(x, PALACE_Z + 2.55, 1.85);                            // hall, on axis
+  roundRug(x, PALACE_Z - 3.2, 2.35, SUMMIT_Y + 0.612 - RUG_T / 2); // under the throne
+  for (const side of [-1, 1]) {
+    roundRug(x + side * 4.2, PALACE_Z + 2.55, 1.6);
+    // Golden incense urns off the axis, one at each flanking medallion's centre.
+    cylinder(M.palaceGold, x + side * 4.2, SUMMIT_Y + 0.7, PALACE_Z + 2.55, 0.65, 1.0, 0, 0, 0, false);
+    cylinder(M.lanternGlow, x + side * 4.2, SUMMIT_Y + 1.3, PALACE_Z + 2.55, 0.35, 0.25, 0, 0, 0, false);
+    runnerRug(x + side * 5.25, PALACE_Z, 3.6, 2.4);              // passage to the wing
+  }
+
+  // --- Flanking Wing Pavilions (Walkable Rooms, R = 4.2m) ---
+  //
+  // Same fix as the rotunda: the bays sit on the chords *between* the columns
+  // with their width tangent, so the pavilion is a room and not a ring of posts.
   const WEST_X = x - 10.5;
-  for (let w = 0; w < 8; w++) {
-    const wa = (w / 8) * Math.PI * 2;
-    if (w === 0) continue; // Open east doorway connecting to corridor
-    const wx = WEST_X + Math.cos(wa) * 4.2;
-    const wz = PALACE_Z + Math.sin(wa) * 4.2;
-    cylinder(M.palaceWhite, wx, SUMMIT_Y + 2.2, wz, 0.45, 4.0, 0, 0, 0, false);
-    box(M.palaceWhite, wx, SUMMIT_Y + 2.2, wz, 1.8, 3.8, 0.35, -wa, 0, 0, false);
-  }
-  emit(G.dome, M.palaceWhite, WEST_X, SUMMIT_Y + 4.2, PALACE_Z, 8.6, 4.8, 8.6, 0, 0, 0, false);
-  cylinder(M.palaceGold, WEST_X, SUMMIT_Y + 7.5, PALACE_Z, 0.22, 2.2, 0, 0, 0, false);
-  // West Room Celestial Star Globe
-  cylinder(M.palaceGold, WEST_X, SUMMIT_Y + 0.6, PALACE_Z, 0.8, 0.8, 0, 0, 0, false);
-  cylinder(M.goldGiboshi, WEST_X, SUMMIT_Y + 1.5, PALACE_Z, 0.55, 0.8, 0, 0, 0, false);
-
-  // --- Flanking East Wing Pavilion (Walkable Room, R = 4.2m) ---
   const EAST_X = x + 10.5;
-  for (let e = 0; e < 8; e++) {
-    const ea = (e / 8) * Math.PI * 2;
-    if (e === 4) continue; // Open west doorway connecting to corridor
-    const ex = EAST_X + Math.cos(ea) * 4.2;
-    const ez = PALACE_Z + Math.sin(ea) * 4.2;
-    cylinder(M.palaceWhite, ex, SUMMIT_Y + 2.2, ez, 0.45, 4.0, 0, 0, 0, false);
-    box(M.palaceWhite, ex, SUMMIT_Y + 2.2, ez, 1.8, 3.8, 0.35, -ea, 0, 0, false);
+  const buildWing = (WX, openIdx) => {
+    for (let w = 0; w < 8; w++) {
+      const wa = (w / 8) * Math.PI * 2;
+      if (w !== openIdx) {
+        const wx = WX + Math.cos(wa) * 4.2;
+        const wz = PALACE_Z + Math.sin(wa) * 4.2;
+        cylinder(M.palaceWhite, wx, SUMMIT_Y + 2.1, wz, 0.45, 4.2, 0, 0, 0, false);
+        cylinder(M.palaceGold, wx, SUMMIT_Y + 4.15, wz, 0.55, 0.3, 0, 0, 0, false);
+      }
+      // Skip the two bays flanking the doorway, so the opening is a full 90°.
+      if (w === openIdx || w === (openIdx + 7) % 8) continue;
+      const ma = ((w + 0.5) / 8) * Math.PI * 2;
+      const mx = WX + Math.cos(ma) * 4.2;
+      const mz = PALACE_Z + Math.sin(ma) * 4.2;
+      emit(wingPanelGeo, M.palaceWhite, mx, SUMMIT_Y + 2.05, mz, 1, 1, 1, 0, Math.PI / 2 - ma, 0, false);
+      box(M.palaceGold, mx, FLOOR_Y + 0.26, mz, 0.5, 0.52, 3.5, -ma, 0, 0, false);
+      box(M.palaceGold, mx, SUMMIT_Y + 3.94, mz, 0.5, 0.28, 3.5, -ma, 0, 0, false);
+      roundWindow(mx, SUMMIT_Y + 2.1, mz, 0.44, ma);
+    }
+    emit(G.dome, M.palaceWhite, WX, SUMMIT_Y + 4.1, PALACE_Z, 8.8, 4.8, 8.8, 0, 0, 0, false);
+    emit(G.dome, M.palaceVaultSmall, WX, SUMMIT_Y + 4.04, PALACE_Z, 8.4, 4.6, 8.4, 0, 0, 0, false);
+    cylinder(M.palaceGold, WX, SUMMIT_Y + 7.4, PALACE_Z, 0.22, 2.2, 0, 0, 0, false);
+    // Each wing keeps its own small chandelier under the cupola, hung clear of
+    // head height: the cupola only springs at 184.1, so it cannot go much higher.
+    cylinder(M.palaceGold, WX, SUMMIT_Y + 4.0, PALACE_Z, 0.07, 0.9, 0, 0, 0, false);
+    emit(G.hoop, M.palaceGold, WX, SUMMIT_Y + 3.5, PALACE_Z, 2.3, 2.3, 2.3, Math.PI / 2, 0, 0, false);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      hangLantern(WX + Math.cos(a) * 1.15, SUMMIT_Y + 3.45, PALACE_Z + Math.sin(a) * 1.15, 0.62);
+    }
+    emit(G.sphere, M.chandelierGlow, WX, SUMMIT_Y + 3.6, PALACE_Z, 0.62, 0.62, 0.62, 0, 0, 0, false);
+    roundRug(WX, PALACE_Z, 2.9);
+  };
+  buildWing(WEST_X, 0);   // doorway faces east, back to the rotunda
+  buildWing(EAST_X, 4);   // doorway faces west
+
+  // West Room Celestial Star Globe. The gilt drum that stood in for the globe
+  // read as a brown barrel indoors — unlit metal has no environment to mirror —
+  // so the sphere it is named for now sits on it, lit from within.
+  cylinder(M.palaceGold, WEST_X, SUMMIT_Y + 0.6, PALACE_Z, 0.8, 0.8, 0, 0, 0, false);
+  cylinder(M.palaceGoldFloor, WEST_X, SUMMIT_Y + 1.05, PALACE_Z, 0.62, 0.16, 0, 0, 0, false);
+  emit(G.sphere, M.chandelierGlow, WEST_X, SUMMIT_Y + 1.85, PALACE_Z, 1.5, 1.5, 1.5, 0, 0, 0, false);
+  for (let i = 0; i < 3; i++) {
+    emit(G.hoop, M.palaceGold, WEST_X, SUMMIT_Y + 1.85, PALACE_Z, 1.62, 1.62, 1.62,
+      i === 0 ? Math.PI / 2 : 0, i === 2 ? Math.PI / 2 : 0, 0, false);
   }
-  emit(G.dome, M.palaceWhite, EAST_X, SUMMIT_Y + 4.2, PALACE_Z, 8.6, 4.8, 8.6, 0, 0, 0, false);
-  cylinder(M.palaceGold, EAST_X, SUMMIT_Y + 7.5, PALACE_Z, 0.22, 2.2, 0, 0, 0, false);
+
   // East Room Celestial Water Font
   cylinder(M.palaceGold, EAST_X, SUMMIT_Y + 0.6, PALACE_Z, 1.2, 0.6, 0, 0, 0, false);
   cylinder(M.water, EAST_X, SUMMIT_Y + 0.85, PALACE_Z, 1.0, 0.15, 0, 0, 0, false);
 
-  // Open Covered Corridors connecting Rotunda to Wings
-  // West Corridor (Open Walkway)
-  box(M.palaceWhite, (x + WEST_X) / 2, SUMMIT_Y + 4.2, PALACE_Z, 3.5, 0.4, 3.0, 0, 0, 0, false);
-  cylinder(M.palaceWhite, (x + WEST_X) / 2, SUMMIT_Y + 2.0, PALACE_Z + 1.4, 0.3, 3.8, 0, 0, 0, false);
-  cylinder(M.palaceWhite, (x + WEST_X) / 2, SUMMIT_Y + 2.0, PALACE_Z - 1.4, 0.3, 3.8, 0, 0, 0, false);
-
-  // East Corridor (Open Walkway)
-  box(M.palaceWhite, (x + EAST_X) / 2, SUMMIT_Y + 4.2, PALACE_Z, 3.5, 0.4, 3.0, 0, 0, 0, false);
-  cylinder(M.palaceWhite, (x + EAST_X) / 2, SUMMIT_Y + 2.0, PALACE_Z + 1.4, 0.3, 3.8, 0, 0, 0, false);
-  cylinder(M.palaceWhite, (x + EAST_X) / 2, SUMMIT_Y + 2.0, PALACE_Z - 1.4, 0.3, 3.8, 0, 0, 0, false);
+  // Covered passages joining the rotunda to the wings. Their posts stood at
+  // ±1.4 m, narrowing a doorway that is now a 5.4 m opening in a real wall;
+  // moved out to ±2.3 they frame the passage instead of blocking it.
+  for (const WX of [WEST_X, EAST_X]) {
+    const px = (x + WX) / 2;
+    box(M.palaceWhite, px, SUMMIT_Y + 4.2, PALACE_Z, 3.5, 0.4, 5.2, 0, 0, 0, false);
+    box(M.palaceGold, px, SUMMIT_Y + 4.44, PALACE_Z, 3.7, 0.16, 5.4, 0, 0, 0, false);
+    for (const side of [-1, 1]) {
+      cylinder(M.palaceWhite, px, SUMMIT_Y + 2.0, PALACE_Z + side * 2.3, 0.3, 3.8, 0, 0, 0, false);
+      cylinder(M.palaceGold, px, SUMMIT_Y + 3.95, PALACE_Z + side * 2.3, 0.38, 0.26, 0, 0, 0, false);
+    }
+  }
 
   // 6. Floating Cloud Layers in the Sky
   buildSkyClouds(x, z, SUMMIT_Y - 2, 22, 42);
@@ -3145,6 +3797,11 @@ addNightLight(28, 2.2, 87.8, 0xff9a38, 14, 12);
 addNightLight(-3.6, 0.4, -22, 0xff3814, 28, 18);
 addNightLight(3.6, 0.4, -22, 0xff3814, 28, 18);
 
+// Sky Palace wing cupolas. The rotunda's own chandelier is a permanent light
+// rather than a pooled emitter — it has to carry the walled hall by day too.
+addNightLight(44.5, 183.1, 7, 0xffc884, 17, 13);
+addNightLight(65.5, 183.1, 7, 0xffc884, 17, 13);
+
 // ---------------------------------------------------------------------------
 // Floating Sky Lanterns (Tōrō Nagashi / Bougies dans des petits cartons qui s'envolent)
 // ---------------------------------------------------------------------------
@@ -3383,6 +4040,7 @@ const DAY_LIGHT_STATE = {
   sun: { intensity: 2.7, visible: true },
   envIntensity: 0.65,
   lanternGlow: { emissive: 0xffaa44, emissiveIntensity: 2.4 },
+  chandelierGlow: { emissive: 0xffb45c, emissiveIntensity: 0.9 },
   candleWax: { emissive: 0x000000, emissiveIntensity: 0 },
   water: { color: 0x234a42, roughness: 0.08, opacity: 0.88 },
   // Daylight only wants a whisper of bloom on the brightest speculars.
@@ -3399,6 +4057,7 @@ const NIGHT_LIGHT_STATE = {
   moon: { intensity: 0.85, visible: true },
   envIntensity: 0.20,
   lanternGlow: { emissive: 0xff8820, emissiveIntensity: 5.8 },
+  chandelierGlow: { emissive: 0xffa049, emissiveIntensity: 1.25 },
   candleWax: { emissive: 0x5a1c08, emissiveIntensity: 0.55 },
   water: { color: 0x0c1e28, roughness: 0.04, opacity: 0.92 },
   // Flames, chōchin and fireflies should bleed into the air, but the threshold
@@ -3428,8 +4087,14 @@ function setShintoTime(night, smooth = false) {
     hemi.intensity = night ? NIGHT_LIGHT_STATE.hemi.intensity : DAY_LIGHT_STATE.hemi.intensity;
     scene.environmentIntensity = night ? NIGHT_LIGHT_STATE.envIntensity : DAY_LIGHT_STATE.envIntensity;
 
+    // The palace chandelier stays lit around the clock — the hall is walled now
+    // — but it has to carry the room outright once the sun is down.
+    if (palaceChandelierLight) palaceChandelierLight.intensity = night ? 26 : 20;
+
     M.lanternGlow.emissive.setHex(night ? NIGHT_LIGHT_STATE.lanternGlow.emissive : DAY_LIGHT_STATE.lanternGlow.emissive);
     M.lanternGlow.emissiveIntensity = night ? NIGHT_LIGHT_STATE.lanternGlow.emissiveIntensity : DAY_LIGHT_STATE.lanternGlow.emissiveIntensity;
+    M.chandelierGlow.emissive.setHex(night ? NIGHT_LIGHT_STATE.chandelierGlow.emissive : DAY_LIGHT_STATE.chandelierGlow.emissive);
+    M.chandelierGlow.emissiveIntensity = night ? NIGHT_LIGHT_STATE.chandelierGlow.emissiveIntensity : DAY_LIGHT_STATE.chandelierGlow.emissiveIntensity;
     M.candleWax.emissive.setHex(night ? NIGHT_LIGHT_STATE.candleWax.emissive : DAY_LIGHT_STATE.candleWax.emissive);
     M.candleWax.emissiveIntensity = night ? NIGHT_LIGHT_STATE.candleWax.emissiveIntensity : DAY_LIGHT_STATE.candleWax.emissiveIntensity;
     M.shojiPaper.emissive = night ? new THREE.Color(0xff8833) : new THREE.Color(0x000000);
@@ -3462,6 +4127,15 @@ function setShintoTime(night, smooth = false) {
 // 16. Flush Kits & Collision World
 // ---------------------------------------------------------------------------
 flushKits();
+
+// Sky clouds are scenery, not architecture. Left in `world` each puff handed
+// the collision pass a 30 m box whose top sits ~0.9 m above the summit plaza —
+// over the half-metre the ground snap steps onto — so the north half of the
+// palace, throne included, was walled off by fog. `scenery` is drawn but never
+// swept for AABBs, which is where the leaf cards already live.
+for (const im of [...world.children]) {
+  if (im.material === M.cloudFluff) scenery.add(im);
+}
 
 const bw = buildCityBoxes(world);
 // Add collision boxes for key bounds and structures
