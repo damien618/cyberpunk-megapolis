@@ -247,6 +247,13 @@ const waterN = ntex('./textures/la/water_normal.jpg', 8, 8);
 const asphaltA = tex('./textures/CP_Asphalt_A.webp', 40, 23);
 const asphaltN = ntex('./textures/CP_Asphalt_N.webp', 40, 23);
 
+// Real NASA-sourced satellite imagery (public domain) for the desk globe, so
+// the continents read as Earth instead of a hand-painted approximation.
+const earthColorT = tex('./textures/earth/earth_atmos_2048.jpg');
+earthColorT.wrapT = THREE.ClampToEdgeWrapping;
+const earthNormalT = ntex('./textures/earth/earth_normal_2048.jpg');
+earthNormalT.wrapT = THREE.ClampToEdgeWrapping;
+
 // ---------------------------------------------------------------------------
 // Procedural textures
 //
@@ -865,6 +872,55 @@ function makeGoldMarbleCanvas({ size = 512, seed = 41, tiles = 4 } = {}) {
   return c;
 }
 
+// Polished white marble for the celestial meditation table. Carrara-style:
+// warm cream ground, long grey-gold veins, no tile grid — the slab is one
+// stone, not a floor of pavers.
+function makeWhiteMarbleCanvas({ size = 512, seed = 73 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(seed);
+  g.fillStyle = '#f4efe6';
+  g.fillRect(0, 0, size, size);
+  for (let i = 0; i < 90; i++) {
+    g.fillStyle = `rgba(232, 224, 210, ${0.15 + rnd() * 0.28})`;
+    g.beginPath();
+    g.ellipse(rnd() * size, rnd() * size, 18 + rnd() * 70, 8 + rnd() * 28, rnd() * Math.PI, 0, Math.PI * 2);
+    g.fill();
+  }
+  for (let v = 0; v < 14; v++) {
+    const gold = rnd() < 0.28;
+    g.strokeStyle = gold
+      ? `rgba(176, 152, 112, ${0.18 + rnd() * 0.22})`
+      : `rgba(132, 128, 122, ${0.22 + rnd() * 0.32})`;
+    g.lineWidth = 0.7 + rnd() * 2.4;
+    g.beginPath();
+    let vx = rnd() * size;
+    let vy = rnd() * size;
+    g.moveTo(vx, vy);
+    const steps = 7 + (rnd() * 6) | 0;
+    for (let s = 0; s < steps; s++) {
+      vx += (rnd() - 0.42) * 70;
+      vy += (rnd() - 0.5) * 58;
+      g.lineTo(vx, vy);
+    }
+    g.stroke();
+  }
+  for (let v = 0; v < 9; v++) {
+    g.strokeStyle = `rgba(198, 192, 182, ${0.18 + rnd() * 0.2})`;
+    g.lineWidth = 0.4 + rnd() * 0.9;
+    g.beginPath();
+    let vx = rnd() * size, vy = rnd() * size;
+    g.moveTo(vx, vy);
+    for (let s = 0; s < 5; s++) {
+      vx += (rnd() - 0.5) * 48;
+      vy += (rnd() - 0.5) * 48;
+      g.lineTo(vx, vy);
+    }
+    g.stroke();
+  }
+  return c;
+}
+
 // Celestial carpets for the sky palace. Unlike every other surface here these
 // are *not* run through worldUV: a rug is one composition, not a tiling, so it
 // wants exactly one stamp. A cylinder cap's UVs are already a disc inscribed in
@@ -1214,6 +1270,10 @@ const goldMarbleC = makeGoldMarbleCanvas();
 const goldMarbleT = canvasTexture(goldMarbleC);
 const goldMarbleN = canvasTexture(normalFromCanvas(goldMarbleC, 1.6), { srgb: false });
 
+const whiteMarbleC = makeWhiteMarbleCanvas();
+const whiteMarbleT = canvasTexture(whiteMarbleC);
+const whiteMarbleN = canvasTexture(normalFromCanvas(whiteMarbleC, 1.8), { srgb: false });
+
 const rugRoundC = makeCelestialRugCanvas();
 const rugRoundT = canvasTexture(rugRoundC);
 const rugRoundN = canvasTexture(normalFromCanvas(rugRoundC, 1.3), { srgb: false });
@@ -1383,6 +1443,27 @@ const M = {
     color: 0xffffff, roughness: 0.32, metalness: 0.5,
     map: goldMarbleT, normalMap: goldMarbleN, normalScale: new THREE.Vector2(0.6, 0.6),
   }),
+  // Meditation table slab — polished Carrara, clearcoat so the veins catch
+  // the lowered chandelier instead of reading as a painted box.
+  palaceMarble: new THREE.MeshPhysicalMaterial({
+    color: 0xf7f2ea, roughness: 0.16, metalness: 0.04,
+    map: whiteMarbleT, normalMap: whiteMarbleN, normalScale: new THREE.Vector2(0.7, 0.7),
+    clearcoat: 0.62, clearcoatRoughness: 0.14,
+  }),
+  incenseStick: new THREE.MeshStandardMaterial({
+    color: 0x3d2a1c, roughness: 0.88, metalness: 0.0,
+  }),
+  incenseAsh: new THREE.MeshStandardMaterial({
+    color: 0xc9c3b6, roughness: 0.96, metalness: 0.0,
+  }),
+  celadon: new THREE.MeshPhysicalMaterial({
+    color: 0x8eae9c, roughness: 0.22, metalness: 0.06,
+    clearcoat: 0.55, clearcoatRoughness: 0.2,
+  }),
+  lacquerVermilion: new THREE.MeshPhysicalMaterial({
+    color: 0x6a1410, roughness: 0.28, metalness: 0.08,
+    clearcoat: 0.78, clearcoatRoughness: 0.16,
+  }),
   // Palace door leaves: keyaki lacquered near-black-brown, so the gold studs
   // and the pull rings are what the eye lands on rather than the timber.
   palaceDoorWood: new THREE.MeshPhysicalMaterial({
@@ -1422,6 +1503,12 @@ const M = {
   towerIvory: new THREE.MeshStandardMaterial({
     color: 0xf6f0e6, roughness: 0.52, metalness: 0.04,
     map: woodDiff, normalMap: woodN, normalScale: new THREE.Vector2(0.6, 0.6),
+  }),
+  // Shaft rings only — palaceGold stays unlit so the hall trim doesn't wash
+  // out when the tower is floodlit gold at night.
+  towerGold: new THREE.MeshStandardMaterial({
+    color: 0xf2c238, roughness: 0.22, metalness: 0.55,
+    emissive: 0x000000, emissiveIntensity: 0,
   }),
   cloudFluff: new THREE.MeshStandardMaterial({
     color: 0xffffff, roughness: 0.95, metalness: 0.0,
@@ -1499,6 +1586,7 @@ worldUV(M.zenGravel, 0.55);
 worldUV(M.treeTrunk, 0.65);
 worldUV(M.checkerPlaza, 0.125);
 worldUV(M.palaceGoldFloor, 0.25);
+worldUV(M.palaceMarble, 0.55);
 worldUV(M.palaceDoorWood, 0.42);
 // M.carpetRound / M.carpetPanel are deliberately left out: a rug is a single
 // composition, and worldUV would tile it into wallpaper.
@@ -2518,6 +2606,150 @@ function buildSkyClouds(centerX, centerZ, altitude = 180, count = 22, radius = 4
 // switch can reach it. Declared before the builder runs: a `let` further down
 // the module would still be in its temporal dead zone when it is assigned.
 let palaceChandelierLight = null;
+let palaceTableLight = null;
+let earthGlobeSpin = null;
+// Dimmed clone of M.chandelierGlow for the globe room's overhead lanterns —
+// full brightness that close above a real Earth texture just blows it out
+// to white, so this wing gets its own, softer copy (kept in sync with day/
+// night in setShintoTime instead of always matching the shared material).
+let globeRoomGlow = null;
+let incenseSmokeMesh = null;
+const incenseSmokeData = [];
+const INCENSE_SMOKE_COUNT = 40;
+const _incenseDummy = new THREE.Object3D();
+
+function makeIncenseSmokeTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 40, 2, 32, 28, 30);
+  grad.addColorStop(0, 'rgba(255, 250, 240, 0.55)');
+  grad.addColorStop(0.35, 'rgba(210, 200, 188, 0.28)');
+  grad.addColorStop(1, 'rgba(180, 170, 160, 0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function buildIncenseSmoke(ox, oy, oz) {
+  const geo = new THREE.PlaneGeometry(1, 1.4);
+  const mat = new THREE.MeshBasicMaterial({
+    map: makeIncenseSmokeTexture(),
+    color: 0xe8e0d4,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  incenseSmokeMesh = new THREE.InstancedMesh(geo, mat, INCENSE_SMOKE_COUNT);
+  incenseSmokeMesh.frustumCulled = false;
+  incenseSmokeData.length = 0;
+  const m = new THREE.Matrix4();
+  for (let i = 0; i < INCENSE_SMOKE_COUNT; i++) {
+    const age = Math.random();
+    incenseSmokeData.push({
+      ox, oy, oz,
+      age,
+      life: 2.4 + Math.random() * 2.2,
+      driftX: (Math.random() - 0.5) * 0.12,
+      driftZ: (Math.random() - 0.5) * 0.12,
+      spin: (Math.random() - 0.5) * 0.6,
+      phase: Math.random() * Math.PI * 2,
+    });
+    m.makeScale(0.01, 0.01, 0.01);
+    m.setPosition(ox, oy, oz);
+    incenseSmokeMesh.setMatrixAt(i, m);
+  }
+  incenseSmokeMesh.instanceMatrix.needsUpdate = true;
+  scenery.add(incenseSmokeMesh);
+}
+
+function tickIncenseSmoke(dt, t) {
+  if (!incenseSmokeMesh) return;
+  const cam = camera.position;
+  for (let i = 0; i < INCENSE_SMOKE_COUNT; i++) {
+    const s = incenseSmokeData[i];
+    s.age += dt / s.life;
+    if (s.age >= 1) {
+      s.age -= 1;
+      s.life = 2.4 + Math.random() * 2.2;
+      s.driftX = (Math.random() - 0.5) * 0.12;
+      s.driftZ = (Math.random() - 0.5) * 0.12;
+    }
+    const u = s.age;
+    const fade = u < 0.12 ? u / 0.12 : (u > 0.55 ? 1 - (u - 0.55) / 0.45 : 1);
+    const scx = (0.08 + u * 0.22) * fade;
+    const scy = (0.14 + u * 0.38) * fade;
+    const px = s.ox + s.driftX * u * 2.4 + Math.sin(t * 0.7 + s.phase) * 0.03 * u;
+    const py = s.oy + u * 0.55;
+    const pz = s.oz + s.driftZ * u * 2.4 + Math.cos(t * 0.55 + s.phase) * 0.03 * u;
+    _incenseDummy.position.set(px, py, pz);
+    _incenseDummy.lookAt(cam);
+    _incenseDummy.rotateZ(s.spin * t);
+    _incenseDummy.scale.set(scx, scy, 1);
+    _incenseDummy.updateMatrix();
+    incenseSmokeMesh.setMatrixAt(i, _incenseDummy.matrix);
+  }
+  incenseSmokeMesh.instanceMatrix.needsUpdate = true;
+}
+
+function buildDeskGlobe(x, y, z, radius = 0.74) {
+  const geo = new THREE.SphereGeometry(radius, 96, 64);
+
+  // Real satellite colour + normal maps (Earth as it actually looks from
+  // orbit), on a plain matte MeshStandardMaterial rather than the old
+  // clearcoat MeshPhysicalMaterial — the clearcoat's mirror-sharp highlight
+  // is what turned the overhead lantern light into a blinding hotspot.
+  const mat = new THREE.MeshStandardMaterial({
+    map: earthColorT,
+    normalMap: earthNormalT,
+    normalScale: new THREE.Vector2(0.55, 0.55),
+    roughness: 0.85,
+    metalness: 0.0,
+  });
+  const earth = new THREE.Mesh(geo, mat);
+  earth.castShadow = true;
+  earth.receiveShadow = true;
+
+  const spin = new THREE.Group();
+  spin.add(earth);
+
+  const root = new THREE.Group();
+  root.position.set(x, y, z);
+  // Sidereal tilt: the pole leans 23.4° so the globe is a terrestrial
+  // mappemonde, not a lamp on a vertical pin.
+  root.rotation.z = -23.44 * Math.PI / 180;
+  root.add(spin);
+
+  const merR = radius + 0.05;
+  const merPts = [];
+  for (let i = 0; i <= 36; i++) {
+    const a = -Math.PI / 2 + Math.PI * (i / 36);
+    merPts.push(new THREE.Vector3(Math.cos(a) * merR, Math.sin(a) * merR, 0));
+  }
+  const meridian = new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(merPts), 36, 0.016, 7, false),
+    M.palaceGold
+  );
+  meridian.castShadow = true;
+  root.add(meridian);
+
+  const axis = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.012, 0.012, radius * 2 + 0.16, 10),
+    M.palaceGold
+  );
+  root.add(axis);
+  for (const pole of [-1, 1]) {
+    const finial = new THREE.Mesh(new THREE.SphereGeometry(0.032, 12, 10), M.goldGiboshi);
+    finial.position.y = pole * (radius + 0.09);
+    root.add(finial);
+  }
+
+  scenery.add(root);
+  earthGlobeSpin = spin;
+}
 
 function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   const SUMMIT_Y = 180.0;
@@ -2558,7 +2790,7 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
 
   // Ornamental Golden Rings every 14 meters
   for (let hy = y + 14; hy < SUMMIT_Y - 10; hy += 14) {
-    cylinder(M.palaceGold, x, hy, z, TOWER_R + 0.35, 0.6, 0, 0, 0, true);
+    cylinder(M.towerGold, x, hy, z, TOWER_R + 0.35, 0.6, 0, 0, 0, true);
     // 4 glowing lanterns around each ring
     for (let la = 0; la < 4; la++) {
       const lang = (la / 4) * Math.PI * 2 + (hy * 0.1);
@@ -2855,10 +3087,10 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   emit(G.hoop, M.palaceGold, x, CHAND_Y + 1.15, PALACE_Z, 3.6, 3.6, 3.6, Math.PI / 2, 0, 0, false);
   emit(G.hoop, M.palaceGold, x, CHAND_Y, PALACE_Z, 6.4, 6.4, 6.4, Math.PI / 2, 0, 0, false);
 
-  const hangLantern = (hx, hy, hz, s) => {
+  const hangLantern = (hx, hy, hz, s, glowMat = M.chandelierGlow) => {
     cylinder(M.palaceGold, hx, hy + 0.34 * s, hz, 0.035, 0.7 * s, 0, 0, 0, false);
     cylinder(M.palaceGold, hx, hy - 0.02 * s, hz, 0.20 * s, 0.10 * s, 0, 0, 0, false);
-    cylinder(M.chandelierGlow, hx, hy - 0.30 * s, hz, 0.24 * s, 0.56 * s, 0, 0, 0, false);
+    cylinder(glowMat, hx, hy - 0.30 * s, hz, 0.24 * s, 0.56 * s, 0, 0, 0, false);
     cylinder(M.goldGiboshi, hx, hy - 0.64 * s, hz, 0.11 * s, 0.20 * s, 0, 0, 0, false);
   };
   for (let i = 0; i < 12; i++) {
@@ -2886,7 +3118,9 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
 
   // The one real light inside: the emissive lanterns above only paint themselves,
   // and now that the rotunda has walls the sun no longer reaches the floor.
-  palaceChandelierLight = new THREE.PointLight(0xffd9a4, 20, 32, 1.5);
+  // Kept low so the marble table and its candles carry the sanctuary instead
+  // of the dome washing the room white.
+  palaceChandelierLight = new THREE.PointLight(0xffc38a, 8, 22, 1.85);
   palaceChandelierLight.position.set(x, CHAND_Y - 0.9, PALACE_Z);
   scene.add(palaceChandelierLight);
 
@@ -2939,9 +3173,87 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   // Interior Throne / Meditation Dais at North Rear of Hall.
   // Bottom is 2 cm into the plaza so this disc and the damier never share a plane.
   cylinder(M.palaceGoldFloor, x, SUMMIT_Y + 0.38, PALACE_Z - 3.2, 3.2, 0.4, 0, 0, 0, false);
-  box(M.palaceWhite, x, SUMMIT_Y + 0.8, PALACE_Z - 3.2, 2.4, 0.45, 1.4, 0, 0, 0, true);
+  const TABLE_X = x;
+  const TABLE_Z = PALACE_Z - 3.2;
+  const TABLE_TOP = SUMMIT_Y + 1.025;
+  box(M.palaceMarble, TABLE_X, SUMMIT_Y + 0.8, TABLE_Z, 2.4, 0.45, 1.4, 0, 0, 0, true);
+  box(M.palaceGold, TABLE_X, TABLE_TOP + 0.01, TABLE_Z, 2.52, 0.03, 1.52, 0, 0, 0, false);
+  box(M.palaceGold, TABLE_X, SUMMIT_Y + 0.59, TABLE_Z, 2.46, 0.05, 1.46, 0, 0, 0, false);
   cylinder(M.goldGiboshi, x - 1.6, SUMMIT_Y + 1.2, PALACE_Z - 3.2, 0.25, 0.8, 0, 0, 0, true);
   cylinder(M.goldGiboshi, x + 1.6, SUMMIT_Y + 1.2, PALACE_Z - 3.2, 0.25, 0.8, 0, 0, 0, true);
+
+  // Japanese meditation set — kept on the far half of the slab (−Z, in front
+  // of the sitter) so nothing clips the seated pose.
+  {
+    const top = TABLE_TOP;
+    const tz = TABLE_Z;
+
+    // Kōro (香炉) — bronze incense burner with ash and three senkō sticks.
+    const kx = TABLE_X + 0.02, kz = tz - 0.34;
+    cylinder(M.brassBell, kx, top + 0.045, kz, 0.09, 0.09, 0, 0, 0, false);
+    cylinder(M.brassBell, kx, top + 0.095, kz, 0.105, 0.018, 0, 0, 0, false);
+    cylinder(M.incenseAsh, kx, top + 0.102, kz, 0.078, 0.016, 0, 0, 0, false);
+    for (let f = 0; f < 3; f++) {
+      const fa = (f / 3) * Math.PI * 2;
+      cylinder(M.brassBell, kx + Math.cos(fa) * 0.065, top + 0.016, kz + Math.sin(fa) * 0.065,
+        0.014, 0.032, 0, 0, 0, false);
+    }
+    const sticks = [
+      { dx: 0.010, dz: -0.008, rx: 0.14, rz: 0.06 },
+      { dx: -0.012, dz: 0.004, rx: -0.10, rz: 0.12 },
+      { dx: 0.004, dz: 0.014, rx: 0.08, rz: -0.11 },
+    ];
+    for (const s of sticks) {
+      const h = 0.17;
+      cylinder(M.incenseStick, kx + s.dx, top + 0.102 + h / 2, kz + s.dz, 0.0075, h, 0, s.rx, s.rz, false);
+      cylinder(M.candleFlame, kx + s.dx + Math.sin(s.rz) * h * 0.35, top + 0.102 + h + 0.01,
+        kz + s.dz - Math.sin(s.rx) * h * 0.35, 0.006, 0.014, 0, 0, 0, false);
+    }
+
+    // Warisōsoku — brass candlestick and a lit stick of wax, left of the kōro.
+    const cx = TABLE_X - 0.58, cz = tz - 0.30;
+    cylinder(M.brassBell, cx, top + 0.03, cz, 0.045, 0.06, 0, 0, 0, false);
+    cylinder(M.goldGiboshi, cx, top + 0.065, cz, 0.055, 0.016, 0, 0, 0, false);
+    cylinder(M.candleWax, cx, top + 0.15, cz, 0.016, 0.15, 0, 0, 0, false);
+    cylinder(M.candleFlame, cx, top + 0.24, cz, 0.012, 0.055, 0, 0, 0, false);
+
+    // Orin (おりん) — singing bowl on a vermilion cushion, wooden bachi beside it.
+    const bx = TABLE_X + 0.55, bz = tz - 0.28;
+    cylinder(M.lacquerVermilion, bx, top + 0.018, bz, 0.09, 0.036, 0, 0, 0, false);
+    emit(G.dome, M.brassBell, bx, top + 0.07, bz, 0.16, 0.09, 0.16, Math.PI, 0, 0, false);
+    cylinder(M.templeWood, bx + 0.16, top + 0.012, bz + 0.02, 0.01, 0.15, 0, 0, Math.PI / 2, false);
+    cylinder(M.templeWoodLight, bx + 0.23, top + 0.016, bz + 0.02, 0.018, 0.03, 0, 0, Math.PI / 2, false);
+
+    // Chabana — celadon vase with a small bamboo spray, far left.
+    const vx = TABLE_X - 0.92, vz = tz - 0.42;
+    cylinder(M.celadon, vx, top + 0.07, vz, 0.038, 0.14, 0, 0, 0, false);
+    cylinder(M.celadon, vx, top + 0.145, vz, 0.032, 0.02, 0, 0, 0, false);
+    cylinder(M.bambooGreen, vx + 0.01, top + 0.26, vz, 0.008, 0.22, 0, 0.18, 0.08, false);
+    puffFoliage(M.bambooLeaf, vx + 0.02, top + 0.36, vz, 0.16, 0.18, 0.16,
+      { seed: 91, count: 7, cardScale: 0.18 });
+
+    // Mizutama — offering cup of water, far right.
+    const wx = TABLE_X + 0.92, wz = tz - 0.40;
+    cylinder(M.celadon, wx, top + 0.035, wz, 0.04, 0.07, 0, 0, 0, false);
+    cylinder(M.water, wx, top + 0.068, wz, 0.032, 0.012, 0, 0, 0, false);
+
+    // Folded sutra booklet (orihon) and juzu prayer beads, mid-front.
+    box(M.palaceDoorWood, TABLE_X - 0.22, top + 0.012, tz - 0.12, 0.13, 0.022, 0.09, 0.35, 0, 0, false);
+    box(M.shideWhite, TABLE_X - 0.215, top + 0.018, tz - 0.118, 0.11, 0.012, 0.078, 0.35, 0, 0, false);
+    emit(G.ring, M.goldGiboshi, TABLE_X + 0.20, top + 0.012, tz - 0.14, 0.13, 0.13, 0.13, Math.PI / 2, 0.4, 0, false);
+    box(M.lacquerVermilion, TABLE_X + 0.265, top + 0.01, tz - 0.12, 0.012, 0.008, 0.05, 0.5, 0, 0, false);
+
+    // Shinto rice offering — small dish with a mound, left of the kōro.
+    cylinder(M.shideWhite, TABLE_X - 0.28, top + 0.01, tz - 0.42, 0.05, 0.012, 0, 0, 0, false);
+    emit(G.sphere, M.shideWhite, TABLE_X - 0.28, top + 0.032, tz - 0.42, 0.055, 0.032, 0.055, 0, 0, 0, false);
+
+    // Warm pool on the marble from the candle and the incense embers.
+    palaceTableLight = new THREE.PointLight(0xffaa66, 2.4, 5.2, 2.1);
+    palaceTableLight.position.set(kx, top + 0.22, kz);
+    scene.add(palaceTableLight);
+
+    buildIncenseSmoke(kx, top + 0.28, kz);
+  }
 
   // --- Celestial Carpets ---
   //
@@ -2979,7 +3291,7 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   // with their width tangent, so the pavilion is a room and not a ring of posts.
   const WEST_X = x - 10.5;
   const EAST_X = x + 10.5;
-  const buildWing = (WX, openIdx) => {
+  const buildWing = (WX, openIdx, opts = {}) => {
     for (let w = 0; w < 8; w++) {
       const wa = (w / 8) * Math.PI * 2;
       if (w !== openIdx) {
@@ -3005,24 +3317,27 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
     // head height: the cupola only springs at 184.1, so it cannot go much higher.
     cylinder(M.palaceGold, WX, SUMMIT_Y + 4.0, PALACE_Z, 0.07, 0.9, 0, 0, 0, false);
     emit(G.hoop, M.palaceGold, WX, SUMMIT_Y + 3.5, PALACE_Z, 2.3, 2.3, 2.3, Math.PI / 2, 0, 0, false);
+    // A room with the real Earth globe wants soft, even light to see the
+    // continents by — a dimmer clone of the shared glow keeps this cupola's
+    // lanterns from blooming into the blinding hotspot the full-brightness
+    // material makes directly overhead.
+    const glow = opts.dim ? (globeRoomGlow = M.chandelierGlow.clone()) : M.chandelierGlow;
+    if (opts.dim) glow.emissiveIntensity = M.chandelierGlow.emissiveIntensity * 0.35;
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
-      hangLantern(WX + Math.cos(a) * 1.15, SUMMIT_Y + 3.45, PALACE_Z + Math.sin(a) * 1.15, 0.62);
+      hangLantern(WX + Math.cos(a) * 1.15, SUMMIT_Y + 3.45, PALACE_Z + Math.sin(a) * 1.15, 0.62, glow);
     }
-    emit(G.sphere, M.chandelierGlow, WX, SUMMIT_Y + 3.6, PALACE_Z, 0.62, 0.62, 0.62, 0, 0, 0, false);
+    emit(G.sphere, glow, WX, SUMMIT_Y + 3.6, PALACE_Z, 0.62, 0.62, 0.62, 0, 0, 0, false);
     roundRug(WX, PALACE_Z, 2.9);
   };
-  buildWing(WEST_X, 0);   // doorway faces east, back to the rotunda
+  buildWing(WEST_X, 0, { dim: true }); // doorway faces east, back to the rotunda — globe room
   buildWing(EAST_X, 4);   // doorway faces west
 
-  // West Room Celestial Star Globe
+  // West Room terrestrial globe (mappemonde) — stand stays in the kit so it
+  // collides; the sphere itself is a dedicated mesh so it can spin on its tilt.
   cylinder(M.palaceGold, WEST_X, SUMMIT_Y + 0.6, PALACE_Z, 0.8, 0.8, 0, 0, 0, true);
   cylinder(M.palaceGoldFloor, WEST_X, SUMMIT_Y + 1.05, PALACE_Z, 0.62, 0.16, 0, 0, 0, false);
-  emit(G.sphere, M.chandelierGlow, WEST_X, SUMMIT_Y + 1.85, PALACE_Z, 1.5, 1.5, 1.5, 0, 0, 0, false);
-  for (let i = 0; i < 3; i++) {
-    emit(G.hoop, M.palaceGold, WEST_X, SUMMIT_Y + 1.85, PALACE_Z, 1.62, 1.62, 1.62,
-      i === 0 ? Math.PI / 2 : 0, i === 2 ? Math.PI / 2 : 0, 0, false);
-  }
+  buildDeskGlobe(WEST_X, SUMMIT_Y + 1.92, PALACE_Z, 0.74);
 
   // East Room Celestial Water Font
   cylinder(M.palaceGold, EAST_X, SUMMIT_Y + 0.6, PALACE_Z, 1.2, 0.6, 0, 0, 0, true);
@@ -3318,10 +3633,12 @@ buildBambooGrove(48, 0.1, 45, 35, 12);
 buildBambooGrove(-45, 0.1, 100, 30, 10);
 buildBambooGrove(45, 0.1, 100, 30, 10);
 buildBambooGrove(0, 0.1, 135, 45, 16);
-flushFoliageCards();
 
 // Celestial Cloud Tower & White Palace Sanctuary (Ascension to Heaven)
 buildCelestialTowerAndSanctuary(55, 0.15, 15);
+// After the palace: its plaza planters and the meditation-table chabana
+// push into the same card list as the grove, so one flush covers them all.
+flushFoliageCards();
 
 // ---------------------------------------------------------------------------
 // 14. Vehicles & Return Car on Parking Lot
@@ -3796,6 +4113,215 @@ addNightLight(3.6, 0.4, -22, 0xff3814, 28, 18);
 addNightLight(44.5, 183.1, 7, 0xffc884, 17, 13);
 addNightLight(65.5, 183.1, 7, 0xffc884, 17, 13);
 
+// Celestial Tower — subdued, softer ambient lighting so the timber reads subtly at night
+// without washing out into an overpowering yellow column. Sparkles carry the lively color show.
+addNightLight(55, 8, 15, 0xe0c8a8, 6.0, 16);
+addNightLight(55, 42, 15, 0xd0c0a0, 4.5, 14);
+addNightLight(55, 85, 15, 0xd0c0a0, 4.5, 14);
+addNightLight(55, 138, 15, 0xd0c0a0, 4.0, 14);
+
+// ---------------------------------------------------------------------------
+// Celestial Tower sparkle — Dynamic Multicolored Scintillation (Yellow -> Emerald -> Red)
+// ---------------------------------------------------------------------------
+function makeSparkleTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const cx = 64, cy = 64;
+
+  // 1. Soft radial glow halo
+  const gradHalo = g.createRadialGradient(cx, cy, 0, cx, cy, 64);
+  gradHalo.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+  gradHalo.addColorStop(0.18, 'rgba(255, 255, 255, 0.65)');
+  gradHalo.addColorStop(0.45, 'rgba(255, 255, 255, 0.16)');
+  gradHalo.addColorStop(1.0, 'rgba(255, 255, 255, 0)');
+  g.fillStyle = gradHalo;
+  g.fillRect(0, 0, 128, 128);
+
+  // 2. Crisp 4-point cross starburst rays (horizontal & vertical)
+  const drawRay = (w, h) => {
+    const grad = g.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h));
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    grad.addColorStop(0.35, 'rgba(255, 255, 255, 0.6)');
+    grad.addColorStop(1.0, 'rgba(255, 255, 255, 0)');
+    g.fillStyle = grad;
+    g.beginPath();
+    g.ellipse(cx, cy, w, h, 0, 0, Math.PI * 2);
+    g.fill();
+  };
+  drawRay(58, 2.4);
+  drawRay(2.4, 58);
+
+  // Diagonal rays for diamond sparkle
+  g.save();
+  g.translate(cx, cy);
+  g.rotate(Math.PI / 4);
+  const gradDiag = g.createRadialGradient(0, 0, 0, 0, 0, 30);
+  gradDiag.addColorStop(0, 'rgba(255, 255, 255, 0.75)');
+  gradDiag.addColorStop(1.0, 'rgba(255, 255, 255, 0)');
+  g.fillStyle = gradDiag;
+  g.beginPath();
+  g.ellipse(0, 0, 24, 1.6, 0, 0, Math.PI * 2);
+  g.fill();
+  g.beginPath();
+  g.ellipse(0, 0, 1.6, 24, 0, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+
+  // 3. Ultra-bright center core
+  const gradCore = g.createRadialGradient(cx, cy, 0, cx, cy, 7);
+  gradCore.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+  gradCore.addColorStop(0.55, 'rgba(255, 255, 255, 0.9)');
+  gradCore.addColorStop(1.0, 'rgba(255, 255, 255, 0)');
+  g.fillStyle = gradCore;
+  g.beginPath();
+  g.arc(cx, cy, 7, 0, Math.PI * 2);
+  g.fill();
+
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const sparkleTex = makeSparkleTexture();
+
+const TOWER_SPARKLE_COUNT = 1800;
+const towerSparkleGeo = new THREE.PlaneGeometry(1, 1);
+const towerSparkleMat = new THREE.MeshBasicMaterial({
+  map: sparkleTex,
+  color: 0xffd52b,
+  transparent: true,
+  opacity: 1,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  fog: false,
+  side: THREE.DoubleSide,
+});
+const towerSparkleMesh = new THREE.InstancedMesh(towerSparkleGeo, towerSparkleMat, TOWER_SPARKLE_COUNT);
+const towerSparkleData = [];
+{
+  const TOWER_CX = 55, TOWER_CZ = 15, TOWER_R = 3.42;
+  const Y0 = 1.6, Y1 = 180.5;
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3();
+  const _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+  for (let i = 0; i < TOWER_SPARKLE_COUNT; i++) {
+    const t = i / TOWER_SPARKLE_COUNT;
+    const y = Y0 + t * (Y1 - Y0) + (Math.random() - 0.5) * 0.8;
+    const ang = i * 2.3999632 + Math.random() * 0.45;
+    
+    // Multi-layer sparkle distribution:
+    // ~65% close to the tower shaft
+    // ~25% along steps and ornamental rings
+    // ~10% floating celestial aura dust
+    const roll = Math.random();
+    let r;
+    if (roll < 0.65) {
+      r = TOWER_R + 0.06 + Math.random() * 0.26;
+    } else if (roll < 0.90) {
+      r = TOWER_R + 0.35 + Math.random() * 0.90;
+    } else {
+      r = TOWER_R + 1.25 + Math.random() * 1.60;
+    }
+
+    const x = TOWER_CX + Math.cos(ang) * r;
+    const z = TOWER_CZ + Math.sin(ang) * r;
+    const isHero = Math.random() < 0.08;
+    const baseScale = isHero ? (0.75 + Math.random() * 0.55) : (0.28 + Math.random() * 0.42);
+
+    towerSparkleData.push({
+      origX: x, origZ: z, origY: y,
+      r, ang,
+      baseScale,
+      driftSpeed: 0.15 + Math.random() * 0.35,
+      speed: 8.0 + Math.random() * 16.0,
+      phase: Math.random() * Math.PI * 2,
+      thresh: isHero ? 0.35 : (0.45 + Math.random() * 0.35),
+      idle: isHero ? 0.04 : (0.06 + Math.random() * 0.06),
+      twinklePower: isHero ? 3.6 : (1.9 + Math.random() * 1.4),
+    });
+    _p.set(x, y, z);
+    _s.set(baseScale * 0.12, baseScale * 0.12, baseScale * 0.12);
+    _m.compose(_p, _q, _s);
+    towerSparkleMesh.setMatrixAt(i, _m);
+  }
+  towerSparkleMesh.instanceMatrix.needsUpdate = true;
+  towerSparkleMesh.frustumCulled = false;
+  nightGroup.add(towerSparkleMesh);
+}
+
+// 10-second alternating color palette:
+// 10s Jaune (Gold/Yellow) -> 10s Vert Émeraude (Emerald Green) -> 10s Rouge (Ruby Red) -> Repeat
+const SPARKLE_COLOR_YELLOW  = new THREE.Color(0xffd52b); // Jaune / Or éclatant
+const SPARKLE_COLOR_EMERALD = new THREE.Color(0x05f07a); // Vert émeraude vibrant
+const SPARKLE_COLOR_RED     = new THREE.Color(0xff2a4a); // Rouge rubis éclatant
+const _sparkleColorTmp      = new THREE.Color();
+
+function getTowerSparkleColor(t, out) {
+  const cycle = t % 30.0; // 30 second total cycle
+  const TRANSITION = 1.0; // 1s smooth blend at 10s boundaries
+
+  if (cycle < 10.0) {
+    // 0s - 10s: Yellow phase
+    if (cycle > (10.0 - TRANSITION)) {
+      const a = (cycle - (10.0 - TRANSITION)) / TRANSITION;
+      const s = a * a * (3 - 2 * a);
+      out.copy(SPARKLE_COLOR_YELLOW).lerp(SPARKLE_COLOR_EMERALD, s);
+    } else {
+      out.copy(SPARKLE_COLOR_YELLOW);
+    }
+  } else if (cycle < 20.0) {
+    // 10s - 20s: Emerald Green phase
+    const p = cycle - 10.0;
+    if (p > (10.0 - TRANSITION)) {
+      const a = (p - (10.0 - TRANSITION)) / TRANSITION;
+      const s = a * a * (3 - 2 * a);
+      out.copy(SPARKLE_COLOR_EMERALD).lerp(SPARKLE_COLOR_RED, s);
+    } else {
+      out.copy(SPARKLE_COLOR_EMERALD);
+    }
+  } else {
+    // 20s - 30s: Red phase
+    const p = cycle - 20.0;
+    if (p > (10.0 - TRANSITION)) {
+      const a = (p - (10.0 - TRANSITION)) / TRANSITION;
+      const s = a * a * (3 - 2 * a);
+      out.copy(SPARKLE_COLOR_RED).lerp(SPARKLE_COLOR_YELLOW, s);
+    } else {
+      out.copy(SPARKLE_COLOR_RED);
+    }
+  }
+  return out;
+}
+
+const _sparkleDummy = new THREE.Object3D();
+function tickTowerSparkles(t) {
+  if (!nightGroup.visible) return;
+  camera.getWorldPosition(_nightCam);
+
+  // Update dynamic color sequence
+  getTowerSparkleColor(t, _sparkleColorTmp);
+  towerSparkleMat.color.copy(_sparkleColorTmp);
+
+  for (let i = 0; i < TOWER_SPARKLE_COUNT; i++) {
+    const s = towerSparkleData[i];
+    const n = Math.sin(t * s.speed + s.phase);
+    const flash = n > s.thresh ? 1.0 + Math.pow((n - s.thresh) / (1.0 - s.thresh), 1.8) * s.twinklePower : s.idle;
+    const sc = s.baseScale * flash;
+
+    // Gentle celestial drift
+    const curAng = s.ang + t * s.driftSpeed * 0.08;
+    const px = 55 + Math.cos(curAng) * s.r;
+    const pz = 15 + Math.sin(curAng) * s.r;
+    const py = s.origY + Math.sin(t * 0.6 + s.phase) * 0.16;
+
+    _sparkleDummy.position.set(px, py, pz);
+    _sparkleDummy.lookAt(_nightCam);
+    _sparkleDummy.scale.set(sc, sc, sc);
+    _sparkleDummy.updateMatrix();
+    towerSparkleMesh.setMatrixAt(i, _sparkleDummy.matrix);
+  }
+  towerSparkleMesh.instanceMatrix.needsUpdate = true;
+}
+
 // ---------------------------------------------------------------------------
 // Floating Sky Lanterns (Tōrō Nagashi / Bougies dans des petits cartons qui s'envolent)
 // ---------------------------------------------------------------------------
@@ -4034,8 +4560,10 @@ const DAY_LIGHT_STATE = {
   sun: { intensity: 2.7, visible: true },
   envIntensity: 0.65,
   lanternGlow: { emissive: 0xffaa44, emissiveIntensity: 2.4 },
-  chandelierGlow: { emissive: 0xffb45c, emissiveIntensity: 0.9 },
+  chandelierGlow: { emissive: 0xffb45c, emissiveIntensity: 0.38 },
   candleWax: { emissive: 0x000000, emissiveIntensity: 0 },
+  towerIvory: { emissive: 0x000000, emissiveIntensity: 0 },
+  towerGold: { emissive: 0x000000, emissiveIntensity: 0 },
   water: { color: 0x234a42, roughness: 0.08, opacity: 0.88 },
   // Daylight only wants a whisper of bloom on the brightest speculars.
   bloom: { strength: 0.22, radius: 0.55, threshold: 0.92 },
@@ -4051,8 +4579,13 @@ const NIGHT_LIGHT_STATE = {
   moon: { intensity: 0.85, visible: true },
   envIntensity: 0.20,
   lanternGlow: { emissive: 0xff8820, emissiveIntensity: 5.8 },
-  chandelierGlow: { emissive: 0xffa049, emissiveIntensity: 1.25 },
+  chandelierGlow: { emissive: 0xffa049, emissiveIntensity: 0.48 },
   candleWax: { emissive: 0x5a1c08, emissiveIntensity: 0.55 },
+  // Subdued, darker night illumination for the tower shaft — lets the ivory wood texture and geometry
+  // breathe with subtle nocturnal ambient depth instead of being an overpowering solid yellow column.
+  // The rich dynamic sparkles carry the brilliant colors.
+  towerIvory: { emissive: 0x0a101b, emissiveIntensity: 0.08 },
+  towerGold: { emissive: 0x1e1808, emissiveIntensity: 0.18 },
   water: { color: 0x0c1e28, roughness: 0.04, opacity: 0.92 },
   // Flames, chōchin and fireflies should bleed into the air, but the threshold
   // stays above the lit shoji panels — catch those too and the haiden washes
@@ -4082,15 +4615,25 @@ function setShintoTime(night, smooth = false) {
     scene.environmentIntensity = night ? NIGHT_LIGHT_STATE.envIntensity : DAY_LIGHT_STATE.envIntensity;
 
     // The palace chandelier stays lit around the clock — the hall is walled now
-    // — but it has to carry the room outright once the sun is down.
-    if (palaceChandelierLight) palaceChandelierLight.intensity = night ? 26 : 20;
+    // — but it stays dim so the marble table and its candles keep the sanctuary
+    // intimate. The table's own PointLight does the close work.
+    if (palaceChandelierLight) palaceChandelierLight.intensity = night ? 10 : 8;
+    if (palaceTableLight) palaceTableLight.intensity = night ? 3.1 : 2.4;
 
     M.lanternGlow.emissive.setHex(night ? NIGHT_LIGHT_STATE.lanternGlow.emissive : DAY_LIGHT_STATE.lanternGlow.emissive);
     M.lanternGlow.emissiveIntensity = night ? NIGHT_LIGHT_STATE.lanternGlow.emissiveIntensity : DAY_LIGHT_STATE.lanternGlow.emissiveIntensity;
     M.chandelierGlow.emissive.setHex(night ? NIGHT_LIGHT_STATE.chandelierGlow.emissive : DAY_LIGHT_STATE.chandelierGlow.emissive);
     M.chandelierGlow.emissiveIntensity = night ? NIGHT_LIGHT_STATE.chandelierGlow.emissiveIntensity : DAY_LIGHT_STATE.chandelierGlow.emissiveIntensity;
+    if (globeRoomGlow) {
+      globeRoomGlow.emissive.copy(M.chandelierGlow.emissive);
+      globeRoomGlow.emissiveIntensity = M.chandelierGlow.emissiveIntensity * 0.35;
+    }
     M.candleWax.emissive.setHex(night ? NIGHT_LIGHT_STATE.candleWax.emissive : DAY_LIGHT_STATE.candleWax.emissive);
     M.candleWax.emissiveIntensity = night ? NIGHT_LIGHT_STATE.candleWax.emissiveIntensity : DAY_LIGHT_STATE.candleWax.emissiveIntensity;
+    M.towerIvory.emissive.setHex(night ? NIGHT_LIGHT_STATE.towerIvory.emissive : DAY_LIGHT_STATE.towerIvory.emissive);
+    M.towerIvory.emissiveIntensity = night ? NIGHT_LIGHT_STATE.towerIvory.emissiveIntensity : DAY_LIGHT_STATE.towerIvory.emissiveIntensity;
+    M.towerGold.emissive.setHex(night ? NIGHT_LIGHT_STATE.towerGold.emissive : DAY_LIGHT_STATE.towerGold.emissive);
+    M.towerGold.emissiveIntensity = night ? NIGHT_LIGHT_STATE.towerGold.emissiveIntensity : DAY_LIGHT_STATE.towerGold.emissiveIntensity;
     M.shojiPaper.emissive = night ? new THREE.Color(0xff8833) : new THREE.Color(0x000000);
     M.shojiPaper.emissiveIntensity = night ? 0.35 : 0;
     M.water.color.setHex(night ? NIGHT_LIGHT_STATE.water.color : DAY_LIGHT_STATE.water.color);
@@ -4142,6 +4685,9 @@ const bw = buildCityBoxes(world);
   push(-80, 0, 150, 80, 6, 160);
   push(-90, 0, -110, -75, 6, 160);
   push(75, 0, -110, 90, 6, 160);
+  // West-wing globe: the spinning mesh lives in scenery (no AABB), so a
+  // modest prop box keeps you from walking through the sphere.
+  push(44.5 - 0.85, 180.2, 7 - 0.85, 44.5 + 0.85, 182.75, 7 + 0.85, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -4708,6 +5254,13 @@ function animate() {
 
   // Animate falling sakura petals
   tickSakuraPetals(dt);
+  tickIncenseSmoke(dt, t);
+  if (earthGlobeSpin) earthGlobeSpin.rotation.y += dt * 0.12;
+  if (palaceTableLight) {
+    const base = window.__nightMode ? 3.1 : 2.4;
+    palaceTableLight.intensity = base
+      * (0.9 + 0.08 * Math.sin(t * 7.4) + 0.05 * Math.sin(t * 13.1));
+  }
 
   // Animate night visual systems (Sky lanterns, water lanterns, fireflies, stars)
   if (nightGroup.visible) {
@@ -4716,6 +5269,7 @@ function animate() {
     tickFireflies(dt, t);
     tickStarTwinkle(dt, t);
     tickSandoCandles(t);
+    tickTowerSparkles(t);
   }
 
   // Animate blinking hazard lights (clignotants) and beacon on the return car
