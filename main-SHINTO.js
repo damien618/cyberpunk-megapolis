@@ -2581,22 +2581,42 @@ function buildBambooGrove(centerX, centerY, centerZ, count = 25, radius = 6) {
 // ---------------------------------------------------------------------------
 // 10. Celestial Tower & Cloud Sanctuary (Tour Céleste & Palais Blanc des Nuages)
 // ---------------------------------------------------------------------------
-function buildSkyClouds(centerX, centerZ, altitude = 180, count = 22, radius = 42) {
+function buildSkyClouds(centerX, centerZ, {
+  altitude = 180, count = 22, radius = 52,
+  plazaRadius = 26, floorY = 180.2,
+} = {}) {
+  // Cloud fluff is a 70% white transparent sphere with depthWrite off. Any
+  // puff that overlaps the plaza disc sits between the camera and the
+  // checkerboard and reads as a milk veil on the tiles (the ring used to
+  // start at r≈27 with 13 m radii, so the inner lobes crossed the whole
+  // terrace and poked ~0.9 m above the walking surface).
+  const FLOOR_CLEAR = 0.55;
+  const EDGE_CLEAR = 1.4;
   for (let i = 0; i < count; i++) {
     const angle = (i / count) * Math.PI * 2 + (Math.sin(i * 3.7) * 0.35);
-    const r = radius * (0.65 + (i % 4) * 0.18);
+    const r = radius * (0.90 + (i % 4) * 0.12);
     const cx = centerX + Math.cos(angle) * r;
     const cz = centerZ + Math.sin(angle) * r;
-    const cy = altitude - 6 + (Math.sin(i * 2.1) * 5);
-    
-    // Cluster of 4 overlapping cloud spheres
+    const cy = altitude - 10 + (Math.sin(i * 2.1) * 4);
+
     for (let p = 0; p < 4; p++) {
-      const px = cx + Math.cos(p * 1.5) * 5.5;
-      const pz = cz + Math.sin(p * 1.5) * 5.5;
-      const py = cy + (p % 2) * 1.8;
+      let px = cx + Math.cos(p * 1.5) * 5.5;
+      let pz = cz + Math.sin(p * 1.5) * 5.5;
+      let py = cy + (p % 2) * 1.8;
       const sx = 16 + (p % 3) * 5;
       const sy = 4.5 + (p % 2) * 2;
       const sz = 14 + ((p + 1) % 3) * 5;
+      const reach = Math.max(sx, sz) * 0.5;
+      const dist = Math.hypot(px - centerX, pz - centerZ);
+      const minDist = plazaRadius + reach + EDGE_CLEAR;
+      if (dist > 0.001 && dist < minDist) {
+        const s = minDist / dist;
+        px = centerX + (px - centerX) * s;
+        pz = centerZ + (pz - centerZ) * s;
+      }
+      const hy = sy * 0.5;
+      const maxTop = floorY - FLOOR_CLEAR;
+      if (py + hy > maxTop) py = maxTop - hy;
       emit(G.sphere, M.cloudFluff, px, py, pz, sx, sy, sz, 0, p * 0.6, 0, false);
     }
   }
@@ -2608,11 +2628,17 @@ function buildSkyClouds(centerX, centerZ, altitude = 180, count = 22, radius = 4
 let palaceChandelierLight = null;
 let palaceTableLight = null;
 let earthGlobeSpin = null;
+let earthGlobeMat = null;
 // Dimmed clone of M.chandelierGlow for the globe room's overhead lanterns —
 // full brightness that close above a real Earth texture just blows it out
 // to white, so this wing gets its own, softer copy (kept in sync with day/
 // night in setShintoTime instead of always matching the shared material).
 let globeRoomGlow = null;
+// Real PointLight for the west-wing cupola. Replaces the night-pool emitter
+// that sat inside the chandelier glass at intensity 17 and crushed the globe
+// to a black silhouette. Always on: the wing is walled, so the sun never
+// reaches the NASA texture either.
+let globeRoomLight = null;
 let incenseSmokeMesh = null;
 const incenseSmokeData = [];
 const INCENSE_SMOKE_COUNT = 40;
@@ -2702,13 +2728,21 @@ function buildDeskGlobe(x, y, z, radius = 0.74) {
   // orbit), on a plain matte MeshStandardMaterial rather than the old
   // clearcoat MeshPhysicalMaterial — the clearcoat's mirror-sharp highlight
   // is what turned the overhead lantern light into a blinding hotspot.
+  // emissiveMap = the same NASA sheet so the oceans keep their own blue at
+  // night instead of falling to a black disc under a dimmed chandelier;
+  // intensity is swapped in setShintoTime.
   const mat = new THREE.MeshStandardMaterial({
     map: earthColorT,
+    emissiveMap: earthColorT,
+    emissive: new THREE.Color(0xffffff),
+    emissiveIntensity: 0.10,
     normalMap: earthNormalT,
     normalScale: new THREE.Vector2(0.55, 0.55),
-    roughness: 0.85,
+    roughness: 0.88,
     metalness: 0.0,
+    color: 0xe8eef6,
   });
+  earthGlobeMat = mat;
   const earth = new THREE.Mesh(geo, mat);
   earth.castShadow = true;
   earth.receiveShadow = true;
@@ -3320,9 +3354,13 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
     // A room with the real Earth globe wants soft, even light to see the
     // continents by — a dimmer clone of the shared glow keeps this cupola's
     // lanterns from blooming into the blinding hotspot the full-brightness
-    // material makes directly overhead.
+    // material makes directly overhead. Dark albedo so a colocated PointLight
+    // cannot relight the glass into a white bloom disc.
     const glow = opts.dim ? (globeRoomGlow = M.chandelierGlow.clone()) : M.chandelierGlow;
-    if (opts.dim) glow.emissiveIntensity = M.chandelierGlow.emissiveIntensity * 0.35;
+    if (opts.dim) {
+      glow.color.setHex(0x3a2a18);
+      glow.emissiveIntensity = M.chandelierGlow.emissiveIntensity * 0.18;
+    }
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
       hangLantern(WX + Math.cos(a) * 1.15, SUMMIT_Y + 3.45, PALACE_Z + Math.sin(a) * 1.15, 0.62, glow);
@@ -3332,6 +3370,14 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   };
   buildWing(WEST_X, 0, { dim: true }); // doorway faces east, back to the rotunda — globe room
   buildWing(EAST_X, 4);   // doorway faces west
+
+  // Soft chandelier light for the globe room. Cool-white and low: warm 17-candela
+  // from a metre above the sphere is what turned the NASA oceans black.
+  // Offset toward the doorway so the lamp is still the chandelier's, but it
+  // lights the face you walk in on instead of punching a white cap on the pole.
+  globeRoomLight = new THREE.PointLight(0xf0e6d4, 2.4, 8.5, 2.0);
+  globeRoomLight.position.set(WEST_X + 0.85, SUMMIT_Y + 3.05, PALACE_Z);
+  scene.add(globeRoomLight);
 
   // West Room terrestrial globe (mappemonde) — stand stays in the kit so it
   // collides; the sphere itself is a dedicated mesh so it can spin on its tilt.
@@ -3354,8 +3400,16 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
     }
   }
 
-  // 6. Floating Cloud Layers in the Sky
-  buildSkyClouds(x, z, SUMMIT_Y - 2, 22, 42);
+  // 6. Floating Cloud Layers in the Sky — a collar around and below the
+  // plaza, never through it (transparent puffs on the damier washed the tiles
+  // white).
+  buildSkyClouds(x, z, {
+    altitude: SUMMIT_Y - 2,
+    count: 22,
+    radius: 52,
+    plazaRadius: PLATFORM_R,
+    floorY: SUMMIT_Y + 0.20,
+  });
 
   // 7. Register Interactive Climbing & Teleport Spots
   furnitureInteractions.push({
@@ -4110,8 +4164,9 @@ addNightLight(3.6, 0.4, -22, 0xff3814, 28, 18);
 
 // Sky Palace wing cupolas. The rotunda's own chandelier is a permanent light
 // rather than a pooled emitter — it has to carry the walled hall by day too.
-addNightLight(44.5, 183.1, 7, 0xffc884, 17, 13);
-addNightLight(65.5, 183.1, 7, 0xffc884, 17, 13);
+// West (globe) wing: same idea — globeRoomLight, not a pool emitter. The old
+// intensity-17 source sat inside the cupola glass and crushed the Earth globe.
+addNightLight(65.5, 183.1, 7, 0xffc884, 12, 11);
 
 // Celestial Tower — subdued, softer ambient lighting so the timber reads subtly at night
 // without washing out into an overpowering yellow column. Sparkles carry the lively color show.
@@ -4619,6 +4674,15 @@ function setShintoTime(night, smooth = false) {
     // intimate. The table's own PointLight does the close work.
     if (palaceChandelierLight) palaceChandelierLight.intensity = night ? 10 : 8;
     if (palaceTableLight) palaceTableLight.intensity = night ? 3.1 : 2.4;
+    // Globe-room chandelier: cooler and much dimmer at night so the NASA
+    // ocean albedo can read as blue instead of a gold-blown silhouette.
+    if (globeRoomLight) {
+      globeRoomLight.intensity = night ? 1.35 : 2.4;
+      globeRoomLight.color.setHex(night ? 0xdcd6cc : 0xf0e6d4);
+    }
+    if (earthGlobeMat) {
+      earthGlobeMat.emissiveIntensity = night ? 0.48 : 0.10;
+    }
 
     M.lanternGlow.emissive.setHex(night ? NIGHT_LIGHT_STATE.lanternGlow.emissive : DAY_LIGHT_STATE.lanternGlow.emissive);
     M.lanternGlow.emissiveIntensity = night ? NIGHT_LIGHT_STATE.lanternGlow.emissiveIntensity : DAY_LIGHT_STATE.lanternGlow.emissiveIntensity;
@@ -4626,7 +4690,9 @@ function setShintoTime(night, smooth = false) {
     M.chandelierGlow.emissiveIntensity = night ? NIGHT_LIGHT_STATE.chandelierGlow.emissiveIntensity : DAY_LIGHT_STATE.chandelierGlow.emissiveIntensity;
     if (globeRoomGlow) {
       globeRoomGlow.emissive.copy(M.chandelierGlow.emissive);
-      globeRoomGlow.emissiveIntensity = M.chandelierGlow.emissiveIntensity * 0.35;
+      // Stay well under the night bloom threshold (0.75) so the cupola reads
+      // as a lamp, not a white disc eating the globe.
+      globeRoomGlow.emissiveIntensity = night ? 0.32 : M.chandelierGlow.emissiveIntensity * 0.22;
     }
     M.candleWax.emissive.setHex(night ? NIGHT_LIGHT_STATE.candleWax.emissive : DAY_LIGHT_STATE.candleWax.emissive);
     M.candleWax.emissiveIntensity = night ? NIGHT_LIGHT_STATE.candleWax.emissiveIntensity : DAY_LIGHT_STATE.candleWax.emissiveIntensity;
@@ -4666,10 +4732,8 @@ function setShintoTime(night, smooth = false) {
 flushKits();
 
 // Sky clouds are scenery, not architecture. Left in `world` each puff handed
-// the collision pass a 30 m box whose top sits ~0.9 m above the summit plaza —
-// over the half-metre the ground snap steps onto — so the north half of the
-// palace, throne included, was walled off by fog. `scenery` is drawn but never
-// swept for AABBs, which is where the leaf cards already live.
+// the collision pass a 30 m box; they now sit below and outside the plaza,
+// but `scenery` is the right bucket anyway — drawn, never swept for AABBs.
 for (const im of [...world.children]) {
   if (im.material === M.cloudFluff) scenery.add(im);
 }
