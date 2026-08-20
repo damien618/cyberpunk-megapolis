@@ -1,6 +1,6 @@
 // turtle-hermit.js — "Vénérable Ermite Tortue", the sage waiting on the
 // celestial plaza. An original character in the martial-arts-hermit tradition:
-// the shell, robe, staff, glasses and beard are all built here from primitives
+// the shell, hawaiian shorts, lapels, staff, glasses and beard are all built here from primitives
 // and procedural canvas textures, so nothing is lifted from an existing work.
 //
 // Two things carry the realism, and both are cheap:
@@ -14,7 +14,7 @@
 import * as THREE from "three";
 import { loadGuestRig, cloneSkinned, dressGuestAtlasDark } from "./crowd.js?v=19";
 
-// Aloha coral for the shirt under the robe. Kept below full saturation because
+// Aloha coral for the shirt. Kept below full saturation because
 // dressGuestAtlasDark multiplies each pixel's own luminance back in, so the
 // folds brighten from here rather than clip.
 const ROBE_HEX = 0xd94a2b;
@@ -824,53 +824,217 @@ function buildTurtleShell() {
 }
 
 /**
- * Hakama skirt, obi and crossed lapels. The guest rig underneath is wearing a
- * polo and jeans and there is no way to reshape it, so the robe is built over
- * the top — below the arms, where nothing can clip through a sleeve.
+ * Hawaiian Bermuda boardshorts: a vibrant tropical aloha-print pair of shorts
+ * covering the pelvis and thighs down to just above the knees, complete with
+ * a tailored waistband, front drawstring with metal eyelets and knotted ties,
+ * separate left and right flared leg barrels, hem cuffs and side pocket details.
  */
-function buildRobe() {
+function buildHawaiianShorts() {
   const group = new THREE.Group();
-  group.name = "HermitRobe";
+  group.name = "HermitHawaiianShorts";
 
-  // Turquoise ground with white-and-gold hibiscus: the loud half of the outfit.
+  // Vibrant turquoise tropical print with white-and-gold hibiscus and monstera leaves.
   const clothMat = new THREE.MeshStandardMaterial({
-    map: canvasTexture(makeAlohaCanvas({ base: "#0f9fb2" }), { repeat: [2, 2] }),
+    map: canvasTexture(makeAlohaCanvas({
+      size: 512,
+      seed: 53,
+      base: "#0f9fb2",
+      leaf: "#0c7a58",
+      petals: ["#ffffff", "#fff3b0", "#ffd166"],
+      heart: "#ef4f3a",
+      flowers: 12,
+      leaves: 14,
+    }), { repeat: [2.5, 2.5] }),
     color: 0xffffff,
-    roughness: 0.86,
+    roughness: 0.82,
     metalness: 0.0,
     side: THREE.DoubleSide,
   });
-  // Obi in coral, kept nearly plain so it reads as a belt against the print.
-  const sashMat = new THREE.MeshStandardMaterial({
+
+  // Coral-red waistband with subtle aloha patterning.
+  const waistMat = new THREE.MeshStandardMaterial({
     map: canvasTexture(makeAlohaCanvas({
-      base: "#ef4f3a", leaf: "#c8341f", petals: ["#ffe9c4"], heart: "#ffd166",
-      seed: 41, flowers: 3, leaves: 2,
+      size: 256,
+      base: "#ef4f3a",
+      leaf: "#c8341f",
+      petals: ["#ffe9c4"],
+      heart: "#ffd166",
+      seed: 41,
+      flowers: 4,
+      leaves: 3,
+    }), { repeat: [4, 1] }),
+    roughness: 0.78,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+  });
+
+  // Trim and hem band in sunny gold aloha print.
+  const trimMat = new THREE.MeshStandardMaterial({
+    map: canvasTexture(makeAlohaCanvas({
+      size: 256,
+      base: "#f7b32b",
+      leaf: "#0c7a58",
+      petals: ["#ffffff", "#ff8a5c"],
+      heart: "#ef4f3a",
+      seed: 23,
+      flowers: 5,
+      leaves: 4,
+    }), { repeat: [3, 1] }),
+    roughness: 0.84,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+  });
+
+  const cordMat = new THREE.MeshStandardMaterial({
+    color: 0xfffaed,
+    roughness: 0.65,
+    metalness: 0.0,
+  });
+
+  const agletMat = new THREE.MeshStandardMaterial({
+    color: 0xd4af37,
+    roughness: 0.35,
+    metalness: 0.85,
+  });
+
+  // 1. Pelvis / Trunk section: covers the hips from waist down to crotch.
+  // Squashed slightly in Z to follow the pelvis's elliptical shape.
+  const trunkGeo = new THREE.CylinderGeometry(0.200, 0.208, 0.185, 28, 2, true);
+  const trunk = new THREE.Mesh(trunkGeo, clothMat);
+  trunk.scale.set(1.02, 1.0, 0.88);
+  trunk.position.set(0, -0.092, 0.008);
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  // 2. Elastic waistband: wraps around the top edge.
+  const waistGeo = new THREE.CylinderGeometry(0.205, 0.200, 0.046, 28);
+  const waistband = new THREE.Mesh(waistGeo, waistMat);
+  waistband.scale.set(1.02, 1.0, 0.88);
+  waistband.position.set(0, -0.005, 0.008);
+  waistband.castShadow = true;
+  group.add(waistband);
+
+  // Rolled top rim on the waistband for a finished cloth edge.
+  const waistRimGeo = new THREE.TorusGeometry(0.203, 0.010, 8, 30);
+  waistRimGeo.rotateX(Math.PI / 2);
+  const waistRim = new THREE.Mesh(waistRimGeo, waistMat);
+  waistRim.scale.set(1.02, 1.0, 0.88);
+  waistRim.position.set(0, 0.018, 0.008);
+  group.add(waistRim);
+
+  // 3. Boardshort front drawstrings & tie knot with gold aglets.
+  const eyeletGeo = new THREE.TorusGeometry(0.0065, 0.0022, 6, 14);
+  for (const side of [-1, 1]) {
+    const eyelet = new THREE.Mesh(eyeletGeo, agletMat);
+    eyelet.position.set(side * 0.022, -0.006, 0.185);
+    eyelet.rotation.y = side * 0.08;
+    group.add(eyelet);
+  }
+
+  // Drawstring knot (small tied bow).
+  const knotCenter = new THREE.Mesh(new THREE.SphereGeometry(0.009, 8, 8), cordMat);
+  knotCenter.position.set(0, -0.006, 0.190);
+  knotCenter.scale.set(1.2, 0.9, 0.9);
+  group.add(knotCenter);
+
+  for (const side of [-1, 1]) {
+    const loop = new THREE.Mesh(new THREE.TorusGeometry(0.014, 0.0035, 6, 14), cordMat);
+    loop.position.set(side * 0.016, -0.004, 0.192);
+    loop.rotation.set(0.25, side * 0.35, side * 0.55);
+    group.add(loop);
+  }
+
+  // Dangling cord ends with golden aglet tips.
+  const cordL = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 0.075, 8), cordMat);
+  cordL.position.set(0.014, -0.046, 0.188);
+  cordL.rotation.set(-0.10, 0, -0.16);
+  const agletL = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0040, 0.014, 8), agletMat);
+  agletL.position.set(0, -0.038, 0);
+  cordL.add(agletL);
+  group.add(cordL);
+
+  const cordR = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 0.082, 8), cordMat);
+  cordR.position.set(-0.012, -0.050, 0.188);
+  cordR.rotation.set(-0.08, 0, 0.14);
+  const agletR = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0040, 0.014, 8), agletMat);
+  agletR.position.set(0, -0.042, 0);
+  cordR.add(agletR);
+  group.add(cordR);
+
+  // 4. Crotch bridge / inseam gusset to seal the underside between the legs.
+  const crotchGeo = new THREE.BoxGeometry(0.052, 0.042, 0.140);
+  const crotch = new THREE.Mesh(crotchGeo, clothMat);
+  crotch.position.set(0, -0.178, 0.008);
+  group.add(crotch);
+
+  // 5. Left and Right Bermuda Shorts Legs.
+  // Each leg is a flared open cylinder running down to just above the knee.
+  const LEG_H = 0.235;
+  const LEG_R_TOP = 0.110;
+  const LEG_R_BOT = 0.124;
+  const LEG_X = 0.098;
+  const LEG_Y = -0.280;
+  const LEG_Z = 0.006;
+
+  for (const side of [-1, 1]) {
+    const legGroup = new THREE.Group();
+    legGroup.position.set(side * LEG_X, LEG_Y, LEG_Z);
+    // Slight outward flare following the natural thigh posture.
+    legGroup.rotation.set(-0.02, 0, side * -0.05);
+
+    // Main leg barrel.
+    const legMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(LEG_R_TOP, LEG_R_BOT, LEG_H, 24, 2, true),
+      clothMat);
+    legMesh.castShadow = true;
+    legGroup.add(legMesh);
+
+    // Bottom hem cuff in sunny golden aloha trim.
+    const hemMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(LEG_R_BOT + 0.002, LEG_R_BOT + 0.003, 0.022, 24, 1, true),
+      trimMat);
+    hemMesh.position.set(0, -LEG_H / 2 + 0.011, 0);
+    hemMesh.castShadow = true;
+    legGroup.add(hemMesh);
+
+    // Outer side seam piping.
+    const piping = new THREE.Mesh(
+      new THREE.BoxGeometry(0.008, LEG_H, 0.014),
+      waistMat);
+    piping.position.set(side * (LEG_R_TOP + 0.004), 0, 0);
+    legGroup.add(piping);
+
+    group.add(legGroup);
+  }
+
+  // 6. Right side cargo / boardshort flap pocket for extra Hawaiian shorts style.
+  const pocketMat = new THREE.MeshStandardMaterial({
+    map: canvasTexture(makeAlohaCanvas({
+      size: 256,
+      base: "#0f9fb2",
+      seed: 88,
+      flowers: 3,
+      leaves: 3,
     })),
     roughness: 0.82,
     metalness: 0.0,
   });
+  const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.080, 0.085), pocketMat);
+  pocket.position.set(-0.218, -0.270, 0.006);
+  pocket.rotation.set(0, 0, 0.05);
+  pocket.castShadow = true;
 
-  // Skirt: waist to just above the ankle. It runs long on purpose — the guest
-  // rig is wearing white trainers, and no amount of dye makes those read as a
-  // mountain ascetic. Open cylinder, so the hem is cloth and not a capped cone.
-  const skirt = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.190, 0.360, 0.930, 26, 3, true), clothMat);
-  skirt.position.set(0, -0.480, 0.010);
-  skirt.castShadow = true;
-  group.add(skirt);
+  const flap = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.024, 0.090), waistMat);
+  flap.position.set(-0.220, -0.226, 0.006);
+  flap.rotation.set(0, 0, 0.05);
+  flap.castShadow = true;
 
-  // Obi knotted at the waist.
-  const obi = new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.198, 0.115, 26), sashMat);
-  obi.position.set(0, -0.035, 0.010);
-  obi.castShadow = true;
-  group.add(obi);
-
-  const knot = new THREE.Mesh(new THREE.BoxGeometry(0.115, 0.075, 0.055), sashMat);
-  knot.position.set(0, -0.045, 0.215);
-  group.add(knot);
+  group.add(pocket, flap);
 
   return group;
 }
+
+const buildRobe = buildHawaiianShorts;
 
 /**
  * Crossed kimono lapels down the chest. Flat panels on the front only — a
@@ -882,7 +1046,7 @@ function buildLapels() {
   const group = new THREE.Group();
   group.name = "HermitLapels";
 
-  // Sunny yellow lapels with coral blossoms, against the turquoise skirt.
+  // Sunny yellow lapels with coral blossoms, paired with the turquoise Hawaiian shorts.
   const mat = new THREE.MeshStandardMaterial({
     map: canvasTexture(makeAlohaCanvas({
       base: "#f7b32b", leaf: "#0c7a58", petals: ["#fffaf0", "#ff8a5c"],
@@ -1331,7 +1495,7 @@ export async function initTurtleHermit({
     spine2Bone.add(shell);
     spine2Bone.add(buildLapels());
   }
-  if (hipsBone) hipsBone.add(buildRobe());
+  if (hipsBone) hipsBone.add(buildHawaiianShorts());
 
   hermitMixer = new THREE.AnimationMixer(hermitMesh);
   if (guestRig.idleClip) {

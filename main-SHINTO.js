@@ -8,7 +8,7 @@ import { buildCityBoxes } from './cityBoxes.js?v=5';
 import { buildCar, carBounds } from './cars.js?v=4';
 import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=19';
 import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=31';
-import { initTurtleHermit, updateTurtleHermit, triggerHermitDialogue, isHermitDialogueOpen } from './turtle-hermit.js?v=12';
+import { initTurtleHermit, updateTurtleHermit, triggerHermitDialogue, isHermitDialogueOpen } from './turtle-hermit.js?v=13';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -2843,6 +2843,7 @@ function buildSkyClouds(centerX, centerZ, {
 // the module would still be in its temporal dead zone when it is assigned.
 let palaceChandelierLight = null;
 let palaceTableLight = null;
+let hermitLight = null;
 let earthGlobeSpin = null;
 let earthGlobeMat = null;
 // Dimmed clone of M.chandelierGlow for the globe room's overhead lanterns —
@@ -4888,6 +4889,7 @@ function setShintoTime(night, smooth = false) {
     // intimate. The table's own PointLight does the close work.
     if (palaceChandelierLight) palaceChandelierLight.intensity = night ? 10 : 8;
     if (palaceTableLight) palaceTableLight.intensity = night ? 3.1 : 2.4;
+    if (hermitLight) hermitLight.intensity = night ? 2.6 : 0;
     // Globe-room chandelier: cooler and much dimmer at night so the NASA
     // ocean albedo can read as blue instead of a gold-blown silhouette.
     if (globeRoomLight) {
@@ -5198,6 +5200,15 @@ try {
     posZ: 20.5,
     yaw: 0,
   });
+  // He stands out on the open checkerboard, past the chandelier's 22 m
+  // reach, so night leaves him lit by moon + hemi alone — dim and cool
+  // enough that his grey hair reads black and the cream kimono trim loses
+  // the contrast that makes it read as a collar instead of a flat plate.
+  // A small warm light pinned to him (same pattern as palaceTableLight)
+  // fixes that without touching the plaza's own night mood.
+  hermitLight = new THREE.PointLight(0xffb877, 0, 6.5, 2.0);
+  hermitLight.position.set(55, 181.2, 20.5);
+  scene.add(hermitLight);
 } catch (e) {
   console.warn('[shinto] hermit load issue:', e);
 }
