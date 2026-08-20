@@ -6,7 +6,7 @@ import { Controller } from './controller.js?v=6';
 import { CameraRig } from './cameraRig.js?v=6';
 import { buildCityBoxes } from './cityBoxes.js?v=5';
 import { buildCar, carBounds } from './cars.js?v=4';
-import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=18';
+import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=19';
 
 // ---------------------------------------------------------------------------
 // Heading to the airport — a linear terminal, laid out the way real ones are

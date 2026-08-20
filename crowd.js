@@ -236,7 +236,7 @@ function dressGuestAtlas(map, shirtHex) {
  * one tone. Dye it instead — keep each pixel's own luminance as the shading
  * and remap the hue, so the folds and the seams survive the recolour.
  */
-function dressGuestAtlasDark(map, shirtHex) {
+export function dressGuestAtlasDark(map, shirtHex) {
   const img = map?.image;
   if (!img) return map;
   const w = img.width || img.videoWidth, h = img.height || img.videoHeight;

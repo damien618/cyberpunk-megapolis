@@ -6,8 +6,9 @@ import { Controller } from './controller.js?v=6';
 import { CameraRig } from './cameraRig.js?v=6';
 import { buildCityBoxes } from './cityBoxes.js?v=5';
 import { buildCar, carBounds } from './cars.js?v=4';
-import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=18';
+import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=19';
 import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=31';
+import { initTurtleHermit, updateTurtleHermit, triggerHermitDialogue, isHermitDialogueOpen } from './turtle-hermit.js?v=12';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -474,19 +475,29 @@ function drawSakuraBlossom(g, scale, fillBase, fillEdge, centerColor = '#e2487a'
 
 function drawBambooBlade(g, scale, fill, vein) {
   g.beginPath();
-  g.moveTo(0, -scale);
-  g.quadraticCurveTo(scale * 0.22, 0, 0, scale);
-  g.quadraticCurveTo(-scale * 0.22, 0, 0, -scale);
+  g.moveTo(0, -scale * 0.95);
+  g.quadraticCurveTo(scale * 0.26, -scale * 0.28, 0, scale);
+  g.quadraticCurveTo(-scale * 0.26, -scale * 0.28, 0, -scale * 0.95);
   g.fillStyle = fill;
   g.fill();
-  g.strokeStyle = vein;
-  g.lineWidth = Math.max(1, scale * 0.03);
-  g.globalAlpha *= 0.45;
+
+  // Subtle highlight along left half of the blade
+  g.fillStyle = 'rgba(255, 255, 255, 0.12)';
   g.beginPath();
   g.moveTo(0, -scale * 0.9);
+  g.quadraticCurveTo(scale * 0.14, -scale * 0.28, 0, scale * 0.85);
+  g.lineTo(0, -scale * 0.9);
+  g.fill();
+
+  // Fine central midrib
+  g.strokeStyle = vein;
+  g.lineWidth = Math.max(1, scale * 0.028);
+  g.globalAlpha *= 0.55;
+  g.beginPath();
+  g.moveTo(0, -scale * 0.85);
   g.lineTo(0, scale * 0.9);
   g.stroke();
-  g.globalAlpha /= 0.45;
+  g.globalAlpha /= 0.55;
 }
 
 function drawLeafKind(g, kind, scale, fill, vein, fillEdge) {
@@ -529,6 +540,24 @@ function makeFoliageClump(kind, tones, vein, {
       palette[(rnd() * palette.length) | 0]);
     g.restore();
   };
+
+  // Branching petiole stem lines for spray cards so leaf fans attach organically
+  if (spray) {
+    g.strokeStyle = vein;
+    g.lineWidth = Math.max(1.6, size * 0.0055);
+    g.globalAlpha = 0.7;
+    for (let i = 0; i < count; i += 2) {
+      const ang = (rnd() - 0.5) * 1.5 + Math.PI / 2;
+      const rad = Math.pow(rnd(), 0.5) * size * 0.38;
+      const x = cx + Math.cos(ang) * rad * 0.55;
+      const y = cy + Math.sin(ang) * rad;
+      g.beginPath();
+      g.moveTo(cx, cy);
+      g.quadraticCurveTo(cx + (x - cx) * 0.35, cy + (y - cy) * 0.65, x, y);
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+  }
 
   // Understorey: the same blades one size up, shaded, packed into the core.
   if (!spray) {
@@ -1240,11 +1269,9 @@ const sakuraWhiteLeafTs = foliageSheets(3, 'sakuraWhite',
 const momijiLeafTs = foliageSheets(3, 'maple',
   ['#c92a2a', '#e03131', '#e8590c', '#f76707', '#a61e1e', '#d9480f'], '#491212',
   { count: 54, seed: 29, scaleMin: 0.085, scaleMax: 0.16 });
-const bambooLeafC = makeFoliageClump('bamboo',
-  ['#5f8f33', '#4d7a28', '#79a845', '#365c1e', '#6b9a3a'], '#2a4416',
-  { count: 20, seed: 31, scaleMin: 0.10, scaleMax: 0.20, spray: true });
-
-const bambooLeafT = canvasTexture(bambooLeafC);
+const bambooLeafTs = foliageSheets(3, 'bamboo',
+  ['#5f8f33', '#4d7a28', '#79a845', '#365c1e', '#6b9a3a', '#8ec449'], '#2a4416',
+  { count: 26, seed: 31, scaleMin: 0.09, scaleMax: 0.19, spray: true });
 
 const washiC = makeWashiCanvas();
 const washiT = canvasTexture(washiC);
@@ -1408,11 +1435,7 @@ const M = {
     color: 0xdfe6cf, roughness: 0.42, metalness: 0.05,
     map: bambooSkinT, normalMap: bambooSkinN, normalScale: new THREE.Vector2(0.7, 0.7),
   }),
-  bambooLeaf: new THREE.MeshStandardMaterial({
-    color: 0xffffff, roughness: 0.88, metalness: 0.0,
-    map: bambooLeafT, alphaTest: 0.34, alphaToCoverage: true,
-    side: THREE.DoubleSide,
-  }),
+  bambooLeaf: foliageMats(bambooLeafTs, { alphaTest: 0.34, roughness: 0.82 }),
   treeTrunk: new THREE.MeshStandardMaterial({
     color: 0xd8c8b8, roughness: 0.82, metalness: 0.02,
     map: barkDiff, normalMap: barkN,
@@ -2563,12 +2586,19 @@ function buildBambooGrove(centerX, centerY, centerZ, count = 25, radius = 6) {
     const lr = mulberry32(leafSeed);
     for (let k = 0; k < 6; k++) {
       const yaw = (k / 6) * Math.PI * 2 + lr() * 0.4;
+      const tx = bx + Math.cos(yaw) * 0.35;
+      const ty = centerY + bh - 0.12 - lr() * 0.35;
+      const tz = bz + Math.sin(yaw) * 0.35;
+
+      branch(M.bambooGreen, bx, centerY + bh - 0.08, bz, tx, ty + 0.04, tz, 0.014, 0.007, false);
+
+      const leafMat = Array.isArray(M.bambooLeaf) ? M.bambooLeaf[k % M.bambooLeaf.length] : M.bambooLeaf;
       foliageCards.push({
-        mat: M.bambooLeaf,
-        x: bx + Math.cos(yaw) * 0.25,
-        y: centerY + bh - 0.15 - lr() * 0.35,
-        z: bz + Math.sin(yaw) * 0.25,
-        sx: 0.55 + lr() * 0.25,
+        mat: leafMat,
+        x: tx,
+        y: ty,
+        z: tz,
+        sx: 0.60 + lr() * 0.25,
         sy: 1.15 + lr() * 0.35,
         rx: 0.85 + lr() * 0.35,
         ry: yaw,
@@ -2576,6 +2606,192 @@ function buildBambooGrove(centerX, centerY, centerZ, count = 25, radius = 6) {
       });
     }
   }
+}
+
+// Potted Dwarf Celestial Bamboo Arrangement (竹) for plaza urns
+function buildCelestialPlanterBamboo(px, py, pz, seed = 1) {
+  const rnd = mulberry32(seed >>> 0);
+  const pickMat = arr => Array.isArray(arr) ? arr[(rnd() * arr.length) | 0] : arr;
+
+  // 1. Lush soil & moss bed inside the golden urn
+  cylinder(M.pondBed, px, py - 0.02, pz, 1.12, 0.06, 0, 0, 0, false);
+  cylinder(M.mossGrass, px, py, pz, 1.08, 0.03, 0, 0, 0, false);
+
+  // Decorative river stones in the moss bed
+  const stoneCount = 3 + Math.floor(rnd() * 2);
+  for (let i = 0; i < stoneCount; i++) {
+    const sang = (i / stoneCount) * Math.PI * 2 + rnd() * 0.8;
+    const srad = 0.42 + rnd() * 0.38;
+    const sx = px + Math.cos(sang) * srad;
+    const sz = pz + Math.sin(sang) * srad;
+    const sSize = 0.14 + rnd() * 0.08;
+    emit(G.sphere, M.stoneLantern, sx, py + sSize * 0.35, sz,
+      sSize * (1 + rnd() * 0.3), sSize * 0.7, sSize * (1 + rnd() * 0.3),
+      rnd() * 0.4, rnd() * Math.PI, 0, false);
+  }
+
+  // 2. Clump of 5 graceful bamboo culms of staggered heights & organic curvature
+  const culmConfigs = [
+    { ox: 0.02, oz: -0.04, h: 3.2, r: 0.055, nodes: 7, tilt: 0.03, tiltDir: 0.6 },
+    { ox: 0.22, oz: 0.16,  h: 2.7, r: 0.048, nodes: 6, tilt: 0.05, tiltDir: 1.9 },
+    { ox: -0.24, oz: 0.14, h: 2.3, r: 0.044, nodes: 5, tilt: 0.06, tiltDir: 3.5 },
+    { ox: -0.12, oz: -0.26, h: 1.9, r: 0.038, nodes: 5, tilt: 0.07, tiltDir: 4.8 },
+    { ox: 0.26, oz: -0.16, h: 1.4, r: 0.032, nodes: 4, tilt: 0.06, tiltDir: 5.7 },
+  ];
+
+  for (let c = 0; c < culmConfigs.length; c++) {
+    const cfg = culmConfigs[c];
+    const nodeCount = cfg.nodes;
+    const segH = cfg.h / nodeCount;
+    let currX = px + cfg.ox + (rnd() - 0.5) * 0.04;
+    let currY = py;
+    let currZ = pz + cfg.oz + (rnd() - 0.5) * 0.04;
+    let currR = cfg.r;
+
+    const tDir = cfg.tiltDir + (rnd() - 0.5) * 0.3;
+    const tAngle = cfg.tilt;
+
+    for (let s = 0; s < nodeCount; s++) {
+      const nextR = Math.max(0.018, currR * 0.94);
+      const leanStep = Math.sin((s / nodeCount) * Math.PI * 0.8) * tAngle * segH;
+      const nextX = currX + Math.cos(tDir) * (0.02 + leanStep);
+      const nextZ = currZ + Math.sin(tDir) * (0.02 + leanStep);
+      const nextY = currY + segH;
+
+      // Culm segment
+      branch(M.bambooGreen, currX, currY, currZ, nextX, nextY, nextZ, currR, nextR, true);
+
+      // Node ring accent at the joint
+      cylinder(M.bambooGreen, nextX, nextY, nextZ, nextR * 1.32, 0.022, 0, 0, 0, false);
+      cylinder(M.palaceGold, nextX, nextY, nextZ, nextR * 1.18, 0.008, 0, 0, 0, false);
+
+      // Lateral branches emerge from upper nodes
+      if (s >= 2) {
+        const branchCount = (s === nodeCount - 1) ? 3 : (2 + (rnd() > 0.5 ? 1 : 0));
+        for (let b = 0; b < branchCount; b++) {
+          const bAngle = tDir + s * 1.8 + b * ((Math.PI * 2) / branchCount) + (rnd() - 0.5) * 0.35;
+          const bLen = 0.35 + (1 - s / nodeCount) * 0.30 + rnd() * 0.12;
+
+          const midX = nextX + Math.cos(bAngle) * bLen * 0.52;
+          const midY = nextY + 0.14 + rnd() * 0.05;
+          const midZ = nextZ + Math.sin(bAngle) * bLen * 0.52;
+
+          const tipX = nextX + Math.cos(bAngle) * bLen;
+          const tipY = nextY + 0.08 - rnd() * 0.06;
+          const tipZ = nextZ + Math.sin(bAngle) * bLen;
+
+          branch(M.bambooGreen, nextX, nextY, nextZ, midX, midY, midZ, 0.016, 0.011, false);
+          branch(M.bambooGreen, midX, midY, midZ, tipX, tipY, tipZ, 0.011, 0.006, false);
+
+          const leafMat = pickMat(M.bambooLeaf);
+          const cScale = 0.55 + rnd() * 0.15;
+          const yaw = bAngle + (rnd() - 0.5) * 0.3;
+          const pitch = 0.65 + rnd() * 0.25;
+          const roll = (rnd() - 0.5) * 0.3;
+
+          foliageCards.push({
+            mat: leafMat,
+            x: tipX,
+            y: tipY,
+            z: tipZ,
+            sx: cScale * (rnd() < 0.5 ? 0.75 : -0.75),
+            sy: cScale * 1.15,
+            rx: pitch,
+            ry: yaw,
+            rz: roll,
+          });
+
+          foliageCards.push({
+            mat: pickMat(M.bambooLeaf),
+            x: tipX + Math.cos(bAngle + 0.4) * 0.05,
+            y: tipY - 0.03,
+            z: tipZ + Math.sin(bAngle + 0.4) * 0.05,
+            sx: cScale * 0.65,
+            sy: cScale * 1.0,
+            rx: pitch + 0.18,
+            ry: yaw + Math.PI * 0.42,
+            rz: roll - 0.15,
+          });
+        }
+      }
+
+      // Culm apex crown
+      if (s === nodeCount - 1) {
+        for (let k = 0; k < 3; k++) {
+          const kAngle = (k / 3) * Math.PI * 2 + rnd() * 0.4;
+          const kLen = 0.28 + rnd() * 0.10;
+          const kTipX = nextX + Math.cos(kAngle) * kLen;
+          const kTipY = nextY + 0.12 - rnd() * 0.04;
+          const kTipZ = nextZ + Math.sin(kAngle) * kLen;
+
+          branch(M.bambooGreen, nextX, nextY, nextZ, kTipX, kTipY, kTipZ, 0.010, 0.005, false);
+
+          const cScale = 0.52 + rnd() * 0.12;
+          foliageCards.push({
+            mat: pickMat(M.bambooLeaf),
+            x: kTipX,
+            y: kTipY,
+            z: kTipZ,
+            sx: cScale * 0.7,
+            sy: cScale * 1.1,
+            rx: 0.7 + rnd() * 0.2,
+            ry: kAngle,
+            rz: (rnd() - 0.5) * 0.2,
+          });
+        }
+      }
+
+      currX = nextX;
+      currY = nextY;
+      currZ = nextZ;
+      currR = nextR;
+    }
+  }
+}
+
+// Potted Dwarf Celestial Sakura Bonsai (桜盆栽) for plaza urns
+function buildCelestialPlanterSakura(px, py, pz, seed = 1) {
+  const rnd = mulberry32(seed >>> 0);
+  const S = 0.48;
+
+  cylinder(M.pondBed, px, py - 0.02, pz, 1.12, 0.06, 0, 0, 0, false);
+  cylinder(M.mossGrass, px, py, pz, 1.08, 0.03, 0, 0, 0, false);
+
+  treeRootFlairs(M.treeTrunk, px, py, pz, S * 1.2, 4);
+
+  const p0 = [px, py, pz];
+  const p1 = [px + 0.08 * S, py + 1.1 * S, pz - 0.06 * S];
+  const p2 = [px - 0.12 * S, py + 2.2 * S, pz + 0.08 * S];
+  const p3 = [px + 0.06 * S, py + 3.2 * S, pz + 0.02 * S];
+
+  branch(M.treeTrunk, p0[0], p0[1], p0[2], p1[0], p1[1], p1[2], 0.28 * S, 0.22 * S);
+  branch(M.treeTrunk, p1[0], p1[1], p1[2], p2[0], p2[1], p2[2], 0.22 * S, 0.17 * S);
+  branch(M.treeTrunk, p2[0], p2[1], p2[2], p3[0], p3[1], p3[2], 0.17 * S, 0.13 * S);
+
+  const boughs = [
+    { dx: 1.4 * S, dy: 3.8 * S, dz: -0.9 * S, tipDx: 2.2 * S, tipDy: 4.2 * S, tipDz: -1.3 * S },
+    { dx: -1.3 * S, dy: 3.7 * S, dz: 1.0 * S,  tipDx: -2.1 * S, tipDy: 4.0 * S, tipDz: 1.5 * S },
+    { dx: 1.1 * S, dy: 3.9 * S, dz: 1.2 * S,  tipDx: 1.7 * S, tipDy: 4.3 * S, tipDz: 1.8 * S },
+    { dx: -0.9 * S, dy: 4.1 * S, dz: -1.0 * S, tipDx: -1.5 * S, tipDy: 4.6 * S, tipDz: -1.4 * S },
+  ];
+
+  const apex = [px + 0.05 * S, py + 4.2 * S, pz + 0.05 * S];
+  branch(M.treeTrunk, p3[0], p3[1], p3[2], apex[0], apex[1], apex[2], 0.13 * S, 0.08 * S);
+
+  boughs.forEach((b, i) => {
+    const midX = px + b.dx, midY = py + b.dy, midZ = pz + b.dz;
+    const tipX = px + b.tipDx, tipY = py + b.tipDy, tipZ = pz + b.tipDz;
+    branch(M.treeTrunk, p3[0], p3[1], p3[2], midX, midY, midZ, 0.14 * S, 0.09 * S);
+    branch(M.treeTrunk, midX, midY, midZ, tipX, tipY, tipZ, 0.09 * S, 0.05 * S);
+
+    puffFoliage(M.sakuraBlossom, tipX, tipY + 0.1, tipZ,
+      1.1 * S, 0.8 * S, 1.1 * S,
+      { seed: seed + i * 13, count: 10, cardScale: 0.65 });
+  });
+
+  puffFoliage(M.sakuraBlossom, apex[0], apex[1] + 0.15, apex[2],
+    1.3 * S, 0.9 * S, 1.3 * S,
+    { seed: seed + 99, count: 12, cardScale: 0.70 });
 }
 
 // ---------------------------------------------------------------------------
@@ -2917,13 +3133,11 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
     // Planter urn
     cylinder(M.palaceWhite, px, SUMMIT_Y + 0.6, pz, 1.1, 0.8, 0, 0, 0, true);
     cylinder(M.palaceGold, px, SUMMIT_Y + 1.05, pz, 1.2, 0.12, 0, 0, 0, true);
-    // Miniature celestial sakura / bamboo
+    // Miniature celestial sakura / bamboo bonsai arrangements
     if (p % 2 === 0) {
-      cylinder(M.treeTrunk, px, SUMMIT_Y + 1.9, pz, 0.14, 1.8, 0, 0, 0, true);
-      puffFoliage(M.sakuraBlossom, px, SUMMIT_Y + 2.9, pz, 1.8, 1.2, 1.8, { seed: p * 17, count: 12, cardScale: 0.6 });
+      buildCelestialPlanterSakura(px, SUMMIT_Y + 1.06, pz, p * 17 + 5);
     } else {
-      cylinder(M.bambooGreen, px, SUMMIT_Y + 2.3, pz, 0.09, 2.6, 0, 0, 0, true);
-      puffFoliage(M.bambooLeaf, px, SUMMIT_Y + 3.3, pz, 1.5, 1.5, 1.5, { seed: p * 23, count: 10, cardScale: 0.65 });
+      buildCelestialPlanterBamboo(px, SUMMIT_Y + 1.06, pz, p * 23 + 11);
     }
   }
 
@@ -4973,6 +5187,21 @@ try {
   console.warn('[shinto] player load issue:', e);
 }
 
+try {
+  // Out on the open checkerboard, between the palace colonnade and the
+  // reflecting pool, turned toward the stairhead the player arrives on.
+  await initTurtleHermit({
+    scene,
+    furnitureInteractions,
+    posX: 55,
+    posY: 180.20,
+    posZ: 20.5,
+    yaw: 0,
+  });
+} catch (e) {
+  console.warn('[shinto] hermit load issue:', e);
+}
+
 // ---------------------------------------------------------------------------
 // 18. Interaction & Travel Handling
 // ---------------------------------------------------------------------------
@@ -5060,7 +5289,7 @@ kneelDayPrompt?.addEventListener('click', event => requestKneelMode('day', event
 kneelNightPrompt?.addEventListener('click', event => requestKneelMode('night', event));
 
 renderer.domElement.addEventListener('click', () => {
-  if (started && !paused && !choosingFurniturePrompt && !choosingKneelMode
+  if (started && !paused && !choosingFurniturePrompt && !choosingKneelMode && !isHermitDialogueOpen()
     && document.pointerLockElement !== renderer.domElement) {
     requestGamePointerLock();
   }
@@ -5112,6 +5341,12 @@ function leaveFurnitureInteraction() {
 function updateFurnitureInteraction(dt) {
   if (travelInProgress) return true;
   if (furnitureInteractionCooldown > 0) furnitureInteractionCooldown -= dt;
+  // The hermit's dialogue is a modal of its own: while it is up, clicks and
+  // keys belong to it, not to whatever spot the player happens to stand on.
+  if (isHermitDialogueOpen()) {
+    setFurniturePrompt(null);
+    return true;
+  }
   if (activeFurnitureInteraction) {
     setFurniturePrompt(null);
     activeFurnitureInteraction.time = (activeFurnitureInteraction.time || 0) + dt;
@@ -5158,7 +5393,12 @@ function updateFurnitureInteraction(dt) {
         enterFurnitureInteraction(nearest, mode);
         return true;
       }
-    } else if (furnitureActionRequested || input.pressed('LMB') || input.pressed('KeyE')) {
+    } else if (furnitureActionRequested || input.pressed('KeyE')
+      // A bare click does not start a conversation. The canvas records
+      // mousedown whether or not the pointer is locked, and showing the
+      // hermit's prompt releases the lock — so every click anywhere on screen
+      // was opening his dialogue. He answers to his own prompt, or to E.
+      || (input.pressed('LMB') && nearest.type !== 'talk_hermit')) {
       furnitureActionRequested = false;
       if (nearest.type === 'travel') {
         travelInProgress = true;
@@ -5189,6 +5429,12 @@ function updateFurnitureInteraction(dt) {
           ctrl.rescueTo(new THREE.Vector3(55, 180.20, 24));
         }
         furnitureInteractionCooldown = 1.0;
+        return true;
+      }
+      if (nearest.type === 'talk_hermit') {
+        setFurniturePrompt(null);
+        triggerHermitDialogue();
+        furnitureInteractionCooldown = 0.6;
         return true;
       }
       if (nearest.type === 'towerDescent') {
@@ -5320,6 +5566,7 @@ function animate() {
   tickSakuraPetals(dt);
   tickIncenseSmoke(dt, t);
   if (earthGlobeSpin) earthGlobeSpin.rotation.y += dt * 0.12;
+  updateTurtleHermit(dt, ctrl.pos);
   if (palaceTableLight) {
     const base = window.__nightMode ? 3.1 : 2.4;
     palaceTableLight.intensity = base
@@ -5407,7 +5654,7 @@ if (arrivedByFlight || window.__startRequested) {
 document.addEventListener('pointerlockchange', () => {
   const hasLock = document.pointerLockElement !== null;
   usedLock = usedLock || hasLock;
-  if ((choosingFurniturePrompt || choosingKneelMode) && !hasLock) {
+  if ((choosingFurniturePrompt || choosingKneelMode || isHermitDialogueOpen()) && !hasLock) {
     paused = false;
     overlay.style.display = 'none';
     return;
