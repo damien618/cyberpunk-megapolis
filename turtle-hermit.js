@@ -723,12 +723,12 @@ function buildTurtleShell() {
 
   // Local convention: z = 0 is the rim plane, which the caller lays against his
   // back; the dome bulges away from him toward -z. Half-extents are in bone
-  // space, which the rig scales by ~0.86 — so the shell ends up about 58 cm
-  // across and 72 cm tall on a 1.58 m man. It overhangs his shoulders, which
-  // is the joke.
-  const HW = 0.30;
-  const HH = 0.40;
-  const DEPTH = 0.26;
+  // space, which the rig scales by ~0.86 — so the shell ends up about 72 cm
+  // across and 89 cm tall on a 1.58 m man. It overhangs his shoulders and
+  // hangs to the hips, which is the joke.
+  const HW = 0.42;
+  const HH = 0.52;
+  const DEPTH = 0.38;
 
   // Main dome. rotateX(-90°) sends the pole to -z, so the shell bulges off his
   // back and the open side faces into it; +90° pointed it out through his chest.
@@ -745,7 +745,7 @@ function buildTurtleShell() {
   group.add(lip);
 
   // Marginal rim wrapping the perimeter.
-  const rimGeo = new THREE.TorusGeometry(HW, 0.038, 14, 40);
+  const rimGeo = new THREE.TorusGeometry(HW, 0.050, 14, 40);
   rimGeo.scale(1.0, HH / HW, 0.85);
   const rim = new THREE.Mesh(rimGeo, rimMat);
   rim.position.z = -0.012;
@@ -755,7 +755,7 @@ function buildTurtleShell() {
   // Scutes sit *on* the dome rather than at hand-guessed depths: solve the
   // ellipsoid for z at each plate's (u, v), then stand the plate proud along
   // the surface normal. Guessed depths buried half of them inside the dome.
-  const PROUD = 0.013;
+  const PROUD = 0.016;
   const UP_Z = new THREE.Vector3(0, 0, 1);
   const addScute = (geo, radius, u, v, sx, sy) => {
     const inside = Math.max(0.04, 1 - u * u - v * v);
@@ -781,7 +781,7 @@ function buildTurtleShell() {
   };
 
   // Vertebral scutes: five plates down the spine, largest in the middle.
-  const VR = 0.084;
+  const VR = 0.110;
   const hexGeo = new THREE.CylinderGeometry(VR * 0.86, VR, 0.024, 6);
   hexGeo.rotateX(Math.PI / 2);
   for (let i = 0; i < 5; i++) {
@@ -791,7 +791,7 @@ function buildTurtleShell() {
   }
 
   // Costal scutes: four plates a side, following the dome's fall-off.
-  const CR = 0.066;
+  const CR = 0.086;
   const sideGeo = new THREE.CylinderGeometry(CR * 0.85, CR, 0.022, 6);
   sideGeo.rotateX(Math.PI / 2);
   for (const side of [-1, 1]) {
@@ -1489,9 +1489,10 @@ export async function initTurtleHermit({
   }
   if (spine2Bone) {
     const shell = buildTurtleShell();
-    // Rim plane laid against his back, hung from the shoulder blades. Any
-    // higher and the dome swallows the back of his head.
-    shell.position.set(0, -0.21, -0.09);
+    // Rim plane laid against his back. Hung lower than the old -0.21 so the
+    // bigger dome covers the whole back down to the hips without swallowing
+    // the back of his head (top stays around +0.22 in Spine2 space).
+    shell.position.set(0, -0.30, -0.10);
     spine2Bone.add(shell);
     spine2Bone.add(buildLapels());
   }

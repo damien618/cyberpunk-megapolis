@@ -8,7 +8,7 @@ import { buildCityBoxes } from './cityBoxes.js?v=5';
 import { buildCar, carBounds } from './cars.js?v=4';
 import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=19';
 import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=31';
-import { initTurtleHermit, updateTurtleHermit, triggerHermitDialogue, isHermitDialogueOpen } from './turtle-hermit.js?v=13';
+import { initTurtleHermit, updateTurtleHermit, triggerHermitDialogue, isHermitDialogueOpen } from './turtle-hermit.js?v=14';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -950,6 +950,133 @@ function makeWhiteMarbleCanvas({ size = 512, seed = 73 } = {}) {
   return c;
 }
 
+// Dark wet granite for the plaza wall-fountain. Charcoal ground, pale flecks,
+// moss stains pooling in the pits — the sheet in the reference is never one
+// flat grey.
+function makeFountainStoneCanvas({ size = 512, seed = 19 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(seed);
+  g.fillStyle = '#4a4e4b';
+  g.fillRect(0, 0, size, size);
+  for (let i = 0; i < 90; i++) {
+    g.fillStyle = `rgba(${55 + rnd() * 40},${58 + rnd() * 38},${52 + rnd() * 30},${0.18 + rnd() * 0.32})`;
+    g.beginPath();
+    g.ellipse(rnd() * size, rnd() * size, 12 + rnd() * 55, 8 + rnd() * 28, rnd() * Math.PI, 0, Math.PI * 2);
+    g.fill();
+  }
+  for (let i = 0; i < 220; i++) {
+    const x = rnd() * size, y = rnd() * size;
+    g.fillStyle = `rgba(18, 22, 18, ${0.12 + rnd() * 0.28})`;
+    g.beginPath();
+    g.ellipse(x, y, 2 + rnd() * 7, 1 + rnd() * 4, rnd() * Math.PI, 0, Math.PI * 2);
+    g.fill();
+  }
+  for (let i = 0; i < 1400; i++) {
+    g.fillStyle = `rgba(210, 215, 205, ${0.04 + rnd() * 0.10})`;
+    g.fillRect(rnd() * size, rnd() * size, 1 + rnd() * 1.6, 1 + rnd() * 1.6);
+  }
+  // Vertical wet streaks — water has been running here for a long time.
+  for (let i = 0; i < 18; i++) {
+    const x = rnd() * size;
+    g.strokeStyle = `rgba(20, 28, 24, ${0.10 + rnd() * 0.18})`;
+    g.lineWidth = 4 + rnd() * 10;
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.lineTo(x + (rnd() - 0.5) * 18, size);
+    g.stroke();
+  }
+  // Moss in the pits.
+  for (let i = 0; i < 40; i++) {
+    const x = rnd() * size, y = rnd() * size;
+    const r = 6 + rnd() * 22;
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, `rgba(46, 78, 32, ${0.22 + rnd() * 0.35})`);
+    grad.addColorStop(1, 'rgba(46, 78, 32, 0)');
+    g.fillStyle = grad;
+    g.beginPath();
+    g.arc(x, y, r, 0, Math.PI * 2);
+    g.fill();
+  }
+  return c;
+}
+
+// Tileable Greek-key (meander) carved into the same granite. Dark grooves,
+// raised pale band — the frame around the falling sheet in the reference.
+function makeGreekKeyCanvas({ size = 256 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  g.fillStyle = '#3e4240';
+  g.fillRect(0, 0, size, size);
+  g.fillStyle = '#6e746e';
+  const u = size / 8;
+  g.fillRect(0, 0, size, u);
+  g.fillRect(0, size - u, size, u);
+  g.fillRect(0, 0, u, size);
+  g.fillRect(size - u, 0, u, size);
+  g.fillRect(u * 2, u * 2, u * 5, u);
+  g.fillRect(u * 6, u * 2, u, u * 4);
+  g.fillRect(u * 3, u * 5, u * 4, u);
+  g.fillRect(u * 3, u * 3, u, u * 3);
+  g.fillRect(u * 3, u * 3, u * 2, u);
+  g.fillStyle = '#2a2d2a';
+  g.fillRect(u * 3.35, u * 3.35, u * 1.3, u * 0.35);
+  return c;
+}
+
+// Falling sheet: vertical white strands on a clear field, tileable in V so a
+// UV scroll reads as water running down the niche.
+function makeFallingWaterCanvas({ size = 512, seed = 11 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(seed);
+  g.clearRect(0, 0, size, size);
+  for (let i = 0; i < 42; i++) {
+    const x = rnd() * size;
+    const w = 1.2 + rnd() * 5.5;
+    const a = 0.18 + rnd() * 0.55;
+    const grad = g.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0, `rgba(255,255,255,0)`);
+    grad.addColorStop(0.45, `rgba(230,245,250,${a})`);
+    grad.addColorStop(1, `rgba(255,255,255,0)`);
+    g.fillStyle = grad;
+    g.fillRect(x, 0, w, size);
+  }
+  for (let i = 0; i < 90; i++) {
+    const x = rnd() * size;
+    const y = rnd() * size;
+    const h = 20 + rnd() * 80;
+    g.fillStyle = `rgba(255,255,255,${0.12 + rnd() * 0.35})`;
+    g.fillRect(x, y, 1 + rnd() * 2.2, h);
+  }
+  return c;
+}
+
+// Splash foam where the sheet hits the grate.
+function makeFountainFoamCanvas({ size = 256, seed = 23 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(seed);
+  g.clearRect(0, 0, size, size);
+  const cx = size / 2, cy = size / 2;
+  const rg = g.createRadialGradient(cx, cy, 4, cx, cy, size * 0.48);
+  rg.addColorStop(0, 'rgba(255,255,255,0.85)');
+  rg.addColorStop(0.35, 'rgba(220,235,240,0.45)');
+  rg.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = rg;
+  g.fillRect(0, 0, size, size);
+  for (let i = 0; i < 70; i++) {
+    const a = rnd() * Math.PI * 2;
+    const r = rnd() * size * 0.42;
+    g.fillStyle = `rgba(255,255,255,${0.15 + rnd() * 0.5})`;
+    g.beginPath();
+    g.ellipse(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.45,
+      3 + rnd() * 10, 1.5 + rnd() * 4, a, 0, Math.PI * 2);
+    g.fill();
+  }
+  return c;
+}
+
 // Celestial carpets for the sky palace. Unlike every other surface here these
 // are *not* run through worldUV: a rug is one composition, not a tiling, so it
 // wants exactly one stamp. A cylinder cap's UVs are already a disc inscribed in
@@ -1272,6 +1399,11 @@ const momijiLeafTs = foliageSheets(3, 'maple',
 const bambooLeafTs = foliageSheets(3, 'bamboo',
   ['#5f8f33', '#4d7a28', '#79a845', '#365c1e', '#6b9a3a', '#8ec449'], '#2a4416',
   { count: 26, seed: 31, scaleMin: 0.09, scaleMax: 0.19, spray: true });
+// Ivy on the plaza fountain wall: the same blade, packed as a clump rather than
+// a spray, so the mass reads as climbing Hedera instead of a bamboo fan.
+const ivyLeafTs = foliageSheets(3, 'bamboo',
+  ['#2f6d28', '#3d8a32', '#1e4f1c', '#4a9a3a', '#6bb34a', '#245820'], '#1a3a14',
+  { count: 48, seed: 47, scaleMin: 0.07, scaleMax: 0.14, spray: false });
 
 const washiC = makeWashiCanvas();
 const washiT = canvasTexture(washiC);
@@ -1300,6 +1432,18 @@ const goldMarbleN = canvasTexture(normalFromCanvas(goldMarbleC, 1.6), { srgb: fa
 const whiteMarbleC = makeWhiteMarbleCanvas();
 const whiteMarbleT = canvasTexture(whiteMarbleC);
 const whiteMarbleN = canvasTexture(normalFromCanvas(whiteMarbleC, 1.8), { srgb: false });
+
+const fountainStoneC = makeFountainStoneCanvas();
+const fountainStoneT = canvasTexture(fountainStoneC);
+const fountainStoneN = canvasTexture(normalFromCanvas(fountainStoneC, 1.7), { srgb: false });
+const greekKeyC = makeGreekKeyCanvas();
+const greekKeyT = canvasTexture(greekKeyC);
+const greekKeyN = canvasTexture(normalFromCanvas(greekKeyC, 2.4), { srgb: false });
+const fountainFallC = makeFallingWaterCanvas();
+const fountainFallT = canvasTexture(fountainFallC, { rx: 1, ry: 2 });
+const fountainFallT2 = canvasTexture(makeFallingWaterCanvas({ seed: 29 }), { rx: 1, ry: 2.4 });
+const fountainFoamT = canvasTexture(makeFountainFoamCanvas());
+fountainFoamT.wrapS = fountainFoamT.wrapT = THREE.ClampToEdgeWrapping;
 
 const rugRoundC = makeCelestialRugCanvas();
 const rugRoundT = canvasTexture(rugRoundC);
@@ -1436,6 +1580,22 @@ const M = {
     map: bambooSkinT, normalMap: bambooSkinN, normalScale: new THREE.Vector2(0.7, 0.7),
   }),
   bambooLeaf: foliageMats(bambooLeafTs, { alphaTest: 0.34, roughness: 0.82 }),
+  ivyLeaf: foliageMats(ivyLeafTs, { alphaTest: 0.38, roughness: 0.82 }),
+  fountainStone: new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.78, metalness: 0.04,
+    map: fountainStoneT, normalMap: fountainStoneN, normalScale: new THREE.Vector2(1.15, 1.15),
+  }),
+  fountainMeander: new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: 0.62, metalness: 0.05,
+    map: greekKeyT, normalMap: greekKeyN, normalScale: new THREE.Vector2(1.6, 1.6),
+  }),
+  fountainIron: new THREE.MeshStandardMaterial({
+    color: 0x2a2c2e, roughness: 0.55, metalness: 0.72,
+  }),
+  fountainWetStone: new THREE.MeshStandardMaterial({
+    color: 0x3a3f3c, roughness: 0.28, metalness: 0.08,
+    map: fountainStoneT, normalMap: fountainStoneN, normalScale: new THREE.Vector2(0.9, 0.9),
+  }),
   treeTrunk: new THREE.MeshStandardMaterial({
     color: 0xd8c8b8, roughness: 0.82, metalness: 0.02,
     map: barkDiff, normalMap: barkN,
@@ -1611,6 +1771,9 @@ worldUV(M.checkerPlaza, 0.125);
 worldUV(M.palaceGoldFloor, 0.25);
 worldUV(M.palaceMarble, 0.55);
 worldUV(M.palaceDoorWood, 0.42);
+worldUV(M.fountainStone, 0.42);
+worldUV(M.fountainMeander, 4.2);
+worldUV(M.fountainWetStone, 0.42);
 // M.carpetRound / M.carpetPanel are deliberately left out: a rug is a single
 // composition, and worldUV would tile it into wallpaper.
 worldUV(M.towerIvory, 0.32);
@@ -2844,6 +3007,7 @@ function buildSkyClouds(centerX, centerZ, {
 let palaceChandelierLight = null;
 let palaceTableLight = null;
 let hermitLight = null;
+let fountainWaterMaps = [];
 let earthGlobeSpin = null;
 let earthGlobeMat = null;
 // Dimmed clone of M.chandelierGlow for the globe room's overhead lanterns —
@@ -3002,6 +3166,181 @@ function buildDeskGlobe(x, y, z, radius = 0.74) {
   earthGlobeSpin = spin;
 }
 
+// Stone wall-fountain on the celestial checkerboard. Built to the garden
+// monument in the reference: dark granite, Greek-key frame, a falling sheet
+// into a grate, ivy climbing both flanks.
+function buildPlazaWallFountain(cx, floorY, cz, yaw) {
+  const nx = Math.sin(yaw);
+  const nz = Math.cos(yaw);
+  const tx = Math.cos(yaw);
+  const tz = -Math.sin(yaw);
+  const at = (along, up, out) => [
+    cx + tx * along + nx * out,
+    floorY + up,
+    cz + tz * along + nz * out,
+  ];
+  const put = (mat, along, up, out, sx, sy, sz, prop = true) => {
+    const p = at(along, up, out);
+    box(mat, p[0], p[1], p[2], sx, sy, sz, yaw, 0, 0, prop);
+  };
+  const putCyl = (mat, along, up, out, r, h, prop = false) => {
+    const p = at(along, up, out);
+    cylinder(mat, p[0], p[1], p[2], r, h, yaw, 0, 0, prop);
+  };
+
+  const W = 3.45;
+  const H = 5.05;
+  const D = 0.72;
+  const NICHE_W = 1.62;
+  const NICHE_H = 3.42;
+  const NICHE_Y0 = 0.62;
+  const FRAME = 0.24;
+  const jambW = (W - NICHE_W) / 2;
+  const aboveH = H - (NICHE_Y0 + NICHE_H);
+
+  // Jambs, sill and lintel leave a real recess; the wet back plate sits at
+  // the far face so the sheet hangs in a cavity instead of on a painted hole.
+  put(M.fountainStone, -(NICHE_W + jambW) / 2, H / 2, -D / 2, jambW, H, D, true);
+  put(M.fountainStone, (NICHE_W + jambW) / 2, H / 2, -D / 2, jambW, H, D, true);
+  put(M.fountainStone, 0, NICHE_Y0 / 2, -D / 2, NICHE_W, NICHE_Y0, D, true);
+  put(M.fountainStone, 0, NICHE_Y0 + NICHE_H + aboveH / 2, -D / 2, NICHE_W, aboveH, D, true);
+  put(M.fountainWetStone, 0, NICHE_Y0 + NICHE_H / 2, -D + 0.06,
+    NICHE_W, NICHE_H, 0.12, false);
+
+  // Greek-key frame around the niche.
+  const fy = NICHE_Y0 + NICHE_H / 2;
+  put(M.fountainMeander, 0, NICHE_Y0 + NICHE_H + FRAME / 2, 0.055,
+    NICHE_W + FRAME * 2, FRAME, 0.11, false);
+  put(M.fountainMeander, 0, NICHE_Y0 - FRAME / 2, 0.055,
+    NICHE_W + FRAME * 2, FRAME, 0.11, false);
+  put(M.fountainMeander, -(NICHE_W + FRAME) / 2, fy, 0.055,
+    FRAME, NICHE_H, 0.11, false);
+  put(M.fountainMeander, (NICHE_W + FRAME) / 2, fy, 0.055,
+    FRAME, NICHE_H, 0.11, false);
+
+  // Outer molded surround, one step proud of the meander.
+  const outer = FRAME + 0.10;
+  put(M.fountainStone, 0, NICHE_Y0 + NICHE_H + FRAME + 0.07, 0.07,
+    NICHE_W + outer * 2 + 0.08, 0.14, 0.14, false);
+  put(M.fountainStone, 0, NICHE_Y0 - FRAME - 0.07, 0.07,
+    NICHE_W + outer * 2 + 0.08, 0.14, 0.14, false);
+  put(M.fountainStone, -(NICHE_W + outer) / 2 - 0.04, fy, 0.07,
+    0.14, NICHE_H + FRAME * 2, 0.14, false);
+  put(M.fountainStone, (NICHE_W + outer) / 2 + 0.04, fy, 0.07,
+    0.14, NICHE_H + FRAME * 2, 0.14, false);
+
+  // Cornice: stepped cap, tiled drip edge, cloud reliefs on the frieze.
+  put(M.fountainStone, 0, H - 0.18, 0.08, W + 0.38, 0.16, D + 0.28, true);
+  put(M.fountainStone, 0, H + 0.02, 0.02, W + 0.18, 0.14, D + 0.12, false);
+  put(M.fountainStone, 0, H - 0.42, 0.06, W - 0.15, 0.28, 0.16, false);
+  const drips = 11;
+  for (let i = 0; i < drips; i++) {
+    const a = -W * 0.46 + (i / (drips - 1)) * W * 0.92;
+    putCyl(M.fountainStone, a, H - 0.05, D * 0.42, 0.065, 0.10, false);
+  }
+  for (const side of [-1, 1]) {
+    putCyl(M.fountainStone, side * 0.55, H - 0.44, 0.14, 0.22, 0.10, false);
+    put(M.fountainStone, side * 0.55, H - 0.50, 0.16, 0.42, 0.08, 0.18, false);
+  }
+
+  // Wet paving apron and the drain grate in front of the sheet.
+  put(M.fountainWetStone, 0, 0.018, 0.62, W + 0.15, 0.036, 1.22, false);
+  put(M.fountainIron, 0, -0.04, 0.62, 2.95, 0.08, 1.02, false);
+  const bars = 14;
+  for (let i = 0; i < bars; i++) {
+    const o = 0.18 + (i / (bars - 1)) * 0.88;
+    put(M.fountainIron, 0, 0.028, o, 2.88, 0.03, 0.045, false);
+  }
+  put(M.fountainIron, 0, 0.03, 0.14, 2.95, 0.04, 0.06, false);
+  put(M.fountainIron, 0, 0.03, 1.10, 2.95, 0.04, 0.06, false);
+  put(M.fountainIron, -1.46, 0.03, 0.62, 0.06, 0.04, 1.02, false);
+  put(M.fountainIron, 1.46, 0.03, 0.62, 0.06, 0.04, 1.02, false);
+
+  // Lip at the foot of the niche where the sheet breaks.
+  put(M.fountainStone, 0, NICHE_Y0 - 0.04, 0.12, NICHE_W + 0.08, 0.08, 0.18, false);
+
+  // Moss in the lower corners, as on the wet granite.
+  for (const side of [-1, 1]) {
+    put(M.mossGrass, side * (W * 0.38), 0.55, 0.10, 0.55, 1.15, 0.08, false);
+    put(M.mossGrass, side * (W * 0.42), 1.8, 0.08, 0.22, 0.55, 0.06, false);
+  }
+
+  // Falling sheet + splash live in scenery so their UVs can scroll. Local +Z
+  // of the group is the facing direction.
+  const waterRoot = new THREE.Group();
+  waterRoot.position.set(cx, floorY, cz);
+  waterRoot.rotation.y = yaw;
+  scenery.add(waterRoot);
+
+  const mkFall = (map, opacity, zOff) => {
+    const mat = new THREE.MeshStandardMaterial({
+      map,
+      color: 0xffffff,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      roughness: 0.12,
+      metalness: 0.0,
+      emissive: 0x8eb8c4,
+      emissiveIntensity: 0.22,
+    });
+    fountainWaterMaps.push({ map, speed: 0.42 + zOff * 0.8 });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(NICHE_W * 0.94, NICHE_H * 0.96), mat);
+    mesh.position.set(0, NICHE_Y0 + NICHE_H / 2, zOff);
+    mesh.renderOrder = 2;
+    waterRoot.add(mesh);
+  };
+  mkFall(fountainFallT, 0.78, -0.22);
+  mkFall(fountainFallT2, 0.55, -0.12);
+
+  const foamMat = new THREE.MeshBasicMaterial({
+    map: fountainFoamT,
+    transparent: true,
+    opacity: 0.82,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const foam = new THREE.Mesh(new THREE.PlaneGeometry(NICHE_W * 1.05, 0.55), foamMat);
+  foam.rotation.x = -Math.PI / 2;
+  foam.position.set(0, 0.07, 0.28);
+  foam.renderOrder = 3;
+  waterRoot.add(foam);
+
+  const mist = new THREE.Mesh(new THREE.PlaneGeometry(NICHE_W * 0.9, 0.42), foamMat);
+  mist.position.set(0, 0.28, 0.18);
+  mist.renderOrder = 3;
+  waterRoot.add(mist);
+
+  // Ivy climbing both flanks — denser and lower on the right, with a fern
+  // skirt, matching the reference.
+  const ivyOn = (along, up, out, rx, ry, rz, seed, count, scale) => {
+    const p = at(along, up, out);
+    puffFoliage(M.ivyLeaf, p[0], p[1], p[2], rx, ry, rz, {
+      seed, count, cardScale: scale, pair: true,
+    });
+  };
+  for (let i = 0; i < 6; i++) {
+    ivyOn(-(W * 0.48), 0.55 + i * 0.72, 0.12 + (i % 2) * 0.08,
+      0.55, 0.55, 0.38, 70 + i * 9, 8, 0.42);
+  }
+  for (let i = 0; i < 8; i++) {
+    ivyOn(W * 0.48, 0.45 + i * 0.58, 0.14 + (i % 3) * 0.07,
+      0.62, 0.58, 0.42, 140 + i * 11, 10, 0.46);
+  }
+  // Wrap a little onto the front so the mass isn't a flat hedge.
+  ivyOn(-(W * 0.38), 1.1, 0.28, 0.35, 0.7, 0.22, 201, 7, 0.38);
+  ivyOn(W * 0.40, 0.9, 0.32, 0.40, 0.85, 0.24, 211, 9, 0.40);
+  ivyOn(W * 0.42, 2.4, 0.26, 0.32, 0.55, 0.20, 221, 7, 0.36);
+  // Fern skirt, lower right.
+  {
+    const p = at(W * 0.52, 0.45, 0.38);
+    puffFoliage(M.bambooLeaf, p[0], p[1], p[2], 0.55, 0.5, 0.45, {
+      seed: 233, count: 9, cardScale: 0.48, pair: true,
+    });
+  }
+}
+
 function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   const SUMMIT_Y = 180.0;
   const TOWER_R = 3.2;
@@ -3141,6 +3480,11 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
       buildCelestialPlanterBamboo(px, SUMMIT_Y + 1.06, pz, p * 23 + 11);
     }
   }
+
+  // Wall-fountain on the open checkerboard, just east of the hermit — the
+  // spot the player stands on when they talk to him. Faces west so the sheet
+  // is the backdrop of that conversation.
+  buildPlazaWallFountain(x + 4.6, SUMMIT_Y + 0.20, z + 5.6, -Math.PI / 2);
 
   // 5. The Rounded White Palace (Palais Blanc aux dômes - Accessible & Walkable!)
   const PALACE_Z = z - 8.0;
@@ -5572,6 +5916,9 @@ function animate() {
   // Animate water normal map ripples
   waterN.offset.x = t * 0.012;
   waterN.offset.y = -t * 0.008;
+  for (const fall of fountainWaterMaps) {
+    fall.map.offset.y -= dt * fall.speed;
+  }
 
   // Animate falling sakura petals
   tickSakuraPetals(dt);
