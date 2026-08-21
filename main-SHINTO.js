@@ -8,7 +8,7 @@ import { buildCityBoxes } from './cityBoxes.js?v=5';
 import { buildCar, carBounds } from './cars.js?v=4';
 import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=19';
 import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=31';
-import { initTurtleHermit, updateTurtleHermit, triggerHermitDialogue, isHermitDialogueOpen } from './turtle-hermit.js?v=14';
+import { initTurtleHermit, updateTurtleHermit, triggerHermitDialogue, isHermitDialogueOpen } from './turtle-hermit.js?v=15';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -1245,6 +1245,166 @@ function makeCelestialRugCanvas({ size = 512, seed = 61 } = {}) {
   return c;
 }
 
+// Urushi lacquer with maki-e gold, for the East Room table's top face: a deep
+// brown-black ground, a nashiji dust of suspended gold flake, a seigaiha rim,
+// a karakusa vine scroll, and a sakura spray around a chrysanthemum boss.
+// G.disc inscribes its cap UVs in a circle in 0..1, so this medallion lands
+// centred on a round slab with no UV work at the call site — the same property
+// the round rugs are built on.
+function makeMakieTableCanvas({ size = 512, seed = 137 } = {}) {
+  const c = makeCanvas(size);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(seed);
+  const R = size / 2;
+
+  // Urushi ground. Warmest just off-centre, where the cupola lanterns land,
+  // and near-black at the rim so the gilt reads as inlay rather than paint.
+  const ground = g.createRadialGradient(R * 0.86, R * 0.78, size * 0.02, R, R, R);
+  ground.addColorStop(0.00, '#45291a');
+  ground.addColorStop(0.42, '#28160c');
+  ground.addColorStop(0.84, '#170c06');
+  ground.addColorStop(1.00, '#0b0402');
+  g.fillStyle = ground;
+  g.fillRect(0, 0, size, size);
+
+  // Nashiji — gold flake suspended in the lacquer. Flat facets, not dots: a
+  // real flake catches the light on one edge and vanishes off it, and the
+  // Sobel pass downstream turns each one into a glint of relief.
+  for (let i = 0; i < 1100; i++) {
+    const a = rnd() * Math.PI * 2;
+    const rr = Math.sqrt(rnd()) * R * 0.99;
+    const s = 0.9 + rnd() * 2.4;
+    g.save();
+    g.translate(R + Math.cos(a) * rr, R + Math.sin(a) * rr);
+    g.rotate(rnd() * Math.PI);
+    g.fillStyle = `rgba(216, 170, 82, ${(0.08 + rnd() * 0.30).toFixed(3)})`;
+    g.fillRect(-s / 2, -s * 0.32, s, s * 0.64);
+    g.restore();
+  }
+
+  const ring = (r, w, stroke) => {
+    g.strokeStyle = stroke;
+    g.lineWidth = w;
+    g.beginPath();
+    g.arc(R, R, r, 0, Math.PI * 2);
+    g.stroke();
+  };
+
+  // Rim: a darkened selvedge band between two gilt fillets.
+  g.fillStyle = 'rgba(6, 3, 1, 0.5)';
+  g.beginPath();
+  g.arc(R, R, R * 0.995, 0, Math.PI * 2);
+  g.arc(R, R, R * 0.865, 0, Math.PI * 2, true);
+  g.fill();
+  ring(R * 0.865, 2.6, 'rgba(226, 188, 108, 0.9)');
+  ring(R * 0.982, 2.2, 'rgba(226, 188, 108, 0.75)');
+
+  // Seigaiha (青海波): three nested crests per station, laid tangent to the
+  // rim so the wave scale reads the same all the way round.
+  for (let i = 0; i < 72; i++) {
+    const a = (i / 72) * Math.PI * 2;
+    g.save();
+    g.translate(R + Math.cos(a) * R * 0.928, R + Math.sin(a) * R * 0.928);
+    g.rotate(a + Math.PI / 2);
+    g.strokeStyle = 'rgba(240, 206, 132, 0.72)';
+    g.lineWidth = 1.5;
+    for (let k = 1; k <= 3; k++) {
+      g.beginPath();
+      g.arc(0, R * 0.026, k * R * 0.0125, Math.PI, 0);
+      g.stroke();
+    }
+    g.restore();
+  }
+
+  // Karakusa (唐草): a scrolling vine on the open field between rim and
+  // medallion. Each unit is one S-curve with a curled tendril off its back.
+  ring(R * 0.665, 1.6, 'rgba(206, 168, 92, 0.5)');
+  ring(R * 0.395, 1.6, 'rgba(206, 168, 92, 0.5)');
+  for (let i = 0; i < 18; i++) {
+    const a = (i / 18) * Math.PI * 2;
+    g.save();
+    g.translate(R, R);
+    g.rotate(a);
+    g.strokeStyle = 'rgba(232, 196, 118, 0.62)';
+    g.lineWidth = 2.2;
+    g.beginPath();
+    g.moveTo(R * 0.415, 0);
+    g.bezierCurveTo(R * 0.47, -R * 0.075, R * 0.60, -R * 0.055, R * 0.645, 0);
+    g.stroke();
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.moveTo(R * 0.53, -R * 0.062);
+    g.quadraticCurveTo(R * 0.565, -R * 0.135, R * 0.505, -R * 0.145);
+    g.quadraticCurveTo(R * 0.462, -R * 0.148, R * 0.482, -R * 0.108);
+    g.stroke();
+    g.restore();
+  }
+
+  // Central medallion: a chrysanthemum (kiku) boss inside a gilt ring.
+  const boss = g.createRadialGradient(R - R * 0.03, R - R * 0.04, 2, R, R, R * 0.30);
+  boss.addColorStop(0.00, '#4a2c19');
+  boss.addColorStop(0.70, '#2a170c');
+  boss.addColorStop(1.00, '#1a0d06');
+  g.fillStyle = boss;
+  g.beginPath();
+  g.arc(R, R, R * 0.30, 0, Math.PI * 2);
+  g.fill();
+  ring(R * 0.30, 2.6, 'rgba(238, 202, 126, 0.9)');
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    g.save();
+    g.translate(R, R);
+    g.rotate(a);
+    const petal = g.createLinearGradient(0, -R * 0.055, 0, -R * 0.265);
+    petal.addColorStop(0, 'rgba(246, 214, 142, 0.95)');
+    petal.addColorStop(1, 'rgba(146, 106, 44, 0.35)');
+    g.fillStyle = petal;
+    g.beginPath();
+    g.moveTo(0, -R * 0.055);
+    g.quadraticCurveTo(R * 0.038, -R * 0.16, 0, -R * 0.265);
+    g.quadraticCurveTo(-R * 0.038, -R * 0.16, 0, -R * 0.055);
+    g.fill();
+    g.restore();
+  }
+  const eye = g.createRadialGradient(R, R, 1, R, R, R * 0.062);
+  eye.addColorStop(0, '#fff0c4');
+  eye.addColorStop(0.6, '#e0b45e');
+  eye.addColorStop(1, '#8a6321');
+  g.fillStyle = eye;
+  g.beginPath();
+  g.arc(R, R, R * 0.062, 0, Math.PI * 2);
+  g.fill();
+
+  // Sakura spray drifting across the field, five gold blossoms on the ring
+  // between the medallion and the vine scroll.
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + 0.55;
+    const rr = R * (0.47 + rnd() * 0.13);
+    g.save();
+    g.translate(R + Math.cos(a) * rr, R + Math.sin(a) * rr);
+    g.rotate(rnd() * Math.PI * 2);
+    const bs = R * (0.052 + rnd() * 0.022);
+    for (let p = 0; p < 5; p++) {
+      g.save();
+      g.rotate((p / 5) * Math.PI * 2);
+      g.fillStyle = 'rgba(244, 210, 140, 0.88)';
+      g.beginPath();
+      g.moveTo(0, -bs * 0.22);
+      g.quadraticCurveTo(bs * 0.52, -bs * 0.62, 0, -bs);
+      g.quadraticCurveTo(-bs * 0.52, -bs * 0.62, 0, -bs * 0.22);
+      g.fill();
+      g.restore();
+    }
+    g.fillStyle = 'rgba(255, 238, 186, 0.95)';
+    g.beginPath();
+    g.arc(0, 0, bs * 0.17, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+  }
+
+  return c;
+}
+
 // Rectangular rug: a key-fret border framing a constellation field. Runners are
 // laid as a row of these squares, so the medallions repeat down their length
 // the way a woven runner's do.
@@ -1449,6 +1609,12 @@ const rugRoundC = makeCelestialRugCanvas();
 const rugRoundT = canvasTexture(rugRoundC);
 const rugRoundN = canvasTexture(normalFromCanvas(rugRoundC, 1.3), { srgb: false });
 
+// Strong Sobel: on a slab you stand right over, the nashiji flake and the
+// raised maki-e gold are the whole reason the top does not read as a decal.
+const makieC = makeMakieTableCanvas();
+const makieT = canvasTexture(makieC);
+const makieN = canvasTexture(normalFromCanvas(makieC, 2.2), { srgb: false });
+
 const rugPanelC = makeCelestialPanelCanvas();
 const rugPanelT = canvasTexture(rugPanelC);
 const rugPanelN = canvasTexture(normalFromCanvas(rugPanelC, 1.3), { srgb: false });
@@ -1646,6 +1812,37 @@ const M = {
   lacquerVermilion: new THREE.MeshPhysicalMaterial({
     color: 0x6a1410, roughness: 0.28, metalness: 0.08,
     clearcoat: 0.78, clearcoatRoughness: 0.16,
+  }),
+  // Bonsai's unglazed clay pot, its glazed rim, soil and moss.
+  bonsaiPot: new THREE.MeshStandardMaterial({
+    color: 0x7a4a30, roughness: 0.62, metalness: 0.0,
+  }),
+  bonsaiPotGlaze: new THREE.MeshPhysicalMaterial({
+    color: 0x5c3423, roughness: 0.3, metalness: 0.02,
+    clearcoat: 0.6, clearcoatRoughness: 0.22,
+  }),
+  bonsaiSoil: new THREE.MeshStandardMaterial({
+    color: 0x261c15, roughness: 0.95, metalness: 0.0,
+  }),
+  bonsaiMoss: new THREE.MeshStandardMaterial({
+    color: 0x3f5c22, roughness: 0.95, metalness: 0.0,
+  }),
+  // East Room table top: urushi under maki-e gold. Metalness is lifted off
+  // zero so the nashiji flake in the map actually glints, and the clearcoat is
+  // near-full — cured lacquer is the glossiest surface in the palace.
+  makieLacquer: new THREE.MeshPhysicalMaterial({
+    color: 0xffffff, roughness: 0.24, metalness: 0.18,
+    map: makieT, normalMap: makieN, normalScale: new THREE.Vector2(0.55, 0.55),
+    // Spread rather than sharpen the coat's highlight: at 0.06 the cupola
+    // lanterns burn a white hole straight through the artwork.
+    clearcoat: 0.85, clearcoatRoughness: 0.16,
+  }),
+  // The same lacquer with no artwork, for the edge, apron and legs — the map
+  // is a single centred medallion and would smear if wrapped round a drum.
+  tableLacquer: new THREE.MeshPhysicalMaterial({
+    color: 0x1e110a, roughness: 0.24, metalness: 0.06,
+    normalMap: woodN, normalScale: new THREE.Vector2(0.3, 0.3),
+    clearcoat: 0.9, clearcoatRoughness: 0.1,
   }),
   // Palace door leaves: keyaki lacquered near-black-brown, so the gold studs
   // and the pull rings are what the eye lands on rather than the timber.
@@ -3944,9 +4141,112 @@ function buildCelestialTowerAndSanctuary(x = 55, y = 0.15, z = 15) {
   cylinder(M.palaceGoldFloor, WEST_X, SUMMIT_Y + 1.05, PALACE_Z, 0.62, 0.16, 0, 0, 0, false);
   buildDeskGlobe(WEST_X, SUMMIT_Y + 1.92, PALACE_Z, 0.74);
 
-  // East Room Celestial Water Font
-  cylinder(M.palaceGold, EAST_X, SUMMIT_Y + 0.6, PALACE_Z, 1.2, 0.6, 0, 0, 0, true);
-  cylinder(M.water, EAST_X, SUMMIT_Y + 0.85, PALACE_Z, 1.0, 0.15, 0, 0, 0, false);
+  // East Room Table — a round maki-e lacquer table on six cabriole legs, in
+  // place of the old water font.
+  //
+  // Every round part here is G.disc (48 sides) rather than the 16-sided G.cyl:
+  // at two metres across, sixteen sides read as a visible hexadecagon, which is
+  // most of why the old font looked like a stack of drums. The silhouette is
+  // legs and open air instead of one solid mass, and the gilt is confined to
+  // thin mouldings on the profile — untextured gold over a large flat face is
+  // what turns to mustard under this room's lamp.
+  {
+    const ET_X = EAST_X, ET_Z = PALACE_Z;
+    const ET_TOP = SUMMIT_Y + 0.86;   // the lacquer's top face
+    const disc = (mat, dy, r, h, prop = false) =>
+      emit(G.disc, mat, ET_X, SUMMIT_Y + dy, ET_Z, r * 2, h, r * 2, 0, 0, 0, prop);
+    const flatHoop = (dy, dia) =>
+      emit(G.hoop, M.palaceGold, ET_X, SUMMIT_Y + dy, ET_Z, dia, dia, dia,
+        Math.PI / 2, 0, 0, false);
+
+    // Slab, the gilt bead wrapping its edge, and the chamfer beneath.
+    disc(M.makieLacquer, 0.8325, 1.00, 0.055, true);
+    flatHoop(0.826, 2.03);
+    disc(M.tableLacquer, 0.780, 0.95, 0.050, false);
+    disc(M.goldGiboshi, 0.743, 0.80, 0.024, false);
+
+    // Apron, banded top and bottom, with carved brackets around its face.
+    // Yaw of -a puts a box's local +X on the outward normal, the same frame
+    // the rotunda's wall panels and porthole bars are placed in.
+    disc(M.tableLacquer, 0.666, 0.72, 0.130, true);
+    disc(M.goldGiboshi, 0.600, 0.735, 0.022, false);
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + Math.PI / 12;
+      box(M.palaceGold, ET_X + Math.cos(a) * 0.725, SUMMIT_Y + 0.666,
+        ET_Z + Math.sin(a) * 0.725, 0.035, 0.075, 0.05, -a, 0, 0, false);
+    }
+
+    // Cabriole legs. One quadratic Bézier in the (radius, height) plane gives
+    // the knee its bulge and the ankle its draw-in; the stretcher hoop is
+    // placed by evaluating that same curve, so it cannot drift off the legs.
+    const legR = t => (1 - t) * (1 - t) * 0.62 + 2 * (1 - t) * t * 0.99 + t * t * 0.80;
+    const legY = t => (1 - t) * (1 - t) * 0.600 + 2 * (1 - t) * t * 0.400 + t * t * 0.225;
+    const legW = t => 0.056 + t * (0.028 - 0.056) + 0.013 * Math.sin(Math.PI * t);
+    const SEG = 6;
+    for (let i = 0; i < 6; i++) {
+      // Offset by 30° so no leg stands dead centre in the doorway view.
+      const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      for (let s = 0; s < SEG; s++) {
+        const t0 = s / SEG, t1 = (s + 1) / SEG;
+        branch(M.tableLacquer,
+          ET_X + ca * legR(t0), SUMMIT_Y + legY(t0), ET_Z + sa * legR(t0),
+          ET_X + ca * legR(t1), SUMMIT_Y + legY(t1), ET_Z + sa * legR(t1),
+          legW(t0), legW(t1), false);
+      }
+      // Gilt shoe, sunk a few millimetres into the floor so no gap shows.
+      cylinder(M.palaceGold, ET_X + ca * legR(1), SUMMIT_Y + 0.222,
+        ET_Z + sa * legR(1), 0.042, 0.055, 0, 0, 0, false);
+    }
+    const ST = 0.88;   // stretcher sits at the ankles, not across the knees
+    flatHoop(legY(ST), legR(ST) * 2);
+
+    // Bonsai (盆栽) — a moyogi pine in a shallow unglazed pot, set well
+    // off-centre so the maki-e medallion still reads. The asymmetry is the
+    // point of the display, not a compromise.
+    const px = ET_X + 0.40, pz = ET_Z - 0.18, top = ET_TOP;
+    // Pot: wide and shallow on four small feet. A deep box reads as a crate;
+    // the whole look of a bonsai pot is that the tree overhangs it.
+    for (const fx of [-0.17, 0.17]) {
+      for (const fz of [-0.11, 0.11]) {
+        box(M.bonsaiPot, px + fx, top + 0.014, pz + fz, 0.06, 0.028, 0.06, 0, 0, 0, false);
+      }
+    }
+    box(M.bonsaiPot, px, top + 0.063, pz, 0.44, 0.072, 0.32, 0, 0, 0, false);
+    box(M.bonsaiPotGlaze, px, top + 0.107, pz, 0.475, 0.026, 0.355, 0, 0, 0, false);
+    box(M.bonsaiSoil, px, top + 0.116, pz, 0.40, 0.016, 0.28, 0, 0, 0, false);
+    emit(G.dome, M.bonsaiSoil, px - 0.02, top + 0.120, pz, 0.32, 0.055, 0.23, 0, 0, 0, false);
+    // Moss cushions and a suiseki accent stone on the soil.
+    emit(G.dome, M.bonsaiMoss, px + 0.12, top + 0.124, pz + 0.06, 0.15, 0.030, 0.11, 0, 0, 0, false);
+    emit(G.dome, M.bonsaiMoss, px - 0.14, top + 0.122, pz - 0.05, 0.11, 0.026, 0.09, 0, 0, 0, false);
+    emit(G.dome, M.bonsaiMoss, px + 0.02, top + 0.126, pz - 0.08, 0.10, 0.024, 0.08, 0, 0, 0, false);
+    box(M.stoneLantern, px + 0.16, top + 0.140, pz - 0.07, 0.075, 0.055, 0.055, 0.6, 0.2, 0.3, false);
+
+    // Trunk: a stout nebari flaring into an S of three tapering stages, with
+    // two branches carrying the lower pads. Pine bark, not incense-stick brown.
+    const k0 = [px - 0.05, top + 0.12, pz + 0.03];
+    const k1 = [px + 0.02, top + 0.22, pz - 0.02];
+    const k2 = [px - 0.03, top + 0.31, pz + 0.02];
+    const k3 = [px + 0.01, top + 0.38, pz - 0.01];
+    emit(G.dome, M.treeTrunk, px - 0.05, top + 0.125, pz + 0.03, 0.14, 0.05, 0.14, 0, 0, 0, false);
+    branch(M.treeTrunk, ...k0, ...k1, 0.048, 0.034, false);
+    branch(M.treeTrunk, ...k1, ...k2, 0.034, 0.024, false);
+    branch(M.treeTrunk, ...k2, ...k3, 0.024, 0.014, false);
+    branch(M.treeTrunk, px + 0.01, top + 0.235, pz - 0.015,
+      px + 0.20, top + 0.265, pz - 0.07, 0.022, 0.010, false);
+    branch(M.treeTrunk, px - 0.02, top + 0.320, pz + 0.015,
+      px - 0.19, top + 0.345, pz + 0.06, 0.018, 0.009, false);
+
+    // Three clipped pads — an odd number, and dense: a pad is a solid mass of
+    // needles read from across the room, so a handful of small cards reads as
+    // a bare twig. Only lightly flattened, so each pad keeps its own volume.
+    puffFoliage(M.pineFoliage, px + 0.21, top + 0.295, pz - 0.075, 0.23, 0.085, 0.20,
+      { seed: 151, count: 16, cardScale: 0.95, flatten: 0.35 });
+    puffFoliage(M.pineFoliage, px - 0.20, top + 0.375, pz + 0.065, 0.20, 0.075, 0.17,
+      { seed: 152, count: 14, cardScale: 0.95, flatten: 0.35 });
+    puffFoliage(M.pineFoliage, px + 0.02, top + 0.425, pz - 0.01, 0.24, 0.095, 0.21,
+      { seed: 153, count: 18, cardScale: 0.95, flatten: 0.30 });
+  }
 
   // Covered passages joining the rotunda to the wings
   for (const WX of [WEST_X, EAST_X]) {
@@ -5917,7 +6217,8 @@ function animate() {
   waterN.offset.x = t * 0.012;
   waterN.offset.y = -t * 0.008;
   for (const fall of fountainWaterMaps) {
-    fall.map.offset.y -= dt * fall.speed;
+    // Positive V offset shifts the sheet downward on the niche plane.
+    fall.map.offset.y += dt * fall.speed;
   }
 
   // Animate falling sakura petals

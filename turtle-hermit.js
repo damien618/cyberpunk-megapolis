@@ -38,8 +38,17 @@ const SKIN_CSS = "#d4966f";
 // Its lowest vertices stop at y = 1.732, above the eyes at y ≈ 1.718, so the
 // eyes are not in it. Only genuinely dark pixels there are repainted, so the
 // forehead skin the box also covers is left alone.
+//
+// NAPE_UV is the back-of-head wrap: on this atlas the nape is the left and
+// right *edges* of the face island, which SCALP_UV insets away from. Dark
+// pixels there are the original brown undercut; they are dyed grey rather
+// than shaved, so the remaining hair matches the side curls and the beard.
 const HAIR_UV = { u0: 0.756, u1: 0.869, v0: 0.875, v1: 1.0 };
 const SCALP_UV = { u0: 0.050, u1: 0.460, v0: 0.0, v1: 0.140 };
+const NAPE_UV = [
+  { u0: 0.000, u1: 0.120, v0: 0.000, v1: 0.255 },
+  { u0: 0.380, u1: 0.520, v0: 0.000, v1: 0.255 },
+];
 
 // Dialogue lines (French, flavorful & humorous martial arts sage wisdom)
 const HERMIT_DIALOGUES = [
@@ -444,10 +453,11 @@ function buildSunglasses() {
 }
 
 /**
- * Erases the hair shell and repaints the scalp underneath — see HAIR_UV and
- * SCALP_UV for why both rectangles are safe to touch. Leaves a thinning grey
- * stubble rather than a bare pate, which is far more forgiving: painted hair
- * has no silhouette to give away, so it cannot read as a cap.
+ * Erases the hair shell, repaints the scalp, and dyes the nape grey — see
+ * HAIR_UV, SCALP_UV and NAPE_UV for why those rectangles are safe to touch.
+ * Leaves a thinning grey stubble on the crown rather than a bare pate, which
+ * is far more forgiving: painted hair has no silhouette to give away, so it
+ * cannot read as a cap.
  *
  * The caller must set alphaTest on the material, or the erased shell stays.
  */
@@ -489,7 +499,27 @@ function shaveHead(texture) {
   }
   ctx.putImageData(data, scalp.x, scalp.y);
 
-  // 3. Stipple sparse short grey hairs back over the crown only (v < 0.075 is
+  // 3. Dye the nape / back-wrap from the rig's dark brown to grey. Same lum
+  //    gate as the scalp so ear skin and the neck stay untouched; already-
+  //    shaved crown pixels sit above the threshold and are skipped.
+  const grey0 = 132, grey1 = 214;
+  for (const nape of NAPE_UV) {
+    const nb = box(nape);
+    const nd = ctx.getImageData(nb.x, nb.y, nb.w, nb.h);
+    const np = nd.data;
+    for (let i = 0; i < np.length; i += 4) {
+      if (np[i + 3] < 16) continue;
+      const lum = 0.3 * np[i] + 0.59 * np[i + 1] + 0.11 * np[i + 2];
+      if (lum >= 95) continue;
+      const g = grey0 + (lum / 95) * (grey1 - grey0);
+      np[i] = g;
+      np[i + 1] = g;
+      np[i + 2] = Math.min(255, g - 3);
+    }
+    ctx.putImageData(nd, nb.x, nb.y);
+  }
+
+  // 4. Stipple sparse short grey hairs back over the crown only (v < 0.075 is
   //    the top of the skull; the forehead runs on down to v ≈ 0.13).
   const rand = rng(73);
   const crownH = Math.ceil(0.075 * h) - scalp.y;
@@ -526,9 +556,9 @@ function shaveHead(texture) {
 }
 
 /**
- * The grey curls that puff out over each ear — the only hair he has left. They
- * also cover the sideburns painted onto the face texture, which sit outside the
- * hair shell's UV island and so survive the shave.
+ * The grey curls that puff out over each ear, plus the nape that joins them.
+ * They also cover the sideburns painted onto the face texture, which sit outside
+ * the hair shell's UV island and so survive the shave.
  */
 function buildSideCurls() {
   const group = new THREE.Group();
@@ -567,6 +597,32 @@ function buildSideCurls() {
       ring.rotation.set(rand() * 0.9, side * Math.PI / 2, rand() * 0.9);
       group.add(ring);
     }
+  }
+
+  // Nape: the side puffs stop at z ≈ -0.045 on each temple, leaving the
+  // painted undercut exposed on the centre-back of the skull. Fill that gap
+  // with the same grey so the remaining hair is one colour all the way round.
+  for (let i = 0; i < 24; i++) {
+    const across = (i / 23) * 2 - 1;
+    const r = 0.015 + rand() * 0.012;
+    const lobe = new THREE.Mesh(new THREE.SphereGeometry(r, 9, 8), curlMat);
+    lobe.position.set(
+      across * 0.072,
+      0.052 + (1 - Math.abs(across)) * 0.030 + rand() * 0.014,
+      -0.078 + Math.abs(across) * 0.028 + (rand() - 0.5) * 0.010);
+    lobe.scale.set(1.12, 0.80, 1.04);
+    lobe.castShadow = true;
+    group.add(lobe);
+  }
+  for (let i = 0; i < 5; i++) {
+    const across = (i / 4) * 2 - 1;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.008, 6, 12), curlMat);
+    ring.position.set(
+      across * 0.048,
+      0.058 + (1 - Math.abs(across)) * 0.016,
+      -0.086 + Math.abs(across) * 0.016);
+    ring.rotation.set(rand() * 0.8, Math.PI / 2, rand() * 0.8);
+    group.add(ring);
   }
 
   return group;
