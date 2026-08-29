@@ -14,6 +14,7 @@
       zoo: { engine: 'world', title: 'Cyberpunk Megapolis — A Trip to the Zoo' },
       airport: { engine: 'world', title: 'Cyberpunk Megapolis — Heading to the Airport' },
       shinto: { engine: 'world', title: 'Cyberpunk Megapolis — Visit to a Shinto shrine (Japan)' },
+      beach: { engine: 'world', title: 'Cyberpunk Megapolis — Aller à la plage de L.A.' },
     };
     const mode = new URLSearchParams(location.search).get('map');
     const world = WORLDS[mode];
@@ -45,6 +46,7 @@
     --zoo-accent: #ffbe5c;
     --airport-accent: #8ec8e0;
     --shinto-accent: #ff6050;
+    --beach-accent: #ffa85c;
     --mono: 'Geist Mono', ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -122,6 +124,7 @@
   #panelLA      { grid-column: 2; grid-row: 2; justify-self: center; align-self: center; }
   #panelZoo     { grid-column: 1; grid-row: 3; justify-self: start; align-self: end; }
   #panelShinto  { grid-column: 3; grid-row: 3; justify-self: end;   align-self: end; }
+  #panelBeach   { grid-column: 2; grid-row: 3; justify-self: center; align-self: end; }
 
   /* Circuit Board SVG overlay */
   .circuit-svg {
@@ -345,10 +348,32 @@
     box-shadow: 0 0 26px rgba(255,96,80,.26); }
   #enterBtnShinto:hover { background: linear-gradient(90deg, rgba(255,96,80,.58), rgba(255,96,80,.32)); }
 
+  /* Beach — centred like the pivot it hangs off, not edge-aligned like the
+     four corner satellites. */
+  .beach-panel {
+    border-color: rgba(255, 168, 92, 0.38);
+    align-items: center; text-align: center;
+  }
+  .beach-panel:hover {
+    border-color: rgba(255, 168, 92, 0.85);
+    box-shadow: 0 0 32px rgba(255, 168, 92, 0.35), 0 14px 40px rgba(0, 0, 0, 0.7);
+  }
+  .beach-panel .kicker { color: #ffcb9a; }
+  .beach-panel .accent-beach { color: var(--beach-accent); text-shadow: 0 0 24px rgba(255,168,92,.42); }
+  .beach-panel .m-name { color: var(--beach-accent); text-shadow: 0 0 12px rgba(255,168,92,.4); }
+  #brandRuleBeach { margin-top: 10px; width: 64px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--beach-accent), transparent); }
+  #enterBtnBeach {
+    color: #2a1405; background: linear-gradient(90deg, rgba(255,168,92,.38), rgba(255,168,92,.14));
+    border-color: var(--beach-accent); text-shadow: 0 0 8px rgba(255,168,92,.9);
+    box-shadow: 0 0 26px rgba(255,168,92,.26); }
+  #enterBtnBeach:hover { background: linear-gradient(90deg, rgba(255,168,92,.58), rgba(255,168,92,.32)); }
+
   .la-card { margin-top: 12px; display: flex; flex-direction: column; gap: 3px; }
   .cyber-panel .la-card, .zoo-panel .la-card { align-items: flex-start; }
   .airport-panel .la-card, .shinto-panel .la-card { align-items: flex-end; }
-  .pivot-panel .la-card { align-items: center; }
+  .pivot-panel .la-card, .beach-panel .la-card { align-items: center; }
+  .beach-panel .m-tag { color: var(--beach-accent); }
 
   .kicker { font-size: 11px; font-weight: 300; letter-spacing: .52em;
     color: #93a8e8; text-transform: uppercase; margin-bottom: 8px; }
@@ -381,11 +406,12 @@
     #panelAirport { grid-column: 2; grid-row: 2; justify-self: center; }
     #panelZoo { grid-column: 1; grid-row: 3; justify-self: center; }
     #panelShinto { grid-column: 2; grid-row: 3; justify-self: center; }
+    #panelBeach { grid-column: 1 / -1; grid-row: 4; justify-self: center; }
   }
   @media (max-width: 640px) {
     #menuHubArea {
       grid-template-columns: 1fr;
-      grid-template-rows: repeat(5, auto);
+      grid-template-rows: repeat(6, auto);
       gap: 16px;
       padding: 20px 14px;
     }
@@ -394,6 +420,7 @@
     #panelAirport { grid-column: 1; grid-row: 3; }
     #panelZoo { grid-column: 1; grid-row: 4; }
     #panelShinto { grid-column: 1; grid-row: 5; }
+    #panelBeach { grid-column: 1; grid-row: 6; }
     .la-panel { align-items: center !important; text-align: center !important; }
     .la-card { align-items: center !important; }
   }
@@ -498,6 +525,8 @@
     text-transform: uppercase; background: transparent; border: none; cursor: pointer;
     color: rgba(95,215,255,0.45); transition: background .18s, color .18s;
   }
+  /* Three states instead of two only fit if the cells give up some padding. */
+  #timeToggle.tt-3 .tt-btn { padding: 9px 15px; letter-spacing: 0.16em; }
   .tt-btn.active { background: rgba(95,215,255,0.15); color: #dff5ff; }
   .tt-btn:hover:not(.active) { background: rgba(95,215,255,0.07); color: rgba(95,215,255,0.75); }
   #hud {
@@ -587,10 +616,19 @@
     border-color: rgba(255, 96, 80, 0.55);
     background: linear-gradient(90deg, rgba(255, 96, 80, 0.38), rgba(220, 140, 160, 0.22));
   }
+  html[data-mode="beach"] #overlay {
+    background: radial-gradient(circle at 65% 30%, rgba(255, 168, 92, 0.18), rgba(5, 8, 15, 0.95) 60%);
+  }
+  html[data-mode="beach"] #panel .tag { color: var(--beach-accent); }
+  html[data-mode="beach"] #startBtn {
+    border-color: rgba(255, 168, 92, 0.55);
+    background: linear-gradient(90deg, rgba(255, 168, 92, 0.38), rgba(95, 215, 255, 0.22));
+  }
   html:not([data-mode="la"]) .brief-la,
   html:not([data-mode="zoo"]) .brief-zoo,
   html:not([data-mode="airport"]) .brief-airport,
-  html:not([data-mode="shinto"]) .brief-shinto { display: none !important; }
+  html:not([data-mode="shinto"]) .brief-shinto,
+  html:not([data-mode="beach"]) .brief-beach { display: none !important; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -634,6 +672,11 @@
         <stop offset="0%" stop-color="#5fd7ff" stop-opacity="1" />
         <stop offset="50%" stop-color="#ff6050" stop-opacity="1" />
         <stop offset="100%" stop-color="#ff6050" stop-opacity="1" />
+      </linearGradient>
+      <linearGradient id="grad-beach" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#5fd7ff" stop-opacity="1" />
+        <stop offset="50%" stop-color="#ffa85c" stop-opacity="1" />
+        <stop offset="100%" stop-color="#ffa85c" stop-opacity="1" />
       </linearGradient>
     </defs>
     <!-- Dynamic paths generated & updated via JS -->
@@ -704,6 +747,19 @@
           <span class="m-name">Kyoto Traveler</span>
         </div>
         <button id="enterBtnShinto" class="enter-btn ready">Enter Game</button>
+      </div>
+
+      <!-- BOTTOM-CENTRE SATELLITE: ALLER À LA PLAGE — sits directly under the
+           L.A. pivot because it is the villa's own beach, one drive away. -->
+      <div class="la-panel beach-panel" id="panelBeach" data-target="beach">
+        <div class="kicker">Satellite 05 · Shoreline</div>
+        <h2>ALLER À<br><span class="accent-beach">LA PLAGE</span></h2>
+        <div id="brandRuleBeach"></div>
+        <div class="la-card">
+          <span class="m-tag">Runner 01</span>
+          <span class="m-name">Baywatch Girl</span>
+        </div>
+        <button id="enterBtnBeach" class="enter-btn ready">Enter Game</button>
       </div>
     </div>
   </div>
@@ -776,7 +832,20 @@
         <button class="tt-btn" data-time="night">🌙 Night</button>
       </div>
     </div>
-    <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span><span class="brief-airport">Entrer dans l'aéroport</span><span class="brief-shinto">Entrer dans le temple</span></button>
+    <div class="brief-beach">
+      <span class="tag">Nouvelle map</span>
+      <h1>Aller à la plage de L.A.</h1>
+      <p>Vous arrivez sur le parking, derrière la corniche. Passé le muret, un escalier descend sur le sable: la plage s'ouvre en grand, la mer est en face, et les falaises ferment la baie de chaque côté.</p>
+      <p>Vous pouvez entrer dans l'eau jusqu'à la taille — au-delà, le fond décroche. La voiture vous ramène à la villa quand vous voulez.</p>
+      <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter / tenir pour tirer la toile, <b>E</b> zip, <b>Shift</b> sprint, <b>R</b> reset.</p>
+      <p class="credit">Plage de L.A. — Cyberpunk Megapolis</p>
+      <div id="timeToggle" class="tt-3">
+        <button class="tt-btn active" data-time="day">☀ Jour</button>
+        <button class="tt-btn" data-time="sunset">🌅 Fin de journée</button>
+        <button class="tt-btn" data-time="night">🌙 Nuit</button>
+      </div>
+    </div>
+    <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span><span class="brief-airport">Entrer dans l'aéroport</span><span class="brief-shinto">Entrer dans le temple</span><span class="brief-beach">Descendre à la plage</span></button>
   </div>
 </div>
 <button id="furniturePrompt" type="button" aria-hidden="true"></button>
@@ -792,6 +861,7 @@
   <button id="travelCyberpunkPrompt" class="lie-prompt" type="button">Voyager à Cyberpunk Megapolis</button>
   <button id="travelZooPrompt" class="lie-prompt" type="button">Voyager au zoo</button>
   <button id="travelAirportPrompt" class="lie-prompt" type="button">Voyager à l'aéroport</button>
+  <button id="travelBeachPrompt" class="lie-prompt" type="button">Aller à la plage</button>
 </div>
 <div id="planePromptGroup" role="group" aria-label="Choisir une destination de vol" aria-hidden="true">
   <button id="planeDestLaPrompt" class="lie-prompt" type="button">1 — Retour à LA</button>
@@ -801,7 +871,12 @@
 <div id="hud">Mode: <b id="mode">air</b> · Vitesse: <b id="speed">0</b> km/h · Hauteur: <b id="height">0</b> m</div>
 <script>
   const laNightSelected = new URLSearchParams(location.search).get('night') === '1';
+  // The beach has THREE time states and owns its own toggle (see setBeachTime
+  // in main-BEACH.js). This two-state sync would light "day" and "sunset" at
+  // the same time, so it stands aside there rather than being generalised —
+  // the other four maps genuinely are day/night.
   const syncLaTimeButtons = selectedNight => {
+    if (document.documentElement.dataset.mode === 'beach') return;
     document.querySelectorAll('.tt-btn').forEach(btn => {
       const isNightBtn = btn.dataset.time === 'night';
       btn.classList.toggle('active', selectedNight ? isNightBtn : !isNightBtn);
@@ -825,6 +900,9 @@
   });
   document.getElementById('enterBtnShinto')?.addEventListener('click', () => {
     location.href = 'index.html?map=shinto';
+  });
+  document.getElementById('enterBtnBeach')?.addEventListener('click', () => {
+    location.href = 'index.html?map=beach';
   });
   document.getElementById('enterBtn')?.addEventListener('click', () => {
     if (document.documentElement.dataset.mode !== 'menu') {
@@ -858,7 +936,9 @@
       { id: 'panelCyber',   color: '#ff4fd8', grad: 'grad-cyber',   pos: 'tl' },
       { id: 'panelAirport', color: '#8ec8e0', grad: 'grad-airport', pos: 'tr' },
       { id: 'panelZoo',     color: '#ffbe5c', grad: 'grad-zoo',     pos: 'bl' },
-      { id: 'panelShinto',  color: '#ff6050', grad: 'grad-shinto',  pos: 'br' }
+      { id: 'panelShinto',  color: '#ff6050', grad: 'grad-shinto',  pos: 'br' },
+      // Directly under the pivot, so it takes the vertical-stack fallback below.
+      { id: 'panelBeach',   color: '#ffa85c', grad: 'grad-beach',   pos: 'bc' }
     ];
 
     let tracksHTML = '';
@@ -1063,10 +1143,11 @@
 </script>
 <script type="module">
   const ENGINES = {
-    la: './main-LA.js?v=202608141500',
+    la: './main-LA.js?v=202608282230',
     zoo: './main-ZOO.js?v=202608141500',
     airport: './main-AIRPORT.js?v=202608170015',
     shinto: './main-SHINTO.js?v=202608212100',
+    beach: './main-BEACH.js?v=202608292310',
   };
   import(ENGINES[document.documentElement.dataset.mode] ?? './main.js?v=24');
 </script>

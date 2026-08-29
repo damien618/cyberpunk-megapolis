@@ -445,40 +445,184 @@ function morphVisitorFace(mesh, rng) {
   mesh.geometry = g;
 }
 
-function seatedRig(group) {
-  const legs = [];
-  for (const side of ['l', 'r']) {
-    const thigh = group.getObjectByName(`thigh_${side}`);
-    const calf = group.getObjectByName(`calf_${side}`);
-    const foot = group.getObjectByName(`foot_${side}`);
-    if (!thigh || !calf) continue;
-    legs.push({
-      side: side === 'l' ? 1 : -1, thigh, calf, foot,
-      rest: {
-        thigh: thigh.quaternion.clone(),
-        calf: calf.quaternion.clone(),
-        foot: foot ? foot.quaternion.clone() : null,
-      },
-    });
+// ---------------------------------------------------------------------------
+// Rig-agnostic posing.
+//
+// Two skeleton conventions ship in this project. The pack (chars/glb) uses
+// Unreal's names — pelvis / thigh_l / calf_l — and the Ready Player Me guests
+// in glb/visitors use Mixamo's — Hips / LeftUpLeg / LeftLeg. Anything that
+// poses a body has to speak both. Written for the pack alone, as seatedRig
+// originally was, the guests can only ever walk, and every seated or lying
+// figure in a map collapses onto the one pack rig — which is the PLAYER's rig,
+// and the thing we most need the crowd not to look like.
+//
+// Poses are written in anatomical terms — flexion (bend forward), abduction
+// (spread sideways) — and each rig says which of its own local axes those are.
+// The pack's numbers below are the ones the seated pose was measured with, so
+// its result is unchanged and the zoo and the airport are untouched.
+// ---------------------------------------------------------------------------
+const RIGS = {
+  pack: {
+    kind: 'pack',
+    root: ['pelvis'], head: ['head'], spine: ['spine_01', 'spine_02', 'spine_03'],
+    thigh: ['thigh_l', 'thigh_r'], calf: ['calf_l', 'calf_r'], foot: ['foot_l', 'foot_r'],
+    upperarm: ['upperarm_l', 'upperarm_r'], lowerarm: ['lowerarm_l', 'lowerarm_r'],
+    flex: 'z', abduct: 'y', flexSign: 1, abductSign: 1,
+  },
+  mixamo: {
+    kind: 'mixamo',
+    root: ['Hips'], head: ['Head'], spine: ['Spine', 'Spine1', 'Spine2'],
+    thigh: ['LeftUpLeg', 'RightUpLeg'], calf: ['LeftLeg', 'RightLeg'],
+    foot: ['LeftFoot', 'RightFoot'],
+    upperarm: ['LeftArm', 'RightArm'], lowerarm: ['LeftForeArm', 'RightForeArm'],
+    flex: 'x', abduct: 'z', flexSign: 1, abductSign: -1,
+  },
+};
+
+// Exact name first, then a suffix match so `mixamorigLeftUpLeg` and
+// `mixamorig:LeftUpLeg` resolve without listing every prefix a exporter invents.
+function boneNamed(root, name) {
+  const hit = root.getObjectByName(name);
+  if (hit) return hit;
+  let found = null;
+  const want = name.toLowerCase();
+  root.traverse(o => {
+    if (found || !o.isBone) return;
+    const n = o.name.toLowerCase().replace(/^mixamorig:?/, '');
+    if (n === want) found = o;
+  });
+  return found;
+}
+export function rootBoneOf(root) {
+  return boneNamed(root, 'pelvis') || boneNamed(root, 'Hips');
+}
+export function rigOf(root) {
+  if (boneNamed(root, 'thigh_l')) return RIGS.pack;
+  if (boneNamed(root, 'LeftUpLeg')) return RIGS.mixamo;
+  return null;
+}
+
+const _q = new THREE.Quaternion();
+const _e = new THREE.Euler(0, 0, 0, 'YXZ');
+// One joint, from anatomical angles. `side` is +1 left, -1 right.
+function setJoint(bone, rest, rig, flex, abduct = 0, side = 1) {
+  if (!bone || !rest) return;
+  _e.set(0, 0, 0, 'YXZ');
+  _e[rig.flex] = flex * rig.flexSign;
+  _e[rig.abduct] = abduct * side * rig.abductSign;
+  bone.quaternion.copy(rest).multiply(_q.setFromEuler(_e));
+}
+
+// Grab a joint and remember the bind rotation. Poses are applied to the BIND
+// pose rather than added to whatever the clip left, or the clip's own stance
+// bleeds through and the limbs drift apart over a few seconds.
+function grab(root, names) {
+  const out = [];
+  for (let i = 0; i < names.length; i++) {
+    const b = boneNamed(root, names[i]);
+    out.push(b ? { bone: b, rest: b.quaternion.clone(), side: i === 0 ? 1 : -1 } : null);
   }
-  const e = new THREE.Euler();
-  const q = new THREE.Quaternion();
-  const apply = () => {
-    for (const l of legs) {
-      e.set(0, l.side * SEAT.spread, SEAT.hip, 'YXZ');
-      l.thigh.quaternion.copy(l.rest.thigh).multiply(q.setFromEuler(e));
-      e.set(0, 0, apply.state.knee, 'YXZ');
-      l.calf.quaternion.copy(l.rest.calf).multiply(q.setFromEuler(e));
-      if (l.foot) {
-        e.set(0, 0, apply.state.ankle, 'YXZ');
-        l.foot.quaternion.copy(l.rest.foot).multiply(q.setFromEuler(e));
-      }
-    }
+  return out;
+}
+function limbs(root, rig) {
+  return {
+    thigh: grab(root, rig.thigh), calf: grab(root, rig.calf), foot: grab(root, rig.foot),
+    upperarm: grab(root, rig.upperarm), lowerarm: grab(root, rig.lowerarm),
+    spine: grab(root, rig.spine), head: grab(root, rig.head),
   };
-  // Straightening the knee swings the shin forward; the ankle turns back by as
-  // much so the sole stays flat on the floor instead of pointing at it.
+}
+
+// Seated on a chair or a bench: thighs forward, shins down. The knee and the
+// ankle live in mutable state because knee-to-sole on these characters is
+// longer than a chair is high — whoever places the sitter measures its own seat
+// and fits the leg to it (see fitSeatedLegs in main-ZOO.js).
+function seatedRig(group) {
+  const rig = rigOf(group);
+  if (!rig) return null;
+  const L = limbs(group, rig);
+  const apply = () => {
+    for (const j of L.thigh) if (j) setJoint(j.bone, j.rest, rig, SEAT.hip, SEAT.spread, j.side);
+    for (const j of L.calf) if (j) setJoint(j.bone, j.rest, rig, apply.state.knee);
+    for (const j of L.foot) if (j) setJoint(j.bone, j.rest, rig, apply.state.ankle);
+  };
   apply.state = { knee: SEAT.knee, ankle: SEAT.ankle };
   apply.rest = { knee: SEAT.knee, ankle: SEAT.ankle };
+  apply.rig = rig;
+  return apply;
+}
+
+// Sunbathing. The body is laid flat by the CALLER (rotating the group), so all
+// this does is take the standing stance out of it: arms down by the sides, one
+// knee loosely raised, head turned. A figure left in its idle stance and simply
+// tipped over reads as a plank, which is the whole risk with a lying pose.
+export function lyingRig(group, rng = Math.random) {
+  const rig = rigOf(group);
+  if (!rig) return null;
+  const L = limbs(group, rig);
+  const kneeUp = rng() < 0.45 ? 0.5 + rng() * 0.5 : 0;
+  const armOut = 0.9 + rng() * 0.5;
+  const bentSide = rng() < 0.5 ? 0 : 1;
+  const apply = () => {
+    L.thigh.forEach((j, i) => {
+      if (j) setJoint(j.bone, j.rest, rig, i === bentSide ? kneeUp * 0.8 : 0.05,
+        0.12 + (i === bentSide ? 0.14 : 0), j.side);
+    });
+    L.calf.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, i === bentSide ? -kneeUp * 1.7 : -0.06); });
+    for (const j of L.upperarm) if (j) setJoint(j.bone, j.rest, rig, -0.1, armOut, j.side);
+    for (const j of L.lowerarm) if (j) setJoint(j.bone, j.rest, rig, -0.25);
+  };
+  apply.rig = rig;
+  return apply;
+}
+
+// Sitting on the ground, knees up or crossed — how people sit round a fire.
+export function groundSitRig(group, rng = Math.random) {
+  const rig = rigOf(group);
+  if (!rig) return null;
+  const L = limbs(group, rig);
+  // Cross-legged, always: round a fire it is what people actually do, and the
+  // wide knees are what make the silhouette read as sitting at all. A deeper
+  // knee than this tucks the shins under the hips and buries them in the sand.
+  const crossed = rng() < 0.5;
+  const hip = crossed ? 1.28 : 1.16;
+  const knee = crossed ? -2.0 : -1.75;
+  const spread = crossed ? 0.98 : 0.8;
+  const lean = 0.12 + rng() * 0.16;
+  const apply = () => {
+    for (const j of L.thigh) if (j) setJoint(j.bone, j.rest, rig, hip, spread, j.side);
+    for (const j of L.calf) if (j) setJoint(j.bone, j.rest, rig, knee);
+    for (const j of L.foot) if (j) setJoint(j.bone, j.rest, rig, 0.2);
+    for (const j of L.upperarm) if (j) setJoint(j.bone, j.rest, rig, apply.state.arm, 0.22, j.side);
+    for (const j of L.lowerarm) if (j) setJoint(j.bone, j.rest, rig, apply.state.forearm);
+    const sp = L.spine[0];
+    if (sp) setJoint(sp.bone, sp.rest, rig, -lean);
+  };
+  apply.state = { arm: 0.35, forearm: 0.7 };
+  apply.rig = rig;
+  return apply;
+}
+
+// A free pose: whatever the caller wants to hold, in anatomical terms. Used for
+// the ball and paddle players, the skaters and the swimmers.
+export function customRig(group) {
+  const rig = rigOf(group);
+  if (!rig) return null;
+  const L = limbs(group, rig);
+  const apply = () => {
+    const s = apply.state;
+    L.thigh.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, s.hip[i], s.spread, j.side); });
+    L.calf.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, s.knee[i]); });
+    L.foot.forEach(j => { if (j) setJoint(j.bone, j.rest, rig, s.ankle); });
+    L.upperarm.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, s.arm[i], s.armOut[i], j.side); });
+    L.lowerarm.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, s.forearm[i]); });
+    const sp = L.spine[0];
+    if (sp) setJoint(sp.bone, sp.rest, rig, s.lean);
+  };
+  apply.state = {
+    hip: [0, 0], knee: [0, 0], spread: 0.06, ankle: 0,
+    arm: [0, 0], armOut: [0, 0], forearm: [0, 0], lean: 0,
+  };
+  apply.rig = rig;
   return apply;
 }
 
@@ -680,9 +824,11 @@ export function makeVisitor(base, walkClip, rng,
   // Paused rather than removed: the mixer still writes the first frame every
   // update, so the pose holds instead of falling back to the bind stance.
   if (still) action.paused = true;
-  // The seated pose writes thigh_l / calf_l. The guest does not have those
-  // bones, so she is a walker (and a standing idle), never a sitter.
-  const pose = seated && !isGuest ? seatedRig(group) : null;
+  // Both rigs can be posed now (see rigOf / setJoint above), so a guest is a
+  // sitter like anyone else. This used to read "the guest does not have those
+  // bones, so she is a walker, never a sitter" — which quietly forced every
+  // seated figure in every map onto the pack rig, i.e. onto the player's body.
+  const pose = seated ? seatedRig(group) : null;
 
   // Stride length scales with leg length, so the tallest visitors cover ground
   // fastest — otherwise the short ones look like they are running on the spot.

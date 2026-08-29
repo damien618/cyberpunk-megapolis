@@ -58,7 +58,10 @@ export class CameraRig {
     }
 
     _look.copy(ctrl.pos);
-    _look.y += ctrl.mode === 'lie' ? 0.35 : (ctrl.mode === 'sit' || ctrl.mode === 'kneel') ? 1.05 : 1.35;
+    _look.y += ctrl.mode === 'lie' ? 0.35
+      : (ctrl.mode === 'sit' || ctrl.mode === 'kneel') ? 1.05
+      : ctrl.mode === 'ride' ? 1.18
+      : 1.35;
     _lat.copy(ctrl.vel).multiplyScalar(0.16);
     if (_lat.length() > 4.5) _lat.setLength(4.5);
     _look.add(_lat);
@@ -72,22 +75,28 @@ export class CameraRig {
 
     let targetDist = 4.2 + speedN * 3.6 + (ctrl.mode === 'swing' ? 1.1 : 0);
     if (ctrl.mode === 'sit') targetDist = 1.72;
+    else if (ctrl.mode === 'ride') targetDist = 5.2;
     else if (ctrl.mode === 'kneel') targetDist = 2.4;
     else if (ctrl.mode === 'lie') targetDist = 2.35;
     this.dist += (targetDist - this.dist) * (1 - Math.exp(-4 * dt));
 
     _desired.copy(this.smoothLook).addScaledVector(_dir, -this.dist);
 
-    // occlusion: snap in, ease back out
+    // occlusion: snap in, ease back out. The Ferris ride looks at the bay
+    // through the wheel; pulling in against the terrace would bury the
+    // camera in the cabin.
     let t = 1;
-    const ids = this.bw.queryNearby(this.smoothLook.x, this.smoothLook.z, this.dist + 12);
-    for (const idx of ids) {
-      const b = this.bw.aabbs[idx];
-      if (!b.collide) continue;
-      const hit = segmentAABB(this.smoothLook, _desired, b, 0.28);
-      if (hit < t) t = hit;
+    if (ctrl.mode !== 'ride') {
+      const ids = this.bw.queryNearby(this.smoothLook.x, this.smoothLook.z, this.dist + 12);
+      for (const idx of ids) {
+        const b = this.bw.aabbs[idx];
+        if (!b.collide) continue;
+        const hit = segmentAABB(this.smoothLook, _desired, b, 0.28);
+        if (hit < t) t = hit;
+      }
     }
-    if (t < this.collT) this.collT = t;
+    if (ctrl.mode === 'ride') this.collT = 1;
+    else if (t < this.collT) this.collT = t;
     else this.collT += (t - this.collT) * (1 - Math.exp(-3.5 * dt));
     const boom = Math.max(1.7, this.dist * this.collT * 0.97);
     _desired.copy(this.smoothLook).addScaledVector(_dir, -boom);

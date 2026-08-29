@@ -37,6 +37,7 @@ const travelPromptGroup = document.getElementById('travelPromptGroup');
 const travelCyberpunkPrompt = document.getElementById('travelCyberpunkPrompt');
 const travelZooPrompt = document.getElementById('travelZooPrompt');
 const travelAirportPrompt = document.getElementById('travelAirportPrompt');
+const travelBeachPrompt = document.getElementById('travelBeachPrompt');
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
@@ -3126,7 +3127,8 @@ const travelParams = new URLSearchParams(location.search);
 // return trip lands the player back at its side.
 const arrivedFromTravel = travelParams.get('arrival') === 'megapolis'
   || travelParams.get('arrival') === 'zoo'
-  || travelParams.get('arrival') === 'airport';
+  || travelParams.get('arrival') === 'airport'
+  || travelParams.get('arrival') === 'beach';
 const arrivalSide = laTravelBounds.width / 2 + 1.1;
 const villaArrivalPoint = new THREE.Vector3(
   LA_TRAVEL_CAR.x + Math.sin(LA_TRAVEL_CAR.yaw) * arrivalSide,
@@ -3275,6 +3277,7 @@ function requestTravelDestination(destination, event) {
 travelCyberpunkPrompt.addEventListener('click', event => requestTravelDestination('megapolis', event));
 travelZooPrompt.addEventListener('click', event => requestTravelDestination('zoo', event));
 travelAirportPrompt.addEventListener('click', event => requestTravelDestination('airport', event));
+travelBeachPrompt?.addEventListener('click', event => requestTravelDestination('beach', event));
 
 function enterFurnitureInteraction(spot, wakeMode = null) {
   setFurniturePrompt(null);
@@ -3367,7 +3370,11 @@ function updateFurnitureInteraction(dt) {
         ? `index.html?map=zoo&arrival=la&laNight=${preservedNight}`
         : destination === 'airport'
           ? `index.html?map=airport&arrival=la&laNight=${preservedNight}`
-          : `index.html?map=megapolis&runner=girl&arrival=la&laNight=${preservedNight}`;
+          // The beach runs three times of day rather than two, so it is handed
+          // a named state instead of the night flag the other maps carry.
+          : destination === 'beach'
+            ? `index.html?map=beach&arrival=la&time=${preservedNight === '1' ? 'night' : 'day'}`
+            : `index.html?map=megapolis&runner=girl&arrival=la&laNight=${preservedNight}`;
       return true;
     }
     const wakeMode = nearest.type === 'lie' ? lieWakeModeRequested : null;
