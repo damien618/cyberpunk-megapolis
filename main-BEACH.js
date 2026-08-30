@@ -6,7 +6,7 @@ import { Controller } from './controller.js?v=6';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes } from './cityBoxes.js?v=5';
 import { buildCar, carBounds } from './cars.js?v=4';
-import { cloneSkinned, makeVisitor, loadGuestRig, groundSitRig, lyingRig, customRig, rootBoneOf } from './crowd.js?v=56';
+import { cloneSkinned, makeVisitor, loadGuestRig, groundSitRig, lyingRig, customRig, rootBoneOf } from './crowd.js?v=57';
 
 // ---------------------------------------------------------------------------
 // Aller à la plage de L.A. — Phase 1: the ground you walk on.
@@ -3721,7 +3721,9 @@ try {
         });
         if (!p) continue;
         p.kind = 'sit';
-        dropToHips(p, terrainHeight(px, pz), 0.37);
+        // 20 cm, not 37: legs out along the sand put the hip joint barely a
+        // hand above it, and the old seat height left them sitting on air.
+        dropToHips(p, terrainHeight(px, pz), 0.20);
         scene.add(p.group);
         nightPeople.push(p.group);
         beachPeople.push(p);

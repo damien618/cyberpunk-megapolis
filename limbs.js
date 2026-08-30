@@ -808,12 +808,26 @@ export function buildBareLegs(root, material) {
   return finish(out, rig, material, 'Wardrobe_BareLegs');
 }
 
+// Where the authored lower body is cut away, and where the lofted leg starts,
+// both as a fraction of the hip -> knee segment. THE LOFT MUST START ABOVE THE
+// CUT (a smaller fraction is higher up the thigh): the two used to be 0.55 and
+// 0.42, i.e. the loft began 5 cm BELOW where the jeans stopped, and every
+// sunbather was severed at the thigh with a hand's width of nothing between
+// shorts and legs. Overlapping them by ~5 cm buries the loft cuff inside the
+// authored shorts instead. LOWER_LEG_CUT_PAD is added to the cut when the
+// vertices are collapsed, so the authored surface really ends at CUT_U + PAD:
+// measured on the RPM guests that lands the hem at bind Y 0.80, which is where
+// crowd.js paints the shorts hem into the atlas.
+const LOWER_LEG_LOFT_U = 0.365;
+const LOWER_LEG_CUT_U = 0.555;
+const LOWER_LEG_CUT_PAD = 0.03;
+
 /**
  * Lower legs for a Mixamo (or pack) guest in shorts. Ready Player Me models
  * jeans and a shoe last as one mesh: painting those islands skin-coloured is
  * how sunbathers used to read as wearing flesh trousers and trainers. This
- * loft starts at the shorts hem so the cuff is buried in the remaining jeans,
- * then reuses the player's calf / ankle / toe tables.
+ * loft starts above the shorts hem so the cuff is buried in the remaining
+ * jeans, then reuses the player's calf / ankle / toe tables.
  */
 export function buildBareLowerLegs(root, material) {
   const found = findLegRig(root);
@@ -821,7 +835,7 @@ export function buildBareLowerLegs(root, material) {
   const { rig, scheme } = found;
   const { indexOf, pos } = restReader(rig);
   const out = { pos: [], tri: [], idx: [], wgt: [] };
-  const fromU = 0.55;
+  const fromU = LOWER_LEG_LOFT_U;
 
   for (const side of ['l', 'r']) {
     const names = scheme[side];
@@ -882,8 +896,8 @@ export function hideAuthoredLowerLegs(root) {
   const { rig, scheme } = found;
   const { pos, indexOf } = restReader(rig);
   const hem = {
-    l: pos(scheme.l.thigh).clone().lerp(pos(scheme.l.calf), 0.42),
-    r: pos(scheme.r.thigh).clone().lerp(pos(scheme.r.calf), 0.42),
+    l: pos(scheme.l.thigh).clone().lerp(pos(scheme.l.calf), LOWER_LEG_CUT_U),
+    r: pos(scheme.r.thigh).clone().lerp(pos(scheme.r.calf), LOWER_LEG_CUT_U),
   };
   const hemY = { l: hem.l.y, r: hem.r.y };
   const thighIdx = { l: indexOf(scheme.l.thigh), r: indexOf(scheme.r.thigh) };
@@ -933,7 +947,7 @@ export function hideAuthoredLowerLegs(root) {
       }
       const side = sideL >= sideR ? 'l' : 'r';
       const y = attr.getY(i);
-      const belowHem = (thighW + calfW + footW) > 0.28 && y < hemY[side] + 0.03;
+      const belowHem = (thighW + calfW + footW) > 0.28 && y < hemY[side] + LOWER_LEG_CUT_PAD;
       if (footW < 0.08 && calfW < 0.12 && !belowHem) continue;
       const t = hem[side];
       attr.setXYZ(i, t.x, t.y, t.z);

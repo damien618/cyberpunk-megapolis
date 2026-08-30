@@ -23,7 +23,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { buildBareLowerLegs, hideAuthoredLowerLegs } from './limbs.js?v=40';
+import { buildBareLowerLegs, hideAuthoredLowerLegs } from './limbs.js?v=41';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
 
@@ -885,12 +885,18 @@ export function lyingRig(group, rng = Math.random) {
   const kneeUp = rng() < 0.38 ? 0.18 + rng() * 0.16 : 0;
   const bentSide = rng() < 0.5 ? 0 : 1;
 
-  // On this Mixamo rig (RPM A-pose), smaller values are needed because it's not
-  // a strict T-pose. Too high an armOut value buries the arms inside the torso.
-  const armFlex = mixamo ? 0.15 : -0.08;
-  const armOut0 = mixamo ? 0.28 : 0.82;
-  const armOut1 = mixamo ? 0.34 : 0.94;
-  const forearm = mixamo ? 0.16 : -0.22;
+  // Arms flat along the body, ON the cloth. The two shoulder axes are not
+  // independent on this rig (RPM A-pose): abduction swings the arm toward the
+  // feet but also DOWN, so the old 0.15 flex / 0.28 abduct left the elbow and
+  // the hand 1-3 cm UNDER the towel top and 0.65 m out from the spine — past
+  // the 1 m cloth. The towel plane then sliced the forearm and what was left
+  // read as a hand lying loose on the sand beside a body cut in half.
+  // Measured against the cloth: flex ~1.0 with abduct ~0.4 holds the whole arm
+  // 4-8 cm clear of it, hands beside the hips and well inside the towel.
+  const armFlex = mixamo ? 0.98 + rng() * 0.14 : -0.08;
+  const armOut0 = mixamo ? 0.36 + rng() * 0.06 : 0.82;
+  const armOut1 = mixamo ? 0.40 + rng() * 0.06 : 0.94;
+  const forearm = mixamo ? 0.08 + rng() * 0.10 : -0.22;
 
   // Idle writes the toe bones; pin them to bind so lofted feet cannot drift.
   const toes = mixamo
@@ -942,25 +948,46 @@ export function groundSitRig(group, rng = Math.random) {
   const rig = rigOf(group);
   if (!rig) return null;
   const L = limbs(group, rig);
+  // Cross-legged, always: round a fire it is what people actually do, and the
   // wide knees are what make the silhouette read as sitting at all. A deeper
   // knee than this tucks the shins under the hips and buries them in the sand.
+  //
+  // The thigh and the calf MUST be written. Without them the legs keep the
+  // standing stance while dropToHips lowers the figure by a leg's length, and
+  // the fire circle becomes five torsos planted in the sand.
+  // setJoint gives a joint a flex and an abduction, never a twist, so a true
+  // cross-legged fold is out of reach on the Mixamo guests: the knee bend
+  // takes the shin straight BACK and the sand swallows it, which is what the
+  // fire circle looked like. Legs out towards the fire with a soft knee is
+  // reachable, sits on the sand rather than in it, and is what half a beach
+  // does anyway. The pack rig keeps its own tuck.
+  const mixamo = rig.kind === 'mixamo';
   const crossed = rng() < 0.5;
-  const hip = crossed ? 1.28 : 1.16;
-  const spread = crossed ? 0.98 : 0.8;
+  const hip = mixamo ? (crossed ? 1.50 : 1.42) : (crossed ? 1.28 : 1.16);
+  const knee = mixamo ? (crossed ? -0.15 : -0.30) : (crossed ? -2.0 : -1.75);
+  const spread = mixamo ? (crossed ? 0.34 : 0.24) : (crossed ? 0.98 : 0.8);
   const lean = 0.12 + rng() * 0.16;
+  const pair = v => (Array.isArray(v) ? v : [v, v]);
   const apply = () => {
+    const s = apply.state;
+    for (const j of L.thigh) if (j) setJoint(j.bone, j.rest, rig, s.hip, s.spread, j.side);
+    for (const j of L.calf) if (j) setJoint(j.bone, j.rest, rig, s.knee);
     for (const j of L.foot) if (j) setJoint(j.bone, j.rest, rig, 0.2);
-    const abd = rig.kind === 'mixamo' ? 0.32 : 0.22;
-    const flex = rig.kind === 'mixamo' ? 0.7 : apply.state.arm;
+    const abd = mixamo ? 0.32 : 0.22;
+    // Per-side arms so the guitarist can hold a neck out to the left: the
+    // state used to be read for the pack rig only, and his arrays fell on the
+    // floor with every guest on the beach being a Mixamo one.
+    const flex = pair(apply.state.arm);
+    const fore = pair(apply.state.forearm);
     L.shoulder.forEach((j, i) => {
       if (j) setJoint(j.bone, j.rest, rig, 0.12, abd * 0.4, j.side);
     });
-    for (const j of L.upperarm) if (j) setJoint(j.bone, j.rest, rig, flex, abd, j.side);
-    for (const j of L.lowerarm) if (j) setJoint(j.bone, j.rest, rig, apply.state.forearm);
+    L.upperarm.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, flex[i], abd, j.side); });
+    L.lowerarm.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, fore[i]); });
     const sp = L.spine[0];
     if (sp) setJoint(sp.bone, sp.rest, rig, -lean);
   };
-  apply.state = { arm: 0.35, forearm: 0.7 };
+  apply.state = { arm: mixamo ? 0.7 : 0.35, forearm: 0.7, hip, knee, spread };
   apply.rig = rig;
   return apply;
 }
