@@ -771,6 +771,53 @@ function makeGlowTexture() {
   return t;
 }
 
+function makeVolleyballTexture() {
+  const S = 256;
+  const c = Object.assign(document.createElement('canvas'), { width: S, height: S });
+  const g = c.getContext('2d');
+
+  // Crisp white leather base
+  g.fillStyle = '#f8f7f0';
+  g.fillRect(0, 0, S, S);
+
+  // Official beach volleyball curved tri-color panel swirls (royal blue, golden yellow, white)
+  const drawBand = (color, cy, ry, angle) => {
+    g.save();
+    g.fillStyle = color;
+    g.beginPath();
+    g.ellipse(S / 2, cy, S * 0.48, ry, angle, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+  };
+
+  drawBand('#194db4', S * 0.28, S * 0.16, 0.38);
+  drawBand('#f6b800', S * 0.44, S * 0.15, -0.38);
+  drawBand('#194db4', S * 0.72, S * 0.16, 0.38);
+  drawBand('#f6b800', S * 0.88, S * 0.15, -0.38);
+
+  // Soft seam grooves between panels
+  g.strokeStyle = '#5a6472';
+  g.lineWidth = 2.0;
+  for (let i = 0; i <= 4; i++) {
+    const y = i * (S / 4);
+    g.beginPath();
+    g.moveTo(0, y);
+    g.bezierCurveTo(S * 0.35, y + 16, S * 0.65, y - 16, S, y);
+    g.stroke();
+  }
+  for (let i = 1; i <= 3; i++) {
+    const x = i * (S / 4);
+    g.beginPath();
+    g.moveTo(x, 0);
+    g.bezierCurveTo(x + 16, S * 0.35, x - 16, S * 0.65, x, S);
+    g.stroke();
+  }
+
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 const waterN = ntex('./textures/la/water_normal.jpg', 22, 14);
 const sidewalkA = tex('./textures/CP_Sidewalk_A.webp', 26, 3);
 const sidewalkN = ntex('./textures/CP_Sidewalk_N.webp', 26, 3);
@@ -940,6 +987,12 @@ const M = {
   }),
   navWhite: new THREE.MeshStandardMaterial({
     color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.2, roughness: 0.4,
+  }),
+  volleyball: new THREE.MeshStandardMaterial({
+    map: makeVolleyballTexture(), roughness: 0.55, metalness: 0.05,
+  }),
+  paddleBall: new THREE.MeshStandardMaterial({
+    color: 0xf2e432, roughness: 0.75,
   }),
   // Flat-shaded so every facet catches the sun differently — that, and three
   // tones alternating, is what turns a row of identical grey balls into scree.
@@ -4140,46 +4193,59 @@ try {
     }
 
     // --- Ball and paddle: PAIRS that face each other and share one clock ----
-    // Built as pairs rather than as six loose figures: separately placed they
-    // each got their own facing (both ended up turned away from the other) and
-    // their own random phase, so nobody was ever reaching when the ball was
-    // actually on their side.
+    // 1. Center Court Volleyball: Match played directly across the net at (60, -12)
+    // 2. Open Sand Volleyball: Casual beach rally
+    // 3. Open Sand Beach Volleyball 2
+    // 4. Beach Paddle / Frescobol: Wooden bats & fast yellow ball
     const GAMES = [
-      { a: [46, -6], b: [54, -6], paddle: false },
-      { a: [70, -14], b: [78, -14], paddle: false },
-      { a: [-22, -12], b: [-14, -12], paddle: true },
+      { a: [60, -16.0], b: [60, -8.0], paddle: false, arc: 2.2, period: 3.2, radius: 0.13 },
+      { a: [46, -6.0], b: [54, -6.0], paddle: false, arc: 1.6, period: 2.8, radius: 0.13 },
+      { a: [72, -18.0], b: [80, -18.0], paddle: false, arc: 1.7, period: 2.9, radius: 0.13 },
+      { a: [-22, -12.0], b: [-14, -12.0], paddle: true, arc: 0.65, period: 1.9, radius: 0.055 },
     ];
     GAMES.forEach((g, gi) => {
-      const mx = (g.a[0] + g.b[0]) / 2, mz = (g.a[1] + g.b[1]) / 2;
-      const half = Math.abs(g.b[0] - g.a[0]) / 2;
+      const dx = g.b[0] - g.a[0], dz = g.b[1] - g.a[1];
+      const dist = Math.hypot(dx, dz) || 1;
+      const nx = dx / dist, nz = dz / dist;
       const phase = rnd() * 6.28;
       const made = [];
+
+      // Forward reach offset in front of player for contact (forearms in bump, racket in paddle)
+      const reachDist = g.paddle ? 0.58 : 0.52;
+      const reachH = g.paddle ? 1.22 : 1.08;
+
+      const PA = new THREE.Vector3(
+        g.a[0] + nx * reachDist,
+        terrainHeight(g.a[0], g.a[1]) + reachH,
+        g.a[1] + nz * reachDist
+      );
+      const PB = new THREE.Vector3(
+        g.b[0] - nx * reachDist,
+        terrainHeight(g.b[0], g.b[1]) + reachH,
+        g.b[1] - nz * reachDist
+      );
+
       [g.a, g.b].forEach(([px, pz], side) => {
         const p = poseHolder(G(gi * 2 + side), customRig, holder => {
           holder.position.set(px, terrainHeight(px, pz), pz);
-          // Face the OTHER player. These models look down their own +Z, so a
-          // quarter turn towards increasing x is +PI/2.
-          holder.rotation.y = px < mx ? Math.PI / 2 : -Math.PI / 2;
+          // Face the other player directly across the baseline
+          holder.rotation.y = side === 0 ? Math.atan2(dx, dz) : Math.atan2(-dx, -dz);
         });
         if (!p) return;
-        p.pose.state.spread = 0.16;
-        p.pose.state.hip = [0.42, 0.38];
-        p.pose.state.knee = [-0.62, -0.55];
+        p.pose.state.spread = 0.18;
+        p.pose.state.hip = [0.40, 0.36];
+        p.pose.state.knee = [-0.58, -0.52];
         p.pose.state.ankle = 0.12;
-        p.pose.state.lean = 0.08;
-        // Mixamo T-pose points +X. Positive armOut on this rig swings BACK;
-        // negative armOut + high flex puts both hands in front of the waist
-        // (a volleyball platform). The old 0.95 / +0.16 path left them in
-        // a droopy T-pose and the hit swung through the bind, which is the
-        // scarecrow the camera was seeing.
+        p.pose.state.lean = 0.10;
         if (g.paddle) {
           p.pose.state.arm = [0.85, 1.15];
           p.pose.state.armOut = [0.22, -0.35];
           p.pose.state.forearm = [0.45, 0.7];
         } else {
-          p.pose.state.arm = [1.50, 1.48];
-          p.pose.state.armOut = [-0.22, -0.20];
-          p.pose.state.forearm = [0.55, 0.58];
+          // Ready bump platform: hands held together in front of the body
+          p.pose.state.arm = [1.38, 1.36];
+          p.pose.state.armOut = [-0.30, -0.28];
+          p.pose.state.forearm = [0.36, 0.38];
         }
         p.pose();
         p.kind = 'player';
@@ -4203,7 +4269,6 @@ try {
             if (!hand && o.isBone && /RightHand$/.test(o.name)) hand = o;
           });
           if (hand) {
-            // Mixamo bones run along +Y; sit the grip in the palm.
             bat.position.set(0.02, 0.1, 0.01);
             bat.rotation.set(1.15, 0.15, 0.35);
             hand.add(bat);
@@ -4216,14 +4281,15 @@ try {
       });
       if (made.length !== 2) return;
       const ball = new THREE.Mesh(
-        new THREE.SphereGeometry(g.paddle ? 0.05 : 0.15, 12, 9),
-        new THREE.MeshStandardMaterial({ color: g.paddle ? 0xf2e85c : 0xf4f0e2, roughness: 0.7 }));
+        new THREE.SphereGeometry(g.radius, g.paddle ? 10 : 20, g.paddle ? 8 : 14),
+        g.paddle ? M.paddleBall : M.volleyball
+      );
       ball.castShadow = true;
       scene.add(ball);
       beachPeople.push({
-        kind: 'rally', group: ball, mx, mz, half, phase,
-        base: terrainHeight(mx, mz), arc: g.paddle ? 0.6 : 1.5,
-        rest: g.paddle ? 1.0 : 1.7, A: made[0], B: made[1],
+        kind: 'rally', group: ball, PA, PB, phase,
+        arc: g.arc, period: g.period, paddle: g.paddle,
+        A: made[0], B: made[1],
       });
     });
 
@@ -4507,41 +4573,65 @@ function tickPeople(dt, t) {
         break;
       }
       case 'rally': {
-        // One clock for the ball and both players. Mixamo bind is a T-pose
-        // along +X: flex ~1.5 drops the arms, negative armOut swings them
-        // FORWARD. Lerping flex through 0 is a jumping-jack (the scarecrow
-        // screenshot). Volleyball is a platform bump in front of the body.
-        const s = Math.sin(t * 1.1 + p.phase);
-        p.group.position.set(
-          p.mx + s * p.half,
-          p.base + p.rest + Math.abs(Math.cos(t * 1.1 + p.phase)) * p.arc,
-          p.mz);
-        const reach = [Math.max(0, -s), Math.max(0, s)];
+        const T = p.period || 3.0;
+        const tCyc = (t + p.phase) % T;
+        const tNorm = tCyc / T; // 0 to 1
+        const isAtoB = tNorm < 0.5;
+        const u = isAtoB ? (tNorm / 0.5) : ((tNorm - 0.5) / 0.5); // 0 to 1 flight progress
+        const pFrom = isAtoB ? p.PA : p.PB;
+        const pTo = isAtoB ? p.PB : p.PA;
+
+        // True ballistic parabolic trajectory
+        const bx = pFrom.x + (pTo.x - pFrom.x) * u;
+        const bz = pFrom.z + (pTo.z - pFrom.z) * u;
+        const by = (1 - u) * pFrom.y + u * pTo.y + 4.0 * p.arc * u * (1.0 - u);
+        p.group.position.set(bx, by, bz);
+
+        // Continuous rotational spin in flight
+        p.group.rotation.x += dt * 4.8 * (isAtoB ? 1 : -1);
+        p.group.rotation.y += dt * 2.2;
+
+        // Dynamic player bump / manchette and anticipation
+        const dtA = Math.min(tNorm, 1.0 - tNorm);
+        const hitA = dtA < 0.16 ? Math.cos((dtA / 0.16) * (Math.PI / 2)) : 0;
+        const prepA = tNorm > 0.80 ? Math.sin((tNorm - 0.80) / 0.20 * Math.PI) : 0;
+
+        const dtB = Math.abs(tNorm - 0.5);
+        const hitB = dtB < 0.16 ? Math.cos((dtB / 0.16) * (Math.PI / 2)) : 0;
+        const prepB = (tNorm > 0.30 && tNorm < 0.50) ? Math.sin((tNorm - 0.30) / 0.20 * Math.PI) : 0;
+
         for (const q of [p.A, p.B]) {
-          const r = reach[q.side];
-          const hit = r * r * (3 - 2 * r); // smoothstep into the hit
+          const hit = q.side === 0 ? hitA : hitB;
+          const prep = q.side === 0 ? prepA : prepB;
+
           if (q.paddle) {
-            q.pose.state.arm[0] = 0.85 + hit * 0.1;
-            q.pose.state.arm[1] = 1.15 - hit * 0.55;
-            q.pose.state.armOut = [0.22 - hit * 0.05, -0.35 - hit * 0.55];
-            q.pose.state.forearm = [0.45, 0.7 - hit * 0.45];
-            q.pose.state.lean = 0.04 - hit * 0.12;
+            q.pose.state.arm[0] = 0.85 + hit * 0.12;
+            q.pose.state.arm[1] = 1.15 - hit * 0.60;
+            q.pose.state.armOut = [0.22 - hit * 0.05, -0.35 - hit * 0.60];
+            q.pose.state.forearm = [0.45, 0.70 - hit * 0.48];
+            q.pose.state.lean = 0.04 + prep * 0.06 - hit * 0.14;
+            q.pose.state.hip = [0.42 - hit * 0.16, 0.38 - hit * 0.12];
+            q.pose.state.knee = [-0.62 + hit * 0.28, -0.55 + hit * 0.22];
+            if (q.sandY != null) q.group.position.y = q.sandY + hit * 0.14;
           } else {
-            q.pose.state.arm[0] = 1.50 - hit * 0.35;
-            q.pose.state.arm[1] = 1.48 - hit * 0.33;
-            q.pose.state.armOut = [-0.22 - hit * 0.73, -0.20 - hit * 0.75];
-            q.pose.state.forearm = [0.55 - hit * 0.21, 0.58 - hit * 0.24];
-            q.pose.state.lean = 0.08 - hit * 0.16;
+            // Volleyball: crouch prep -> explosive upward push through legs & forearms
+            q.pose.state.knee = [-0.58 - prep * 0.16 + hit * 0.28, -0.52 - prep * 0.16 + hit * 0.28];
+            q.pose.state.hip = [0.40 + prep * 0.12 - hit * 0.18, 0.36 + prep * 0.12 - hit * 0.18];
+            q.pose.state.spread = 0.18;
+            q.pose.state.ankle = 0.12;
+
+            // Arms: ready low platform -> locked tight manchette lifting through the ball
+            q.pose.state.arm[0] = 1.38 - hit * 0.42;
+            q.pose.state.arm[1] = 1.36 - hit * 0.42;
+            q.pose.state.armOut = [-0.30 - hit * 0.14, -0.28 - hit * 0.14];
+            q.pose.state.forearm = [0.36 - hit * 0.16, 0.38 - hit * 0.16];
+            q.pose.state.lean = 0.12 + prep * 0.08 - hit * 0.18;
+
+            if (q.sandY != null) q.group.position.y = q.sandY - prep * 0.05 + hit * 0.12;
           }
-          q.pose.state.hip = [0.42 - hit * 0.16, 0.38 - hit * 0.12];
-          q.pose.state.knee = [-0.62 + hit * 0.28, -0.55 + hit * 0.22];
-          q.pose.state.spread = 0.16;
-          q.pose.state.ankle = 0.12;
-          if (q.sandY != null) q.group.position.y = q.sandY + hit * 0.16;
+
           q.mixer.update(0);
           q.pose();
-          // The holder already carries the hop; this puts the soles on it
-          // rather than 6 cm above, which is what the crouch was costing.
           standSolesOn(q, q.group.position.y);
         }
         break;
