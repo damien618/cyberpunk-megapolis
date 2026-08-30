@@ -690,6 +690,20 @@ const G = {
   // Umbrella canopies want facets, not a smooth cone — a beach parasol is
   // eight panels over eight ribs.
   canopy: withUV2(new THREE.ConeGeometry(0.5, 1, 8).translate(0, 0.5, 0)),
+  // Hoist at the origin, flying +X. Used as the pennant on the one free
+  // parasol the player can lie under.
+  pennant: withUV2((() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([
+      0, 0.42, 0,  1.65, 0, 0,  0, -0.42, 0,
+    ], 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute([
+      0, 0, 1,  0, 0, 1,  0, 0, 1,
+    ], 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 0.5, 0, 0], 2));
+    g.setIndex([0, 1, 2]);
+    return g;
+  })()),
   trunk: withUV2(new THREE.CylinderGeometry(0.34, 0.5, 1, 9).translate(0, 0.5, 0)),
   // Half a capsule on its side: every boat hull on this map.
   hull: withUV2(new THREE.SphereGeometry(0.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2)
@@ -2515,6 +2529,56 @@ function parasol(fabric, tilt) {
   // making a 5 m disc solid would hang an invisible ceiling over the beach.
   shape(G.sphere, M.deckWood, lean, 3.24, 0, 0.17, 0.2, 0.17, { rz: tilt });
 }
+// Marker flags for the free shaded towel. MeshBasic so they stay readable at
+// night and from the unlit back face; the vane billboards toward the camera
+// so a thin pennant is never seen edge-on from the promenade.
+const FLAG_CLOTH = new THREE.MeshBasicMaterial({
+  color: 0xff2a12, side: THREE.DoubleSide, fog: true,
+});
+const FLAG_BAND = new THREE.MeshBasicMaterial({
+  color: 0xfff4e6, side: THREE.DoubleSide, fog: true,
+});
+let beachLieFlag = null;
+function makeFlagVane(mastH, pennantScale) {
+  const root = new THREE.Group();
+  const mast = new THREE.Mesh(G.cylBase, M.steel);
+  mast.scale.set(0.05, mastH, 0.05);
+  mast.castShadow = true;
+  const ball = new THREE.Mesh(G.sphere, M.steel);
+  ball.position.y = mastH;
+  ball.scale.set(0.13, 0.13, 0.13);
+  const vane = new THREE.Group();
+  vane.position.y = mastH * 0.62;
+  const cloth = new THREE.Mesh(G.pennant, FLAG_CLOTH);
+  cloth.scale.setScalar(pennantScale);
+  const band = new THREE.Mesh(G.card, FLAG_BAND);
+  band.scale.set(0.14, 0.84 * pennantScale, 1);
+  band.position.set(0.07, 0, 0.01);
+  vane.add(cloth, band);
+  root.add(mast, ball, vane);
+  root.frustumCulled = false;
+  return { root, vane };
+}
+function addParasolFlag(gx, gz, pyaw, tilt) {
+  const gy = terrainHeight(gx, gz);
+  const lean = Math.sin(tilt) * -1.9;
+  const c = Math.cos(pyaw), s = Math.sin(pyaw);
+  const flag = makeFlagVane(1.85, 1.35);
+  // Sit the mast on the finial, not inside the cone, so it reads against the sky.
+  flag.root.position.set(gx + lean * c, gy + 3.40, gz - lean * s);
+  scene.add(flag.root);
+  return flag;
+}
+function addTowelPin(tx, tz, yaw) {
+  const gy = terrainHeight(tx, tz);
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  // Pillow corner, off the lying body.
+  const lx = 0.58, lz = -1.02;
+  const pin = makeFlagVane(1.35, 0.55);
+  pin.root.position.set(tx + lx * c + lz * s, gy, tz - lx * s + lz * c);
+  scene.add(pin.root);
+  return pin;
+}
 function towel(fabric) {
   prop(() => box(fabric, 0, 0.03, 0, 1.0, 0.06, 2.1));
   box(M.fabricWhite, 0, 0.09, -0.78, 0.44, 0.1, 0.32);   // rolled-up sweater as a pillow
@@ -2531,23 +2595,115 @@ function cooler() {
 // Clusters, not a grid: people on a beach sit in groups, and an even spread
 // reads as parking bays.
 const PITCHES = [];
+// Afternoon sun from TIME_STATES.day. The table is declared with the lighting
+// later, but shade has to be laid now, with the towels. West-facing beach, so
+// the shadow of a 2 m canopy falls about a metre east and a little inland.
+const DAY_SUN = new THREE.Vector3(-80, 155, -20).normalize();
+const CANOPY_R = 2.35;
+const CANOPY_H = 2.0;
+function canopyShadeCenter(canopyX, canopyZ) {
+  return {
+    x: canopyX - CANOPY_H * DAY_SUN.x / DAY_SUN.y,
+    z: canopyZ - CANOPY_H * DAY_SUN.z / DAY_SUN.y,
+  };
+}
+function inCanopyShade(tx, tz, canopyX, canopyZ) {
+  const s = canopyShadeCenter(canopyX, canopyZ);
+  return Math.hypot(tx - s.x, tz - s.z) <= CANOPY_R * 0.78;
+}
+
+const shadedPitches = [];
 for (let g = 0; g < 22; g++) {
   const gx = -128 + rnd() * 256;
   const gz = -34 + rnd() * 48;
   if (Math.abs(gx) > BEACH_HALF_W - 14) continue;
   if (!clearOfPier(gx)) continue;
   const fabric = pick(FABRICS);
-  onGround(gx, gz, rnd() * 6.3, () => parasol(fabric, (rnd() - 0.5) * 0.24));
+  const tilt = (rnd() - 0.5) * 0.24;
+  const pyaw = rnd() * 6.3;
+  const lean = Math.sin(tilt) * -1.9;
+  onGround(gx, gz, pyaw, () => parasol(fabric, tilt));
+  const pc = Math.cos(pyaw), ps = Math.sin(pyaw);
+  const canopyX = gx + lean * pc;
+  const canopyZ = gz - lean * ps;
+  const shade = canopyShadeCenter(canopyX, canopyZ);
   const towels = 1 + Math.floor(rnd() * 3);
   for (let t = 0; t < towels; t++) {
-    const a = rnd() * Math.PI * 2;
-    const r = 1.9 + rnd() * 1.5;
-    const tx = gx + Math.cos(a) * r, tz = gz + Math.sin(a) * r;
+    let tx, tz, a;
+    if (t === 0) {
+      // First towel of the group goes in the afternoon shade, just off the
+      // pole so the mast is not in the middle of the back.
+      tx = shade.x;
+      tz = shade.z;
+      const dx = tx - gx, dz = tz - gz;
+      const d = Math.hypot(dx, dz);
+      if (d < 1.15) {
+        const ux = d > 0.08 ? dx / d : 0;
+        const uz = d > 0.08 ? dz / d : 1;
+        tx = gx + ux * 1.15;
+        tz = gz + uz * 1.15;
+      }
+      a = Math.atan2(tz - gz, tx - gx);
+    } else {
+      a = rnd() * Math.PI * 2;
+      const r = 1.9 + rnd() * 1.5;
+      tx = gx + Math.cos(a) * r;
+      tz = gz + Math.sin(a) * r;
+    }
     if (!clearOfPier(tx)) continue;
-    onGround(tx, tz, a + Math.PI / 2, () => towel(pick(FABRICS)));
-    PITCHES.push([tx, tz, a + Math.PI / 2]);
+    if (Math.abs(tx) > BEACH_HALF_W - 14) continue;
+    const yaw = a + Math.PI / 2;
+    onGround(tx, tz, yaw, () => towel(pick(FABRICS)));
+    const pitch = [tx, tz, yaw];
+    PITCHES.push(pitch);
+    if (inCanopyShade(tx, tz, canopyX, canopyZ)) {
+      shadedPitches.push({ pitch, gx, gz, pyaw, tilt });
+    }
   }
   if (rnd() > 0.45) onGround(gx + 1.6, gz + 1.9, rnd() * 3, cooler);
+}
+
+// One free towel, in the shade, marked with a pennant so you can find it from
+// the promenade. Prefer the middle of the bay, at the foot of the centre
+// stairs — that is the shot you walk into.
+let reservedPitch = null;
+let beachLieInteraction = null;
+{
+  let best = null, bestScore = Infinity;
+  for (const c of shadedPitches) {
+    const [tx, tz] = c.pitch;
+    const score = Math.hypot(tx, tz - 6);
+    if (score < bestScore) { bestScore = score; best = c; }
+  }
+  if (best) {
+    reservedPitch = best.pitch;
+    const [tx, tz, yaw] = best.pitch;
+    const gy = terrainHeight(tx, tz);
+    const topFlag = addParasolFlag(best.gx, best.gz, best.pyaw, best.tilt);
+    const pinFlag = addTowelPin(tx, tz, yaw);
+    beachLieFlag = { top: topFlag, pin: pinFlag };
+    // The pack rig's origin is the standing feet. Tipped onto its back that
+    // puts the pelvis on the rolled sweater (local −Z) and floats the whole
+    // body 8 cm over the cloth. Slide the rest point toward the foot of the
+    // towel so the hips land on the yellow mat and the head at the pillow —
+    // the same shift the sunbathers already use (`body.position.z = 0.82`).
+    const lieAlong = 0.90;
+    const sy = Math.sin(yaw), cy = Math.cos(yaw);
+    beachLieInteraction = {
+      type: 'lie',
+      x: tx + lieAlong * sy,
+      y: gy + TOWEL_TOP,
+      z: tz + lieAlong * cy,
+      centerX: tx,
+      centerZ: tz,
+      approachY: gy,
+      yaw,
+      halfWidth: 0.5,
+      halfDepth: 1.05,
+      triggerDistance: 0.95,
+      label: "S'allonger",
+    };
+  }
 }
 
 // Volleyball court — poles, net and a taped-out rectangle.
@@ -3435,7 +3591,7 @@ try {
     // PITCHES was recorded when the towels were laid so the two cannot drift
     // apart; a sunbather beside her towel is worse than no sunbather.
     const lying = guests.length
-      ? PITCHES.filter(() => rnd() < 0.62).slice(0, 26)
+      ? PITCHES.filter(p => p !== reservedPitch && rnd() < 0.62).slice(0, 26)
       : [];
     for (let i = 0; i < lying.length; i++) {
       const [tx, tz, tyaw] = lying[i];
@@ -3949,6 +4105,12 @@ let travelInProgress = false;
 let actionPrompt = null;           // { kind, label }
 let ferrisActionRequested = false;
 let ferrisCooldown = 0;
+let lieActionRequested = false;
+let activeFurnitureInteraction = null;
+let furnitureCooldown = 0;
+let releasedSpot = null;
+const RELEASE_RADIUS = 1.6;
+const interactionExitKeys = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyE'];
 
 // ---------------------------------------------------------------------------
 // Shared action prompt. Travel home and boarding the wheel both use the one
@@ -3974,6 +4136,7 @@ furniturePrompt.addEventListener('click', event => {
   event.stopPropagation();
   if (!actionPrompt || travelInProgress) return;
   if (actionPrompt.kind === 'travel') travelDestinationRequested = 'la';
+  else if (actionPrompt.kind === 'lie') lieActionRequested = true;
   else if (actionPrompt.kind === 'ferris') {
     ferrisActionRequested = true;
     const car = ferrisBottomCar();
@@ -3991,17 +4154,86 @@ renderer.domElement.addEventListener('click', () => {
   if (started && !paused && !choosingPrompt && !input.locked) requestGamePointerLock();
 });
 
-function nearTravelCar() {
-  const spot = beachTravelInteraction;
-  const dx = ctrl.pos.x - spot.centerX;
-  const dz = ctrl.pos.z - spot.centerZ;
+function distanceToFurniture(spot, position) {
+  const dx = position.x - spot.centerX;
+  const dz = position.z - spot.centerZ;
   const c = Math.cos(spot.yaw), s = Math.sin(spot.yaw);
   const localX = dx * c - dz * s;
   const localZ = dx * s + dz * c;
   const ox = Math.max(0, Math.abs(localX) - spot.halfWidth);
   const oz = Math.max(0, Math.abs(localZ) - spot.halfDepth);
+  return Math.hypot(ox, oz);
+}
+
+function nearTravelCar() {
+  const spot = beachTravelInteraction;
   if (Math.abs(ctrl.pos.y - spot.approachY) > 1.25) return false;
-  return Math.hypot(ox, oz) <= spot.triggerDistance;
+  return distanceToFurniture(spot, ctrl.pos) <= spot.triggerDistance;
+}
+
+function nearLieSpot() {
+  const spot = beachLieInteraction;
+  if (!spot || furnitureCooldown > 0 || ctrl.mode !== 'ground') return false;
+  if (releasedSpot === spot) return false;
+  if (Math.abs(ctrl.pos.y - spot.approachY) > 0.9) return false;
+  return distanceToFurniture(spot, ctrl.pos) <= spot.triggerDistance;
+}
+
+function enterLie() {
+  const spot = beachLieInteraction;
+  if (!spot) return;
+  setActionPrompt(null);
+  activeFurnitureInteraction = {
+    ...spot,
+    source: spot,
+    returnPosition: ctrl.pos.clone(),
+    readyToExit: false,
+  };
+  ctrl.pos.set(spot.x, spot.y, spot.z);
+  ctrl.prevY = spot.y;
+  ctrl.vel.set(0, 0, 0);
+  ctrl.mode = 'lie';
+  ctrl.webOn = false;
+  lieActionRequested = false;
+  if (Number.isFinite(spot.yaw)) {
+    input.yaw = spot.yaw + Math.PI;
+    if (player) player.yaw = spot.yaw;
+  }
+}
+
+function leaveLie() {
+  const interaction = activeFurnitureInteraction;
+  if (!interaction) return;
+  ctrl.pos.copy(interaction.returnPosition);
+  ctrl.prevY = ctrl.pos.y;
+  ctrl.vel.set(0, 0, 0);
+  ctrl.mode = 'ground';
+  releasedSpot = interaction.source;
+  activeFurnitureInteraction = null;
+  furnitureCooldown = 0.65;
+  setActionPrompt(null);
+}
+
+function updateLieInteraction(dt) {
+  furnitureCooldown = Math.max(0, furnitureCooldown - dt);
+  if (releasedSpot && distanceToFurniture(releasedSpot, ctrl.pos) > RELEASE_RADIUS)
+    releasedSpot = null;
+  if (!activeFurnitureInteraction) return false;
+
+  setActionPrompt(null);
+  if (input.pressed('KeyR')) {
+    activeFurnitureInteraction = null;
+    furnitureCooldown = 0.65;
+    ctrl.rescueTo(spawnPoint);
+    return true;
+  }
+  const held = interactionExitKeys.some(k => input.down(k));
+  if (!held) activeFurnitureInteraction.readyToExit = true;
+  if (held && activeFurnitureInteraction.readyToExit) {
+    leaveLie();
+    return false;
+  }
+  return true;
 }
 
 function nearFerrisBoard() {
@@ -4143,10 +4375,11 @@ function updateTravel(dt) {
   }
   travelDestinationRequested = null;
 
-  const wantBoard = ferrisActionRequested || input.pressed('LMB') || input.pressed('KeyE');
+  const wantAction = ferrisActionRequested || lieActionRequested
+    || input.pressed('LMB') || input.pressed('KeyE');
   if (nearWheel && carReady) {
     setActionPrompt({ kind: 'ferris', label: 'Monter dans la grande roue' });
-    if (wantBoard) boardFerris(carReady);
+    if (wantAction) boardFerris(carReady);
     return;
   }
   if (nearWheel) {
@@ -4154,6 +4387,14 @@ function updateTravel(dt) {
     return;
   }
   ferrisActionRequested = false;
+
+  if (nearLieSpot()) {
+    setActionPrompt({ kind: 'lie', label: "S'allonger" });
+    if (wantAction) enterLie();
+    lieActionRequested = false;
+    return;
+  }
+  lieActionRequested = false;
   setActionPrompt(null);
 }
 
@@ -4179,17 +4420,20 @@ function updateAvatar(dt) {
   if (!player) return;
   updateAvatarOutfit();
   const riding = Boolean(ferris.ride);
+  const lying = ctrl.mode === 'lie';
   player.update({
     dt,
     mode: riding ? 'sit' : ctrl.mode,
     pos: ctrl.pos,
-    vel: riding ? _stillVel : ctrl.vel,
-    webOn: ctrl.webOn,
+    vel: (riding || lying) ? _stillVel : ctrl.vel,
+    webOn: lying ? false : ctrl.webOn,
     webHand: ctrl.webHand,
     anchor: ctrl.anchor,
-    ropeSlack: ctrl.webOn ? Math.max(0, ctrl.pos.distanceTo(ctrl.anchor) - ctrl.ropeLen) : 0,
-    posture: riding ? 'sit' : undefined,
-    facingYaw: riding ? ferris._seatEuler.y + Math.PI : undefined,
+    ropeSlack: ctrl.webOn && !lying ? Math.max(0, ctrl.pos.distanceTo(ctrl.anchor) - ctrl.ropeLen) : 0,
+    posture: riding ? 'sit' : lying ? 'lie' : undefined,
+    facingYaw: riding ? ferris._seatEuler.y + Math.PI
+      : lying ? activeFurnitureInteraction?.yaw
+      : undefined,
     floorY: riding ? ctrl.pos.y - 0.42 : undefined,
   });
 }
@@ -4217,9 +4461,12 @@ function animate() {
     const cp = Math.cos(input.pitch);
     forward.set(-Math.sin(input.yaw) * cp, Math.sin(input.pitch), -Math.cos(input.yaw) * cp).normalize();
     if (!riding) {
-      ctrl.update(dt, input, input.yaw, forward);
-      if (ctrl.pos.y < -60) ctrl.rescueTo(spawnPoint);
-      updateTravel(dt);
+      const lying = updateLieInteraction(dt);
+      if (!lying) {
+        ctrl.update(dt, input, input.yaw, forward);
+        if (ctrl.pos.y < -60) ctrl.rescueTo(spawnPoint);
+        updateTravel(dt);
+      }
     }
   }
   // Two normal-map layers drifting at different rates: one swell rolling in,
@@ -4239,6 +4486,14 @@ function animate() {
   skyDome.position.copy(camera.position);
 
   tickPeople(dt, t);
+  if (beachLieFlag) {
+    const flutter = Math.sin(t * 3.4) * 0.14;
+    for (const part of [beachLieFlag.top, beachLieFlag.pin]) {
+      const p = part.root.position;
+      part.vane.rotation.y = Math.atan2(camera.position.x - p.x, camera.position.z - p.z);
+      part.vane.rotation.z = flutter;
+    }
+  }
   updateSunShadow(ctrl.pos);
   updateAvatar(dt);
   rig.update(dt, input, ctrl);
@@ -4284,7 +4539,7 @@ document.addEventListener('pointerlockchange', () => {
   // keep playing and leave the overlay closed. Same while on the wheel:
   // the Descendre button has to be clickable, and a failed lock must not
   // freeze the car in the sky.
-  if ((choosingPrompt || ferris.ride) && document.pointerLockElement === null) {
+  if ((choosingPrompt || ferris.ride || ctrl.mode === 'lie') && document.pointerLockElement === null) {
     paused = false;
     overlay.style.display = 'none';
     return;
@@ -4313,7 +4568,8 @@ const hook = {
   // Where phase 3 puts its sunbathers: one entry per towel already on the
   // sand, as [x, z, yaw]. Laid down here so the towels and the people on them
   // cannot drift apart.
-  PITCHES, beachPeople,
+  PITCHES, reservedPitch, beachLieInteraction, beachLieFlag,
+  enterLie, leaveLie, beachPeople,
   get beachTime() { return beachTime; },
 };
 window.__beach = hook;
