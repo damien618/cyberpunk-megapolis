@@ -23,6 +23,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { buildBareLowerLegs, hideAuthoredLowerLegs } from './limbs.js?v=40';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
 
@@ -280,6 +281,321 @@ export function dressGuestAtlasDark(map, shirtHex) {
   return t;
 }
 
+// Venice / Ocean Front Walk, not a zoo morning: coral tees, swim shorts,
+// the odd white tank. Applied through dressGuestBeach so the RPM jeans
+// become shorts and the calves become skin.
+const BEACH_TEES = [0xf4efe4, 0xff6b4a, 0x3ec1d3, 0xffd166, 0xef476f,
+  0x06d6a0, 0x118ab2, 0xff9f1c, 0x7b2cbf, 0x2ec4b6, 0xe71d36, 0xf7fff7, 0x4cc9f0];
+const BEACH_SHORTS = [0xe8d5a3, 0x4a90a4, 0xd4a574, 0x2c5f7c, 0xf2f2f0,
+  0xc45c26, 0x3d5a3a, 0x5b6b7a, 0xe07a5f, 0x81b29a, 0x1d3557, 0xcad2c5];
+
+const BEACH_SHOES = [0xf2eee6, 0x1c1c1e, 0x2a4a7a, 0xc45c26, 0x3d5a3a,
+  0xe8d5a3, 0x2b2e32, 0x8b2942, 0x4a90a4, 0xd9c4a0, 0x5c4033];
+
+const BEACH_SHORTS_PX = 1;
+const BEACH_SKIN_PX = 2;
+const BEACH_SHOE_PX = 3;
+
+function beachBoneKind(name) {
+  const n = String(name || '').replace(/^mixamorig:?/i, '');
+  if (/foot|toe/i.test(n)) return 'foot';
+  if (/upleg/i.test(n)) return 'thigh';
+  if (/leg$/i.test(n)) return 'calf';
+  if (/hips|spine/i.test(n)) return 'hips';
+  return '';
+}
+
+/**
+ * One mask per guest template: jeans UV island above a mid-thigh hem is
+ * shorts, calves are skin, shoe islands stay shoes. Built from bind pose
+ * + bone weights, not from a rectangle — the eye lives in the same
+ * quadrant as the sneaker.
+ */
+function buildBeachMask(root) {
+  let mesh = null;
+  root.traverse(o => { if (!mesh && o.isSkinnedMesh) mesh = o; });
+  if (!mesh?.skeleton || !mesh.geometry) return null;
+  const geo = mesh.geometry;
+  const pos = geo.attributes.position;
+  const uv = geo.attributes.uv;
+  const skinIndex = geo.attributes.skinIndex;
+  const skinWeight = geo.attributes.skinWeight;
+  const index = geo.index;
+  if (!pos || !uv || !skinIndex || !skinWeight || !index) return null;
+  const bones = mesh.skeleton.bones;
+  const nVert = pos.count;
+  const kind = new Array(nVert);
+  const uArr = new Float32Array(nVert);
+  const vArr = new Float32Array(nVert);
+  for (let i = 0; i < nVert; i++) {
+    let best = 0, bw = -1;
+    for (let k = 0; k < 4; k++) {
+      const w = skinWeight.getComponent(i, k);
+      if (w > bw) { bw = w; best = skinIndex.getComponent(i, k); }
+    }
+    kind[i] = beachBoneKind(bones[best]?.name);
+    uArr[i] = uv.getX(i);
+    vArr[i] = uv.getY(i);
+  }
+  const yArr = new Float32Array(nVert);
+  for (let i = 0; i < nVert; i++) yArr[i] = pos.getY(i);
+  // Mid-thigh in bind pose. Painting the UV by interpolated Y (not by a
+  // majority vote on the triangle) is what keeps the hem a ring instead of
+  // a sawtooth.
+  const HEM = 0.80;
+  const W = 1024, H = 1024;
+  const data = new Uint8Array(W * H);
+  const fillTri = (i0, i1, i2, foot) => {
+    const u0 = uArr[i0] * (W - 1), v0 = vArr[i0] * (H - 1);
+    const u1 = uArr[i1] * (W - 1), v1 = vArr[i1] * (H - 1);
+    const u2 = uArr[i2] * (W - 1), v2 = vArr[i2] * (H - 1);
+    let minx = Math.floor(Math.min(u0, u1, u2));
+    let maxx = Math.ceil(Math.max(u0, u1, u2));
+    let miny = Math.floor(Math.min(v0, v1, v2));
+    let maxy = Math.ceil(Math.max(v0, v1, v2));
+    if (maxx < 0 || maxy < 0 || minx >= W || miny >= H) return;
+    minx = Math.max(0, minx); miny = Math.max(0, miny);
+    maxx = Math.min(W - 1, maxx); maxy = Math.min(H - 1, maxy);
+    const abx = u1 - u0, aby = v1 - v0;
+    const acx = u2 - u0, acy = v2 - v0;
+    const den = abx * acy - acx * aby;
+    const y0 = yArr[i0], y1 = yArr[i1], y2 = yArr[i2];
+    if (Math.abs(den) < 1e-8) {
+      const k = foot ? BEACH_SHOE_PX : (y0 >= HEM ? BEACH_SHORTS_PX : BEACH_SKIN_PX);
+      for (let y = miny; y <= maxy; y++) {
+        for (let x = minx; x <= maxx; x++) {
+          const i = y * W + x;
+          if (!data[i]) data[i] = k;
+        }
+      }
+      return;
+    }
+    const inv = 1 / den;
+    for (let y = miny; y <= maxy; y++) {
+      for (let x = minx; x <= maxx; x++) {
+        const px = x + 0.5 - u0, py = y + 0.5 - v0;
+        const a = (px * acy - acx * py) * inv;
+        const b = (abx * py - px * aby) * inv;
+        if (a < -0.02 || b < -0.02 || a + b > 1.02) continue;
+        const yy = y0 * (1 - a - b) + y1 * a + y2 * b;
+        data[y * W + x] = foot ? BEACH_SHOE_PX
+          : (yy < HEM ? BEACH_SKIN_PX : BEACH_SHORTS_PX);
+      }
+    }
+  };
+  const triN = index.count;
+  for (let t = 0; t < triN; t += 3) {
+    const i0 = index.getX(t), i1 = index.getX(t + 1), i2 = index.getX(t + 2);
+    if (uArr[i0] < 0.48 && uArr[i1] < 0.48 && uArr[i2] < 0.48) continue;
+    const foot = kind[i0] === 'foot' || kind[i1] === 'foot' || kind[i2] === 'foot';
+    const leg = foot
+      || kind[i0] === 'thigh' || kind[i1] === 'thigh' || kind[i2] === 'thigh'
+      || kind[i0] === 'calf' || kind[i1] === 'calf' || kind[i2] === 'calf'
+      || kind[i0] === 'hips' || kind[i1] === 'hips' || kind[i2] === 'hips';
+    if (!leg) continue;
+    fillTri(i0, i1, i2, foot);
+  }
+  return { w: W, h: H, data };
+}
+
+function sampleFaceSkin(p, w, h) {
+  let r = 0, g = 0, b = 0, n = 0;
+  const x1 = w >> 1, y1 = h >> 1;
+  for (let y = 0; y < y1; y += 2) {
+    for (let x = 0; x < x1; x += 2) {
+      const i = (y * w + x) * 4;
+      const R = p[i], G = p[i + 1], B = p[i + 2];
+      const lum = 0.3 * R + 0.59 * G + 0.11 * B;
+      if (lum < 90 || R < 80 || R < B) continue;
+      r += R; g += G; b += B; n++;
+    }
+  }
+  if (!n) return { r: 210, g: 160, b: 128 };
+  return { r: r / n, g: g / n, b: b / n };
+}
+
+function atlasToCanvas(map) {
+  const img = map?.image;
+  if (!img) return null;
+  const w = img.width || img.videoWidth, h = img.height || img.videoHeight;
+  if (!w || !h) return null;
+  const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  return { c, ctx, w, h, data: ctx.getImageData(0, 0, w, h) };
+}
+
+function canvasTexture(c, map) {
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.flipY = map.flipY;
+  t.wrapS = map.wrapS;
+  t.wrapT = map.wrapT;
+  t.anisotropy = map.anisotropy || 4;
+  t.needsUpdate = true;
+  return t;
+}
+
+function paintShirtRegion(p, w, h, shirtHex, dark) {
+  const shirt = new THREE.Color(shirtHex);
+  const x1 = w >> 1, y0 = h >> 1;
+  if (dark) {
+    let sum = 0, n = 0;
+    for (let y = y0; y < h; y++) {
+      for (let x = 0; x < x1; x++) {
+        const i = (y * w + x) * 4;
+        if (p[i + 3] < 16) continue;
+        sum += 0.3 * p[i] + 0.59 * p[i + 1] + 0.11 * p[i + 2];
+        n++;
+      }
+    }
+    const mean = Math.max(12, sum / Math.max(1, n));
+    for (let y = y0; y < h; y++) {
+      for (let x = 0; x < x1; x++) {
+        const i = (y * w + x) * 4;
+        if (p[i + 3] < 16) continue;
+        const lum = 0.3 * p[i] + 0.59 * p[i + 1] + 0.11 * p[i + 2];
+        const k = Math.min(1.45, 0.25 + 0.75 * (lum / mean));
+        p[i]     = Math.min(255, shirt.r * 255 * k);
+        p[i + 1] = Math.min(255, shirt.g * 255 * k);
+        p[i + 2] = Math.min(255, shirt.b * 255 * k);
+      }
+    }
+    return;
+  }
+  for (let y = y0; y < h; y++) {
+    for (let x = 0; x < x1; x++) {
+      const i = (y * w + x) * 4;
+      const r = p[i], g = p[i + 1], b = p[i + 2], a = p[i + 3];
+      if (a < 16) continue;
+      const lum = 0.3 * r + 0.59 * g + 0.11 * b;
+      if (lum < 14) continue;
+      const ink = lum < 72 && r < 96;
+      const fabric = lum > 88;
+      if (!ink && !fabric) continue;
+      const k = (ink ? 220 : lum) / 255;
+      p[i]     = Math.min(255, shirt.r * 255 * k);
+      p[i + 1] = Math.min(255, shirt.g * 255 * k);
+      p[i + 2] = Math.min(255, shirt.b * 255 * k);
+    }
+  }
+}
+
+function dressGuestBeach(map, mask, { shirtHex, shortsHex, shoeHex, darkShirt = false,
+  barefoot = false } = {}) {
+  const atlas = atlasToCanvas(map);
+  if (!atlas) return map;
+  const { c, ctx, w, h, data } = atlas;
+  const p = data.data;
+  paintShirtRegion(p, w, h, shirtHex, darkShirt);
+  if (mask?.data) {
+    const shorts = new THREE.Color(shortsHex);
+    const shoe = new THREE.Color(shoeHex ?? 0x2b2e32);
+    const skin = sampleFaceSkin(p, w, h);
+    const mw = mask.w, mh = mask.h, md = mask.data;
+    for (let y = 0; y < h; y++) {
+      const my = Math.min(mh - 1, (y * mh / h) | 0);
+      for (let x = 0; x < w; x++) {
+        const m = md[my * mw + Math.min(mw - 1, (x * mw / w) | 0)];
+        if (!m) continue;
+        const i = (y * w + x) * 4;
+        if (p[i + 3] < 16) continue;
+        const lum = 0.3 * p[i] + 0.59 * p[i + 1] + 0.11 * p[i + 2];
+        const lift = 0.42 + 0.58 * Math.min(1, lum / 70);
+        if (m === BEACH_SHORTS_PX) {
+          p[i]     = Math.min(255, shorts.r * 255 * lift);
+          p[i + 1] = Math.min(255, shorts.g * 255 * lift);
+          p[i + 2] = Math.min(255, shorts.b * 255 * lift);
+        } else if (m === BEACH_SHOE_PX) {
+          if (barefoot) {
+            const k = 0.84 + 0.2 * lift;
+            p[i]     = Math.min(255, skin.r * k);
+            p[i + 1] = Math.min(255, skin.g * k);
+            p[i + 2] = Math.min(255, skin.b * k);
+          } else {
+            // Keep laces / rubber sole pale so the mesh still reads as a shoe
+            // instead of a skin-coloured sneaker.
+            if (lum > 125) {
+              p[i]     = Math.min(255, 232 * (0.85 + 0.15 * lift));
+              p[i + 1] = Math.min(255, 224 * (0.85 + 0.15 * lift));
+              p[i + 2] = Math.min(255, 210 * (0.85 + 0.15 * lift));
+            } else {
+              p[i]     = Math.min(255, shoe.r * 255 * lift);
+              p[i + 1] = Math.min(255, shoe.g * 255 * lift);
+              p[i + 2] = Math.min(255, shoe.b * 255 * lift);
+            }
+          }
+        } else {
+          const k = 0.84 + 0.2 * lift;
+          p[i]     = Math.min(255, skin.r * k);
+          p[i + 1] = Math.min(255, skin.g * k);
+          p[i + 2] = Math.min(255, skin.b * k);
+        }
+      }
+    }
+  }
+  ctx.putImageData(data, 0, 0);
+  return canvasTexture(c, map);
+}
+
+function sampleGuestSkin(group, fallbackHex) {
+  let found = null;
+  group.traverse(o => {
+    if (found || !o.isSkinnedMesh || String(o.name).startsWith('Wardrobe_')) return;
+    const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    for (const m of mats) {
+      if (!m?.map) continue;
+      const atlas = atlasToCanvas(m.map);
+      if (!atlas) continue;
+      const s = sampleFaceSkin(atlas.data.data, atlas.w, atlas.h);
+      found = new THREE.Color(s.r / 255, s.g / 255, s.b / 255);
+      return;
+    }
+  });
+  return found ?? new THREE.Color(fallbackHex);
+}
+
+function attachBeachShades(group, rng) {
+  const head = boneNamed(group, 'Head');
+  const le = boneNamed(group, 'LeftEye');
+  const re = boneNamed(group, 'RightEye');
+  if (!head || !le || !re) return;
+  const frames = [0x1a1a18, 0x2a1c12, 0xeeeae4, 0xc4a35a, 0x3a2214];
+  const lenses = [0x1a1a1a, 0x2a1810, 0x152030, 0x1a2818];
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: frames[(rng() * frames.length) | 0], roughness: 0.32, metalness: 0.28,
+  });
+  const lensMat = new THREE.MeshStandardMaterial({
+    color: lenses[(rng() * lenses.length) | 0], roughness: 0.06, metalness: 0.45,
+    transparent: true, opacity: 0.74,
+  });
+  const shades = new THREE.Group();
+  shades.name = 'BeachShades';
+  const ly = (le.position.y + re.position.y) * 0.5;
+  const lz = (le.position.z + re.position.z) * 0.5 + 0.028;
+  const spread = Math.abs(le.position.x - re.position.x);
+  const R = Math.max(0.022, spread * 0.44);
+  for (const side of [-1, 1]) {
+    const cx = side * spread * 0.5;
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.0035, 6, 14), frameMat);
+    rim.position.set(cx, ly, lz);
+    const lens = new THREE.Mesh(new THREE.CircleGeometry(R * 0.92, 14), lensMat);
+    lens.position.set(cx, ly, lz + 0.001);
+    const temple = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.0022, 0.0022, 0.09, 5), frameMat);
+    temple.rotation.x = Math.PI / 2;
+    temple.position.set(side * (spread * 0.5 + R * 0.4), ly, lz - 0.042);
+    shades.add(rim, lens, temple);
+  }
+  const bridgeLen = Math.max(0.01, spread - R * 1.6);
+  const bridge = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.0022, 0.0022, bridgeLen, 5), frameMat);
+  bridge.rotation.z = Math.PI / 2;
+  bridge.position.set(0, ly, lz);
+  shades.add(bridge);
+  head.add(shades);
+}
+
 /**
  * A visitor who is not the pack: her own mesh, her own walk, her own idle,
  * scaled to a standing height in metres. Clips are loaded separately because
@@ -323,7 +639,8 @@ export async function loadGuestRig({
   const walkClip = bindClipTo(pinRootXZ(rawWalk), scene);
   const idleClip = bindClipTo(pinRootXZ(rawIdle), scene);
   const { height: measured } = skinnedExtents(scene);
-  return { scene, walkClip, idleClip, kind: 'guest', recolor, measured, fitHeight: height, stride };
+  const beachMask = buildBeachMask(scene);
+  return { scene, walkClip, idleClip, kind: 'guest', recolor, measured, fitHeight: height, stride, beachMask };
 }
 
 // The two characters do not name their clothing the same way. The girl has a
@@ -474,6 +791,7 @@ const RIGS = {
     root: ['Hips'], head: ['Head'], spine: ['Spine', 'Spine1', 'Spine2'],
     thigh: ['LeftUpLeg', 'RightUpLeg'], calf: ['LeftLeg', 'RightLeg'],
     foot: ['LeftFoot', 'RightFoot'],
+    shoulder: ['LeftShoulder', 'RightShoulder'],
     upperarm: ['LeftArm', 'RightArm'], lowerarm: ['LeftForeArm', 'RightForeArm'],
     flex: 'x', abduct: 'z', flexSign: 1, abductSign: -1,
   },
@@ -527,6 +845,7 @@ function grab(root, names) {
 function limbs(root, rig) {
   return {
     thigh: grab(root, rig.thigh), calf: grab(root, rig.calf), foot: grab(root, rig.foot),
+    shoulder: rig.shoulder ? grab(root, rig.shoulder) : [null, null],
     upperarm: grab(root, rig.upperarm), lowerarm: grab(root, rig.lowerarm),
     spine: grab(root, rig.spine), head: grab(root, rig.head),
   };
@@ -559,17 +878,60 @@ export function lyingRig(group, rng = Math.random) {
   const rig = rigOf(group);
   if (!rig) return null;
   const L = limbs(group, rig);
-  const kneeUp = rng() < 0.45 ? 0.5 + rng() * 0.5 : 0;
-  const armOut = 0.9 + rng() * 0.5;
+  const mixamo = rig.kind === 'mixamo';
+  // A deep single-knee bend looks fine from the side but overlaps both calves
+  // and feet from the normal player camera. Keep the relaxed asymmetry small
+  // enough that all four limb segments retain a clean silhouette.
+  const kneeUp = rng() < 0.38 ? 0.18 + rng() * 0.16 : 0;
   const bentSide = rng() < 0.5 ? 0 : 1;
+
+  // On this Mixamo rig (RPM A-pose), smaller values are needed because it's not
+  // a strict T-pose. Too high an armOut value buries the arms inside the torso.
+  const armFlex = mixamo ? 0.15 : -0.08;
+  const armOut0 = mixamo ? 0.28 : 0.82;
+  const armOut1 = mixamo ? 0.34 : 0.94;
+  const forearm = mixamo ? 0.16 : -0.22;
+
+  // Idle writes the toe bones; pin them to bind so lofted feet cannot drift.
+  const toes = mixamo
+    ? grab(group, ['LeftToeBase', 'RightToeBase'])
+      .concat(grab(group, ['LeftToe_End', 'RightToe_End']))
+    : [];
+
   const apply = () => {
+    const s = apply.state;
     L.thigh.forEach((j, i) => {
-      if (j) setJoint(j.bone, j.rest, rig, i === bentSide ? kneeUp * 0.8 : 0.05,
-        0.12 + (i === bentSide ? 0.14 : 0), j.side);
+      if (j) setJoint(j.bone, j.rest, rig,
+        i === s.bentSide ? s.kneeUp * 0.72 : -0.04,
+        0.13 + (i === s.bentSide ? 0.06 : 0), j.side);
     });
-    L.calf.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, i === bentSide ? -kneeUp * 1.7 : -0.06); });
-    for (const j of L.upperarm) if (j) setJoint(j.bone, j.rest, rig, -0.1, armOut, j.side);
-    for (const j of L.lowerarm) if (j) setJoint(j.bone, j.rest, rig, -0.25);
+    L.calf.forEach((j, i) => {
+      if (j) setJoint(j.bone, j.rest, rig,
+        i === s.bentSide ? -s.kneeUp * 1.05 : -0.02);
+    });
+    L.foot.forEach((j, i) => {
+      if (j) setJoint(j.bone, j.rest, rig,
+        i === s.bentSide ? -0.18 : -0.24);
+    });
+    for (const j of toes) if (j) j.bone.quaternion.copy(j.rest);
+    L.shoulder.forEach((j, i) => {
+      if (j) setJoint(j.bone, j.rest, rig, 0.0, 0.0, j.side);
+    });
+    L.upperarm.forEach((j, i) => {
+      if (j) setJoint(j.bone, j.rest, rig, s.armFlex[i], s.armOut[i], j.side);
+    });
+    L.lowerarm.forEach((j, i) => {
+      if (j) setJoint(j.bone, j.rest, rig, s.forearm[i]);
+    });
+    const hd = L.head[0];
+    if (hd) setJoint(hd.bone, hd.rest, rig, 0.12, s.headTurn, 1);
+  };
+  apply.state = {
+    bentSide, kneeUp,
+    armFlex: [armFlex, armFlex + 0.02],
+    armOut: [armOut0, armOut1],
+    forearm: [forearm, forearm + 0.04],
+    headTurn: (rng() - 0.5) * 0.5,
   };
   apply.rig = rig;
   return apply;
@@ -580,19 +942,20 @@ export function groundSitRig(group, rng = Math.random) {
   const rig = rigOf(group);
   if (!rig) return null;
   const L = limbs(group, rig);
-  // Cross-legged, always: round a fire it is what people actually do, and the
   // wide knees are what make the silhouette read as sitting at all. A deeper
   // knee than this tucks the shins under the hips and buries them in the sand.
   const crossed = rng() < 0.5;
   const hip = crossed ? 1.28 : 1.16;
-  const knee = crossed ? -2.0 : -1.75;
   const spread = crossed ? 0.98 : 0.8;
   const lean = 0.12 + rng() * 0.16;
   const apply = () => {
-    for (const j of L.thigh) if (j) setJoint(j.bone, j.rest, rig, hip, spread, j.side);
-    for (const j of L.calf) if (j) setJoint(j.bone, j.rest, rig, knee);
     for (const j of L.foot) if (j) setJoint(j.bone, j.rest, rig, 0.2);
-    for (const j of L.upperarm) if (j) setJoint(j.bone, j.rest, rig, apply.state.arm, 0.22, j.side);
+    const abd = rig.kind === 'mixamo' ? 0.32 : 0.22;
+    const flex = rig.kind === 'mixamo' ? 0.7 : apply.state.arm;
+    L.shoulder.forEach((j, i) => {
+      if (j) setJoint(j.bone, j.rest, rig, 0.12, abd * 0.4, j.side);
+    });
+    for (const j of L.upperarm) if (j) setJoint(j.bone, j.rest, rig, flex, abd, j.side);
     for (const j of L.lowerarm) if (j) setJoint(j.bone, j.rest, rig, apply.state.forearm);
     const sp = L.spine[0];
     if (sp) setJoint(sp.bone, sp.rest, rig, -lean);
@@ -613,6 +976,9 @@ export function customRig(group) {
     L.thigh.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, s.hip[i], s.spread, j.side); });
     L.calf.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, s.knee[i]); });
     L.foot.forEach(j => { if (j) setJoint(j.bone, j.rest, rig, s.ankle); });
+    L.shoulder.forEach((j, i) => {
+      if (j) setJoint(j.bone, j.rest, rig, 0, (s.armOut[i] || 0) * 0.25, j.side);
+    });
     L.upperarm.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, s.arm[i], s.armOut[i], j.side); });
     L.lowerarm.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, s.forearm[i]); });
     const sp = L.spine[0];
@@ -635,9 +1001,14 @@ export function customRig(group) {
  * the walk for an idle plus the pose above. `still` is for the people who are
  * placed rather than routed — the standing shopkeepers — who were playing the
  * walk on the spot and treading the same square metre for ever.
+ * `look: 'beach'` recuts the RPM jeans into shorts, dyes a tee, and randomly
+ * hangs sunglasses on the head. `authoredBody` keeps a complete GLB outfit for
+ * poses where cutting the atlas would be more visible than city trousers.
  */
 export function makeVisitor(base, walkClip, rng,
-  { uniform = null, seated = false, still = false, idleClip = null, guest = null } = {}) {
+  { uniform = null, seated = false, still = false, playIdle = false,
+    idleClip = null, guest = null, look = null, barefoot = false,
+    authoredBody = false, authoredBeach = false } = {}) {
   const group = cloneSkinned(base);
   const isGuest = Boolean(guest) || Boolean(group.getObjectByName('Hips') && !group.getObjectByName('pelvis'));
 
@@ -667,13 +1038,19 @@ export function makeVisitor(base, walkClip, rng,
   const cut = rng();
   const style = isGirl ? (cut < 0.55 ? 'short' : 'cap')
     : (cut < 0.34 ? 'long' : cut < 0.68 ? 'short' : 'cap');
-  const wearsHat = uniform ? uniform.hat === true : (style === 'cap' || rng() < 0.2);
-  const wearsPack = uniform ? false : rng() < 0.32;
+  const beachLook = look === 'beach';
+  const wearsHat = beachLook ? false
+    : uniform ? uniform.hat === true : (style === 'cap' || rng() < 0.2);
+  const wearsPack = beachLook || uniform ? false : rng() < 0.32;
   if (uniform) {
     chosen.tshirt = uniform.shirt;
     chosen.pants = uniform.pants;
     chosen.shoes = uniform.shoes ?? chosen.shoes;
     if (uniform.hat !== undefined) chosen.hat = uniform.hatColour ?? chosen.hat;
+  } else if (beachLook) {
+    chosen.tshirt = pick(BEACH_TEES);
+    chosen.shorts = pick(BEACH_SHORTS);
+    chosen.shoes = pick(BEACH_SHOES);
   }
 
   group.traverse(o => {
@@ -683,13 +1060,52 @@ export function makeVisitor(base, walkClip, rng,
       if (!m) return m;
       const c = m.clone();
       if (isGuest) {
+        if (authoredBeach) {
+          // Quaternius' beach GLB is modular: body, legs, feet and head use
+          // separate skinned meshes and flat-colour materials. Preserve that
+          // authored geometry. On Beach_Feet only, Red_Dark is the sandal
+          // primitive; hiding it reveals the complete skin primitive beneath.
+          const objectName = o.name.toLowerCase();
+          const materialName = (c.name || '').toLowerCase();
+          const feet = objectName.includes('beach_feet');
+          const legs = objectName.includes('beach_legs');
+          const body = objectName.includes('beach_body') || objectName.includes('formal_body');
+          const head = objectName.includes('beach_head') || objectName.includes('formad_head');
+          c.visible = !(feet && materialName === 'red_dark');
+          c.metalness = 0;
+          c.roughness = 0.82;
+          c.envMapIntensity = 0.45;
+          if (materialName === 'skin') c.color.setHex(skinTone);
+          else if (materialName === 'hair' || (head && materialName === 'brown'))
+            c.color.setHex(hairColour);
+          else if (legs && materialName === 'red_dark') c.color.setHex(chosen.shorts);
+          else if (legs && materialName === 'white') c.color.setHex(0xf4ead7);
+          else if (body && materialName !== 'skin') c.color.setHex(chosen.tshirt);
+          c.needsUpdate = true;
+          return c;
+        }
         // RPM guests ship as one atlas — light fabric gets the ink-lift pass,
         // dark fabric gets the dye pass. Mixamo bodies (X Bot) are a single
         // tintable mesh: dressing an atlas region on those dyes the whole
         // person the shirt colour, which is how a clone army starts.
-        if (guest?.recolor === 'atlas-dark' && c.map) c.map = dressGuestAtlasDark(c.map, chosen.tshirt);
-        else if (guest?.recolor !== 'tint' && c.map) c.map = dressGuestAtlas(c.map, chosen.tshirt);
-        else c.color.lerp(new THREE.Color(chosen.tshirt), 0.42);
+        // Most beach visitors get the lightweight texture recut. Sunbathers
+        // keep the complete authored lower body: it is preferable to intact
+        // GLB clothes and feet than to cutting or replacing anatomy at runtime.
+        if (beachLook && c.map) {
+          c.map = dressGuestBeach(c.map, authoredBody ? null : guest?.beachMask, {
+            shirtHex: chosen.tshirt,
+            shortsHex: chosen.shorts ?? pick(BEACH_SHORTS),
+            shoeHex: chosen.shoes ?? pick(BEACH_SHOES),
+            darkShirt: guest?.recolor === 'atlas-dark',
+            barefoot,
+          });
+        } else if (guest?.recolor === 'atlas-dark' && c.map) {
+          c.map = dressGuestAtlasDark(c.map, chosen.tshirt);
+        } else if (guest?.recolor !== 'tint' && c.map) {
+          c.map = dressGuestAtlas(c.map, chosen.tshirt);
+        } else {
+          c.color.lerp(new THREE.Color(chosen.tshirt), 0.42);
+        }
         c.metalness = Math.min(c.metalness ?? 0, 0.06);
         c.roughness = Math.max(c.roughness ?? 0.5, 0.6);
         c.envMapIntensity = 0.7;
@@ -808,6 +1224,27 @@ export function makeVisitor(base, walkClip, rng,
     }
   }
 
+  // RPM lower legs are jeans plus a shoe last. Recolouring those islands as
+  // skin is how sunbathers used to read as wearing flesh trousers. Collapse
+  // the authored calf and foot into the shorts hem and loft anatomical legs
+  // onto the same Mixamo bones — the tables are the player's. Authored beach
+  // GLBs already ship real legs; leave those.
+  if (barefoot && isGuest && !authoredBeach) {
+    hideAuthoredLowerLegs(group);
+    const skinMat = new THREE.MeshStandardMaterial({
+      color: sampleGuestSkin(group, skinTone),
+      roughness: 0.88,
+      metalness: 0,
+      envMapIntensity: 0.7,
+    });
+    const legs = buildBareLowerLegs(group, skinMat);
+    if (legs) {
+      legs.visible = true;
+      legs.castShadow = true;
+      legs.receiveShadow = true;
+    }
+  }
+
   const mixer = new THREE.AnimationMixer(group);
   // The pack's walk carries its own forward travel on the pelvis. The path
   // decides where a visitor is, so that track goes: left in, they slide away
@@ -815,15 +1252,23 @@ export function makeVisitor(base, walkClip, rng,
   // Someone standing at their door plays the idle if there is one: a walk held
   // on one frame is a mid-stride pose, and a shopkeeper frozen with one foot
   // forward reads as a mannequin rather than as a person waiting for custom.
-  const clip = (still && idleClip ? idleClip : walkClip).clone();
+  // `playIdle` is a standing person who is actually idling — shopkeepers,
+  // browsers — as opposed to `still`, which freezes frame 0 and reads as a
+  // mannequin. Seated figures keep the idle running under the posed legs so
+  // the hands and head are not statues either.
+  const useIdle = Boolean(idleClip) && (still || playIdle || seated);
+  const clip = (useIdle ? idleClip : walkClip).clone();
   if (!isGuest) clip.tracks = clip.tracks.filter(t => t.name !== 'pelvis.position');
   const action = mixer.clipAction(clip);
-  action.timeScale = seated ? 0.0001 : 0.88 + rng() * 0.3;
-  action.time = still ? 0 : rng() * clip.duration;
+  action.timeScale = seated ? 0.55
+    : playIdle ? 0.75 + rng() * 0.4
+    : 0.88 + rng() * 0.3;
+  action.time = (still && !playIdle) ? 0 : rng() * Math.max(clip.duration, 0.01);
   action.play();
   // Paused rather than removed: the mixer still writes the first frame every
   // update, so the pose holds instead of falling back to the bind stance.
-  if (still) action.paused = true;
+  // Frame 0 (not a random idle time) so later posed rigs grab a stable rest.
+  if (still && !playIdle && !seated) action.paused = true;
   // Both rigs can be posed now (see rigOf / setJoint above), so a guest is a
   // sitter like anyone else. This used to read "the guest does not have those
   // bones, so she is a walker, never a sitter" — which quietly forced every
@@ -838,8 +1283,9 @@ export function makeVisitor(base, walkClip, rng,
   const pace = isGuest && guest?.stride
     ? guest.stride / Math.max(clip.duration, 0.01)
     : 1.05;
+  if (beachLook && isGuest && rng() < 0.55) attachBeachShades(group, rng);
   return { group, mixer, pose, height,
-    speed: still ? 0 : pace * height * action.timeScale };
+    speed: (still && !playIdle) ? 0 : pace * height * action.timeScale };
 }
 
 /** How many distinct looks the variation above can produce, for the record. */

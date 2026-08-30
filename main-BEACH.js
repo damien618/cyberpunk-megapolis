@@ -6,7 +6,7 @@ import { Controller } from './controller.js?v=6';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes } from './cityBoxes.js?v=5';
 import { buildCar, carBounds } from './cars.js?v=4';
-import { makeVisitor, loadGuestRig, lyingRig, groundSitRig, customRig, rootBoneOf } from './crowd.js?v=22';
+import { cloneSkinned, makeVisitor, loadGuestRig, groundSitRig, lyingRig, customRig, rootBoneOf } from './crowd.js?v=56';
 
 // ---------------------------------------------------------------------------
 // Aller à la plage de L.A. — Phase 1: the ground you walk on.
@@ -445,6 +445,42 @@ function makeRockGeo(salt) {
   return withUV2(g);
 }
 
+// Surfboard / skate deck: a real outline, extruded, not a box with a picture
+// stuck on. Venice racks are a row of these silhouettes.
+function makeBoardGeo(kind) {
+  const s = new THREE.Shape();
+  if (kind === 'surf') {
+    const L = 1.12, W = 0.255;
+    s.moveTo(0, L);
+    s.bezierCurveTo(W * 0.5, L - 0.04, W, L * 0.42, W, 0.04);
+    s.lineTo(W * 0.8, -L * 0.7);
+    s.lineTo(W * 0.38, -L);
+    s.lineTo(0, -L - 0.02);
+    s.lineTo(-W * 0.38, -L);
+    s.lineTo(-W * 0.8, -L * 0.7);
+    s.lineTo(-W, 0.04);
+    s.bezierCurveTo(-W, L * 0.42, -W * 0.5, L - 0.04, 0, L);
+  } else {
+    const L = 0.40, W = 0.098;
+    s.moveTo(0, L);
+    s.bezierCurveTo(W, L - 0.01, W, L * 0.55, W, 0);
+    s.bezierCurveTo(W, -L * 0.55, W, -L + 0.01, 0, -L);
+    s.bezierCurveTo(-W, -L + 0.01, -W, -L * 0.55, -W, 0);
+    s.bezierCurveTo(-W, L * 0.55, -W, L - 0.01, 0, L);
+  }
+  const g = new THREE.ExtrudeGeometry(s, {
+    depth: kind === 'surf' ? 0.052 : 0.036,
+    bevelEnabled: true,
+    bevelThickness: 0.007,
+    bevelSize: 0.006,
+    bevelSegments: 1,
+    curveSegments: 14,
+  });
+  g.center();
+  g.computeVertexNormals();
+  return withUV2(g);
+}
+
 // Soft radial sprite — the wash foam and, later, the bonfire glow.
 function makeGlowTexture() {
   const c = Object.assign(document.createElement('canvas'), { width: 128, height: 128 });
@@ -579,6 +615,25 @@ const M = {
   fabricYellow: new THREE.MeshStandardMaterial({ color: 0xe8b23c, roughness: 0.86, side: THREE.DoubleSide }),
   fabricGreen: new THREE.MeshStandardMaterial({ color: 0x3f9c78, roughness: 0.86, side: THREE.DoubleSide }),
   fabricPink: new THREE.MeshStandardMaterial({ color: 0xe07ba0, roughness: 0.86, side: THREE.DoubleSide }),
+  fabricNavy: new THREE.MeshStandardMaterial({ color: 0x1e2a44, roughness: 0.86, side: THREE.DoubleSide }),
+  fabricBlack: new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.86, side: THREE.DoubleSide }),
+  fabricOrange: new THREE.MeshStandardMaterial({ color: 0xe07030, roughness: 0.86, side: THREE.DoubleSide }),
+  mannequin: new THREE.MeshStandardMaterial({ color: 0xc8a882, roughness: 0.7 }),
+  lensDark: new THREE.MeshStandardMaterial({
+    color: 0x1a2430, roughness: 0.08, metalness: 0.4, transparent: true, opacity: 0.62,
+  }),
+  lensGold: new THREE.MeshStandardMaterial({
+    color: 0xc88820, roughness: 0.12, metalness: 0.55, transparent: true, opacity: 0.7,
+  }),
+  crust: new THREE.MeshStandardMaterial({ color: 0xc48a3a, roughness: 0.92 }),
+  cheese: new THREE.MeshStandardMaterial({ color: 0xf0c24a, roughness: 0.7 }),
+  pepperoni: new THREE.MeshStandardMaterial({ color: 0xb03028, roughness: 0.7 }),
+  vinyl: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.35, metalness: 0.15 }),
+  paper: new THREE.MeshStandardMaterial({ color: 0xf3ead4, roughness: 0.9 }),
+  chrome: new THREE.MeshStandardMaterial({ color: 0xd5dce8, roughness: 0.28, metalness: 0.52 }),
+  shopWarm: new THREE.MeshStandardMaterial({
+    color: 0xffe2b0, emissive: 0xffc878, emissiveIntensity: 0.35, roughness: 0.6,
+  }),
 
   // --- Boats ---------------------------------------------------------------
   hullWhite: new THREE.MeshStandardMaterial({ color: 0xf0efe8, roughness: 0.34, metalness: 0.1 }),
@@ -643,6 +698,9 @@ const G = {
   // Grows upward from its base rather than from its centre, so a frond or a
   // leaf card can be pinned where it actually joins the plant.
   blade: withUV2(new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0)),
+  surf: makeBoardGeo('surf'),
+  skate: makeBoardGeo('skate'),
+  lens: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 12).rotateX(Math.PI / 2)),
   // Three boulders, so a scree slope is not one shape repeated.
   rockA: makeRockGeo(0),
   rockB: makeRockGeo(31.7),
@@ -1241,8 +1299,22 @@ function shower() {
 // vintage, souvenirs.
 // ---------------------------------------------------------------------------
 const SHOP_Z = 44.0;              // front face of the terrace
+// Skate lane. Palms sit at z=33.2; the pop-up tents (3 m deep) sit around
+// z=36. The lane has to be inland of the tent backs, not through them.
+const SKATE_Z = 40.9;
 const SHOP_D = 7.2;               // depth of the block
 const ARC_D = 2.4;                // depth of the arcade in front of the glass
+// Where the stools are, shared by the shop fittings AND by the people sitting
+// on them. The sitters used to carry their own hand-tuned Z and ended up 1.6 m
+// in front of the stools, sitting on thin air. `dz` is relative to `zf` inside
+// the shop frame; `top` is the seat surface above the promenade.
+const STOOL = {
+  henna: { dz: -0.95, top: 0.70, xs: [-1.6, 0, 1.6] },
+  pizza: { dz: -1.25, top: 0.795, xs: [-2.5, 2.5] },
+};
+// zf is -SHOP_D/2 + 0.45 and the frame origin is SHOP_Z + SHOP_D/2, so the two
+// halves of the depth cancel and a stool lands here:
+const stoolZ = dz => SHOP_Z + 0.45 + dz;
 const GF = 5.4;                   // underside of the fascia. A round arch over
                                   // a 4 m bay crowns 2 m above its springing,
                                   // so a 3.7 m ground floor buried the whole
@@ -1337,6 +1409,220 @@ const MURALS = [0, 1, 2, 3, 4].map(i => new THREE.MeshStandardMaterial({
   map: makeMuralTexture(i), roughness: 0.94, metalness: 0,
 }));
 
+// Merchandise prints. Ocean Front Walk's stock is GRAPHIC: Venice / California
+// tees, painted boards, tattoo flash, 3-for-$10 piles. A flat colour card
+// cannot carry a slogan, so these are canvases the same way the fascia is.
+function canvasMat(W, H, draw, opts = {}) {
+  const c = Object.assign(document.createElement('canvas'), { width: W, height: H });
+  draw(c.getContext('2d'), W, H);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  return new THREE.MeshStandardMaterial({
+    map: t, roughness: opts.roughness ?? 0.82, metalness: 0,
+    side: opts.side ?? THREE.DoubleSide,
+    transparent: !!opts.transparent, alphaTest: opts.alphaTest ?? 0,
+  });
+}
+function paintText(g, text, x, y, px, fill, stroke) {
+  g.font = `bold ${px}px "Arial Black", Impact, sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  if (stroke) { g.lineWidth = Math.max(2, px * 0.08); g.strokeStyle = stroke; g.strokeText(text, x, y); }
+  g.fillStyle = fill;
+  g.fillText(text, x, y);
+}
+
+const TEE_MATS = [
+  canvasMat(256, 320, (g, W, H) => {
+    g.fillStyle = '#151515'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#2a8f7a';
+    g.beginPath(); g.moveTo(W * 0.5, 48); g.lineTo(W * 0.38, 150); g.lineTo(W * 0.62, 150); g.fill();
+    g.fillStyle = '#1e6e5c';
+    g.beginPath(); g.ellipse(W * 0.5, 168, 54, 22, 0, 0, Math.PI * 2); g.fill();
+    paintText(g, 'VENICE', W / 2, 214, 36, '#f4ead0');
+    paintText(g, 'BEACH', W / 2, 252, 32, '#f4ead0');
+    paintText(g, 'CALIFORNIA', W / 2, 286, 14, '#e8b23c');
+  }),
+  canvasMat(256, 320, (g, W, H) => {
+    g.fillStyle = '#f4efe4'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#e07030';
+    g.beginPath(); g.arc(W / 2, 120, 52, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#4d95c8';
+    for (let i = 0; i < 5; i++) g.fillRect(0, 150 + i * 16, W, 8);
+    paintText(g, 'VENICE', W / 2, 250, 34, '#1e2a44');
+  }),
+  canvasMat(256, 320, (g, W, H) => {
+    g.fillStyle = '#c42c28'; g.fillRect(0, 0, W, H);
+    paintText(g, 'CALI', W / 2, 120, 64, '#fff6df', '#7a1814');
+    paintText(g, 'FORNIA', W / 2, 178, 40, '#fff6df', '#7a1814');
+    paintText(g, 'est. 1905', W / 2, 240, 18, '#f2b12e');
+  }),
+  canvasMat(256, 320, (g, W, H) => {
+    g.fillStyle = '#1e4a78'; g.fillRect(0, 0, W, H);
+    g.strokeStyle = '#7ec8e8'; g.lineWidth = 6;
+    g.beginPath(); g.moveTo(20, 160); g.quadraticCurveTo(80, 80, 140, 150);
+    g.quadraticCurveTo(190, 210, 240, 120); g.stroke();
+    paintText(g, 'SURF', W / 2, 240, 42, '#f4ead0');
+    paintText(g, '+ SKATE', W / 2, 278, 22, '#e8b23c');
+  }),
+  canvasMat(256, 320, (g, W, H) => {
+    g.fillStyle = '#1a1a1a'; g.fillRect(0, 0, W, H);
+    paintText(g, 'MUSCLE', W / 2, 130, 32, '#f4ead0');
+    paintText(g, 'BEACH', W / 2, 175, 40, '#e0533c');
+    g.fillStyle = '#f4ead0'; g.fillRect(40, 210, W - 80, 4);
+    paintText(g, 'VENICE  CA', W / 2, 250, 16, '#f2b12e');
+  }),
+  canvasMat(256, 320, (g, W, H) => {
+    g.fillStyle = '#e8b23c'; g.fillRect(0, 0, W, H);
+    paintText(g, '3 FOR', W / 2, 120, 36, '#1e2a44');
+    paintText(g, '$10', W / 2, 185, 72, '#c42c28');
+    paintText(g, 'TEES', W / 2, 250, 28, '#1e2a44');
+  }),
+];
+
+const BOARD_MATS = [
+  canvasMat(128, 512, (g, W, H) => {
+    g.fillStyle = '#f4ead0'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#e0533c'; g.fillRect(0, 0, W, H * 0.22);
+    g.fillStyle = '#f2b12e'; g.fillRect(0, H * 0.22, W, H * 0.16);
+    g.fillStyle = '#2fa08f'; g.fillRect(0, H * 0.38, W, H * 0.28);
+    g.fillStyle = '#4d95c8'; g.fillRect(0, H * 0.66, W, H * 0.34);
+    paintText(g, 'VENICE', W / 2, H * 0.52, 22, '#fff6df');
+  }),
+  canvasMat(128, 512, (g, W, H) => {
+    g.fillStyle = '#1e2a44'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#e07030';
+    g.beginPath(); g.arc(W / 2, H * 0.28, 36, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#4d95c8'; g.fillRect(0, H * 0.5, W, H * 0.5);
+    paintText(g, 'PACIFIC', W / 2, H * 0.72, 16, '#f4ead0');
+  }),
+  canvasMat(128, 512, (g, W, H) => {
+    g.fillStyle = '#c42c28'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#151515'; g.fillRect(W * 0.38, 0, W * 0.24, H);
+    paintText(g, 'DOGTOWN', W / 2, H * 0.5, 14, '#f4ead0');
+  }),
+  canvasMat(128, 512, (g, W, H) => {
+    g.fillStyle = '#2fa08f'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#f4ead0';
+    for (let i = 0; i < 8; i++) g.fillRect(0, 40 + i * 58, W, 8);
+    paintText(g, 'MOLLUSK', W / 2, H * 0.55, 14, '#1e2a44');
+  }),
+];
+
+const DECK_MATS = [
+  canvasMat(256, 80, (g, W, H) => {
+    g.fillStyle = '#1a1a1a'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#e0533c'; g.fillRect(20, 10, 80, H - 20);
+    paintText(g, 'VENICE', W * 0.62, H / 2, 22, '#f4ead0');
+  }),
+  canvasMat(256, 80, (g, W, H) => {
+    g.fillStyle = '#4d95c8'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#f2b12e';
+    for (let i = 0; i < 6; i++) g.fillRect(i * 44, 0, 16, H);
+  }),
+  canvasMat(256, 80, (g, W, H) => {
+    g.fillStyle = '#2fa08f'; g.fillRect(0, 0, W, H);
+    paintText(g, 'BOARDWALK', W / 2, H / 2, 18, '#fff6df');
+  }),
+  canvasMat(256, 80, (g, W, H) => {
+    g.fillStyle = '#c060a0'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#151515'; g.beginPath(); g.arc(W * 0.3, H / 2, 18, 0, Math.PI * 2); g.fill();
+    paintText(g, 'SKATE', W * 0.68, H / 2, 20, '#f4ead0');
+  }),
+];
+
+const FLASH_MAT = canvasMat(512, 640, (g, W, H) => {
+  g.fillStyle = '#f3ead4'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#1a1a1a';
+  g.font = 'bold 22px Impact, sans-serif';
+  g.textAlign = 'center';
+  g.fillText('FLASH', W / 2, 28);
+  const icons = (x, y, kind) => {
+    g.save(); g.translate(x, y); g.strokeStyle = '#1a1a1a'; g.fillStyle = '#1a1a1a'; g.lineWidth = 3;
+    if (kind === 0) { // swallow
+      g.beginPath(); g.moveTo(-18, 4); g.lineTo(0, -16); g.lineTo(18, 4); g.lineTo(0, -4); g.closePath(); g.fill();
+    } else if (kind === 1) { // heart
+      g.beginPath(); g.moveTo(0, 14); g.bezierCurveTo(-22, -2, -12, -20, 0, -8);
+      g.bezierCurveTo(12, -20, 22, -2, 0, 14); g.fill();
+    } else if (kind === 2) { // star
+      g.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const a = -Math.PI / 2 + i * Math.PI * 2 / 5, b = a + Math.PI / 5;
+        g.lineTo(Math.cos(a) * 16, Math.sin(a) * 16);
+        g.lineTo(Math.cos(b) * 7, Math.sin(b) * 7);
+      }
+      g.closePath(); g.fill();
+    } else if (kind === 3) { // dagger
+      g.fillRect(-3, -16, 6, 22); g.beginPath(); g.moveTo(-6, 6); g.lineTo(0, 18); g.lineTo(6, 6); g.fill();
+      g.fillRect(-10, -4, 20, 4);
+    } else { // rose-ish
+      g.beginPath(); g.arc(0, -4, 12, 0, Math.PI * 2); g.fill();
+      g.fillRect(-2, 6, 4, 12);
+    }
+    g.restore();
+  };
+  let k = 0;
+  for (let row = 0; row < 4; row++)
+    for (let col = 0; col < 3; col++)
+      icons(70 + col * 150, 90 + row * 130, (k++) % 5);
+}, { side: THREE.DoubleSide, roughness: 0.9 });
+
+const PIZZA_MAT = canvasMat(256, 256, (g, W, H) => {
+  g.fillStyle = '#c48a3a';
+  g.beginPath(); g.arc(W / 2, H / 2, 120, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#d44c28';
+  g.beginPath(); g.arc(W / 2, H / 2, 100, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#f0c24a';
+  g.beginPath(); g.arc(W / 2, H / 2, 92, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#b03028';
+  for (const [x, y] of [[90, 80], [150, 90], [80, 150], [160, 155], [120, 120], [100, 180], [170, 120]]) {
+    g.beginPath(); g.arc(x, y, 14, 0, Math.PI * 2); g.fill();
+  }
+});
+
+const POST_MATS = [0, 1, 2, 3].map(i => canvasMat(160, 220, (g, W, H) => {
+  const skies = ['#4d95c8', '#e07030', '#2fa08f', '#c060a0'];
+  g.fillStyle = skies[i]; g.fillRect(0, 0, W, H * 0.62);
+  g.fillStyle = '#f2b12e';
+  g.beginPath(); g.arc(W * 0.7, H * 0.28, 22, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#e8d4a8'; g.fillRect(0, H * 0.62, W, H * 0.38);
+  g.fillStyle = '#2fa08f'; g.fillRect(0, H * 0.58, W, 10);
+  paintText(g, 'VENICE', W / 2, H * 0.78, 18, '#1e2a44');
+  paintText(g, 'BEACH', W / 2, H * 0.88, 16, '#c42c28');
+}, { side: THREE.DoubleSide }));
+
+const HENNA_MAT = canvasMat(256, 320, (g, W, H) => {
+  g.fillStyle = '#f3ead4'; g.fillRect(0, 0, W, H);
+  g.strokeStyle = '#5e2a10'; g.lineWidth = 2;
+  for (let i = 0; i < 6; i++) {
+    g.beginPath();
+    g.arc(W / 2, 50 + i * 44, 18 + (i % 3) * 8, 0, Math.PI * 1.6);
+    g.stroke();
+  }
+  paintText(g, 'HENNA', W / 2, H - 24, 18, '#5e2a10');
+}, { side: THREE.DoubleSide });
+
+const PRICE_TEES = canvasMat(256, 128, (g, W, H) => {
+  g.fillStyle = '#e0533c'; g.fillRect(0, 0, W, H);
+  paintText(g, '3 FOR $10', W / 2, H / 2, 36, '#fff6df');
+});
+const PRICE_SHADES = canvasMat(256, 128, (g, W, H) => {
+  g.fillStyle = '#2fa08f'; g.fillRect(0, 0, W, H);
+  paintText(g, '2 FOR $10', W / 2, H / 2, 32, '#fff6df');
+});
+const PRICE_PIZZA = canvasMat(256, 128, (g, W, H) => {
+  g.fillStyle = '#c42c28'; g.fillRect(0, 0, W, H);
+  paintText(g, 'SLICE $4', W / 2, H / 2, 34, '#fff6df');
+});
+
+let merchSeed = 90291 >>> 0;
+const mrnd = () => ((merchSeed = (merchSeed * 1664525 + 1013904223) >>> 0) / 4294967296);
+const mpick = arr => arr[Math.floor(mrnd() * arr.length) % arr.length];
+
+const shopSpinners = [];
+const SHOP_FRONT = []; // { x, kind, w, label } — world X of each unit, for the crowd
+
 // The shop's name, PAINTED on its fascia: a texture sitting flush against the
 // band that is already part of the building, not a panel hung in front of it.
 function fasciaSign(x, y, z, w, h, label, paint, ink) {
@@ -1417,84 +1703,272 @@ function column(cx, z, h) {
   shape(G.box, M.arcade, cx, h + 0.06, z, 0.9, 0.14, 0.9);        // abacus
 }
 
-// What is actually out on the walk in front of each trade. The stock is half
-// the shopfront on this strip — the buildings are only its backdrop.
+// What is actually out on the walk in front of each trade. Venice dumps its
+// stock UNDER THE ARCHES: pipe racks of slogan tees, spinning sunglass trees,
+// boards on end, flash sheets in the window. A shop that only has a painted
+// name and an empty arcade is a facade, not a store.
+function hangingTee(mat, x, y, z) {
+  const face = Math.PI;
+  // Wire hanger, then a shirt with THICKNESS and sleeves that drop — a card
+  // with two tabs was a paper cut-out, not a garment.
+  shape(G.cyl, M.chrome, x, y + 0.36, z, 0.012, 0.1, 0.012);
+  shape(G.cyl, M.chrome, x, y + 0.31, z, 0.2, 0.008, 0.2, { rx: Math.PI / 2 });
+  box(mat, x, y - 0.02, z, 0.38, 0.52, 0.055, face);
+  shape(G.box, mat, x - 0.24, y + 0.12, z, 0.16, 0.2, 0.045, { rz: 0.55, ry: face });
+  shape(G.box, mat, x + 0.24, y + 0.12, z, 0.16, 0.2, 0.045, { rz: -0.55, ry: face });
+  shape(G.cyl, mat, x, y + 0.24, z, 0.09, 0.04, 0.06, { rx: Math.PI / 2 });
+}
+function pipeRack(cx, z, width, count) {
+  prop(() => {
+    box(M.chrome, cx, 2.02, z, width, 0.035, 0.035);
+    box(M.chrome, cx - width / 2 + 0.03, 1.05, z, 0.04, 2.05, 0.04);
+    box(M.chrome, cx + width / 2 - 0.03, 1.05, z, 0.04, 2.05, 0.04);
+    box(M.chrome, cx, 0.04, z, width - 0.1, 0.04, 0.22);
+  });
+  for (let i = 0; i < count; i++) {
+    const tx = cx - width / 2 + 0.26 + i * ((width - 0.52) / Math.max(1, count - 1));
+    hangingTee(mpick(TEE_MATS), tx, 1.58, z);
+  }
+}
+function foldedStack(x, y, z) {
+  for (let i = 0; i < 6; i++)
+    box(mpick(TEE_MATS), x + (mrnd() - 0.5) * 0.03, y + i * 0.038, z, 0.4, 0.034, 0.3,
+      (mrnd() - 0.5) * 0.12);
+}
+function mannequin(x, z, shirt) {
+  prop(() => {
+    shape(G.cylBase, M.black, x, 0, z, 0.32, 0.06, 0.32);
+    shape(G.cyl, M.chrome, x, 0.38, z, 0.05, 0.7, 0.05);
+    box(M.mannequin, x, 0.85, z, 0.28, 0.18, 0.16);           // hips
+    box(M.mannequin, x, 1.18, z, 0.3, 0.5, 0.16);             // torso
+    box(M.mannequin, x, 1.48, z, 0.38, 0.08, 0.12);            // shoulders
+    shape(G.cyl, M.mannequin, x, 1.58, z, 0.07, 0.12, 0.07);   // neck
+    shape(G.sphere, M.mannequin, x, 1.74, z, 0.18, 0.22, 0.2);
+    shape(G.cyl, M.mannequin, x - 0.22, 1.22, z, 0.06, 0.42, 0.06, { rz: 0.18 });
+    shape(G.cyl, M.mannequin, x + 0.22, 1.22, z, 0.06, 0.42, 0.06, { rz: -0.18 });
+    hangingTee(shirt, x, 1.22, z - 0.1);
+  });
+}
+function hat(mat, x, y, z) {
+  shape(G.disc, mat, x, y, z, 0.4, 0.025, 0.4);
+  shape(G.cyl, mat, x, y + 0.09, z, 0.2, 0.12, 0.2);
+  shape(G.disc, mat, x, y + 0.155, z, 0.2, 0.02, 0.2);
+}
+function surfboard(mat, x, y, z, lean = 0) {
+  shape(G.surf, mat, x, y + 1.16, z, 1, 1, 1, { rz: lean });
+  box(M.black, x, y + 0.22, z + 0.05, 0.055, 0.2, 0.11);
+}
+function skateComplete(mat, x, y, z) {
+  shape(G.skate, mat, x, y, z, 1, 1, 1, { rx: Math.PI / 2 });
+  for (const dx of [-0.22, 0.22]) {
+    box(M.chrome, x + dx, y - 0.028, z, 0.07, 0.03, 0.16);
+    for (const s of [-1, 1])
+      shape(G.cyl, M.black, x + dx, y - 0.055, z + s * 0.08, 0.048, 0.04, 0.048, { rz: Math.PI / 2 });
+  }
+}
+function sunglassPair(x, y, z, ry, lens) {
+  shape(G.lens, lens, x - 0.055, y, z, 0.1, 0.03, 0.08, { ry });
+  shape(G.lens, lens, x + 0.055, y, z, 0.1, 0.03, 0.08, { ry });
+  box(M.black, x, y, z, 0.04, 0.018, 0.03, ry);
+  box(M.black, x - 0.11, y, z + 0.04, 0.08, 0.012, 0.012, ry);
+  box(M.black, x + 0.11, y, z + 0.04, 0.08, 0.012, 0.012, ry);
+}
+function addMesh(parent, geo, mat, x, y, z, sx, sy, sz, rot = {}) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, z);
+  m.scale.set(sx, sy, sz);
+  if (rot.rx) m.rotation.x = rot.rx;
+  if (rot.ry) m.rotation.y = rot.ry;
+  if (rot.rz) m.rotation.z = rot.rz;
+  m.castShadow = true;
+  parent.add(m);
+  return m;
+}
+function spinnerRack(lx, lz) {
+  const g = new THREE.Group();
+  g.position.set(FX + lx, LIFT, FZ + lz);
+  scene.add(g);
+  addMesh(g, G.cylBase, M.black, 0, 0, 0, 0.28, 0.06, 0.28);
+  addMesh(g, G.cyl, M.chrome, 0, 0.85, 0, 0.045, 1.7, 0.045);
+  const ring = new THREE.Group();
+  ring.position.y = 0.42;
+  g.add(ring);
+  for (let tier = 0; tier < 4; tier++) {
+    const n = 8;
+    const r = 0.32 + (tier % 2) * 0.04;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + tier * 0.2;
+      const pair = new THREE.Group();
+      pair.position.set(Math.cos(a) * r, tier * 0.28, Math.sin(a) * r);
+      pair.rotation.y = a + Math.PI / 2;
+      addMesh(pair, G.lens, i % 2 ? M.lensDark : M.lensGold, -0.05, 0, 0, 0.09, 0.025, 0.07);
+      addMesh(pair, G.lens, i % 2 ? M.lensDark : M.lensGold, 0.05, 0, 0, 0.09, 0.025, 0.07);
+      addMesh(pair, G.box, M.black, 0, 0, 0, 0.035, 0.016, 0.025);
+      ring.add(pair);
+    }
+  }
+  shopSpinners.push(ring);
+}
+function pizzaPie(x, y, z, s = 0.55) {
+  shape(G.disc, M.crust, x, y, z, s * 1.06, 0.035, s * 1.06);
+  shape(G.disc, PIZZA_MAT, x, y + 0.022, z, s, 0.03, s);
+}
+function pizzaSlice(x, y, z, ry) {
+  shape(G.cone, M.crust, x, y, z, 0.26, 0.04, 0.4, { rx: Math.PI / 2, ry });
+  shape(G.cone, M.cheese, x, y + 0.025, z, 0.2, 0.025, 0.32, { rx: Math.PI / 2, ry });
+  shape(G.disc, M.pepperoni, x + 0.04, y + 0.04, z + 0.02, 0.07, 0.015, 0.07);
+}
+function vinylDisc(x, y, z) {
+  shape(G.disc, M.vinyl, x, y, z, 0.3, 0.016, 0.3);
+  shape(G.disc, mpick(POST_MATS), x, y + 0.01, z, 0.1, 0.008, 0.1);
+  shape(G.cyl, M.chrome, x, y + 0.012, z, 0.018, 0.01, 0.018);
+}
+function displayTable(x, y, z, w, d, h = 0.78) {
+  prop(() => {
+    box(M.deckWood, x, y + h, z, w, 0.05, d);
+    box(M.chrome, x, y + h - 0.04, z, w - 0.04, 0.03, d - 0.04);
+    for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]])
+      shape(G.cylBase, M.chrome, x + dx * (w / 2 - 0.06), y, z + dz * (d / 2 - 0.06),
+        0.04, h - 0.02, 0.04);
+  });
+}
+
 function shopStock(kind, w) {
-  const zf = -SHOP_D / 2 + 0.9;          // out under the arches
-  const zg = -SHOP_D / 2 + ARC_D + 0.25; // against the glass
+  const zf = -SHOP_D / 2 + 0.45;         // out under the arches, on the walk
+  const zg = -SHOP_D / 2 + ARC_D - 0.15; // at the opening, still in the bay
+  const zi = 0.4;                        // deep in the shop, seen through the opening
+
   if (kind === 'tees') {
-    for (const dx of [-w * 0.26, w * 0.26]) {
-      box(M.steel, dx, 2.05, zf, 2.6, 0.06, 0.06);
-      box(M.steel, dx, 1.05, zf, 0.06, 2.1, 0.06);
-      for (let i = 0; i < 9; i++)
-        shape(G.card, pick(FABRICS), dx - 1.2 + i * 0.3, 1.62, zf, 0.5, 0.72, 1);
-    }
-    for (let i = 0; i < 4; i++)
-      box(pick(FABRICS), -w / 2 + 1.4 + i * ((w - 2.8) / 3), 1.32, zg, 0.8, 0.12, 0.5);
+    pipeRack(-w * 0.28, zf, 2.7, 8);
+    pipeRack(w * 0.28, zf, 2.7, 8);
+    pipeRack(0, zg + 0.15, 3.4, 9);
+    mannequin(-w * 0.42, zf - 0.55, TEE_MATS[0]);
+    mannequin(w * 0.42, zf - 0.55, TEE_MATS[1]);
+    for (let i = 0; i < 4; i++) foldedStack(-w / 2 + 1.8 + i * ((w - 3.6) / 3), 0.55, zg);
+    // Interior wall of hanging tees, visible through the opening.
+    for (let row = 0; row < 2; row++)
+      for (let i = 0; i < 10; i++)
+        hangingTee(mpick(TEE_MATS), -w / 2 + 1.4 + i * ((w - 2.8) / 9), 1.3 + row * 0.85, zi);
+    shape(G.card, PRICE_TEES, 0, 2.35, zf - 0.05, 1.1, 0.38, 1, { ry: Math.PI });
   } else if (kind === 'shades') {
-    for (const dx of [-w * 0.2, w * 0.24]) {     // spinner racks
-      shape(G.cylBase, M.black, dx, 0, zf, 0.3, 1.5, 0.3);
-      for (let i = 0; i < 18; i++) {
-        const a = (i / 18) * Math.PI * 2;
-        box(M.black, dx + Math.cos(a) * 0.44, 1.05 + (i % 5) * 0.24, zf + Math.sin(a) * 0.44,
-          0.26, 0.09, 0.07, a);
-      }
-    }
-    box(M.counter, 0, 0.5, zg, w - 2.4, 1.0, 0.6);
-    for (let i = 0; i < 12; i++)
-      box(M.black, -w / 2 + 1.5 + i * ((w - 3) / 11), 1.06, zg, 0.24, 0.08, 0.09);
-  } else if (kind === 'surf') {
-    for (let i = 0; i < 7; i++) {                // boards on end
-      const bx = -w / 2 + 1.2 + i * ((w - 2.4) / 6);
-      shape(G.canopy, pick(FABRICS), bx, 0.05, zg, 0.6, 2.7, 0.17, { rz: (rnd() - 0.5) * 0.2 });
-    }
-    for (let i = 0; i < 3; i++)                  // skate decks hung out front
-      shape(G.canopy, pick(FABRICS), -w * 0.26 + i * (w * 0.26), 1.0, zf, 0.34, 1.5, 0.12,
-        { rz: Math.PI });
-    box(M.steel, 0, 2.1, zf, w - 3, 0.06, 0.06);
-  } else if (kind === 'tattoo') {
-    box(M.black, 0, 1.6, zg, w - 2.6, 2.2, 0.14);          // dark glass front
-    for (let i = 0; i < 10; i++)                            // flash sheets
-      shape(G.card, pick([M.fabricYellow, M.fabricRed, M.fabricWhite]),
-        -w / 2 + 1.6 + i * ((w - 3.2) / 9), 1.7, zg - 0.09, 0.5, 0.66, 1);
-    box(M.counter, 0, 0.45, zf + 0.5, 2.2, 0.9, 0.6);
-  } else if (kind === 'henna') {
-    box(M.counter, 0, 0.5, zf, w - 3.4, 1.0, 0.7);
-    for (let i = 0; i < 3; i++)                             // stools
-      prop(() => {
-        shape(G.cylBase, M.steel, -1.5 + i * 1.5, 0, zf - 1.0, 0.09, 0.66, 0.09);
-        shape(G.cyl, M.deckWood, -1.5 + i * 1.5, 0.69, zf - 1.0, 0.62, 0.09, 0.62);
-      });
-    for (let i = 0; i < 8; i++)                             // pattern books
-      shape(G.card, pick(FABRICS), -w / 2 + 1.8 + i * ((w - 3.6) / 7), 1.8, zg, 0.46, 0.6, 1);
-  } else if (kind === 'pizza') {
-    box(M.steel, 0, 0.55, zg, w - 2.2, 1.1, 0.7);           // servery
-    box(M.glassPane, 0, 1.35, zg - 0.06, w - 2.6, 0.5, 0.06);
+    spinnerRack(-w * 0.22, zf);
+    spinnerRack(w * 0.22, zf);
+    displayTable(0, 0, zg, w - 2.4, 0.72, 0.92);
+    for (let i = 0; i < 14; i++)
+      sunglassPair(-w / 2 + 1.5 + i * ((w - 3) / 13), 1.06, zg - 0.2, 0,
+        i % 2 ? M.lensDark : M.lensGold);
+    // Hat wall — every Venice sunglass stall also sells $5 lids.
+    for (let i = 0; i < 8; i++)
+      hat(mpick([M.fabricWhite, M.fabricRed, M.fabricNavy, M.fabricYellow, M.fabricBlack]),
+        -w / 2 + 1.6 + i * ((w - 3.2) / 7), 1.7, zg + 0.15);
     for (let i = 0; i < 6; i++)
-      shape(G.disc, M.fabricYellow, -w / 2 + 1.6 + i * ((w - 3.2) / 5), 1.16, zg, 0.5, 0.05, 0.5);
-    for (let i = 0; i < 2; i++)                             // pavement tables
-      prop(() => {
-        shape(G.cylBase, M.steel, -2.4 + i * 4.8, 0, zf - 1.3, 0.09, 0.74, 0.09);
-        shape(G.disc, M.deckWood, -2.4 + i * 4.8, 0.76, zf - 1.3, 1.1, 0.08, 1.1);
-      });
-  } else if (kind === 'vintage') {
-    for (const dx of [-w * 0.24, w * 0.24]) {
-      box(M.steel, dx, 2.0, zf, 2.4, 0.06, 0.06);
-      for (let i = 0; i < 8; i++)
-        shape(G.card, pick(FABRICS), dx - 1.05 + i * 0.3, 1.5, zf, 0.52, 0.86, 1);
+      hat(mpick([M.fabricWhite, M.fabricNavy, M.fabricBlack]),
+        -w / 2 + 2.0 + i * ((w - 4) / 5), 1.35, zi);
+    shape(G.card, PRICE_SHADES, 0, 2.3, zf - 0.1, 1.1, 0.38, 1, { ry: Math.PI });
+  } else if (kind === 'surf') {
+    // Shortboards on end in a rack, the signature of Boardwalk Skate & Surf.
+    prop(() => {
+      box(M.steel, 0, 0.08, zf + 0.15, w - 1.8, 0.1, 0.55);
+      box(M.steel, 0, 1.15, zf + 0.15, w - 1.8, 0.05, 0.05);
+    });
+    for (let i = 0; i < 9; i++) {
+      const bx = -w / 2 + 1.15 + i * ((w - 2.3) / 8);
+      surfboard(BOARD_MATS[i % BOARD_MATS.length], bx, 0.12, zf + 0.15, (i - 4) * 0.035);
     }
-    for (let i = 0; i < 5; i++)                             // hats on a shelf
-      shape(G.disc, pick([M.fabricWhite, M.frondDry, M.fabricYellow]),
-        -w / 2 + 1.6 + i * ((w - 3.2) / 4), 1.62, zg, 0.6, 0.05, 0.6);
-  } else {                                                  // souvenir
+    // Complete skateboards on a low bench out front, decks hung on the wall.
+    displayTable(0, 0, zf - 0.15, 2.4, 0.7, 0.42);
+    for (let i = 0; i < 3; i++)
+      skateComplete(DECK_MATS[i % DECK_MATS.length], -0.7 + i * 0.7, 0.48, zf - 0.15);
+    for (let i = 0; i < 5; i++)
+      shape(G.skate, DECK_MATS[i % DECK_MATS.length],
+        -w * 0.3 + i * (w * 0.15), 1.62, zf, 1, 1, 1);
+    // Wetsuits hanging inside.
+    for (let i = 0; i < 4; i++)
+      hangingTee(mpick([M.fabricBlack, M.fabricNavy]), -1.6 + i * 1.05, 1.45, zi);
+  } else if (kind === 'tattoo') {
+    // Dark parlour: blacked-out interior, flash on the walls, a chair.
+    box(M.black, 0, 1.7, zi + 0.8, w - 1.2, 3.4, 0.2);
+    box(M.shopWarm, 0, 3.4, 0.2, w - 2.4, 0.08, 3.0);
+    for (let i = 0; i < 6; i++)
+      shape(G.card, FLASH_MAT, -w / 2 + 1.8 + i * ((w - 3.6) / 5), 1.85, zg - 0.02, 0.7, 0.9, 1, { ry: Math.PI });
+    for (let i = 0; i < 4; i++)
+      shape(G.card, FLASH_MAT, -w * 0.32 + i * (w * 0.2), 1.8, zi + 0.7, 0.8, 1.05, 1, { ry: Math.PI });
+    displayTable(0, 0, zf + 0.2, 2.2, 0.7, 0.9);
+    prop(() => {
+      shape(G.cylBase, M.steel, 0.9, 0, zg + 0.4, 0.08, 0.46, 0.08);
+      box(M.black, 0.9, 0.55, zg + 0.4, 0.55, 0.1, 0.55);
+      box(M.black, 0.9, 0.85, zg + 0.62, 0.5, 0.5, 0.08);
+    });
+    box(M.black, -1.1, 1.15, zf + 0.2, 0.08, 2.2, 0.08);
+    shape(G.sphere, M.shopWarm, -1.1, 2.35, zf + 0.2, 0.16, 0.16, 0.16);
+  } else if (kind === 'henna') {
+    displayTable(0, 0, zf + 0.1, w - 3.2, 0.8, 0.86);
+    for (let i = 0; i < 3; i++)
+      prop(() => {
+        shape(G.cylBase, M.steel, STOOL.henna.xs[i], 0, zf + STOOL.henna.dz, 0.08, 0.62, 0.08);
+        shape(G.cyl, M.deckWood, STOOL.henna.xs[i], 0.66, zf + STOOL.henna.dz, 0.58, 0.08, 0.58);
+      });
+    for (let i = 0; i < 6; i++)
+      shape(G.card, HENNA_MAT, -w / 2 + 1.8 + i * ((w - 3.6) / 5), 1.75, zg, 0.42, 0.55, 1, { ry: Math.PI });
+    // Henna cones on the trestle.
+    for (let i = 0; i < 5; i++)
+      shape(G.cone, M.paper, -0.8 + i * 0.4, 1.0, zf + 0.1, 0.07, 0.16, 0.07);
+    for (let i = 0; i < 4; i++)
+      shape(G.card, HENNA_MAT, -1.2 + i * 0.8, 1.5, zi, 0.5, 0.7, 1, { ry: Math.PI });
+  } else if (kind === 'pizza') {
+    displayTable(0, 0, zg, w - 2.2, 0.82, 0.92);
+    box(M.chrome, 0, 1.22, zg, w - 2.15, 0.03, 0.84);
+    box(M.glassPane, 0, 1.4, zg - 0.4, w - 2.35, 0.42, 0.03);
+    box(M.shopWarm, 0, 0.98, zg, w - 2.5, 0.03, 0.5);
+    for (let i = 0; i < 4; i++)
+      pizzaPie(-w / 2 + 2.2 + i * ((w - 4.4) / 3), 1.12, zg, 0.48);
+    for (let i = 0; i < 3; i++)
+      pizzaSlice(-0.7 + i * 0.7, 1.14, zg - 0.22, (i - 1) * 0.4);
+    // Soda fridge.
+    box(M.steel, w / 2 - 1.6, 1.0, zg + 0.5, 0.7, 2.0, 0.6);
+    box(M.glassPane, w / 2 - 1.6, 1.15, zg + 0.18, 0.6, 1.5, 0.04);
+    for (let i = 0; i < 2; i++)
+      prop(() => {
+        shape(G.cylBase, M.steel, STOOL.pizza.xs[i], 0, zf + STOOL.pizza.dz, 0.08, 0.72, 0.08);
+        shape(G.disc, M.deckWood, STOOL.pizza.xs[i], 0.76, zf + STOOL.pizza.dz, 1.05, 0.07, 1.05);
+      });
+    pizzaPie(STOOL.pizza.xs[0], 0.84, zf + STOOL.pizza.dz, 0.36);
+    shape(G.card, PRICE_PIZZA, 0, 2.15, zg - 0.5, 1.2, 0.4, 1, { ry: Math.PI });
+  } else if (kind === 'vintage') {
+    pipeRack(-w * 0.26, zf, 2.5, 7);
+    pipeRack(w * 0.26, zf, 2.5, 7);
+    for (let i = 0; i < 5; i++)
+      hat(mpick([M.fabricWhite, M.frondDry, M.fabricNavy, M.fabricRed]),
+        -w / 2 + 1.6 + i * ((w - 3.2) / 4), 1.55, zg);
+    // Vinyl crate and posters — Boardwalk Vintage's actual mix.
+    box(M.deckWood, 0, 0.35, zf - 0.35, 1.4, 0.7, 0.55);
+    for (let i = 0; i < 8; i++)
+      box(mpick(POST_MATS), -0.5 + i * 0.14, 0.72, zf - 0.35, 0.02, 0.32, 0.32);
+    for (let i = 0; i < 4; i++)
+      shape(G.card, mpick(POST_MATS), -w * 0.3 + i * (w * 0.2), 1.7, zi, 0.55, 0.78, 1, { ry: Math.PI });
+    vinylDisc(-0.35, 0.78, zf - 0.5);
+    vinylDisc(0.35, 0.78, zf - 0.2);
+  } else {
+    // Souvenirs: snow globes, postcards, stacked trinkets, a "VENICE" magnet wall.
     for (let sh = 0; sh < 3; sh++)
-      for (let i = 0; i < 9; i++)
-        shape(G.cyl, pick(FABRICS), -w / 2 + 1.3 + i * ((w - 2.6) / 8), 1.2 + sh * 0.62, zg,
-          0.24, 0.4, 0.24);
-    for (let i = 0; i < 12; i++)                            // postcard spinner
-      box(pick(FABRICS), -w * 0.3 + (i % 4) * 0.3, 1.1 + Math.floor(i / 4) * 0.34, zf,
-        0.26, 0.3, 0.04);
-    shape(G.cylBase, M.black, -w * 0.3 + 0.45, 0, zf, 0.16, 1.1, 0.16);
+      for (let i = 0; i < 8; i++) {
+        const px = -w / 2 + 1.4 + i * ((w - 2.8) / 7);
+        shape(G.sphere, mpick(FABRICS), px, 0.95 + sh * 0.55, zg, 0.16, 0.16, 0.16);
+        shape(G.cyl, M.glassPane, px, 1.08 + sh * 0.55, zg, 0.18, 0.22, 0.18);
+      }
+    for (let i = 0; i < 10; i++)
+      shape(G.card, mpick(POST_MATS), -w * 0.38 + (i % 5) * 0.32, 1.15 + Math.floor(i / 5) * 0.42, zf,
+        0.22, 0.3, 1, { rx: -0.2, ry: Math.PI });
+    shape(G.cylBase, M.black, -w * 0.1, 0, zf, 0.14, 1.15, 0.14);
+    for (let i = 0; i < 8; i++)
+      shape(G.card, mpick(POST_MATS), -w * 0.1 + Math.cos(i) * 0.28, 0.7 + (i % 4) * 0.28,
+        zf + Math.sin(i) * 0.28, 0.18, 0.26, 1);
+    // Letter magnets / "VENICE" block on the counter.
+    box(M.counter, w * 0.28, 0.45, zf + 0.2, 2.2, 0.9, 0.55);
+    const letters = 'VENICE';
+    for (let i = 0; i < letters.length; i++)
+      box(mpick([M.fabricRed, M.fabricYellow, M.fabricBlue, M.fabricWhite]),
+        w * 0.28 - 0.75 + i * 0.26, 1.02, zf + 0.2, 0.22, 0.22, 0.08);
   }
 }
 
@@ -1510,11 +1984,16 @@ function shopUnit(s, muralMat) {
   box(stucco, 0, (GF + FASCIA + UF) / 2, D / 2 - 0.15, w, H, 0.3);          // back
   for (const dx of [-w / 2 + 0.15, w / 2 - 0.15])
     box(stucco, dx, H / 2, 0, 0.3, H, D);                                    // party walls
-  // Shopfront plane, set back behind the arcade.
-  box(stucco, 0, GF / 2, zGlass, w - 0.6, GF, 0.24);
-  box(M.glassPane, 0, 1.9, zGlass - 0.14, w - 3.0, 3.0, 0.06);
-  box(stucco, 0, 3.9, zGlass - 0.12, w - 3.0, 1.0, 0.1);
-  box(M.arcade, 0, 0.14, zGlass - 0.14, w - 3.0, 0.28, 0.3);                 // stall riser
+  // Shopfront: an OPENING, not a sealed wall. Venice dumps its stock onto
+  // the walk and you see into the shop — a glass decal on a blank wall is
+  // what made the first pass read as a facade.
+  const winW = Math.max(2.8, w - 2.6), winH = 3.15, winY = 1.9;
+  box(stucco, 0, 0.4, zGlass, w - 0.6, 0.8, 0.28);                          // bulkhead
+  box(stucco, -w / 2 + 0.75, winY, zGlass, 1.5, winH + 0.15, 0.28);          // jambs
+  box(stucco,  w / 2 - 0.75, winY, zGlass, 1.5, winH + 0.15, 0.28);
+  box(stucco, 0, winY + winH * 0.5 + 0.15, zGlass, w - 0.6, 1.05, 0.28);    // lintel
+  box(M.deckWood, 0, 0.04, 0.5, w - 0.9, 0.08, D - 1.4);                    // interior floor
+  box(M.shopWarm, 0, GF - 0.2, 0.3, w - 2.0, 0.06, D - 2.2);                // interior glow
   // Arcade: piers at the bay ends, arches between.
   const bays = Math.max(2, Math.round(w / 4.2));
   const span = (w - 0.9) / bays;
@@ -1554,6 +2033,7 @@ function shopUnit(s, muralMat) {
       shopUnit(s, i % 3 === 1 ? null : MURALS[i % MURALS.length]));
     fasciaSign(x, PROM_Y + GF + FASCIA / 2, SHOP_Z - 0.18,
       s.w - 0.15, FASCIA, s.label, PALETTE[s.c], s.ink);
+    SHOP_FRONT.push({ x, kind: s.kind, w: s.w, label: s.label });
   });
 }
 
@@ -1575,10 +2055,11 @@ function vendorStall(canopy) {
   for (let i = 0; i < 8; i++)
     box(pick(FABRICS), -1.25 + i * 0.36, 0.82, -0.3, 0.26, 0.08, 0.4);
 }
-for (const [vx, vz] of [
-  [-58, 40.6], [-41, 40.2], [-25, 40.7], [-8, 40.3],
-  [9, 40.7], [24, 40.2], [40, 40.6], [55, 40.3],
-]) {
+const VENDOR_STALLS = [
+  [-58, 36.2], [-41, 35.8], [-25, 36.3], [-8, 35.9],
+  [9, 36.3], [24, 35.8], [40, 36.2], [55, 35.9],
+];
+for (const [vx, vz] of VENDOR_STALLS) {
   if (!clearOfFerris(vx, vz)) continue;
   onDeck(vx, vz, Math.PI, () => vendorStall(pick(FABRICS)));
 }
@@ -1605,7 +2086,7 @@ for (const sx of [-62, 0, 62]) onGround(sx + 6.5, 24, Math.PI, () => prop(shower
 for (let i = -46; i <= 46; i++) {
   const x0 = i * 2.4, x1 = i * 2.4 + 1.4;
   if (x1 > FERRIS_WEST && x0 < FERRIS_EAST) continue;
-  const z = 38.4;
+  const z = SKATE_Z;
   slab(M.paint, x0, x1, z - 0.07, z + 0.07, PROM_Y, PROM_Y + 0.015);
 }
 
@@ -2038,6 +2519,9 @@ function towel(fabric) {
   prop(() => box(fabric, 0, 0.03, 0, 1.0, 0.06, 2.1));
   box(M.fabricWhite, 0, 0.09, -0.78, 0.44, 0.1, 0.32);   // rolled-up sweater as a pillow
 }
+// Towel box is 6 cm thick, centred at y = 0.03, so the cloth top is 6 cm
+// above the sand. Used to seat a sunbather ON the towel rather than in it.
+const TOWEL_TOP = 0.06;
 function cooler() {
   prop(() => {
     box(M.guardWhite, 0, 0.2, 0, 0.66, 0.4, 0.44);
@@ -2650,6 +3134,7 @@ function setBeachTime(name) {
   // take over the silhouette after dark.
   for (const m of ferrisBulbMats)
     m.emissiveIntensity = s.lamp > 0 ? 1.2 + s.lamp * 0.55 : 0.32;
+  M.shopWarm.emissiveIntensity = s.lamp > 0 ? 0.85 + s.lamp * 0.25 : 0.35;
 
   updateSunShadow(ctrl.pos);
   // Kept in sync for anything that reads the shared night flag (the avatar's
@@ -2698,9 +3183,47 @@ const beachPeople = [];      // { group, mixer, pose, kind, ... } — ticked bel
 const nightPeople = [];      // shown only after dark
 const dayPeople = [];        // hidden after dark (the swimmers)
 
-function guestVisitor(g, opts = {}) {
-  return makeVisitor(g.scene, g.walkClip, rnd, { guest: g, idleClip: g.idleClip, ...opts });
+// The Ready Player Me guests ship BAREFOOT: one mesh, one 1024 atlas, no shoe
+// geometry and nothing in the texture to tint. Measured, their foot is 0.127 of
+// body height — if anything SMALLER than life (~0.15) — so the problem was
+// never the size. It is that a bare low-poly foot at this scale reads as a pale
+// slab. A shoe hull parented to the foot bone follows every pose for free.
+const SHOE_GEO = new THREE.SphereGeometry(0.5, 10, 7);
+const SHOE_MATS = [0xf2f0e8, 0x232833, 0x2f5d8a, 0xd8514a, 0xe8dcc4, 0x3c6b4a]
+  .map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.72, metalness: 0 }));
+const _toeDir = new THREE.Vector3();
+const _shoeUp = new THREE.Vector3(0, 1, 0);
+function addFootwear(body) {
+  const mat = pick(SHOE_MATS);
+  for (const [fn, tn] of [['LeftFoot', 'LeftToeBase'], ['RightFoot', 'RightToeBase'],
+                          ['foot_l', 'ball_l'], ['foot_r', 'ball_r']]) {
+    const foot = body.getObjectByName(fn), toe = body.getObjectByName(tn);
+    if (!foot || !toe) continue;
+    const len = toe.position.length();     // ankle -> ball, in the foot's own units
+    if (!(len > 1e-4)) continue;
+    _toeDir.copy(toe.position).normalize();
+    const shoe = new THREE.Mesh(SHOE_GEO, mat);
+    // Long axis down the foot, whatever the bone's own frame happens to be.
+    shoe.quaternion.setFromUnitVectors(_shoeUp, _toeDir);
+    shoe.position.copy(_toeDir).multiplyScalar(len * 0.60);
+    shoe.scale.set(len * 0.74, len * 1.55, len * 0.74);
+    shoe.castShadow = true;
+    foot.add(shoe);
+  }
 }
+
+function guestVisitor(g, opts = {}) {
+  const v = makeVisitor(g.scene, g.walkClip, rnd, {
+    guest: g, idleClip: g.idleClip, look: 'beach', ...opts,
+  });
+  if (!opts.barefoot && !opts.authoredBody) addFootwear(v.group);
+  return v;
+}
+
+// Sunbathers (and anyone else built through poseHolder) are barefoot. The RPM
+// mesh's calves and feet are jeans plus a shoe last; hideAuthoredLowerLegs
+// collapses that geometry and buildBareLowerLegs lofts anatomical legs onto
+// the same Mixamo skeleton.
 
 // A figure that holds a pose instead of walking. The mixer still writes frame
 // zero every update, so the pose is re-applied AFTER it — which is also what
@@ -2708,7 +3231,85 @@ function guestVisitor(g, opts = {}) {
 // Sit a posed body down by its HIPS. A folded pose leaves the root bone at
 // standing height, so placing the group on the sand leaves the figure hovering
 // a leg's length above it — which is exactly what the fire circle did.
+// Stand a posed figure on a surface by its SOLES.
+//
+// Same trap as the hips above, one joint further down: bending the knees lifts
+// the FEET, because the root bone does not move. A skater whose group origin
+// sits on the board therefore floats above it by however much the crouch
+// shortens the legs — measured at 7-10 cm here, which is exactly the gap you
+// could see under the boards. The ball players were 6 cm up for the same
+// reason.
+//
+// `ankleH` is measured ONCE in the unposed stance, where the soles are on the
+// group origin by definition, so it is this figure's own ankle height at this
+// figure's own scale. After that one pass per frame is exact: moving
+// body.position.y moves the feet one for one.
+const FOOT_BONES = ['foot_l', 'foot_r', 'LeftFoot', 'RightFoot',
+  'LeftToeBase', 'RightToeBase', 'LeftToe_End', 'RightToe_End'];
+const SOLE_ABOVE_BONE = 0.02;
+const _footV = new THREE.Vector3();
+const _originV = new THREE.Vector3();
+const _hold = new THREE.Vector3();
+function measureAnkle(rec) {
+  const body = rec.body || rec.group;
+  rec.feet = FOOT_BONES.map(n => body.getObjectByName(n)).filter(Boolean);
+  if (!rec.feet.length) return rec;
+  rec.group.updateMatrixWorld(true);
+  body.getWorldPosition(_originV);
+  let m = Infinity;
+  for (const f of rec.feet) { f.getWorldPosition(_footV); m = Math.min(m, _footV.y); }
+  if (isFinite(m)) rec.ankleH = m - _originV.y;
+  return rec;
+}
+function standSolesOn(p, targetY) {
+  if (!p.feet || !p.feet.length || p.ankleH === undefined || !p.body) return;
+  p.group.updateMatrixWorld(true);
+  let m = Infinity;
+  for (const f of p.feet) { f.getWorldPosition(_footV); m = Math.min(m, _footV.y); }
+  if (!isFinite(m)) return;
+  p.body.position.y += targetY - (m - p.ankleH);
+}
+// Mixamo hip-flex throws the feet FORWARD (character +Z = board WIDTH). A
+// Y-only plant left them hovering beside the deck. Each frame: reset the
+// body, pose, then slide it so the foot cluster sits on the board.
+function plantSkateFeet(p) {
+  const body = p.body, bones = p.feet;
+  if (!body || !bones || !bones.length) return;
+  body.position.set(0, 0, 0);
+  p.group.updateMatrixWorld(true);
+  let cx = 0, cz = 0, minY = Infinity, n = 0;
+  for (const f of bones) {
+    f.getWorldPosition(_footV);
+    p.group.worldToLocal(_hold.copy(_footV));
+    cx += _hold.x;
+    cz += _hold.z;
+    if (_hold.y < minY) minY = _hold.y;
+    n++;
+  }
+  if (!n || !isFinite(minY)) return;
+  body.position.set(
+    -cx / n,
+    (p.deckTop + SOLE_ABOVE_BONE) - minY,
+    -cz / n);
+}
+
 const _hipV = new THREE.Vector3();
+const _lieScale = new THREE.Vector3();
+// A Mixamo laid on its back maps bind -Z (the back of the mesh) onto world Y.
+// Anchor the pelvis centre one half-body thickness above the cloth. Measuring
+// the whole posed AABB is wrong here: an open hand can be lower than the back,
+// making the hand touch the towel while the torso floats in the air.
+function liftOntoTowel(p, clothTop = TOWEL_TOP, clearance = 0.02) {
+  const hips = rootBoneOf(p.body);
+  if (!hips) return;
+  p.group.updateMatrixWorld(true);
+  hips.getWorldPosition(_hipV);
+  p.body.getWorldScale(_lieScale);
+  const halfBodyDepth = 0.085 * Math.max(_lieScale.x, _lieScale.z);
+  const pelvisTarget = p.group.position.y + clothTop + clearance + halfBodyDepth;
+  p.body.position.y += pelvisTarget - _hipV.y;
+}
+
 function dropToHips(p, groundY, hipY) {
   const hips = rootBoneOf(p.body);
   if (!hips) return;
@@ -2717,16 +3318,19 @@ function dropToHips(p, groundY, hipY) {
   p.group.position.y += (groundY + hipY) - _hipV.y;
 }
 
-function poseHolder(g, poseFor, place) {
-  const v = guestVisitor(g, { still: true });
+function poseHolder(g, poseFor, place, extra = {}) {
+  const v = guestVisitor(g, { barefoot: true, still: true, ...extra });
   const pose = poseFor(v.group);
   if (!pose) return null;
   const holder = new THREE.Group();
   holder.add(v.group);
   scene.add(holder);
   place(holder, v.group);
+  v.mixer.update(0);
+  const rec = { group: holder, body: v.group, mixer: v.mixer, pose, phase: rnd() * 6.28 };
+  measureAnkle(rec);          // bind stance: soles are on the origin here
   pose();
-  return { group: holder, body: v.group, mixer: v.mixer, pose, phase: rnd() * 6.28 };
+  return rec;
 }
 
 try {
@@ -2746,13 +3350,20 @@ try {
   }
   const G = i => guests[i % guests.length];
 
+
   if (guests.length) {
     // --- The corniche: people walking it, in both directions ---------------
-    const WALK_Z = [31.6, 33.8, 36.0, 39.2];
+    // Pedestrian lanes:
+    // 31.4: seaward walk (between seawall and palms/benches line at 33.2-34.6)
+    // 38.8 & 39.6: central promenade (between marquee vendor stalls ending at z=37.5 and skate lane at z=40.9)
+    // 42.4: shopfront stroll (between skate lane at 40.9 and boutique arcades at 44.0)
+    const WALK_Z = [31.4, 38.8, 39.6, 42.4];
     for (let i = 0; i < 20; i++) {
       const v = guestVisitor(G(i));
       const dir = i % 2 ? 1 : -1;
-      const z = WALK_Z[i % WALK_Z.length] + (rnd() - 0.5) * 0.8;
+      const baseZ = WALK_Z[i % WALK_Z.length];
+      const zOffset = baseZ === 31.4 ? (rnd() - 0.5) * 0.4 : (rnd() - 0.5) * 0.5;
+      const z = baseZ + zOffset;
       let wx = -100 + rnd() * 200;
       if (wx > FERRIS_WEST && wx < FERRIS_EAST) wx = dir > 0 ? FERRIS_EAST : FERRIS_WEST;
       v.group.position.set(wx, PROM_Y, z);
@@ -2761,21 +3372,94 @@ try {
       beachPeople.push({ ...v, kind: 'walk', dir, z, speed: v.speed * (0.85 + rnd() * 0.4) });
     }
 
+    // --- Shopkeepers and browsers. Keepers IDLE in the arch (the clip is
+    // what makes them breathe). Customers WALK the front of the unit, slow,
+    // turning at each end — a frozen "looking" pose was a mannequin.
+    SHOP_FRONT.forEach((s, si) => {
+      const keeper = guestVisitor(G(si), { playIdle: true });
+      keeper.group.position.set(s.x + (si % 2 ? -1.15 : 1.15), PROM_Y, SHOP_Z - 0.7);
+      keeper.group.rotation.y = Math.PI;
+      scene.add(keeper.group);
+      beachPeople.push({
+        ...keeper, kind: 'tend',
+        baseYaw: Math.PI, phase: rnd() * 6.28,
+      });
+      const nBrowse = s.kind === 'pizza' || s.kind === 'tees' || s.kind === 'surf' ? 2 : 1;
+      for (let b = 0; b < nBrowse; b++) {
+        const v = guestVisitor(G(si + b + 3));
+        const x0 = s.x - s.w * 0.38, x1 = s.x + s.w * 0.38;
+        const z = SHOP_Z - 1.2 - b * 0.35;
+        const dir = b % 2 ? -1 : 1;
+        const gait = 0.4 + rnd() * 0.22;
+        v.group.position.set(x0 + rnd() * (x1 - x0), PROM_Y, z);
+        v.group.rotation.y = dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+        scene.add(v.group);
+        beachPeople.push({
+          ...v, kind: 'shopWalk', x0, x1, z, dir, gait,
+          speed: v.speed * gait,
+        });
+      }
+      if (s.kind === 'pizza') {
+        STOOL.pizza.xs.forEach((dx, k) => {
+          const v = guestVisitor(G(si + 5 + k), { seated: true });
+          const holder = new THREE.Group();
+          holder.add(v.group);
+          holder.position.set(s.x + dx, PROM_Y, stoolZ(STOOL.pizza.dz));
+          holder.rotation.y = dx > 0 ? -0.32 : 0.32;   // half-turned to the counter
+          scene.add(holder);
+          v.mixer.update(0);
+          v.pose?.();
+          const p = { group: holder, body: v.group, mixer: v.mixer, pose: v.pose,
+            kind: 'sit', phase: rnd() * 6.28 };
+          dropToHips(p, PROM_Y + STOOL.pizza.top, 0.13);
+          beachPeople.push(p);
+        });
+      }
+      if (s.kind === 'henna') {
+        const v = guestVisitor(G(si + 2), { seated: true });
+        const holder = new THREE.Group();
+        holder.add(v.group);
+        holder.position.set(s.x + STOOL.henna.xs[1], PROM_Y, stoolZ(STOOL.henna.dz));
+        holder.rotation.y = 0;                 // facing the henna table behind
+        scene.add(holder);
+        v.mixer.update(0);
+        v.pose?.();
+        const p = { group: holder, body: v.group, mixer: v.mixer, pose: v.pose,
+          kind: 'sit', phase: rnd() * 6.28 };
+        dropToHips(p, PROM_Y + STOOL.henna.top, 0.13);
+        beachPeople.push(p);
+      }
+    });
+
     // --- Sunbathers, one per towel already on the sand ---------------------
     // PITCHES was recorded when the towels were laid so the two cannot drift
     // apart; a sunbather beside her towel is worse than no sunbather.
-    const lying = PITCHES.filter(() => rnd() < 0.62).slice(0, 26);
+    const lying = guests.length
+      ? PITCHES.filter(() => rnd() < 0.62).slice(0, 26)
+      : [];
     for (let i = 0; i < lying.length; i++) {
       const [tx, tz, tyaw] = lying[i];
-      const p = poseHolder(G(i + 1), grp => lyingRig(grp, rnd), (holder, body) => {
+      const p = poseHolder(G(i), lyingRig,
+        (holder, body) => {
         holder.position.set(tx, terrainHeight(tx, tz), tz);
         holder.rotation.y = tyaw;
         // Tipped onto her back: the model stands up +Y and faces +Z, so a
         // quarter turn about X lays it down with the face to the sky.
         body.rotation.x = -Math.PI / 2;
-        body.position.set(0, 0.17, 0.82);
+        body.position.set(0, 0.04, 0.82);
       });
-      if (p) { p.kind = 'lie'; beachPeople.push(p); }
+      if (p) {
+        p.kind = 'lie';
+        const s = p.pose.state;
+        if (s.armOut) {
+          s._out0 = s.armOut[0];
+          s._out1 = s.armOut[1];
+          s._f0 = s.forearm[0];
+          s._head = s.headTurn;
+        }
+        liftOntoTowel(p);
+        beachPeople.push(p);
+      }
     }
 
     // --- In the water. Waders stand chest-deep; nobody swims after dark. ----
@@ -2790,11 +3474,14 @@ try {
         body.position.y = 0;
       });
       if (!p) continue;
-      // Arms out of the water, a little forward lean against the swell.
-      p.pose.state.arm = [-0.5 - rnd() * 0.5, -0.5 - rnd() * 0.5];
-      p.pose.state.armOut = [0.55, 0.55];
-      p.pose.state.forearm = [0.9, 0.9];
+      // Mixamo: flex X brings the arm forward/up out of the water. Negative
+      // flex on this rig buried the arms in the torso.
+      p.pose.state.arm = [0.55 + rnd() * 0.25, 0.5 + rnd() * 0.25];
+      p.pose.state.armOut = [0.4, 0.38];
+      p.pose.state.forearm = [0.55, 0.6];
       p.pose.state.lean = 0.12;
+      p.pose.state.hip = [0.15, 0.2];
+      p.pose.state.knee = [-0.25, -0.3];
       p.pose();
       p.kind = 'wade';
       p.bed = bed;
@@ -2827,13 +3514,30 @@ try {
         });
         if (!p) return;
         p.pose.state.spread = 0.16;
-        p.pose.state.hip = [-0.2, 0.16];
-        p.pose.state.knee = [0.34, 0.2];
+        p.pose.state.hip = [0.42, 0.38];
+        p.pose.state.knee = [-0.62, -0.55];
+        p.pose.state.ankle = 0.12;
+        p.pose.state.lean = 0.08;
+        // Mixamo T-pose points +X. Positive armOut on this rig swings BACK;
+        // negative armOut + high flex puts both hands in front of the waist
+        // (a volleyball platform). The old 0.95 / +0.16 path left them in
+        // a droopy T-pose and the hit swung through the bind, which is the
+        // scarecrow the camera was seeing.
+        if (g.paddle) {
+          p.pose.state.arm = [0.85, 1.15];
+          p.pose.state.armOut = [0.22, -0.35];
+          p.pose.state.forearm = [0.45, 0.7];
+        } else {
+          p.pose.state.arm = [1.50, 1.48];
+          p.pose.state.armOut = [-0.22, -0.20];
+          p.pose.state.forearm = [0.55, 0.58];
+        }
         p.pose();
         p.kind = 'player';
         p.side = side;
         p.phase = phase;
         p.paddle = g.paddle;
+        p.sandY = terrainHeight(px, pz);
         made.push(p);
         beachPeople.push(p);
         if (g.paddle) {
@@ -2845,9 +3549,20 @@ try {
             new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 0.7 }));
           grip.position.y = -0.16;
           bat.add(face, grip);
-          bat.position.set(-0.34, 1.28, 0.28);
-          bat.rotation.set(0, 0, -0.5);
-          p.group.add(bat);
+          let hand = null;
+          p.body.traverse(o => {
+            if (!hand && o.isBone && /RightHand$/.test(o.name)) hand = o;
+          });
+          if (hand) {
+            // Mixamo bones run along +Y; sit the grip in the palm.
+            bat.position.set(0.02, 0.1, 0.01);
+            bat.rotation.set(1.15, 0.15, 0.35);
+            hand.add(bat);
+          } else {
+            bat.position.set(-0.34, 1.28, 0.28);
+            bat.rotation.set(0, 0, -0.5);
+            p.group.add(bat);
+          }
         }
       });
       if (made.length !== 2) return;
@@ -2864,46 +3579,57 @@ try {
     });
 
     // --- Skaters on the painted lane ---------------------------------------
+    // Stance is SIDEWAYS to travel: board along world X, rider faces the
+    // shops (or the sea). Facing along X with the board across the lane is
+    // what made them look like they were being slid on their side.
+    // still:true so idle does not fight the pump pose.
     for (let i = 0; i < 5; i++) {
       const dir = i % 2 ? 1 : -1;
-      const p = poseHolder(G(i), customRig, holder => {
-        let sx = -90 + rnd() * 180;
-        if (sx > FERRIS_WEST && sx < FERRIS_EAST) sx = dir > 0 ? FERRIS_EAST : FERRIS_WEST;
-        holder.position.set(sx, PROM_Y, 38.4 + (rnd() - 0.5) * 0.6);
-        holder.rotation.y = dir > 0 ? Math.PI / 2 : -Math.PI / 2;
-      });
-      if (!p) continue;
-      // Every skater got the identical stance before, which is what made five
-      // people read as one person copied five times. Stance, crouch and arm
-      // carriage all vary, and `goofy` swaps which foot leads.
+      const v = guestVisitor(G(i), { still: true });
+      const pose = customRig(v.group);
+      if (!pose) continue;
+      let sx = -90 + rnd() * 180;
+      if (sx > FERRIS_WEST && sx < FERRIS_EAST) sx = dir > 0 ? FERRIS_EAST : FERRIS_WEST;
+      const faceYaw = i % 3 === 0 ? Math.PI : 0;
+      const holder = new THREE.Group();
+      holder.position.set(sx, PROM_Y, SKATE_Z);
+      holder.rotation.y = faceYaw;
+      v.group.position.y = 0.075;
+      holder.add(v.group);
+      scene.add(holder);
       const goofy = rnd() < 0.45;
-      p.goofy = goofy;
-      p.crouch = 0.7 + rnd() * 0.5;
-      p.armCarry = 0.8 + rnd() * 0.6;
-      p.pose.state.spread = 0.24 + rnd() * 0.18;
-      p.pose.state.arm = goofy ? [-0.9, -0.4] : [-0.4, -0.9];
-      p.pose.state.armOut = [p.armCarry, p.armCarry * 1.1];
-      p.pose.state.forearm = [0.35 + rnd() * 0.3, 0.4 + rnd() * 0.3];
-      p.pose.state.lean = 0.12 + rnd() * 0.14;
-      p.pose();
-      // The board, under the front foot.
-      const deck = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 0.24),
-        new THREE.MeshStandardMaterial({ color: pick([0xd8362a, 0x2f86b4, 0xe8b23c]), roughness: 0.6 }));
-      deck.position.set(0, 0.09, 0);
+      const rec = measureAnkle({ group: holder, body: v.group });
+      pose.state.spread = -0.18;
+      pose.state.ankle = 0.04;
+      pose.state.hip = [0.36, 0.34];
+      pose.state.knee = [-0.55, -0.50];
+      pose();
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.04, 0.21),
+        new THREE.MeshStandardMaterial({
+          color: pick([0xd8362a, 0x2f86b4, 0xe8b23c, 0x1e2a44]), roughness: 0.55,
+        }));
+      deck.position.set(0, 0.055, 0);
       deck.castShadow = true;
-      p.group.add(deck);
-      for (const dx of [-0.28, 0.28]) {
-        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.05, 8),
-          new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 0.5 }));
-        w.rotation.z = Math.PI / 2;
-        w.position.set(dx, 0.045, 0);
-        p.group.add(w);
+      holder.add(deck);
+      for (const dx of [-0.24, 0.24]) {
+        const truck = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.025, 0.15),
+          new THREE.MeshStandardMaterial({ color: 0xcdd3d8, roughness: 0.4, metalness: 0.35 }));
+        truck.position.set(dx, 0.035, 0);
+        holder.add(truck);
+        for (const s of [-1, 1]) {
+          const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.036, 8),
+            new THREE.MeshStandardMaterial({ color: 0x1c1e22, roughness: 0.5 }));
+          wh.rotation.x = Math.PI / 2;
+          wh.position.set(dx, 0.028, s * 0.078);
+          holder.add(wh);
+        }
       }
-      p.body.position.y = 0.12;
-      p.kind = 'skate';
-      p.dir = dir;
-      p.speed = 3.4 + rnd() * 2.2;
-      beachPeople.push(p);
+      beachPeople.push({
+        group: holder, body: v.group, mixer: v.mixer, pose,
+        kind: 'skate', dir, faceYaw, speed: 3.6 + rnd() * 2.0,
+        goofy, crouch: 0.5 + rnd() * 0.22, phase: rnd() * 6.28,
+        feet: rec.feet, ankleH: rec.ankleH, deckTop: 0.075,
+      });
     }
 
     // --- Ferris wheel: people sitting in the gondolas ----------------------
@@ -3039,59 +3765,96 @@ function tickPeople(dt, t) {
           p.group.position.x = p.dir > 0 ? FERRIS_EAST : FERRIS_WEST;
         if (p.group.position.x > 108) p.group.position.x = -108;
         if (p.group.position.x < -108) p.group.position.x = 108;
+
+        // Dynamic obstacle avoidance around vendor stalls (marquee tents)
+        let curZ = p.z;
+        for (const [vx, vz] of VENDOR_STALLS) {
+          const dx = p.group.position.x - vx;
+          const dz = curZ - vz;
+          if (Math.abs(dx) < 2.5 && Math.abs(dz) < 1.7) {
+            curZ = vz + (dz >= 0 ? 1.75 : -1.75);
+          }
+        }
+        p.group.position.z = curZ;
+
         p.mixer.update(dt);
         break;
       }
       case 'skate': {
         p.group.position.x += p.speed * p.dir * dt;
+        p.group.position.z = SKATE_Z;
         if (p.group.position.x > FERRIS_WEST && p.group.position.x < FERRIS_EAST)
           p.group.position.x = p.dir > 0 ? FERRIS_EAST : FERRIS_WEST;
         if (p.group.position.x > 100) p.group.position.x = -100;
         if (p.group.position.x < -100) p.group.position.x = 100;
         p.mixer.update(0);
-        // Pumping: the back leg drives, the front knee rides it out, and the
-        // body rises and falls with the push. Legs held still was most of why
-        // these read as statues being slid along.
-        const push = Math.sin(t * 2.3 + p.phase);
+        // Both feet stay on the deck. A scripted "push foot on the ground"
+        // without IK slid through the board and read as a seizure. Weight
+        // shifts, knees bounce, arms counter-balance — a carve, not a walk.
+        const pump = Math.sin(t * 1.65 + p.phase);
+        const carve = Math.sin(t * 0.7 + p.phase * 0.5);
         const lead = p.goofy ? 1 : 0, back = p.goofy ? 0 : 1;
-        p.pose.state.hip[lead] = -0.42 - p.crouch * 0.18 - push * 0.1;
-        p.pose.state.knee[lead] = 0.62 + p.crouch * 0.3 + push * 0.12;
-        p.pose.state.hip[back] = -0.08 + push * 0.42;
-        p.pose.state.knee[back] = 0.34 - push * 0.3;
-        p.pose.state.lean = 0.12 + p.crouch * 0.08 + push * 0.07;
-        p.pose.state.arm[0] = (p.goofy ? -0.9 : -0.4) - push * 0.25;
-        p.pose.state.arm[1] = (p.goofy ? -0.4 : -0.9) + push * 0.25;
+        const c = p.crouch;
+        p.pose.state.hip[lead] = 0.38 + c * 0.08 + pump * 0.04;
+        p.pose.state.knee[lead] = -0.58 - c * 0.08 + pump * 0.06;
+        p.pose.state.hip[back] = 0.34 + c * 0.06 - pump * 0.05;
+        p.pose.state.knee[back] = -0.52 - c * 0.06 - pump * 0.08;
+        // Mixamo abduct SIGN: positive spread CROSSES the feet into the
+        // middle of the board. Negative pushes them out onto the trucks.
+        p.pose.state.spread = -0.18;
+        p.pose.state.ankle = 0.04;
+        p.pose.state.lean = 0.14 + c * 0.05 + carve * 0.04;
+        p.pose.state.arm = [0.22 + carve * 0.08, 0.2 - carve * 0.08];
+        p.pose.state.armOut = [0.48 + pump * 0.1, 0.46 - pump * 0.1];
+        p.pose.state.forearm = [0.42, 0.4];
         p.pose();
-        p.body.position.y = 0.12 + Math.max(0, push) * 0.03;
+        plantSkateFeet(p);
+        p.group.rotation.z = carve * 0.07;
         break;
       }
       case 'lie': {
         p.mixer.update(0);
+        const s = p.pose.state;
+        const b = Math.sin(t * 0.65 + p.phase);
+        const h = Math.sin(t * 0.32 + p.phase * 0.7);
+        if (s.armOut) {
+          s.armOut[0] = s._out0 + b * 0.05;
+          s.armOut[1] = s._out1 - b * 0.04;
+          s.headTurn = s._head + h * 0.14;
+          s.forearm[0] = s._f0 + b * 0.06;
+        }
         p.pose();
-        // Breathing, on the chest rather than the whole body.
-        p.body.scale.y = 1 + Math.sin(t * 0.9 + p.phase) * 0.006;
+        const breath = 1 + Math.sin(t * 0.85 + p.phase) * 0.014;
+        // After -90 X, local Z is world Y (into the towel). Breathing on Z
+        // pushed them back under the cloth; breathe across the chest instead.
+        p.body.scale.y = breath;
+        p.body.scale.x = 1 + Math.sin(t * 0.85 + p.phase) * 0.008;
+        p.body.scale.z = 1;
         break;
       }
       case 'wade': {
         p.mixer.update(0);
+        const w = Math.sin(t * 1.05 + p.phase);
+        p.pose.state.arm[0] = 0.6 + w * 0.14;
+        p.pose.state.arm[1] = 0.55 - w * 0.12;
+        p.pose.state.armOut[0] = 0.4 + w * 0.06;
+        p.pose.state.armOut[1] = 0.38 - w * 0.05;
         p.pose();
-        // Riding the swell, and the swash lifts them as it passes.
-        p.group.position.y = p.bed + Math.sin(t * 0.9 + p.phase) * 0.06;
-        p.group.rotation.z = Math.sin(t * 0.7 + p.phase) * 0.03;
+        p.group.position.y = p.bed + Math.sin(t * 0.9 + p.phase) * 0.07;
+        p.group.rotation.z = Math.sin(t * 0.7 + p.phase) * 0.04;
         break;
       }
       case 'player': {
-        // Driven entirely by the rally below, so nothing to do here but hold.
+        // Rally writes the pose after this; mixer only so the idle rest holds.
         p.mixer.update(0);
-        p.pose();
         break;
       }
       case 'rally': {
-        // One clock for the ball and both players: the ball crosses, and
-        // whoever it is arriving at goes up for it. Separate phases meant
-        // everyone waved at nothing.
+        // One clock for the ball and both players. Mixamo bind is a T-pose
+        // along +X: flex ~1.5 drops the arms, negative armOut swings them
+        // FORWARD. Lerping flex through 0 is a jumping-jack (the scarecrow
+        // screenshot). Volleyball is a platform bump in front of the body.
         const s = Math.sin(t * 1.1 + p.phase);
-        p.group.position.set(p.mx + s * p.half, p.mz === undefined ? 0 : 0, 0);
         p.group.position.set(
           p.mx + s * p.half,
           p.base + p.rest + Math.abs(Math.cos(t * 1.1 + p.phase)) * p.arc,
@@ -3099,19 +3862,55 @@ function tickPeople(dt, t) {
         const reach = [Math.max(0, -s), Math.max(0, s)];
         for (const q of [p.A, p.B]) {
           const r = reach[q.side];
-          const up = -0.25 - r * 2.0;
-          q.pose.state.arm[0] = up;
-          q.pose.state.arm[1] = up + 0.18;
-          q.pose.state.armOut = [0.3 - r * 0.1, 0.3 - r * 0.1];
-          q.pose.state.forearm = [0.5 - r * 0.35, 0.5 - r * 0.35];
-          q.pose.state.lean = -0.05 - r * 0.16;
-          q.pose.state.knee = [0.34 - r * 0.2, 0.2 - r * 0.12];
+          const hit = r * r * (3 - 2 * r); // smoothstep into the hit
+          if (q.paddle) {
+            q.pose.state.arm[0] = 0.85 + hit * 0.1;
+            q.pose.state.arm[1] = 1.15 - hit * 0.55;
+            q.pose.state.armOut = [0.22 - hit * 0.05, -0.35 - hit * 0.55];
+            q.pose.state.forearm = [0.45, 0.7 - hit * 0.45];
+            q.pose.state.lean = 0.04 - hit * 0.12;
+          } else {
+            q.pose.state.arm[0] = 1.50 - hit * 0.35;
+            q.pose.state.arm[1] = 1.48 - hit * 0.33;
+            q.pose.state.armOut = [-0.22 - hit * 0.73, -0.20 - hit * 0.75];
+            q.pose.state.forearm = [0.55 - hit * 0.21, 0.58 - hit * 0.24];
+            q.pose.state.lean = 0.08 - hit * 0.16;
+          }
+          q.pose.state.hip = [0.42 - hit * 0.16, 0.38 - hit * 0.12];
+          q.pose.state.knee = [-0.62 + hit * 0.28, -0.55 + hit * 0.22];
+          q.pose.state.spread = 0.16;
+          q.pose.state.ankle = 0.12;
+          if (q.sandY != null) q.group.position.y = q.sandY + hit * 0.16;
+          q.mixer.update(0);
+          q.pose();
+          // The holder already carries the hop; this puts the soles on it
+          // rather than 6 cm above, which is what the crouch was costing.
+          standSolesOn(q, q.group.position.y);
         }
+        break;
+      }
+      case 'tend': {
+        p.mixer.update(dt);
+        p.group.rotation.y = p.baseYaw + Math.sin(t * 0.38 + p.phase) * 0.22;
+        break;
+      }
+      case 'shopWalk': {
+        p.group.position.x += p.speed * p.dir * dt;
+        if (p.group.position.x > p.x1) {
+          p.dir = -1;
+          p.group.rotation.y = -Math.PI / 2;
+          p.group.position.x = p.x1;
+        } else if (p.group.position.x < p.x0) {
+          p.dir = 1;
+          p.group.rotation.y = Math.PI / 2;
+          p.group.position.x = p.x0;
+        }
+        p.mixer.update(dt * (p.gait || 0.5));
         break;
       }
       case 'sit':
       case 'play': {
-        p.mixer.update(0);
+        p.mixer.update(dt);
         if (p.kind === 'play') {
           p.pose.state.forearm = 1.5 + Math.sin(t * 3.1 + p.phase) * 0.28;
         } else {
@@ -3406,6 +4205,7 @@ function animate() {
   const dt = Math.min(0.033, clock.getDelta());
   const t = clock.elapsedTime;
   tickFerris(dt, t);
+  for (const ring of shopSpinners) ring.rotation.y += 0.55 * dt;
   // Follow the car even while the overlay is up, or a pause would leave the
   // avatar hanging in the air as the wheel kept turning underneath.
   const riding = updateFerrisRide(dt, started && !paused);
@@ -3472,8 +4272,9 @@ function startBeach() {
   resumePlay();
 }
 
-startBtn.addEventListener('click', startBeach);
-if (arrivedFromTravel) startBeach();
+window.__startBeach = startBeach;
+startBtn?.addEventListener('click', startBeach);
+if (arrivedFromTravel || window.__startRequested) startBeach();
 
 document.addEventListener('pointerlockchange', () => {
   usedLock = usedLock || document.pointerLockElement !== null;

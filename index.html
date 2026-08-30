@@ -1133,6 +1133,7 @@
     if (window.__startVilla) window.__startVilla();
     if (window.__startZoo) window.__startZoo();
     if (window.__startShinto) window.__startShinto();
+    if (window.__startBeach) window.__startBeach();
   }, true);
   window.addEventListener('error', e => {
     console.error('[Page Error]', e.error || e.message);
@@ -1147,7 +1148,7 @@
     zoo: './main-ZOO.js?v=202608141500',
     airport: './main-AIRPORT.js?v=202608170015',
     shinto: './main-SHINTO.js?v=202608212100',
-    beach: './main-BEACH.js?v=202608292310',
+    beach: './main-BEACH.js?v=202608302345',
   };
   import(ENGINES[document.documentElement.dataset.mode] ?? './main.js?v=24');
 </script>

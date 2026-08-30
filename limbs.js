@@ -340,7 +340,7 @@ function pushVertex(out, p, w) {
   out.wgt.push(w.wgt[0], w.wgt[1], w.wgt[2], w.wgt[3]);
 }
 
-function finish(out, rig, material, name) {
+function finish(out, rig, material, name, opts = {}) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(out.pos, 3));
   g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(out.idx, 4));
@@ -360,7 +360,7 @@ function finish(out, rig, material, name) {
   mesh.castShadow = rig.castShadow;
   mesh.receiveShadow = rig.receiveShadow;
   mesh.frustumCulled = false;
-  mesh.visible = false;
+  mesh.visible = opts.visible === true;
   rig.parent.add(mesh);
   return mesh;
 }
@@ -398,6 +398,35 @@ function restReader(rig) {
 // ---------------------------------------------------------------------------
 
 const LEG_BONES = side => ['pelvis', `thigh_${side}`, `calf_${side}`, `foot_${side}`, `ball_${side}`];
+
+const PACK_LEG = {
+  l: { pelvis: 'pelvis', thigh: 'thigh_l', calf: 'calf_l', foot: 'foot_l', ball: 'ball_l' },
+  r: { pelvis: 'pelvis', thigh: 'thigh_r', calf: 'calf_r', foot: 'foot_r', ball: 'ball_r' },
+};
+const MIXAMO_LEG = {
+  l: { pelvis: 'Hips', thigh: 'LeftUpLeg', calf: 'LeftLeg', foot: 'LeftFoot', ball: 'LeftToeBase' },
+  r: { pelvis: 'Hips', thigh: 'RightUpLeg', calf: 'RightLeg', foot: 'RightFoot', ball: 'RightToeBase' },
+};
+
+function schemeBones(scheme) {
+  const names = new Set();
+  for (const side of ['l', 'r']) {
+    for (const k of Object.values(scheme[side])) names.add(k);
+  }
+  return [...names];
+}
+
+function findLegRig(root) {
+  const pack = findRig(root, schemeBones(PACK_LEG));
+  if (pack) return { rig: pack, scheme: PACK_LEG };
+  const mix = findRig(root, schemeBones(MIXAMO_LEG));
+  if (mix) return { rig: mix, scheme: MIXAMO_LEG };
+  return null;
+}
+
+function boneShortName(name = '') {
+  return String(name).split(/[:|/]/).pop().replace(/^mixamorig/i, '');
+}
 
 // Influences for a whole cross-section. Deriving them from `u` alone — rather
 // than per vertex — is what makes the knee and the ankle shear evenly all the
@@ -777,6 +806,150 @@ export function buildBareLegs(root, material) {
     buildToes({ out, bone, fwd, hip, flatBall, soleY, L });
   }
   return finish(out, rig, material, 'Wardrobe_BareLegs');
+}
+
+/**
+ * Lower legs for a Mixamo (or pack) guest in shorts. Ready Player Me models
+ * jeans and a shoe last as one mesh: painting those islands skin-coloured is
+ * how sunbathers used to read as wearing flesh trousers and trainers. This
+ * loft starts at the shorts hem so the cuff is buried in the remaining jeans,
+ * then reuses the player's calf / ankle / toe tables.
+ */
+export function buildBareLowerLegs(root, material) {
+  const found = findLegRig(root);
+  if (!found) return null;
+  const { rig, scheme } = found;
+  const { indexOf, pos } = restReader(rig);
+  const out = { pos: [], tri: [], idx: [], wgt: [] };
+  const fromU = 0.55;
+
+  for (const side of ['l', 'r']) {
+    const names = scheme[side];
+    const hip = pos(names.thigh), knee = pos(names.calf);
+    const ankle = pos(names.foot), ball = pos(names.ball);
+    const fwd = new THREE.Vector3(ball.x - ankle.x, 0, ball.z - ankle.z);
+    if (fwd.lengthSq() < 1e-8) fwd.set(0, 0, 1);
+    else fwd.normalize();
+    const L = Math.max(1e-4, ankle.distanceTo(ball));
+    const soleY = ball.y - 0.20 * L;
+    const flatBall = new THREE.Vector3(ball.x, 0, ball.z);
+    const along = (from, f, y) => from.clone().addScaledVector(fwd, f * L).setY(y);
+    const hem = hip.clone().lerp(knee, fromU);
+    const bone = {
+      pelvis: indexOf(names.pelvis), thigh: indexOf(names.thigh),
+      calf: indexOf(names.calf), foot: indexOf(names.foot),
+      ball: indexOf(names.ball),
+    };
+    loft({
+      points: [
+        hem, knee, ankle,
+        along(ankle, 0.02, ankle.y - 0.36 * L),
+        along(ankle, 0.42, soleY + 0.13 * L),
+        along(flatBall, 0, soleY + 0.10 * L),
+        along(flatBall, 0.05, soleY + 0.082 * L),
+        along(flatBall, 0.10, soleY + 0.068 * L),
+        along(flatBall, 0.16, soleY + 0.058 * L),
+        along(flatBall, 0.20, soleY + 0.054 * L),
+      ],
+      pathU: [fromU, 1, 2, 2.30, 2.62, 3.0, 3.07, 3.12, 3.18, LEG_END],
+      profile: LEG_PROFILE,
+      scale: hip.distanceTo(ankle) / LEG_SPAN,
+      rings: ringParams(fromU, LEG_END, u => u < 0.80 ? 0.090
+        : u < 0.88 ? 0.040 : u < 1.30 ? 0.019 : u < 1.50 ? 0.044
+        : u < 1.78 ? 0.070 : u < 2.35 ? 0.026 : u < 3.05 ? 0.045 : 0.030),
+      weights: legWeights(bone),
+      lateral: Math.sign(hip.x) || 1,
+      floorY: soleY,
+      floorFrom: 2,
+      warp: legWarp,
+      radial: LEG_RADIAL,
+    }, out);
+    buildToes({ out, bone, fwd, hip, flatBall, soleY, L });
+  }
+  return finish(out, rig, material, 'Wardrobe_BareLegs', { visible: true });
+}
+
+/**
+ * Collapse the authored jeans-and-shoe last into a stump at the shorts hem
+ * so it cannot poke through the lofted calf. Geometry is cloned first: crowd
+ * clones share the template buffer, and walking guests still need trousers.
+ * Weights are rewritten onto the thigh so the stump follows the hem instead
+ * of swinging with the calf bone.
+ */
+export function hideAuthoredLowerLegs(root) {
+  const found = findLegRig(root);
+  if (!found) return;
+  const { rig, scheme } = found;
+  const { pos, indexOf } = restReader(rig);
+  const hem = {
+    l: pos(scheme.l.thigh).clone().lerp(pos(scheme.l.calf), 0.42),
+    r: pos(scheme.r.thigh).clone().lerp(pos(scheme.r.calf), 0.42),
+  };
+  const hemY = { l: hem.l.y, r: hem.r.y };
+  const thighIdx = { l: indexOf(scheme.l.thigh), r: indexOf(scheme.r.thigh) };
+
+  root.traverse(mesh => {
+    if (!mesh.isSkinnedMesh || !mesh.skeleton) return;
+    if (/^Wardrobe_/.test(mesh.name)) return;
+    const bones = mesh.skeleton.bones;
+    let hasLeg = false;
+    const kind = bones.map(b => {
+      const short = boneShortName(b.name);
+      if (/foot|toe/i.test(short)) { hasLeg = true; return 'foot'; }
+      if (short === scheme.l.calf || short === scheme.r.calf) { hasLeg = true; return 'calf'; }
+      if (short === scheme.l.thigh || short === scheme.r.thigh) return 'thigh';
+      return '';
+    });
+    if (!hasLeg) return;
+    const sideOf = bones.map(b => {
+      const short = boneShortName(b.name);
+      if (short === scheme.l.foot || short === scheme.l.ball || short === scheme.l.calf
+        || short === scheme.l.thigh || /^(LeftFoot|LeftToe|LeftLeg|LeftUpLeg)/i.test(short)
+        || /_l$/i.test(short)) return 'l';
+      if (short === scheme.r.foot || short === scheme.r.ball || short === scheme.r.calf
+        || short === scheme.r.thigh || /^(RightFoot|RightToe|RightLeg|RightUpLeg)/i.test(short)
+        || /_r$/i.test(short)) return 'r';
+      return '';
+    });
+
+    const geo = mesh.geometry.clone();
+    const attr = geo.attributes.position;
+    const skinIndex = geo.attributes.skinIndex;
+    const skinWeight = geo.attributes.skinWeight;
+    if (!attr || !skinIndex || !skinWeight) return;
+    let changed = false;
+    for (let i = 0; i < attr.count; i++) {
+      let footW = 0, calfW = 0, thighW = 0, sideL = 0, sideR = 0;
+      for (let k = 0; k < 4; k++) {
+        const w = skinWeight.getComponent(i, k);
+        if (w <= 0) continue;
+        const bi = skinIndex.getComponent(i, k);
+        const knd = kind[bi];
+        if (knd === 'foot') footW += w;
+        else if (knd === 'calf') calfW += w;
+        else if (knd === 'thigh') thighW += w;
+        if (sideOf[bi] === 'l') sideL += w;
+        else if (sideOf[bi] === 'r') sideR += w;
+      }
+      const side = sideL >= sideR ? 'l' : 'r';
+      const y = attr.getY(i);
+      const belowHem = (thighW + calfW + footW) > 0.28 && y < hemY[side] + 0.03;
+      if (footW < 0.08 && calfW < 0.12 && !belowHem) continue;
+      const t = hem[side];
+      attr.setXYZ(i, t.x, t.y, t.z);
+      const ti = Math.max(0, thighIdx[side]);
+      skinIndex.setXYZW(i, ti, 0, 0, 0);
+      skinWeight.setXYZW(i, 1, 0, 0, 0);
+      changed = true;
+    }
+    if (!changed) return;
+    attr.needsUpdate = true;
+    skinIndex.needsUpdate = true;
+    skinWeight.needsUpdate = true;
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    mesh.geometry = geo;
+  });
 }
 
 // Five short tubes fanning out of the forefoot pad. Each is skinned to the same
