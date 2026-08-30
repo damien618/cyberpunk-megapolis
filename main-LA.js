@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Player } from './player.js?v=49';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
-import { Controller } from './controller.js?v=6';
+import { Controller } from './controller.js?v=7';
 import { CameraRig } from './cameraRig.js?v=5';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar, carBounds, rollCars, setCarLightsDay, setCarLightsNight } from './cars.js?v=4';

@@ -997,7 +997,7 @@ function charMatFor(name) {
 
 // ---------- game layer (architecture adapted from the web-slinger reference) ----------
 import { buildCityBoxes } from './cityBoxes.js?v=3';
-import { Controller } from './controller.js?v=3';
+import { Controller } from './controller.js?v=4';
 import { CameraRig } from './cameraRig.js?v=4';
 import { Input } from './input.js?v=3';
 

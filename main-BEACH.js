@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Player } from './player.js?v=74';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
-import { Controller } from './controller.js?v=6';
+import { Controller } from './controller.js?v=7';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes } from './cityBoxes.js?v=5';
 import { buildCar, carBounds } from './cars.js?v=4';
@@ -1322,11 +1322,32 @@ scene.add(wetBand);
 
 // Seawall: a solid mass from below the sand up to deck level. Solid is the
 // point — it is what stops you strolling up off the beach anywhere except at
-// the steps, which is what gives the promenade its own edge.
-longSlab(M.seawall, -PROM_HALF_W, PROM_HALF_W, SEAWALL_Z0, SEAWALL_Z1, SAND_TOP - 2.4, PROM_Y);
+// the steps, which is what gives the promenade its own edge. The sea face is
+// cut at every flight (and the ramp): leave it running through and the wall's
+// AABB is a 4 m face sitting on the last tread, so the controller reads a wall
+// one step short of the deck the same way the capping course used to.
 const STAIRS = [-62, 0, 62];
 const STAIR_HALF = 3.4;
 const RAMP_X0 = 30, RAMP_X1 = 38;
+{
+  const gaps = STAIRS.map(sx => [sx - STAIR_HALF - 0.05, sx + STAIR_HALF + 0.05])
+    .concat([[RAMP_X0 - 0.05, RAMP_X1 + 0.05]])
+    .sort((p, q) => p[0] - q[0]);
+  let cx = -PROM_HALF_W;
+  for (const [g0, g1] of gaps) {
+    if (g0 > cx) {
+      longSlab(M.seawall, cx, g0, SEAWALL_Z0, SEAWALL_Z1, SAND_TOP - 2.4, PROM_Y);
+    }
+    // Behind the treads the wall still has thickness, so the promenade does
+    // not open a hole you can walk through. The treads themselves end at
+    // SEAWALL_Z0 + 0.1; overlap them so the landing is continuous.
+    longSlab(M.seawall, g0, g1, SEAWALL_Z0 + 0.08, SEAWALL_Z1, SAND_TOP - 2.4, PROM_Y);
+    cx = Math.max(cx, g1);
+  }
+  if (cx < PROM_HALF_W) {
+    longSlab(M.seawall, cx, PROM_HALF_W, SEAWALL_Z0, SEAWALL_Z1, SAND_TOP - 2.4, PROM_Y);
+  }
+}
 
 // Capping course, proud of the face — the ledge people sit on. It STOPS at
 // every opening, and that is not cosmetic: run through, this 14 cm lip sat
@@ -1350,16 +1371,21 @@ const RAMP_X0 = 30, RAMP_X1 = 38;
   }
 }
 
-// Five treads per flight, and each flight starts BELOW its own patch of sand
-// rather than at a nominal level. The dunes roll: where the sand happened to
-// sit low the bottom riser came out at 52 cm — again over the step-up — and
-// that flight could not even be entered from the beach.
+// Eight treads per flight, each well under the 50 cm step-up. Five treads
+// made a 43 cm riser — climbable once the controller stopped treating the
+// face as a wall, but still a hop, and where the sand sat low the first
+// riser used to overshoot 50 cm and refuse to be entered at all. Start the
+// flight below its own patch of sand so the bottom tread is a kerb, not a
+// wall. Treads are deeper than the capsule radius so a foot actually fits.
+const STAIR_N = 8;
+const STAIR_TREAD = 0.70;
 for (const sx of STAIRS) {
-  const base = terrainHeight(sx, SEAWALL_Z0 - 3.4) - 0.4;
-  const rise = (PROM_Y - base) / 5;
-  for (let i = 0; i < 5; i++) {
+  const nose = SEAWALL_Z0 - STAIR_N * STAIR_TREAD;
+  const base = terrainHeight(sx, nose) - 0.12;
+  const rise = (PROM_Y - base) / STAIR_N;
+  for (let i = 0; i < STAIR_N; i++) {
     const top = base + (i + 1) * rise;
-    const z0 = SEAWALL_Z0 - (5 - i) * 0.56;
+    const z0 = SEAWALL_Z0 - (STAIR_N - i) * STAIR_TREAD;
     slab(M.seawall, sx - STAIR_HALF, sx + STAIR_HALF, z0, SEAWALL_Z0 + 0.1, base - 1.6, top);
   }
 }

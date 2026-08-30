@@ -498,11 +498,33 @@ export class Controller {
         if (nh > 0.35) {                              // wall-ish, not a ramp/floor
           nx /= nh; nz /= nh;
           if (nx * _rdir.x + nz * _rdir.z > 0) { nx = -nx; nz = -nz; }
-          const back = Math.max(0, hit.distance - R);
-          this.pos.x = _o.x + _rdir.x * back;
-          this.pos.z = _o.z + _rdir.z * back;
-          const vn = this.vel.x * nx + this.vel.z * nz;
-          if (vn < 0) { this.vel.x -= vn * nx; this.vel.z -= vn * nz; }
+
+          // AABB already ignores boxes under STEP_H, but these swept rays do
+          // not: the knee probe sits at 0.35 m, right in the face of a 40 cm
+          // stair riser, so holding forward grinds up one trembling step at a
+          // time. If a floor just inside the hit is a short step, walk onto it
+          // instead of treating the riser as a wall. Rails still block —
+          // groundFn refuses props, so the floor behind them is not a step.
+          let stepped = false;
+          if (this.mode === 'ground') {
+            const into = hit.distance + 0.12;
+            const sx = _o.x + _rdir.x * into;
+            const sz = _o.z + _rdir.z * into;
+            const stepY = this.groundFn(sx, sz, this.pos.y + STEP_H + 0.2, this.pos.y, this.pos.y);
+            if (stepY !== null && stepY - this.pos.y > 0.025 && stepY - this.pos.y < STEP_H) {
+              this.pos.x = sx;
+              this.pos.z = sz;
+              this.land(stepY);
+              stepped = true;
+            }
+          }
+          if (!stepped) {
+            const back = Math.max(0, hit.distance - R);
+            this.pos.x = _o.x + _rdir.x * back;
+            this.pos.z = _o.z + _rdir.z * back;
+            const vn = this.vel.x * nx + this.vel.z * nz;
+            if (vn < 0) { this.vel.x -= vn * nx; this.vel.z -= vn * nz; }
+          }
         }
       }
     }
