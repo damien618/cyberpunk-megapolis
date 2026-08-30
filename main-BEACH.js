@@ -1963,6 +1963,10 @@ const PRICE_PIZZA = canvasMat(256, 128, (g, W, H) => {
   g.fillStyle = '#c42c28'; g.fillRect(0, 0, W, H);
   paintText(g, 'SLICE $4', W / 2, H / 2, 34, '#fff6df');
 });
+const PRICE_WHEEL = canvasMat(256, 128, (g, W, H) => {
+  g.fillStyle = '#d8362a'; g.fillRect(0, 0, W, H);
+  paintText(g, 'RIDE $8', W / 2, H / 2, 36, '#fff6df');
+});
 
 let merchSeed = 90291 >>> 0;
 const mrnd = () => ((merchSeed = (merchSeed * 1664525 + 1013904223) >>> 0) / 4294967296);
@@ -2504,19 +2508,65 @@ const ferris = {
 
   // Ticket booth on the shop-street approach, west of the fenced pad so it
   // is the last thing you pass before the wheel and does not sit under a car.
+  // Built as a hollow shell with an OPEN serving hatch: a filled box plus a
+  // glass decal on the front read as a shuttered kiosk, which is what it was.
   onDeck(54.2, 36.2, 0, () => {
-    box(M.kiosk, 0, 1.35, 0, 3.4, 2.7, 2.5);
-    box(M.kioskTrim, 0, 2.78, 0, 3.6, 0.18, 2.7);
-    box(M.fabricRed, 0, 3.08, 0, 3.9, 0.1, 2.9);
-    box(M.glassPane, 0, 1.45, -1.28, 2.1, 1.15, 0.06);
-    box(M.counter, 0, 0.95, -0.9, 2.4, 0.12, 0.7);
+    const BW = 3.4, BD = 2.5, BH = 2.7, t = 0.12;
+    const winW = 2.15, winH = 1.18, sillH = 0.92;
+    const zF = -BD / 2;
+    const jamb = (BW - winW) / 2;
+    const lintelH = BH - sillH - winH;
+
+    box(M.deckWood, 0, 0.03, 0, BW - 0.16, 0.06, BD - 0.16);
+    box(M.kiosk, 0, BH / 2, BD / 2 - t / 2, BW, BH, t);                 // back
+    box(M.kiosk, -BW / 2 + t / 2, BH / 2, 0, t, BH, BD);                // west wall
+    box(M.kiosk, 0, sillH / 2, zF + t / 2, BW, sillH, t);               // bulkhead
+    box(M.kiosk, -BW / 2 + jamb / 2, sillH + winH / 2, zF + t / 2, jamb, winH, t);
+    box(M.kiosk,  BW / 2 - jamb / 2, sillH + winH / 2, zF + t / 2, jamb, winH, t);
+    box(M.kiosk, 0, sillH + winH + lintelH / 2, zF + t / 2, BW, lintelH, t);
+
+    // East wall: a staff door onto the wheel pad, so the seller is not
+    // trapped behind the hatch. Split around the opening rather than
+    // painting a door on a sealed wall.
+    const doorW = 0.86, doorH = 2.05, doorZ0 = 0.12, doorZ1 = 0.12 + doorW;
+    const xE0 = BW / 2 - t, xE1 = BW / 2;
+    slab(M.kiosk, xE0, xE1, -BD / 2, doorZ0, 0, BH);
+    slab(M.kiosk, xE0, xE1, doorZ1, BD / 2, 0, BH);
+    slab(M.kiosk, xE0, xE1, doorZ0, doorZ1, doorH, BH);
+    // Closed in the frame — a swung leaf sat in the middle of the opening.
+    box(M.deckWood, (xE0 + xE1) / 2, doorH / 2, (doorZ0 + doorZ1) / 2,
+      t + 0.02, doorH - 0.03, doorW - 0.04);
+    box(M.steel, xE1 + 0.03, 1.02, doorZ1 - 0.14, 0.04, 0.10, 0.10);
+
+    // Roof plate stays ON TOP of the box — it must not hang past the fascia
+    // or it hides the name from the walk. The wrap-around kioskTrim band is
+    // gone: that was the blue bar sitting in front of PACIFIC WHEEL.
+    box(M.fabricRed, 0, BH + 0.08, 0.04, BW + 0.28, 0.12, BD + 0.08);
+    // Front valance, proud of the wall: this is the name band.
+    box(M.fabricRed, 0, BH - 0.12, zF - 0.10, BW + 0.16, 0.44, 0.10);
+
+    // Counter proud of the hatch — the ledge you lean on to buy a ticket.
+    box(M.counter, 0, sillH + 0.06, zF - 0.22, winW + 0.18, 0.10, 0.58);
+    box(M.counter, 0, sillH - 0.02, -0.12, winW + 0.22, 0.08, 1.15);
+
+    // Shutter rolled UP into a housing over the opening, with a short drop
+    // of slats so it still reads as a shutter rather than a missing wall.
+    box(M.steel, 0, sillH + winH + 0.11, zF - 0.09, winW + 0.28, 0.18, 0.24);
+    box(M.steel, 0, sillH + winH - 0.05, zF - 0.05, winW + 0.06, 0.10, 0.08);
+    for (const dx of [-winW / 2 - 0.04, winW / 2 + 0.04])
+      box(M.steel, dx, sillH + winH / 2, zF - 0.02, 0.05, winH, 0.05);
+
     prop(() => {
+      box(M.black, 0.55, sillH + 0.18, 0.18, 0.36, 0.22, 0.28);         // till
+      box(M.fabricRed, -0.55, sillH + 0.14, 0.22, 0.32, 0.10, 0.22);     // ticket pad
+      box(M.fabricYellow, -0.55, sillH + 0.22, 0.22, 0.28, 0.06, 0.18);
+      shape(G.card, PRICE_WHEEL, 0, 1.88, BD / 2 - t - 0.03, 1.2, 0.42, 1, { ry: Math.PI });
       shape(G.cylBase, M.steel, -0.7, 0, -1.7, 0.08, 0.62, 0.08);
       shape(G.cyl, M.deckWood, -0.7, 0.64, -1.7, 0.5, 0.08, 0.5);
     });
   });
-  fasciaSign(54.2, PROM_Y + 2.78, 36.2 - 1.32,
-    3.2, 0.42, 'PACIFIC WHEEL', '#d8362a', '#fff6df');
+  fasciaSign(54.2, PROM_Y + 2.58, 36.2 - 1.46,
+    3.3, 0.40, 'PACIFIC WHEEL', '#d8362a', '#fff6df');
 
   // Queue fence around the wheel, with a boarding gap on the seaward face
   // and another on the west (shop-street) approach.
@@ -4017,6 +4067,18 @@ try {
         beachPeople.push(p);
       }
     });
+
+    // Ticket seller in the Pacific Wheel booth, facing the hatch.
+    {
+      const keeper = guestVisitor(G(11), { playIdle: true });
+      keeper.group.position.set(54.2, PROM_Y, 36.55);
+      keeper.group.rotation.y = Math.PI;
+      scene.add(keeper.group);
+      beachPeople.push({
+        ...keeper, kind: 'tend',
+        baseYaw: Math.PI, phase: rnd() * 6.28,
+      });
+    }
 
     // --- Sunbathers, one per towel already on the sand ---------------------
     // PITCHES was recorded when the towels were laid so the two cannot drift
