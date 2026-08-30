@@ -481,6 +481,281 @@ function makeBoardGeo(kind) {
   return withUV2(g);
 }
 
+// ---------------------------------------------------------------------------
+// Boat Geometries — Hydrodynamic hulls, 3D billowing sails, and superstructures.
+// ---------------------------------------------------------------------------
+function makeSailboatHullGeo() {
+  const g = new THREE.BufferGeometry();
+  const Nz = 16, ringSize = 12;
+  const pos = [], uvs = [], ind = [];
+
+  for (let iz = 0; iz <= Nz; iz++) {
+    const t = iz / Nz;
+    const z = -0.5 + t * 1.0;
+    let w;
+    if (t < 0.6) {
+      w = 0.5 * (0.75 + 0.25 * Math.sin(t / 0.6 * Math.PI * 0.5));
+    } else {
+      const u = (t - 0.6) / 0.4;
+      w = 0.5 * Math.cos(u * Math.PI * 0.5);
+    }
+    const yDeck = 0.15 + 0.10 * Math.pow(t - 0.3, 2);
+    let yBot = t < 0.9 ? -0.22 * Math.sin(t * Math.PI * 0.85) : -0.05 * (1.0 - t) / 0.1;
+    if (t === 0) yBot = -0.08;
+    const depth = yDeck - yBot;
+
+    const profile = [
+      [+w * 0.5, yDeck],
+      [+w * 0.5 * 0.95, yDeck - depth * 0.35],
+      [+w * 0.5 * 0.70, yDeck - depth * 0.75],
+      [+w * 0.5 * 0.20, yBot + 0.02],
+      [0.0, yBot],
+      [-w * 0.5 * 0.20, yBot + 0.02],
+      [-w * 0.5 * 0.70, yDeck - depth * 0.75],
+      [-w * 0.5 * 0.95, yDeck - depth * 0.35],
+      [-w * 0.5, yDeck],
+      [-w * 0.5 * 0.5, yDeck + 0.015],
+      [0.0, yDeck + 0.025],
+      [+w * 0.5 * 0.5, yDeck + 0.015],
+    ];
+
+    for (let k = 0; k < ringSize; k++) {
+      pos.push(profile[k][0], profile[k][1], z);
+      uvs.push(k / (ringSize - 1), t);
+    }
+  }
+
+  for (let iz = 0; iz < Nz; iz++) {
+    const r0 = iz * ringSize;
+    const r1 = (iz + 1) * ringSize;
+    for (let k = 0; k < ringSize; k++) {
+      const kNext = (k + 1) % ringSize;
+      ind.push(r0 + k, r1 + k, r1 + kNext);
+      ind.push(r0 + k, r1 + kNext, r0 + kNext);
+    }
+  }
+
+  // Stern transom cap (t=0, ring 0)
+  const sternCenter = pos.length / 3;
+  pos.push(0.0, 0.05, -0.5);
+  uvs.push(0.5, 0.0);
+  for (let k = 0; k < ringSize; k++) {
+    const kNext = (k + 1) % ringSize;
+    ind.push(sternCenter, kNext, k);
+  }
+
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setIndex(ind);
+  g.computeVertexNormals();
+  return withUV2(g);
+}
+
+function makeYachtHullGeo() {
+  const g = new THREE.BufferGeometry();
+  const Nz = 16, ringSize = 12;
+  const pos = [], uvs = [], ind = [];
+
+  for (let iz = 0; iz <= Nz; iz++) {
+    const t = iz / Nz;
+    const z = -0.5 + t * 1.0;
+    let w;
+    if (t < 0.3) {
+      w = 0.5 * 0.88;
+    } else if (t < 0.7) {
+      w = 0.5 * 0.95;
+    } else {
+      const u = (t - 0.7) / 0.3;
+      w = 0.5 * 0.95 * Math.cos(u * Math.PI * 0.5);
+    }
+    const yDeck = 0.16 + 0.08 * Math.pow(t, 1.5);
+    const yChine = yDeck - 0.12;
+    let yBot = t < 0.95 ? -0.16 * Math.sin(t * Math.PI * 0.9) : 0.0;
+    if (t < 0.1) yBot = -0.06;
+    const depth = yDeck - yBot;
+
+    const profile = [
+      [+w * 0.5, yDeck],
+      [+w * 0.5 * 0.92, yChine],
+      [+w * 0.5 * 0.60, yBot + 0.04],
+      [+w * 0.5 * 0.15, yBot + 0.01],
+      [0.0, yBot],
+      [-w * 0.5 * 0.15, yBot + 0.01],
+      [-w * 0.5 * 0.60, yBot + 0.04],
+      [-w * 0.5 * 0.92, yChine],
+      [-w * 0.5, yDeck],
+      [-w * 0.5 * 0.5, yDeck + 0.01],
+      [0.0, yDeck + 0.018],
+      [+w * 0.5 * 0.5, yDeck + 0.01],
+    ];
+
+    for (let k = 0; k < ringSize; k++) {
+      pos.push(profile[k][0], profile[k][1], z);
+      uvs.push(k / (ringSize - 1), t);
+    }
+  }
+
+  for (let iz = 0; iz < Nz; iz++) {
+    const r0 = iz * ringSize;
+    const r1 = (iz + 1) * ringSize;
+    for (let k = 0; k < ringSize; k++) {
+      const kNext = (k + 1) % ringSize;
+      ind.push(r0 + k, r1 + k, r1 + kNext);
+      ind.push(r0 + k, r1 + kNext, r0 + kNext);
+    }
+  }
+
+  // Stern transom cap
+  const sternCenter = pos.length / 3;
+  pos.push(0.0, 0.05, -0.5);
+  uvs.push(0.5, 0.0);
+  for (let k = 0; k < ringSize; k++) {
+    const kNext = (k + 1) % ringSize;
+    ind.push(sternCenter, kNext, k);
+  }
+
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setIndex(ind);
+  g.computeVertexNormals();
+  return withUV2(g);
+}
+
+function makeMainsailGeo(camber = 0.06) {
+  const g = new THREE.BufferGeometry();
+  const Ny = 12, Nu = 10;
+  const L_boom = 0.45;
+  const pos = [], uvs = [], ind = [];
+
+  for (let iy = 0; iy <= Ny; iy++) {
+    const v = iy / Ny;
+    const y = v * 1.0;
+    const zLeech = -L_boom * Math.pow(1.0 - v, 0.82);
+    for (let iu = 0; iu <= Nu; iu++) {
+      const u = iu / Nu;
+      const z = zLeech * u;
+      const x = Math.sin(u * Math.PI) * camber * Math.sin((1.0 - v) * Math.PI * 0.85 + 0.15);
+      pos.push(x, y, z);
+      uvs.push(u, v);
+    }
+  }
+
+  for (let iy = 0; iy < Ny; iy++) {
+    for (let iu = 0; iu < Nu; iu++) {
+      const p00 = iy * (Nu + 1) + iu;
+      const p01 = p00 + 1;
+      const p10 = (iy + 1) * (Nu + 1) + iu;
+      const p11 = p10 + 1;
+      ind.push(p00, p10, p11);
+      ind.push(p00, p11, p01);
+    }
+  }
+
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setIndex(ind);
+  g.computeVertexNormals();
+  return withUV2(g);
+}
+
+function makeJibGeo(camber = 0.05) {
+  const g = new THREE.BufferGeometry();
+  const Ny = 12, Nu = 10;
+  const tack = [0, 0.02, 0.45];
+  const head = [0, 0.88, 0.03];
+  const clew = [0, 0.10, 0.06];
+  const pos = [], uvs = [], ind = [];
+
+  for (let iy = 0; iy <= Ny; iy++) {
+    const v = iy / Ny;
+    const luffY = tack[1] + (head[1] - tack[1]) * v;
+    const luffZ = tack[2] + (head[2] - tack[2]) * v;
+    const leechY = clew[1] + (head[1] - clew[1]) * v;
+    const leechZ = clew[2] + (head[2] - clew[2]) * v;
+
+    for (let iu = 0; iu <= Nu; iu++) {
+      const u = iu / Nu;
+      const py = luffY + (leechY - luffY) * u;
+      const pz = luffZ + (leechZ - luffZ) * u;
+      const px = Math.sin(u * Math.PI) * camber * (1.0 - v * 0.7);
+      pos.push(px, py, pz);
+      uvs.push(u, v);
+    }
+  }
+
+  for (let iy = 0; iy < Ny; iy++) {
+    for (let iu = 0; iu < Nu; iu++) {
+      const p00 = iy * (Nu + 1) + iu;
+      const p01 = p00 + 1;
+      const p10 = (iy + 1) * (Nu + 1) + iu;
+      const p11 = p10 + 1;
+      ind.push(p00, p10, p11);
+      ind.push(p00, p11, p01);
+    }
+  }
+
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setIndex(ind);
+  g.computeVertexNormals();
+  return withUV2(g);
+}
+
+function makeYachtCabinGeo() {
+  const s = new THREE.Shape();
+  s.moveTo(-0.28, 0);
+  s.lineTo(0.25, 0);
+  s.lineTo(0.12, 0.16);
+  s.lineTo(-0.22, 0.16);
+  s.lineTo(-0.28, 0.08);
+  s.closePath();
+
+  const g = new THREE.ExtrudeGeometry(s, {
+    depth: 0.28,
+    bevelEnabled: true,
+    bevelThickness: 0.015,
+    bevelSize: 0.015,
+    bevelSegments: 2,
+  });
+  g.center();
+  g.rotateY(Math.PI / 2);
+  g.computeVertexNormals();
+  return withUV2(g);
+}
+
+function makeRadarArchGeo() {
+  const s = new THREE.Shape();
+  s.moveTo(-0.06, 0);
+  s.lineTo(0.04, 0);
+  s.lineTo(0.02, 0.14);
+  s.lineTo(-0.06, 0.14);
+  s.closePath();
+  const g = new THREE.ExtrudeGeometry(s, {
+    depth: 0.26,
+    bevelEnabled: true,
+    bevelThickness: 0.008,
+    bevelSize: 0.008,
+    bevelSegments: 1,
+  });
+  g.center();
+  g.rotateY(Math.PI / 2);
+  g.computeVertexNormals();
+  return withUV2(g);
+}
+
+function makeBowRailGeo() {
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-0.12, 0, -0.2),
+    new THREE.Vector3(-0.09, 0.04, 0.05),
+    new THREE.Vector3(0, 0.05, 0.25),
+    new THREE.Vector3(0.09, 0.04, 0.05),
+    new THREE.Vector3(0.12, 0, -0.2),
+  ]);
+  const g = new THREE.TubeGeometry(curve, 16, 0.006, 6, false);
+  g.computeVertexNormals();
+  return withUV2(g);
+}
+
 // Soft radial sprite — the wash foam and, later, the bonfire glow.
 function makeGlowTexture() {
   const c = Object.assign(document.createElement('canvas'), { width: 128, height: 128 });
@@ -636,10 +911,35 @@ const M = {
   }),
 
   // --- Boats ---------------------------------------------------------------
-  hullWhite: new THREE.MeshStandardMaterial({ color: 0xf0efe8, roughness: 0.34, metalness: 0.1 }),
-  hullDark: new THREE.MeshStandardMaterial({ color: 0x24354a, roughness: 0.4, metalness: 0.15 }),
+  hullWhite: new THREE.MeshStandardMaterial({ color: 0xf5f5ef, roughness: 0.25, metalness: 0.08 }),
+  hullNavy: new THREE.MeshStandardMaterial({ color: 0x16263b, roughness: 0.28, metalness: 0.12 }),
+  hullDark: new THREE.MeshStandardMaterial({ color: 0x1e2734, roughness: 0.35, metalness: 0.15 }),
+  hullTeak: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0xba9268, roughness: 0.75,
+  }),
+  hullBlack: new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.5 }),
   sail: new THREE.MeshStandardMaterial({
-    color: 0xf7f5ee, roughness: 0.9, side: THREE.DoubleSide,
+    color: 0xfbf9f4, roughness: 0.8, side: THREE.DoubleSide,
+  }),
+  sailStripe: new THREE.MeshStandardMaterial({
+    color: 0xd9382c, roughness: 0.72, side: THREE.DoubleSide,
+  }),
+  sailBlue: new THREE.MeshStandardMaterial({
+    color: 0x2262a2, roughness: 0.72, side: THREE.DoubleSide,
+  }),
+  yachtGlass: new THREE.MeshStandardMaterial({
+    color: 0x0e1822, roughness: 0.05, metalness: 0.85, transparent: true, opacity: 0.82,
+  }),
+  cushionNavy: new THREE.MeshStandardMaterial({ color: 0x1e3654, roughness: 0.82 }),
+  cushionWhite: new THREE.MeshStandardMaterial({ color: 0xeeebe2, roughness: 0.82 }),
+  navRed: new THREE.MeshStandardMaterial({
+    color: 0xff3333, emissive: 0xff1111, emissiveIntensity: 2.2, roughness: 0.4,
+  }),
+  navGreen: new THREE.MeshStandardMaterial({
+    color: 0x00e676, emissive: 0x00cc55, emissiveIntensity: 2.2, roughness: 0.4,
+  }),
+  navWhite: new THREE.MeshStandardMaterial({
+    color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.2, roughness: 0.4,
   }),
   // Flat-shaded so every facet catches the sun differently — that, and three
   // tones alternating, is what turns a row of identical grey balls into scree.
@@ -708,6 +1008,14 @@ const G = {
   // Half a capsule on its side: every boat hull on this map.
   hull: withUV2(new THREE.SphereGeometry(0.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2)
     .rotateX(Math.PI)),
+  sailHull: makeSailboatHullGeo(),
+  yachtHull: makeYachtHullGeo(),
+  mainsail: makeMainsailGeo(0.06),
+  jib: makeJibGeo(0.05),
+  yachtCabin: makeYachtCabinGeo(),
+  radarArch: makeRadarArchGeo(),
+  bowRail: makeBowRailGeo(),
+  radome: withUV2(new THREE.SphereGeometry(0.5, 12, 8).scale(1, 0.65, 1)),
   disc: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 20)),
   // Grows upward from its base rather than from its centre, so a frond or a
   // leaf card can be pinned where it actually joins the plant.
@@ -2794,31 +3102,128 @@ let beachLieInteraction = null;
 // they give the horizon a scale, and at sunset they are the thing in front of
 // the sun.
 // ---------------------------------------------------------------------------
-function sailboat(len) {
-  shape(G.hull, M.hullWhite, 0, 0, 0, len * 0.32, len * 0.2, len);
-  box(M.hullWhite, 0, len * 0.055, len * 0.05, len * 0.22, len * 0.07, len * 0.42);
-  shape(G.cylBase, M.steel, 0, len * 0.06, 0, 0.12, len * 1.15, 0.12);
-  shape(G.card, M.sail, 0, len * 0.62, -len * 0.16, len * 0.62, len * 1.02, 1, { ry: 0.25 });
-  shape(G.card, M.sail, 0, len * 0.5, len * 0.3, len * 0.4, len * 0.72, 1, { ry: 0.25 });
+function sailboat(len, opts = {}) {
+  const hullMat = opts.navy ? M.hullNavy : M.hullWhite;
+  // Sleek hydrodynamic monohull
+  shape(G.sailHull, hullMat, 0, 0, 0, len * 0.32, len * 0.22, len);
+  // Underwater antifouling waterline stripe
+  shape(G.sailHull, M.hullDark, 0, -len * 0.035, 0, len * 0.325, len * 0.08, len * 1.005);
+  // Teak deck cockpit well
+  box(M.hullTeak, 0, len * 0.038, -len * 0.16, len * 0.20, len * 0.015, len * 0.36);
+  // Low-profile coachroof / deckhouse
+  box(hullMat, 0, len * 0.052, len * 0.08, len * 0.18, len * 0.038, len * 0.38);
+  // Smoked ribbon windows on coachroof
+  box(M.yachtGlass, 0, len * 0.055, len * 0.08, len * 0.188, len * 0.022, len * 0.34);
+  // Mast
+  shape(G.cylBase, M.steel, 0, len * 0.04, len * 0.06, len * 0.018, len * 1.22, len * 0.018);
+  // Spreaders (cross-trees)
+  box(M.steel, 0, len * 0.52, len * 0.06, len * 0.14, len * 0.010, len * 0.012);
+  box(M.steel, 0, len * 0.82, len * 0.06, len * 0.10, len * 0.008, len * 0.010);
+  // Boom extending aft
+  shape(G.cylBase, M.steel, 0, len * 0.16, 0.06, len * 0.014, len * 0.46, len * 0.014, { rx: Math.PI / 2 });
+  // Mainsail (aerodynamic billowing curve)
+  shape(G.mainsail, opts.stripe ? M.sailStripe : M.sail, 0, len * 0.16, 0.06, len * 0.95, len * 1.02, len * 0.95);
+  // Jib / Genoa (headsail)
+  shape(G.jib, M.sail, 0, len * 0.04, 0, len * 0.95, len * 1.02, len * 0.95);
+  // Forestay and backstay wires
+  shape(G.cylBase, M.steel, 0, len * 0.05, len * 0.45, len * 0.005, len * 1.30, len * 0.005, { rx: -0.34 });
+  shape(G.cylBase, M.steel, 0, len * 0.05, -len * 0.46, len * 0.005, len * 1.35, len * 0.005, { rx: 0.38 });
+  // Bow pulpit rail
+  shape(G.bowRail, M.chrome, 0, len * 0.045, len * 0.34, len * 0.9, len * 0.8, len * 0.9);
+  // Cockpit helm wheel
+  shape(G.lens, M.chrome, 0, len * 0.07, -len * 0.30, len * 0.06, len * 0.06, len * 0.015);
+  // Navigation lights (port red, starboard green, masthead white)
+  box(M.navRed, -len * 0.12, len * 0.05, len * 0.16, 0.08, 0.05, 0.08);
+  box(M.navGreen, len * 0.12, len * 0.05, len * 0.16, 0.08, 0.05, 0.08);
+  box(M.navWhite, 0, len * 1.25, len * 0.06, 0.06, 0.06, 0.06);
 }
-function motorYacht(len) {
-  shape(G.hull, M.hullWhite, 0, 0, 0, len * 0.34, len * 0.19, len);
-  box(M.hullWhite, 0, len * 0.1, len * 0.04, len * 0.26, len * 0.13, len * 0.44);
-  box(M.glassPane, 0, len * 0.12, len * -0.19, len * 0.22, len * 0.07, 0.1);
-  box(M.hullWhite, 0, len * 0.2, len * 0.12, len * 0.18, len * 0.09, len * 0.2);
-  shape(G.cylBase, M.steel, 0, len * 0.24, len * 0.12, 0.08, len * 0.26, 0.08);
-  shape(G.hull, M.hullDark, 0, -len * 0.02, 0, len * 0.35, len * 0.06, len * 1.01);
+
+function motorYacht(len, opts = {}) {
+  const hullMat = opts.navy ? M.hullNavy : M.hullWhite;
+  // Sleek deep-V hull
+  shape(G.yachtHull, hullMat, 0, 0, 0, len * 0.34, len * 0.22, len);
+  // Bootstripe / dark hull bottom
+  shape(G.yachtHull, M.hullDark, 0, -len * 0.032, 0, len * 0.344, len * 0.08, len * 1.005);
+  // Teak swim platform at transom
+  box(M.hullTeak, 0, len * 0.022, -len * 0.46, len * 0.28, len * 0.015, len * 0.10);
+  // Teak aft cockpit deck
+  box(M.hullTeak, 0, len * 0.038, -len * 0.28, len * 0.24, len * 0.015, len * 0.20);
+  // Main aerodynamic salon superstructure
+  shape(G.yachtCabin, M.hullWhite, 0, len * 0.055, -len * 0.02, len * 0.86, len * 0.86, len * 0.86);
+  // Smoked panoramic window band
+  box(M.yachtGlass, 0, len * 0.075, len * 0.02, len * 0.25, len * 0.045, len * 0.42);
+  // Upper flybridge deck / lounge
+  box(M.hullWhite, 0, len * 0.155, -len * 0.06, len * 0.20, len * 0.022, len * 0.32);
+  // Flybridge wind deflector
+  box(M.yachtGlass, 0, len * 0.178, len * 0.06, len * 0.18, len * 0.035, len * 0.04);
+  // Hardtop roof over flybridge
+  box(M.hullWhite, 0, len * 0.225, -len * 0.08, len * 0.18, len * 0.016, len * 0.26);
+  // Hardtop support pillars (stainless steel)
+  box(M.chrome, -len * 0.08, len * 0.185, -len * 0.04, 0.05, len * 0.07, 0.05);
+  box(M.chrome, len * 0.08, len * 0.185, -len * 0.04, 0.05, len * 0.07, 0.05);
+  box(M.chrome, -len * 0.08, len * 0.185, -len * 0.16, 0.05, len * 0.07, 0.05);
+  box(M.chrome, len * 0.08, len * 0.185, -len * 0.16, 0.05, len * 0.07, 0.05);
+  // Radar arch on hardtop
+  shape(G.radarArch, M.hullWhite, 0, len * 0.23, -len * 0.14, len * 0.65, len * 0.65, len * 0.65);
+  // Satellite radomes
+  shape(G.radome, M.hullWhite, -len * 0.05, len * 0.28, -len * 0.14, len * 0.045, len * 0.035, len * 0.045);
+  shape(G.radome, M.hullWhite, len * 0.05, len * 0.28, -len * 0.14, len * 0.045, len * 0.035, len * 0.045);
+  // VHF antenna
+  shape(G.cylBase, M.chrome, len * 0.07, len * 0.24, -len * 0.16, 0.015, len * 0.24, 0.015, { rx: -0.15 });
+  // Foredeck sun cushions
+  box(opts.navy ? M.cushionWhite : M.cushionNavy, 0, len * 0.065, len * 0.25, len * 0.13, len * 0.02, len * 0.16);
+  // Bow pulpit rail
+  shape(G.bowRail, M.chrome, 0, len * 0.055, len * 0.36, len * 0.95, len * 0.85, len * 0.95);
+  // Navigation lights
+  box(M.navRed, -len * 0.14, len * 0.11, len * 0.15, 0.08, 0.05, 0.08);
+  box(M.navGreen, len * 0.14, len * 0.11, len * 0.15, 0.08, 0.05, 0.08);
+  box(M.navWhite, 0, len * 0.31, -len * 0.14, 0.06, 0.06, 0.06);
 }
+
+function sportCruiser(len) {
+  // Sleek open sport yacht / day boat
+  shape(G.yachtHull, M.hullNavy, 0, 0, 0, len * 0.33, len * 0.20, len);
+  shape(G.yachtHull, M.hullWhite, 0, len * 0.01, 0, len * 0.32, len * 0.12, len * 0.98);
+  // Teak cockpit & swim platform
+  box(M.hullTeak, 0, len * 0.025, -len * 0.15, len * 0.24, len * 0.015, len * 0.55);
+  // Low raked sports windshield
+  box(M.yachtGlass, 0, len * 0.085, len * 0.08, len * 0.24, len * 0.06, len * 0.12, 0.25);
+  // Swept-back radar arch
+  shape(G.radarArch, M.hullWhite, 0, len * 0.07, -len * 0.12, len * 0.8, len * 0.8, len * 0.8);
+  // Radome
+  shape(G.radome, M.hullWhite, 0, len * 0.21, -len * 0.12, len * 0.05, len * 0.035, len * 0.05);
+  // Aft sun lounger pad
+  box(M.cushionWhite, 0, len * 0.048, -len * 0.30, len * 0.20, len * 0.025, len * 0.18);
+  // Bow rail
+  shape(G.bowRail, M.chrome, 0, len * 0.05, len * 0.34, len * 0.85, len * 0.75, len * 0.85);
+  // Nav lights
+  box(M.navRed, -len * 0.13, len * 0.08, len * 0.10, 0.08, 0.05, 0.08);
+  box(M.navGreen, len * 0.13, len * 0.08, len * 0.10, 0.08, 0.05, 0.08);
+  box(M.navWhite, 0, len * 0.22, -len * 0.12, 0.06, 0.06, 0.06);
+}
+
 const BOATS = [
-  [-150, -196, 0.7, 'sail', 9], [42, -228, -0.5, 'sail', 11],
-  [128, -178, 1.9, 'motor', 13], [-24, -300, 0.3, 'motor', 17],
-  [206, -262, -1.2, 'sail', 10], [-232, -246, 2.4, 'motor', 12],
-  [86, -352, 0.9, 'sail', 12],
+  [-160, -205, 0.65, 'sail', 11],
+  [45, -232, -0.45, 'superSail', 14],
+  [132, -182, 1.85, 'motor', 15],
+  [-28, -305, 0.35, 'motorNavy', 18],
+  [210, -265, -1.15, 'sail', 10],
+  [-238, -248, 2.35, 'sport', 12],
+  [90, -355, 0.85, 'superSail', 13],
+  [-88, -172, 1.15, 'sport', 10],
+  [172, -322, -0.75, 'motor', 16],
+  [-192, -342, 0.45, 'sail', 12],
 ];
 for (const [bx, bz, ry, kind, len] of BOATS) {
   const prev = LIFT;
-  LIFT = SEA_Y - len * 0.055;    // sit them in the water, not on it
-  frame(bx, bz, ry, () => (kind === 'sail' ? sailboat(len) : motorYacht(len)));
+  LIFT = SEA_Y - len * 0.042;    // sit them naturally at the waterline
+  frame(bx, bz, ry, () => {
+    if (kind === 'sail') sailboat(len);
+    else if (kind === 'superSail') sailboat(len, { stripe: true, navy: true });
+    else if (kind === 'motor') motorYacht(len);
+    else if (kind === 'motorNavy') motorYacht(len, { navy: true });
+    else if (kind === 'sport') sportCruiser(len);
+  });
   LIFT = prev;
 }
 
@@ -3864,14 +4269,20 @@ try {
       ring.add(light);
       beachPeople.push({ kind: 'fire', group: ring, flame, light, emberMat, phase: rnd() * 6.28 });
 
-      // Four or five people round it, one of them with a guitar.
+      // Four or five people round it, one of them with a guitar. G(0) only:
+      // man.glb's own authored leg skin (not just the bare-leg loft laid over
+      // it) tears under this much hip flex on either the thigh or the calf —
+      // checked with the loft off, the pose still shreds his trouser mesh into
+      // the same knife-thin blade, so the defect is in his rig, not in ours.
+      // woman.glb holds at every hip/knee/spread pairing tried here, so she is
+      // the only guest sat down at a fire until his rig is fixed at the source.
       const n = 4 + Math.floor(rnd() * 2);
       const guitarist = Math.floor(rnd() * n);
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2 + rnd() * 0.3;
         const r = 1.9 + rnd() * 0.5;
         const px = fx + Math.cos(a) * r, pz = fz + Math.sin(a) * r;
-        const p = poseHolder(G(f + i), grp => groundSitRig(grp, rnd), holder => {
+        const p = poseHolder(G(0), grp => groundSitRig(grp, rnd), holder => {
           holder.position.set(px, terrainHeight(px, pz), pz);
           holder.rotation.y = Math.atan2(fx - px, fz - pz);   // face the fire
         });
