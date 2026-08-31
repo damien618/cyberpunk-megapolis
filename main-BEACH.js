@@ -51,6 +51,11 @@ const hudMode = document.getElementById('mode');
 const hudSpeed = document.getElementById('speed');
 const hudHeight = document.getElementById('height');
 const furniturePrompt = document.getElementById('furniturePrompt');
+// The cruise seller's question. A GROUP rather than the shared single button
+// because it has two answers, and "oui" leaves the map.
+const cruisePromptGroup = document.getElementById('cruisePromptGroup');
+const cruiseYesPrompt = document.getElementById('cruiseYesPrompt');
+const cruiseNoPrompt = document.getElementById('cruiseNoPrompt');
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
@@ -1211,6 +1216,15 @@ const FERRIS_WEST = FERRIS_X - FERRIS_R - 6;
 const FERRIS_EAST = FERRIS_X + FERRIS_R + 6;
 const clearOfFerris = (x, z) =>
   Math.abs(x - FERRIS_X) > FERRIS_R + 5.5 || Math.abs(z - FERRIS_Z) > 8;
+
+// The cruise line's booking office, at the far end of the walk PAST the wheel —
+// the last building before the promenade runs out at x = 110. It is the only
+// thing out here, which is the point: you walk the shops, you pass under the
+// wheel, and the street ends on a ticket window with a liner painted over it.
+// Its own dimensions live with the build (it is founded on the terrace line,
+// which is not declared until the Ocean Front Walk section); X is here because
+// the props scattered down the walk have to keep off it.
+const CRUISE_X = 98;
 
 const BEACH_HALF_W = 150;     // sand runs ±150 m before the headlands close in
 const PROM_HALF_W = 110;      // built promenade is shorter than the sand
@@ -2638,6 +2652,173 @@ const ferris = {
   fence(HX + 1.8, HX + 6.5, HZ - 5.32, HZ - 5.2);             // seaward, right of boarding
 }
 
+// ---------------------------------------------------------------------------
+// L.A. HARBOR CRUISES — the booking office at the end of the street.
+//
+// Built as an OPEN LOGGIA rather than a room you walk into: two piers carry a
+// lintel, and the ticket counter spans the opening between them with the seller
+// behind it. That is what a harbour booking office on a boardwalk actually is,
+// and it also means the player never has to be let through a doorway — the
+// whole transaction happens at the counter, out on the walk, in daylight.
+//
+// The prompt it raises is the one thing on this map that leaves it: answering
+// "oui" navigates to ?map=cruise, which is a world of its own (main-CRUISE.js).
+// ---------------------------------------------------------------------------
+const CRUISE_ZF = SHOP_Z;             // front face, on the terrace line
+const CRUISE_W = 15.0;
+const CRUISE_D = 8.0;
+const CRUISE_H = 5.8;                 // to the underside of the fascia
+// Where the player has to stand for the seller to speak to them: a box on the
+// walk in front of the counter, not a radius around the building — approaching
+// the back of the office should not start a conversation through a wall.
+const CRUISE_DESK = {
+  x: CRUISE_X,
+  z: CRUISE_ZF - 1.9,
+  halfWidth: 4.2,
+  halfDepth: 2.6,
+};
+
+// The line's livery: navy hull, buff funnel, gold lettering.
+const CRUISE_NAVY = '#12314f';
+const CRUISE_GOLD = '#e8c063';
+const M_cruiseNavy = new THREE.MeshStandardMaterial({ color: 0x12314f, roughness: 0.7 });
+const M_cruiseCream = new THREE.MeshStandardMaterial({ color: 0xf4ecdc, roughness: 0.82 });
+const M_cruiseGold = new THREE.MeshStandardMaterial({
+  color: 0xe8c063, roughness: 0.42, metalness: 0.45,
+});
+
+// The window poster: a liner on a blue sea, drawn rather than photographed
+// because a painted travel poster is what hangs in these offices.
+const CRUISE_POSTER = canvasMat(512, 384, (g, W, H) => {
+  const sky = g.createLinearGradient(0, 0, 0, H * 0.62);
+  sky.addColorStop(0, '#2b6ea8');
+  sky.addColorStop(1, '#bcd9e8');
+  g.fillStyle = sky;
+  g.fillRect(0, 0, W, H);
+  g.fillStyle = '#0f4d78';
+  g.fillRect(0, H * 0.62, W, H * 0.38);
+  // Hull, superstructure, funnel — a liner reads entirely from that stack.
+  g.fillStyle = '#12314f';
+  g.beginPath();
+  g.moveTo(W * 0.10, H * 0.62);
+  g.lineTo(W * 0.90, H * 0.62);
+  g.lineTo(W * 0.84, H * 0.74);
+  g.lineTo(W * 0.17, H * 0.74);
+  g.closePath();
+  g.fill();
+  g.fillStyle = '#f4ecdc';
+  g.fillRect(W * 0.16, H * 0.46, W * 0.66, H * 0.16);
+  g.fillRect(W * 0.26, H * 0.36, W * 0.44, H * 0.10);
+  g.fillStyle = '#e8c063';
+  g.fillRect(W * 0.46, H * 0.20, W * 0.10, H * 0.16);
+  g.fillStyle = '#12314f';
+  g.fillRect(W * 0.46, H * 0.20, W * 0.10, H * 0.04);
+  // Window bands and a wash at the bow.
+  g.fillStyle = '#2b6ea8';
+  for (let i = 0; i < 22; i++) g.fillRect(W * 0.18 + i * W * 0.029, H * 0.50, W * 0.016, H * 0.035);
+  g.fillStyle = 'rgba(255,255,255,0.75)';
+  g.beginPath();
+  g.ellipse(W * 0.13, H * 0.735, W * 0.09, H * 0.022, 0, 0, Math.PI * 2);
+  g.fill();
+  paintText(g, 'CROISIÈRES', W / 2, H * 0.88, 44, '#ffe9b8', '#06243c');
+  paintText(g, 'DE LUXE', W / 2, H * 0.965, 30, '#ffe9b8', '#06243c');
+});
+const CRUISE_PRICE = canvasMat(256, 128, (g, W, H) => {
+  g.fillStyle = CRUISE_NAVY;
+  g.fillRect(0, 0, W, H);
+  paintText(g, 'DÉPARTS', W / 2, H * 0.34, 30, CRUISE_GOLD);
+  paintText(g, 'TOUS LES JOURS', W / 2, H * 0.74, 26, '#fff6df');
+});
+
+onDeck(CRUISE_X, CRUISE_ZF + CRUISE_D / 2, 0, () => {
+  const W = CRUISE_W, D = CRUISE_D, H = CRUISE_H, t = 0.3;
+  const zF = -D / 2, zB = D / 2;
+  const pierW = 2.2;                   // the two piers carrying the lintel
+  const openW = W - pierW * 2;         // clear width of the loggia
+  const lintelH = 1.15;
+  const openH = H - lintelH;
+
+  // Plinth, one step up off the promenade — every unit on this terrace is.
+  box(M.concreteSlab, 0, 0.09, 0, W + 0.5, 0.18, D + 0.5);
+
+  // Back and side walls, full height. The office is sealed on three sides.
+  box(M_cruiseCream, 0, H / 2 + 0.18, zB - t / 2, W, H, t);
+  for (const sx of [-1, 1])
+    box(M_cruiseCream, sx * (W / 2 - t / 2), H / 2 + 0.18, 0, t, H, D);
+
+  // The front: two piers and the lintel over them. Navy to the springing,
+  // cream above — the way these harbour offices are painted.
+  for (const sx of [-1, 1]) {
+    box(M_cruiseNavy, sx * (W / 2 - pierW / 2), openH / 2 + 0.18, zF + t, pierW, openH, t * 2);
+    box(M_cruiseCream, sx * (W / 2 - pierW / 2), openH + lintelH / 2 + 0.18,
+      zF + t, pierW, lintelH, t * 2);
+  }
+  box(M_cruiseCream, 0, openH + lintelH / 2 + 0.18, zF + t, openW, lintelH, t * 2);
+
+  // Roof slab and parapet. The fascia sign is painted on the parapet face.
+  box(M_cruiseCream, 0, H + 0.30, 0, W + 0.6, 0.24, D + 0.6);
+  box(M_cruiseNavy, 0, H + 0.86, zF - 0.28, W + 0.6, 0.88, 0.22);
+  for (const sx of [-1, 1])
+    box(M_cruiseNavy, sx * (W / 2 + 0.19), H + 0.86, 0, 0.22, 0.88, D + 0.6);
+  box(M_cruiseNavy, 0, H + 0.86, zB + 0.28, W + 0.6, 0.88, 0.22);
+
+  // Awning over the counter, carried on two posts down to the walk — shade
+  // for the queue, and the thing that makes the office read from the wheel.
+  const awnY = openH - 0.30;
+  box(M.fabricRed, 0, awnY, zF - 1.30, openW + 0.7, 0.12, 2.6);
+  for (const sx of [-1, 1])
+    shape(G.cylBase, M.steel, sx * (openW / 2 + 0.1), 0.18, zF - 2.5,
+      0.09, awnY - 0.18, 0.09);
+
+  // The counter across the opening. This is the shop: a stone ledge on the
+  // walk side, a timber worktop behind it, and the seller between the two.
+  const sill = 1.06;
+  box(M_cruiseNavy, 0, sill / 2 + 0.18, zF + 0.55, openW, sill, 0.85);
+  box(M.counter, 0, sill + 0.24, zF + 0.55, openW + 0.5, 0.14, 1.15);
+  box(M.counter, 0, sill + 0.10, zF + 2.30, openW - 0.8, 0.10, 1.30);
+
+  prop(() => {
+    // Till, ticket pads, a brass bell, a rope fender on the counter.
+    box(M.black, 2.4, sill + 0.42, zF + 0.75, 0.44, 0.26, 0.34);
+    for (let i = 0; i < 3; i++)
+      box(i % 2 ? M.fabricYellow : M.paper, -1.4 + i * 0.5, sill + 0.36,
+        zF + 0.72, 0.36, 0.09, 0.26);
+    shape(G.cyl, M_cruiseGold, -2.9, sill + 0.38, zF + 0.70, 0.16, 0.14, 0.16);
+    shape(G.sphere, M_cruiseGold, -2.9, sill + 0.47, zF + 0.70, 0.07, 0.07, 0.07);
+
+    // Departures board on the back wall, and the poster beside it.
+    shape(G.card, CRUISE_PRICE, -3.6, 3.30, zB - t - 0.04, 2.1, 1.05, 1, { ry: Math.PI });
+    shape(G.card, CRUISE_POSTER, 2.6, 3.20, zB - t - 0.04, 2.4, 1.8, 1, { ry: Math.PI });
+
+    // A builder's model of the ship in a case on the back counter — the one
+    // object that tells you what you are buying before you have bought it.
+    const mx = 0, my = 1.62, mz = zB - 1.5;
+    box(M.deckWood, mx, my - 0.10, mz, 3.4, 0.20, 0.9);
+    shape(G.hull, M_cruiseNavy, mx, my + 0.16, mz, 3.0, 0.34, 0.62);
+    box(M_cruiseCream, mx - 0.1, my + 0.30, mz, 2.1, 0.22, 0.48);
+    box(M_cruiseCream, mx - 0.2, my + 0.46, mz, 1.3, 0.16, 0.40);
+    box(M_cruiseGold, mx - 0.3, my + 0.64, mz, 0.30, 0.24, 0.26);
+    // The case: a glass box over the lot, so it reads as a model, not a toy.
+    box(M.glassPane, mx, my + 0.34, mz, 3.5, 1.0, 1.0);
+  });
+
+  // Bollards and a rope, marking the queue on the walk. Mooring bollards on a
+  // boardwalk are a conceit, but they are the line's own furniture.
+  prop(() => {
+    for (const bx of [-openW / 2 - 0.4, openW / 2 + 0.4]) {
+      shape(G.cylBase, M_cruiseNavy, bx, 0.18, zF - 3.2, 0.34, 0.86, 0.34);
+      shape(G.sphere, M_cruiseNavy, bx, 1.02, zF - 3.2, 0.42, 0.30, 0.42);
+    }
+    box(M.fabricWhite, 0, 0.92, zF - 3.2, openW + 0.8, 0.09, 0.09);
+  });
+});
+
+// The name on the parapet, and the French strapline under the lintel.
+fasciaSign(CRUISE_X, PROM_Y + CRUISE_H + 0.86, CRUISE_ZF - 0.40,
+  13.6, 0.70, 'L.A. HARBOR CRUISES', CRUISE_NAVY, CRUISE_GOLD);
+fasciaSign(CRUISE_X, PROM_Y + CRUISE_H - 0.98, CRUISE_ZF - 0.30,
+  10.2, 0.42, 'BILLETTERIE · CROISIÈRES', '#f4ecdc', CRUISE_NAVY);
+
 function addFerrisMesh(parent, geo, mat, x, y, z, sx, sy, sz, rot = {}) {
   const m = new THREE.Mesh(geo, mat);
   m.position.set(x, y, z);
@@ -3690,7 +3871,10 @@ const ctrl = new Controller(bw, groundFn, castFn, {
 });
 
 const travelParams = new URLSearchParams(location.search);
-const arrivedFromTravel = travelParams.get('arrival') === 'la';
+// `cruise` lands here too: stepping off the ship puts you back at the car park,
+// beside the car, which is the same place the drive down from the villa ends.
+const arrivedFromTravel = travelParams.get('arrival') === 'la'
+  || travelParams.get('arrival') === 'cruise';
 const arrivalSide = beachTravelBounds.width / 2 + 1.1;
 const beachArrivalPoint = new THREE.Vector3(
   BEACH_TRAVEL_CAR.x + Math.sin(BEACH_TRAVEL_CAR.yaw) * arrivalSide,
@@ -3872,6 +4056,7 @@ player.addWardrobePart('hairCrown', harmoniseHair(player, {
 const beachPeople = [];      // { group, mixer, pose, kind, ... } — ticked below
 const nightPeople = [];      // shown only after dark
 const dayPeople = [];        // hidden after dark (the swimmers)
+let cruiseSeller = null;     // the one NPC the player can talk to
 
 // The Ready Player Me guests ship BAREFOOT: one mesh, one 1024 atlas, no shoe
 // geometry and nothing in the texture to tint. Measured, their foot is 0.127 of
@@ -4131,6 +4316,22 @@ try {
         ...keeper, kind: 'tend',
         baseYaw: Math.PI, phase: rnd() * 6.28,
       });
+    }
+
+    // The cruise seller, behind his counter at the end of the street. Unlike
+    // the other keepers he TURNS TO THE PLAYER once they are at the desk —
+    // he is the one person on this map who says something, and a man who
+    // asks you a question while facing the back wall is a vending machine.
+    {
+      const keeper = guestVisitor(G(6), { playIdle: true });
+      keeper.group.position.set(CRUISE_X, PROM_Y + 0.18, CRUISE_ZF + 2.1);
+      keeper.group.rotation.y = Math.PI;
+      scene.add(keeper.group);
+      cruiseSeller = {
+        ...keeper, kind: 'cruiseSeller',
+        baseYaw: Math.PI, phase: rnd() * 6.28,
+      };
+      beachPeople.push(cruiseSeller);
     }
 
     // --- Sunbathers, one per towel already on the sand ---------------------
@@ -4641,6 +4842,20 @@ function tickPeople(dt, t) {
         p.group.rotation.y = p.baseYaw + Math.sin(t * 0.38 + p.phase) * 0.22;
         break;
       }
+      // Same idle, except that once the player is at his counter he squares up
+      // to them and holds it. Eased rather than snapped: a head that whips
+      // round the moment you cross a line reads as a trigger, not a greeting.
+      case 'cruiseSeller': {
+        p.mixer.update(dt);
+        const want = atCruiseDesk()
+          ? Math.atan2(ctrl.pos.x - p.group.position.x, ctrl.pos.z - p.group.position.z)
+          : p.baseYaw + Math.sin(t * 0.38 + p.phase) * 0.22;
+        let d = want - p.group.rotation.y;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        p.group.rotation.y += d * Math.min(1, dt * 4.5);
+        break;
+      }
       case 'shopWalk': {
         p.group.position.x += p.speed * p.dir * dt;
         if (p.group.position.x > p.x1) {
@@ -4692,6 +4907,8 @@ let travelDestinationRequested = null;
 let choosingPrompt = false;
 let travelInProgress = false;
 let actionPrompt = null;           // { kind, label }
+let cruiseAskOpen = false;         // the seller's question is up
+let cruiseDeclined = false;        // "non" — cleared by walking away from the desk
 let ferrisActionRequested = false;
 let ferrisCooldown = 0;
 let lieActionRequested = false;
@@ -4740,7 +4957,8 @@ furniturePrompt.addEventListener('click', event => {
 renderer.domElement.addEventListener('click', () => {
   // After walking away the unlock is not a user gesture, so the first canvas
   // click is what reclaims mouse look.
-  if (started && !paused && !choosingPrompt && !input.locked) requestGamePointerLock();
+  if (started && !paused && !choosingPrompt && !cruiseAskOpen && !input.locked)
+    requestGamePointerLock();
 });
 
 function distanceToFurniture(spot, position) {
@@ -4759,6 +4977,49 @@ function nearTravelCar() {
   if (Math.abs(ctrl.pos.y - spot.approachY) > 1.25) return false;
   return distanceToFurniture(spot, ctrl.pos) <= spot.triggerDistance;
 }
+
+// Standing at the cruise counter. A box on the walk in front of it rather than
+// a radius: the office is 15 m wide and sealed on three sides, and walking past
+// its back wall must not start a conversation through it.
+function atCruiseDesk() {
+  if (ctrl.mode !== 'ground') return false;
+  if (Math.abs(ctrl.pos.y - PROM_Y) > 1.3) return false;
+  return Math.abs(ctrl.pos.x - CRUISE_DESK.x) < CRUISE_DESK.halfWidth
+    && Math.abs(ctrl.pos.z - CRUISE_DESK.z) < CRUISE_DESK.halfDepth;
+}
+
+// Mirrors setActionPrompt for the two-answer group: same pointer-lock dance,
+// so the buttons can actually be clicked and mouse look comes back after.
+function setCruiseAsk(show) {
+  if (show === cruiseAskOpen) return;
+  cruiseAskOpen = show;
+  cruisePromptGroup?.classList.toggle('show', show);
+  cruisePromptGroup?.setAttribute('aria-hidden', show ? 'false' : 'true');
+  if (show) {
+    if (document.pointerLockElement === renderer.domElement) document.exitPointerLock?.();
+  } else if (started && !paused && !cruiseDeclined) {
+    requestGamePointerLock();
+  }
+}
+
+cruiseYesPrompt?.addEventListener('click', event => {
+  event.stopPropagation();
+  if (travelInProgress) return;
+  travelInProgress = true;
+  setCruiseAsk(false);
+  // Hand the ship the time of day. It only knows day and night, so golden
+  // hour sails as day — the sun has not gone down yet.
+  const time = beachTime === 'night' ? 'night' : 'day';
+  location.href = `index.html?map=cruise&arrival=beach&time=${time}`;
+});
+cruiseNoPrompt?.addEventListener('click', event => {
+  event.stopPropagation();
+  // Latch the refusal so the question does not reopen on the very next frame
+  // while the player is still standing at the counter. Walking away clears it.
+  cruiseDeclined = true;
+  setCruiseAsk(false);
+  requestGamePointerLock();
+});
 
 function nearLieSpot() {
   const spot = beachLieInteraction;
@@ -4977,6 +5238,21 @@ function updateTravel(dt) {
   }
   ferrisActionRequested = false;
 
+  // The cruise counter. Its own group, so the single button must be cleared
+  // first or the two would stack on top of each other in the middle of the
+  // screen. Stepping out of the box is what re-arms a refused question.
+  if (atCruiseDesk()) {
+    setActionPrompt(null);
+    if (!cruiseDeclined) {
+      setCruiseAsk(true);
+      lieActionRequested = false;
+      return;
+    }
+  } else {
+    cruiseDeclined = false;
+  }
+  setCruiseAsk(false);
+
   if (nearLieSpot()) {
     setActionPrompt({ kind: 'lie', label: "S'allonger" });
     if (wantAction) enterLie();
@@ -5128,14 +5404,15 @@ document.addEventListener('pointerlockchange', () => {
   // keep playing and leave the overlay closed. Same while on the wheel:
   // the Descendre button has to be clickable, and a failed lock must not
   // freeze the car in the sky.
-  if ((choosingPrompt || ferris.ride || ctrl.mode === 'lie') && document.pointerLockElement === null) {
+  if ((choosingPrompt || cruiseAskOpen || ferris.ride || ctrl.mode === 'lie')
+      && document.pointerLockElement === null) {
     paused = false;
     overlay.style.display = 'none';
     return;
   }
   if (!usedLock) return;
   paused = !input.locked;
-  if (paused) setActionPrompt(null);
+  if (paused) { setActionPrompt(null); setCruiseAsk(false); }
   overlay.style.display = paused ? 'flex' : 'none';
 });
 
@@ -5154,6 +5431,8 @@ const hook = {
   SEA_Y, PROM_Y, SAND_TOP, SHORE_Z, WADE_Z, BEACH_HALF_W,
   PIER_X, PIER_Y, PIER_HALF, PIER_Z1, TOWERS,
   FERRIS_X, FERRIS_Z, FERRIS_R, ferris,
+  CRUISE_X, CRUISE_ZF, CRUISE_DESK, atCruiseDesk,
+  get cruiseSeller() { return cruiseSeller; },
   // Where phase 3 puts its sunbathers: one entry per towel already on the
   // sand, as [x, z, yaw]. Laid down here so the towels and the people on them
   // cannot drift apart.

@@ -15,6 +15,7 @@
       airport: { engine: 'world', title: 'Cyberpunk Megapolis — Heading to the Airport' },
       shinto: { engine: 'world', title: 'Cyberpunk Megapolis — Visit to a Shinto shrine (Japan)' },
       beach: { engine: 'world', title: 'Cyberpunk Megapolis — Aller à la plage de L.A.' },
+      cruise: { engine: 'world', title: 'Cyberpunk Megapolis — Croisière de luxe' },
     };
     const mode = new URLSearchParams(location.search).get('map');
     const world = WORLDS[mode];
@@ -47,6 +48,7 @@
     --airport-accent: #8ec8e0;
     --shinto-accent: #ff6050;
     --beach-accent: #ffa85c;
+    --cruise-accent: #ffd98a;
     --mono: 'Geist Mono', ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -564,17 +566,28 @@
   .lie-prompt:hover, .lie-prompt:focus-visible {
     background: #f1f1f1; outline: 2px solid #fff; outline-offset: 2px;
   }
-  #liePromptGroup, #travelPromptGroup, #planePromptGroup, #kneelPromptGroup {
+  #liePromptGroup, #travelPromptGroup, #planePromptGroup, #kneelPromptGroup,
+  #cruisePromptGroup, #cabinPromptGroup {
     position: fixed; left: 50%; top: calc(50% + 42px); z-index: 9;
     transform: translate(-50%, 8px); display: flex; flex-direction: column; gap: 9px;
     width: min(470px, calc(100vw - 32px));
     opacity: 0; visibility: hidden; pointer-events: none;
     transition: opacity .14s ease, transform .14s ease, visibility .14s;
   }
-  #liePromptGroup.show, #travelPromptGroup.show, #planePromptGroup.show, #kneelPromptGroup.show {
+  #liePromptGroup.show, #travelPromptGroup.show, #planePromptGroup.show, #kneelPromptGroup.show,
+  #cruisePromptGroup.show, #cabinPromptGroup.show {
     transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto;
   }
   .lie-prompt { width: 100%; }
+  /* The cruise seller ASKS something, so his rows need a line above them that
+     is the question. It is styled as speech — dark plate, quoted — rather than
+     as another button, or the player reads it as a fourth thing to click. */
+  .prompt-ask {
+    padding: 9px 18px; border: 2px solid #000; border-radius: 2px;
+    background: #0d1118; color: #ffe9b8; text-align: center;
+    font-family: var(--mono); font-size: 14px; font-weight: 600; letter-spacing: .02em;
+    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.28);
+  }
 
   /* ---------- mode gate: only one engine's DOM is active at a time ---------- */
   /* #furniturePrompt is excluded here: the cyberpunk city (main.js) reuses it
@@ -588,6 +601,8 @@
   html:not([data-engine="world"]) #travelPromptGroup,
   html:not([data-engine="world"]) #planePromptGroup,
   html:not([data-engine="world"]) #kneelPromptGroup,
+  html:not([data-engine="world"]) #cruisePromptGroup,
+  html:not([data-engine="world"]) #cabinPromptGroup,
   html:not([data-engine="world"]) #hud { display: none !important; }
 
   html[data-engine="world"] #loader,
@@ -624,11 +639,24 @@
     border-color: rgba(255, 168, 92, 0.55);
     background: linear-gradient(90deg, rgba(255, 168, 92, 0.38), rgba(95, 215, 255, 0.22));
   }
+  html[data-mode="cruise"] #overlay {
+    background: radial-gradient(circle at 65% 30%, rgba(255, 217, 138, 0.18), rgba(5, 8, 15, 0.95) 60%);
+  }
+  html[data-mode="cruise"] #panel .tag { color: var(--cruise-accent); }
+  html[data-mode="cruise"] #startBtn {
+    border-color: rgba(255, 217, 138, 0.55);
+    background: linear-gradient(90deg, rgba(255, 217, 138, 0.38), rgba(95, 215, 255, 0.22));
+  }
+  /* One selector list, and it must STAY one list: the cruise rules above were
+     first pasted into the middle of it, which left `.brief-la` … `.brief-shinto`
+     as part of the cruise overlay's background rule instead of a display:none —
+     so every map's briefing showed at once on the start screen. */
   html:not([data-mode="la"]) .brief-la,
   html:not([data-mode="zoo"]) .brief-zoo,
   html:not([data-mode="airport"]) .brief-airport,
   html:not([data-mode="shinto"]) .brief-shinto,
-  html:not([data-mode="beach"]) .brief-beach { display: none !important; }
+  html:not([data-mode="beach"]) .brief-beach,
+  html:not([data-mode="cruise"]) .brief-cruise { display: none !important; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -845,7 +873,20 @@
         <button class="tt-btn" data-time="night">🌙 Nuit</button>
       </div>
     </div>
-    <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span><span class="brief-airport">Entrer dans l'aéroport</span><span class="brief-shinto">Entrer dans le temple</span><span class="brief-beach">Descendre à la plage</span></button>
+    <div class="brief-cruise">
+      <span class="tag">Nouvelle map</span>
+      <h1>Croisière de luxe</h1>
+      <p>Vous embarquez sur le pont promenade du paquebot, à la coupée. Vers la proue, la salle de bal et sa piste de danse sous les lustres; vers la poupe, le casino — roulette, black-jack et machines à sous. Entre les deux, la coursive des cabines: la vôtre porte le numéro 214.</p>
+      <p>Un escalier monte au pont piscine: bassin, transats, parasols et bar sous la cheminée.</p>
+      <p>Pour débarquer, allongez-vous sur le lit de votre cabine et choisissez: revenir à la plage de L.A., ou vous relever à bord de jour ou de nuit.</p>
+      <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter, <b>Shift</b> sprint, <b>R</b> reset.</p>
+      <p class="credit">Paquebot de croisière — Cyberpunk Megapolis</p>
+      <div id="timeToggle">
+        <button class="tt-btn active" data-time="day">☀ Jour</button>
+        <button class="tt-btn" data-time="night">🌙 Nuit</button>
+      </div>
+    </div>
+    <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span><span class="brief-airport">Entrer dans l'aéroport</span><span class="brief-shinto">Entrer dans le temple</span><span class="brief-beach">Descendre à la plage</span><span class="brief-cruise">Embarquer</span></button>
   </div>
 </div>
 <button id="furniturePrompt" type="button" aria-hidden="true"></button>
@@ -866,6 +907,20 @@
 <div id="planePromptGroup" role="group" aria-label="Choisir une destination de vol" aria-hidden="true">
   <button id="planeDestLaPrompt" class="lie-prompt" type="button">1 — Retour à LA</button>
   <button id="planeDestShintoPrompt" class="lie-prompt" type="button">2 — Temple shinto au Japon</button>
+</div>
+<!-- The cruise ticket seller on Ocean Front Walk (main-BEACH.js), and the bed
+     in cabin 214 aboard the ship (main-CRUISE.js). Both are questions with
+     fixed answers, so both are prompt GROUPS rather than the single shared
+     #furniturePrompt button. -->
+<div id="cruisePromptGroup" role="group" aria-label="Partir en croisière" aria-hidden="true">
+  <div class="prompt-ask">« Voulez-vous partir en croisière ? »</div>
+  <button id="cruiseYesPrompt" class="lie-prompt" type="button">Oui — embarquer sur le paquebot</button>
+  <button id="cruiseNoPrompt" class="lie-prompt" type="button">Non — pas aujourd'hui</button>
+</div>
+<div id="cabinPromptGroup" role="group" aria-label="S'allonger dans la cabine" aria-hidden="true">
+  <button id="cabinBeachPrompt" class="lie-prompt" type="button">S'allonger et se lever à la plage de L.A.</button>
+  <button id="cabinDayPrompt" class="lie-prompt" type="button">S'allonger et se lever dans le bateau de croisière de jour</button>
+  <button id="cabinNightPrompt" class="lie-prompt" type="button">S'allonger et se lever dans le bateau de croisière de nuit</button>
 </div>
 <div id="crosshair"></div>
 <div id="hud">Mode: <b id="mode">air</b> · Vitesse: <b id="speed">0</b> km/h · Hauteur: <b id="height">0</b> m</div>
@@ -1148,7 +1203,8 @@
     zoo: './main-ZOO.js?v=202608141500',
     airport: './main-AIRPORT.js?v=202608170015',
     shinto: './main-SHINTO.js?v=202608212100',
-    beach: './main-BEACH.js?v=202608302900',
+    beach: './main-BEACH.js?v=202608310100',
+    cruise: './main-CRUISE.js?v=202608310100',
   };
   import(ENGINES[document.documentElement.dataset.mode] ?? './main.js?v=24');
 </script>
