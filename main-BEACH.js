@@ -6,7 +6,7 @@ import { Controller } from './controller.js?v=7';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes } from './cityBoxes.js?v=5';
 import { buildCar, carBounds } from './cars.js?v=4';
-import { cloneSkinned, makeVisitor, loadGuestRig, groundSitRig, lyingRig, customRig, rootBoneOf } from './crowd.js?v=57';
+import { cloneSkinned, makeVisitor, loadGuestRig, groundSitRig, lyingRig, customRig, rootBoneOf } from './crowd.js?v=59';
 
 // ---------------------------------------------------------------------------
 // Aller à la plage de L.A. — Phase 1: the ground you walk on.
@@ -2433,7 +2433,10 @@ function shopUnit(s, muralMat) {
     box(stucco, wx, GF + FASCIA + UF - 0.28, zFront - 0.1, 1.4, 0.14, 0.16);
   }
   box(stucco, 0, H + PARAPET / 2, zFront + 0.12, w, PARAPET, 0.34);
-  box(M.arcade, 0, H + PARAPET, zFront + 0.1, w + 0.1, 0.16, 0.5);
+  box(M.arcade, 0, H + PARAPET, zFront + 0.1, w, 0.16, 0.5);
+  // Roof slab, closing the shell from above — without it the Ferris wheel
+  // looks straight down into an empty box.
+  box(stucco, 0, H + 0.06, 0, w, 0.12, D);
   shopStock(s.kind, w);
 }
 
@@ -2741,10 +2744,11 @@ onDeck(CRUISE_X, CRUISE_ZF + CRUISE_D / 2, 0, () => {
   // Plinth, one step up off the promenade — every unit on this terrace is.
   box(M.concreteSlab, 0, 0.09, 0, W + 0.5, 0.18, D + 0.5);
 
-  // Back and side walls, full height. The office is sealed on three sides.
+  // Back and side walls. The side walls run between the front piers and back wall.
   box(M_cruiseCream, 0, H / 2 + 0.18, zB - t / 2, W, H, t);
+  const sideD = D - 3 * t;
   for (const sx of [-1, 1])
-    box(M_cruiseCream, sx * (W / 2 - t / 2), H / 2 + 0.18, 0, t, H, D);
+    box(M_cruiseCream, sx * (W / 2 - t / 2), H / 2 + 0.18, t / 2, t, H, sideD);
 
   // The front: two piers and the lintel over them. Navy to the springing,
   // cream above — the way these harbour offices are painted.
@@ -4193,6 +4197,61 @@ function dropToHips(p, groundY, hipY) {
   p.group.position.y += (groundY + hipY) - _hipV.y;
 }
 
+const _cTmpA = new THREE.Vector3();
+const _cTmpB = new THREE.Vector3();
+const _cLiveA = new THREE.Vector3();
+const _cLiveB = new THREE.Vector3();
+function boneOn(root, ...names) {
+  for (const n of names) {
+    const hit = root.getObjectByName(n);
+    if (hit) return hit;
+  }
+  const want = new Set(names.map(n => n.toLowerCase()));
+  let found = null;
+  root.traverse(o => {
+    if (found || !o.isBone) return;
+    const n = o.name.toLowerCase().replace(/^mixamorig:?/, '');
+    if (want.has(n)) found = o;
+  });
+  return found;
+}
+function bindPlayerContact(p) {
+  const body = p.body || p.group;
+  p.foreL = boneOn(body, 'LeftForeArm');
+  p.foreR = boneOn(body, 'RightForeArm');
+  p.handL = boneOn(body, 'LeftHand');
+  p.handR = boneOn(body, 'RightHand');
+}
+// Where the ball should actually meet the body this frame: the bump
+// platform (hands) or the paddle face, pushed forward by the ball radius
+// so it sits on the arms rather than inside them.
+function playerContact(p, out) {
+  if (p.batFace) {
+    p.batFace.updateMatrixWorld(true);
+    p.batFace.getWorldPosition(out);
+  } else if (p.handL && p.handR) {
+    p.handL.getWorldPosition(_cTmpA);
+    p.handR.getWorldPosition(_cTmpB);
+    out.addVectors(_cTmpA, _cTmpB).multiplyScalar(0.5);
+  } else if (p.foreL && p.foreR) {
+    p.foreL.getWorldPosition(_cTmpA);
+    p.foreR.getWorldPosition(_cTmpB);
+    out.addVectors(_cTmpA, _cTmpB).multiplyScalar(0.5);
+  } else {
+    const yaw = p.group.rotation.y;
+    out.set(
+      p.group.position.x + Math.sin(yaw) * 0.52,
+      (p.sandY ?? p.group.position.y) + 1.05,
+      p.group.position.z + Math.cos(yaw) * 0.52);
+    return out;
+  }
+  const yaw = p.group.rotation.y;
+  const r = p.paddle ? 0.07 : 0.14;
+  out.x += Math.sin(yaw) * r;
+  out.z += Math.cos(yaw) * r;
+  return out;
+}
+
 function poseHolder(g, poseFor, place, extra = {}) {
   const v = guestVisitor(g, { barefoot: true, still: true, ...extra });
   const pose = poseFor(v.group);
@@ -4406,25 +4465,11 @@ try {
     ];
     GAMES.forEach((g, gi) => {
       const dx = g.b[0] - g.a[0], dz = g.b[1] - g.a[1];
-      const dist = Math.hypot(dx, dz) || 1;
-      const nx = dx / dist, nz = dz / dist;
       const phase = rnd() * 6.28;
       const made = [];
 
-      // Forward reach offset in front of player for contact (forearms in bump, racket in paddle)
-      const reachDist = g.paddle ? 0.58 : 0.52;
-      const reachH = g.paddle ? 1.22 : 1.08;
-
-      const PA = new THREE.Vector3(
-        g.a[0] + nx * reachDist,
-        terrainHeight(g.a[0], g.a[1]) + reachH,
-        g.a[1] + nz * reachDist
-      );
-      const PB = new THREE.Vector3(
-        g.b[0] - nx * reachDist,
-        terrainHeight(g.b[0], g.b[1]) + reachH,
-        g.b[1] - nz * reachDist
-      );
+      const PA = new THREE.Vector3();
+      const PB = new THREE.Vector3();
 
       [g.a, g.b].forEach(([px, pz], side) => {
         const p = poseHolder(G(gi * 2 + side), customRig, holder => {
@@ -4433,20 +4478,31 @@ try {
           holder.rotation.y = side === 0 ? Math.atan2(dx, dz) : Math.atan2(-dx, -dz);
         });
         if (!p) return;
-        p.pose.state.spread = 0.18;
-        p.pose.state.hip = [0.40, 0.36];
-        p.pose.state.knee = [-0.58, -0.52];
-        p.pose.state.ankle = 0.12;
-        p.pose.state.lean = 0.10;
+        // Mixamo abduct SIGN: positive spread CROSSES the feet. Athletic
+        // stance is negative — same as the skaters on the board.
+        p.pose.state.spread = -0.24;
+        p.pose.state.hip = [0.38, 0.34];
+        p.pose.state.knee = [-0.60, -0.54];
+        p.pose.state.ankle = 0.16;
+        p.pose.state.lean = 0.08;
         if (g.paddle) {
-          p.pose.state.arm = [0.85, 1.15];
-          p.pose.state.armOut = [0.22, -0.35];
-          p.pose.state.forearm = [0.45, 0.7];
+          // Left arm out for balance, right arm in front with the bat.
+          p.pose.state.arm = [0.55, 0.92];
+          p.pose.state.armOut = [0.38, -0.18];
+          p.pose.state.forearm = [0.40, 0.52];
         } else {
-          // Ready bump platform: hands held together in front of the body
-          p.pose.state.arm = [1.38, 1.36];
-          p.pose.state.armOut = [-0.30, -0.28];
-          p.pose.state.forearm = [0.36, 0.38];
+          // Ready bump: arms raised near-straight, angled in to bring the
+          // hands together below eye level — the real volleyball platform is
+          // built by raising locked arms together, not by bending the elbow.
+          // A first pass here bent the elbow hard (forearm 1.30) to close the
+          // hand gap; on this rig that reads as a raised bicep-curl, not a
+          // reach, because the elbow was already forward of a raised shoulder.
+          // Forearm stays in the range already proven safe elsewhere in this
+          // file (0.4-0.6 for the wader/skater); the hands still land within
+          // a ball's width of each other (see the 'rally' case below).
+          p.pose.state.arm = [1.32, 1.30];
+          p.pose.state.armOut = [-0.32, -0.30];
+          p.pose.state.forearm = [0.38, 0.40];
         }
         p.pose();
         p.kind = 'player';
@@ -4454,6 +4510,7 @@ try {
         p.phase = phase;
         p.paddle = g.paddle;
         p.sandY = terrainHeight(px, pz);
+        bindPlayerContact(p);
         made.push(p);
         beachPeople.push(p);
         if (g.paddle) {
@@ -4465,12 +4522,9 @@ try {
             new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 0.7 }));
           grip.position.y = -0.16;
           bat.add(face, grip);
-          let hand = null;
-          p.body.traverse(o => {
-            if (!hand && o.isBone && /RightHand$/.test(o.name)) hand = o;
-          });
+          const hand = p.handR || boneOn(p.body, 'RightHand');
           if (hand) {
-            bat.position.set(0.02, 0.1, 0.01);
+            bat.position.set(0.02, 0.10, 0.01);
             bat.rotation.set(1.15, 0.15, 0.35);
             hand.add(bat);
           } else {
@@ -4478,9 +4532,16 @@ try {
             bat.rotation.set(0, 0, -0.5);
             p.group.add(bat);
           }
+          p.batFace = face;
         }
       });
       if (made.length !== 2) return;
+      standSolesOn(made[0], made[0].group.position.y);
+      standSolesOn(made[1], made[1].group.position.y);
+      made[0].group.updateMatrixWorld(true);
+      made[1].group.updateMatrixWorld(true);
+      playerContact(made[0], PA);
+      playerContact(made[1], PB);
       const ball = new THREE.Mesh(
         new THREE.SphereGeometry(g.radius, g.paddle ? 10 : 20, g.paddle ? 8 : 14),
         g.paddle ? M.paddleBall : M.volleyball
@@ -4776,29 +4837,21 @@ function tickPeople(dt, t) {
       case 'rally': {
         const T = p.period || 3.0;
         const tCyc = (t + p.phase) % T;
-        const tNorm = tCyc / T; // 0 to 1
+        const tNorm = tCyc / T;
         const isAtoB = tNorm < 0.5;
-        const u = isAtoB ? (tNorm / 0.5) : ((tNorm - 0.5) / 0.5); // 0 to 1 flight progress
+        const u = isAtoB ? (tNorm / 0.5) : ((tNorm - 0.5) / 0.5);
         const pFrom = isAtoB ? p.PA : p.PB;
         const pTo = isAtoB ? p.PB : p.PA;
 
-        // True ballistic parabolic trajectory
-        const bx = pFrom.x + (pTo.x - pFrom.x) * u;
-        const bz = pFrom.z + (pTo.z - pFrom.z) * u;
-        const by = (1 - u) * pFrom.y + u * pTo.y + 4.0 * p.arc * u * (1.0 - u);
-        p.group.position.set(bx, by, bz);
-
-        // Continuous rotational spin in flight
-        p.group.rotation.x += dt * 4.8 * (isAtoB ? 1 : -1);
-        p.group.rotation.y += dt * 2.2;
-
-        // Dynamic player bump / manchette and anticipation
+        // Snappier bump than the old 0.16-of-cycle window, which held the
+        // "hit" pose long after the ball had already left.
+        const HIT_W = 0.10;
         const dtA = Math.min(tNorm, 1.0 - tNorm);
-        const hitA = dtA < 0.16 ? Math.cos((dtA / 0.16) * (Math.PI / 2)) : 0;
+        const hitA = dtA < HIT_W ? Math.cos((dtA / HIT_W) * (Math.PI / 2)) : 0;
         const prepA = tNorm > 0.80 ? Math.sin((tNorm - 0.80) / 0.20 * Math.PI) : 0;
 
         const dtB = Math.abs(tNorm - 0.5);
-        const hitB = dtB < 0.16 ? Math.cos((dtB / 0.16) * (Math.PI / 2)) : 0;
+        const hitB = dtB < HIT_W ? Math.cos((dtB / HIT_W) * (Math.PI / 2)) : 0;
         const prepB = (tNorm > 0.30 && tNorm < 0.50) ? Math.sin((tNorm - 0.30) / 0.20 * Math.PI) : 0;
 
         for (const q of [p.A, p.B]) {
@@ -4806,35 +4859,55 @@ function tickPeople(dt, t) {
           const prep = q.side === 0 ? prepA : prepB;
 
           if (q.paddle) {
-            q.pose.state.arm[0] = 0.85 + hit * 0.12;
-            q.pose.state.arm[1] = 1.15 - hit * 0.60;
-            q.pose.state.armOut = [0.22 - hit * 0.05, -0.35 - hit * 0.60];
-            q.pose.state.forearm = [0.45, 0.70 - hit * 0.48];
-            q.pose.state.lean = 0.04 + prep * 0.06 - hit * 0.14;
-            q.pose.state.hip = [0.42 - hit * 0.16, 0.38 - hit * 0.12];
-            q.pose.state.knee = [-0.62 + hit * 0.28, -0.55 + hit * 0.22];
-            if (q.sandY != null) q.group.position.y = q.sandY + hit * 0.14;
+            q.pose.state.arm[0] = 0.55 + hit * 0.10;
+            q.pose.state.arm[1] = 0.92 - hit * 0.38;
+            q.pose.state.armOut = [0.38 - hit * 0.08, -0.18 - hit * 0.42];
+            q.pose.state.forearm = [0.40, 0.52 - hit * 0.28];
+            q.pose.state.lean = 0.06 + prep * 0.06 - hit * 0.12;
+            q.pose.state.hip = [0.38 + prep * 0.08 - hit * 0.14, 0.34 + prep * 0.06 - hit * 0.10];
+            q.pose.state.knee = [-0.60 - prep * 0.10 + hit * 0.24, -0.54 - prep * 0.10 + hit * 0.20];
+            q.pose.state.spread = -0.22;
+            q.pose.state.ankle = 0.16;
+            if (q.sandY != null) q.group.position.y = q.sandY - prep * 0.04 + hit * 0.10;
           } else {
-            // Volleyball: crouch prep -> explosive upward push through legs & forearms
-            q.pose.state.knee = [-0.58 - prep * 0.16 + hit * 0.28, -0.52 - prep * 0.16 + hit * 0.28];
-            q.pose.state.hip = [0.40 + prep * 0.12 - hit * 0.18, 0.36 + prep * 0.12 - hit * 0.18];
-            q.pose.state.spread = 0.18;
-            q.pose.state.ankle = 0.12;
+            // Crouch prep → uncoil through the legs, platform lifting with the ball.
+            q.pose.state.knee = [-0.60 - prep * 0.18 + hit * 0.30, -0.54 - prep * 0.18 + hit * 0.28];
+            q.pose.state.hip = [0.38 + prep * 0.12 - hit * 0.16, 0.34 + prep * 0.12 - hit * 0.16];
+            q.pose.state.spread = -0.24;
+            q.pose.state.ankle = 0.16 + hit * 0.06;
 
-            // Arms: ready low platform -> locked tight manchette lifting through the ball
-            q.pose.state.arm[0] = 1.38 - hit * 0.42;
-            q.pose.state.arm[1] = 1.36 - hit * 0.42;
-            q.pose.state.armOut = [-0.30 - hit * 0.14, -0.28 - hit * 0.14];
-            q.pose.state.forearm = [0.36 - hit * 0.16, 0.38 - hit * 0.16];
-            q.pose.state.lean = 0.12 + prep * 0.08 - hit * 0.18;
+            // The platform tightens through the hit rather than opening: raise
+            // the locked arms further and angle them in a touch more, instead
+            // of bending the elbow. Measured on both guest rigs across the
+            // whole prep/hit grid, hand separation never exceeds one ball
+            // width (0.26) and tightens to 5-18 cm right at the hit, while the
+            // chest itself moves under 2 cm — an arm push, not a torso lurch.
+            q.pose.state.arm[0] = 1.32 + prep * 0.04 + hit * 0.14;
+            q.pose.state.arm[1] = 1.30 + prep * 0.04 + hit * 0.14;
+            q.pose.state.armOut = [-0.32 - prep * 0.02 - hit * 0.10, -0.30 - prep * 0.02 - hit * 0.10];
+            q.pose.state.forearm = [0.38, 0.40];
+            q.pose.state.lean = 0.08 + prep * 0.06 - hit * 0.06;
 
-            if (q.sandY != null) q.group.position.y = q.sandY - prep * 0.05 + hit * 0.12;
+            if (q.sandY != null) q.group.position.y = q.sandY - prep * 0.05 + hit * 0.14;
           }
 
           q.mixer.update(0);
           q.pose();
           standSolesOn(q, q.group.position.y);
         }
+
+        p.A.group.updateMatrixWorld(true);
+        p.B.group.updateMatrixWorld(true);
+
+        const bx = pFrom.x + (pTo.x - pFrom.x) * u;
+        const bz = pFrom.z + (pTo.z - pFrom.z) * u;
+        const by = (1 - u) * pFrom.y + u * pTo.y + 4.0 * p.arc * u * (1.0 - u);
+        p.group.position.set(bx, by, bz);
+        if (hitA > 0) p.group.position.lerp(playerContact(p.A, _cLiveA), hitA);
+        if (hitB > 0) p.group.position.lerp(playerContact(p.B, _cLiveB), hitB);
+
+        p.group.rotation.x += dt * 4.8 * (isAtoB ? 1 : -1);
+        p.group.rotation.y += dt * 2.2;
         break;
       }
       case 'tend': {

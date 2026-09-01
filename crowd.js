@@ -538,19 +538,80 @@ function dressGuestBeach(map, mask, { shirtHex, shortsHex, shoeHex, darkShirt = 
   return canvasTexture(c, map);
 }
 
+function isSkinByte(r, g, b, a) {
+  if (a < 16) return false;
+  const lum = 0.3 * r + 0.59 * g + 0.11 * b;
+  if (lum < 35 || lum > 245) return false;
+  if (r + 12 < b) return false;
+  if (g > r + 35 && g > b + 20) return false;
+  return true;
+}
+
+function colorFromSrgb(r, g, b) {
+  return new THREE.Color().setRGB(r / 255, g / 255, b / 255, THREE.SRGBColorSpace);
+}
+
+// Lofted legs are an untextured material.color: they have to be sampled off
+// the SAME atlas the arms actually display, in sRGB, or they come out a
+// different person. The old path averaged the top-left quadrant of the
+// already-recut beach atlas (white shorts mixed into the face) and fed those
+// bytes to THREE.Color as linear, which is exactly the pale-calves / tan-arms
+// mismatch on the sand.
 function sampleGuestSkin(group, fallbackHex) {
   let found = null;
   group.traverse(o => {
     if (found || !o.isSkinnedMesh || String(o.name).startsWith('Wardrobe_')) return;
     const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
-    for (const m of mats) {
-      if (!m?.map) continue;
-      const atlas = atlasToCanvas(m.map);
-      if (!atlas) continue;
-      const s = sampleFaceSkin(atlas.data.data, atlas.w, atlas.h);
-      found = new THREE.Color(s.r / 255, s.g / 255, s.b / 255);
-      return;
+    const mat = mats.find(m => m?.map);
+    if (!mat?.map) return;
+    const atlas = atlasToCanvas(mat.map);
+    if (!atlas) return;
+    const { w, h, data } = atlas;
+    const pix = data.data;
+    const uv = o.geometry?.attributes?.uv;
+    const skinIndex = o.geometry?.attributes?.skinIndex;
+    const skinWeight = o.geometry?.attributes?.skinWeight;
+    const bones = o.skeleton?.bones;
+    const samples = [];
+    if (uv && skinIndex && skinWeight && bones) {
+      const isArm = bones.map(bone =>
+        /^(Left|Right)(Arm|ForeArm|Hand)$/i.test(
+          String(bone.name || '').replace(/^mixamorig:?/i, '')));
+      for (let i = 0; i < skinIndex.count; i++) {
+        let wt = 0;
+        for (let k = 0; k < 4; k++) {
+          const idx = skinIndex.getComponent(i, k);
+          if (isArm[idx]) wt += skinWeight.getComponent(i, k);
+        }
+        if (wt < 0.5) continue;
+        let u = uv.getX(i), v = uv.getY(i);
+        u -= Math.floor(u); v -= Math.floor(v);
+        if (u < 0) u += 1;
+        if (v < 0) v += 1;
+        const x = Math.min(w - 1, (u * w) | 0);
+        const y = Math.min(h - 1, (v * h) | 0);
+        const j = (y * w + x) * 4;
+        const R = pix[j], G = pix[j + 1], B = pix[j + 2], A = pix[j + 3];
+        if (!isSkinByte(R, G, B, A)) continue;
+        samples.push([R, G, B, 0.3 * R + 0.59 * G + 0.11 * B]);
+      }
     }
+    let r, g, b;
+    if (samples.length >= 12) {
+      // Drop the darkest third (creases, baked AO) so the loft matches the
+      // sunlit arm the camera actually sees, not the average of the atlas.
+      samples.sort((a, c) => a[3] - c[3]);
+      const start = (samples.length * 0.35) | 0;
+      let sr = 0, sg = 0, sb = 0, n = 0;
+      for (let i = start; i < samples.length; i++) {
+        sr += samples[i][0]; sg += samples[i][1]; sb += samples[i][2]; n++;
+      }
+      r = sr / n; g = sg / n; b = sb / n;
+    } else {
+      const s = sampleFaceSkin(pix, w, h);
+      r = s.r; g = s.g; b = s.b;
+    }
+    found = colorFromSrgb(r, g, b);
   });
   return found ?? new THREE.Color(fallbackHex);
 }
@@ -998,11 +1059,17 @@ export function customRig(group) {
   const rig = rigOf(group);
   if (!rig) return null;
   const L = limbs(group, rig);
+  // Idle writes the toe bones; pin them to bind so lofted feet cannot twist
+  // into a crossed stance the thigh pose did not ask for.
+  const toes = rig.kind === 'mixamo'
+    ? grab(group, ['LeftToeBase', 'RightToeBase', 'LeftToe_End', 'RightToe_End'])
+    : [];
   const apply = () => {
     const s = apply.state;
     L.thigh.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, s.hip[i], s.spread, j.side); });
     L.calf.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, s.knee[i]); });
     L.foot.forEach(j => { if (j) setJoint(j.bone, j.rest, rig, s.ankle); });
+    for (const j of toes) if (j) j.bone.quaternion.copy(j.rest);
     L.shoulder.forEach((j, i) => {
       if (j) setJoint(j.bone, j.rest, rig, 0, (s.armOut[i] || 0) * 0.25, j.side);
     });
@@ -1258,11 +1325,19 @@ export function makeVisitor(base, walkClip, rng,
   // GLBs already ship real legs; leave those.
   if (barefoot && isGuest && !authoredBeach) {
     hideAuthoredLowerLegs(group);
+    let skinRough = 0.72, skinEnv = 0.7;
+    group.traverse(o => {
+      if (!o.isSkinnedMesh || String(o.name).startsWith('Wardrobe_')) return;
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (!m) return;
+      if (m.roughness != null) skinRough = m.roughness;
+      if (m.envMapIntensity != null) skinEnv = m.envMapIntensity;
+    });
     const skinMat = new THREE.MeshStandardMaterial({
       color: sampleGuestSkin(group, skinTone),
-      roughness: 0.88,
+      roughness: skinRough,
       metalness: 0,
-      envMapIntensity: 0.7,
+      envMapIntensity: skinEnv,
     });
     const legs = buildBareLowerLegs(group, skinMat);
     if (legs) {

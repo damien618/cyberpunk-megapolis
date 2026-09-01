@@ -51,7 +51,11 @@ const cabinBeachPrompt = document.getElementById('cabinBeachPrompt');
 const cabinDayPrompt = document.getElementById('cabinDayPrompt');
 const cabinNightPrompt = document.getElementById('cabinNightPrompt');
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  powerPreference: 'high-performance',
+  logarithmicDepthBuffer: true,
+});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
@@ -62,6 +66,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xbcd6e6);
 scene.fog = new THREE.Fog(0xbcd6e6, 260, 1700);
 
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.25, 6000);
@@ -134,6 +139,7 @@ const skyDome = new THREE.Mesh(
   new THREE.SphereGeometry(3000, 32, 18),
   new THREE.ShaderMaterial({
     side: THREE.BackSide,
+    depthTest: false,
     depthWrite: false,
     fog: false,
     uniforms: skyUniforms,
@@ -573,7 +579,7 @@ function addInstancedPrimitive(geometry, material, items, propFlags) {
     m.compose(p, q, s);
     im.setMatrixAt(i, m);
   }
-  im.castShadow = true;
+  im.castShadow = !material.transparent;
   im.receiveShadow = true;
   im.instanceMatrix.needsUpdate = true;
   if (propFlags?.some(Boolean)) im.userData.prop = propFlags;
@@ -717,10 +723,11 @@ function halfBeam(z) {
 // Stations give the deck edge a real staircase of boxes that follows the sheer.
 // ---------------------------------------------------------------------------
 const STATION = 2.5;
+let prevHb = null, prevSheer = 0;
 for (let z = -SHIP_L2; z < SHIP_L2; z += STATION) {
   const zc = z + STATION / 2;
   const hb = halfBeam(zc);
-  if (hb < 0.4) continue;
+  if (hb < 0.4) { prevHb = null; continue; }
   // Sheer: the deck EDGE lifts toward the bow, the way a real hull does. It is
   // the difference between a ship and a barge — but it is carried by the hull
   // side and the bulwark only, NOT by the deck you walk on.
@@ -734,12 +741,12 @@ for (let z = -SHIP_L2; z < SHIP_L2; z += STATION) {
   // exactly what this still gives.
   const sheer = Math.max(0, (zc / SHIP_L2)) ** 2 * 1.6;
 
-  // Topsides, waterline to deck: navy, and FLAT-TOPPED at DECK_Y. This is a
-  // full-width block — the hull is solid, not a shell — so if its top follows
-  // the sheer then the top of the hull itself becomes the floor of every room
-  // forward of amidships, standing proud of their finishes. The sheer is
+  // Topsides, waterline to the UNDERSIDE of the teak. This is a full-width
+  // block — the hull is solid, not a shell — so if its top shares DECK_Y with
+  // the teak, the two coplanar faces z-fight and the promenade flickers navy
+  // through the planks. Stop the hull at the teak's bottom; the sheer is
   // carried by the bulwark above instead, which is where the eye reads it.
-  slab(M.hullNavy, -hb, hb, z, z + STATION, 1.1, DECK_Y);
+  slab(M.hullNavy, -hb, hb, z, z + STATION, 1.1, DECK_Y - 0.22);
   // Boot-topping, the band at the waterline.
   slab(M.hullBoot, -hb - 0.02, hb + 0.02, z, z + STATION, 0.2, 1.1);
   // Below the water: never seen from the deck, but seen from the pool deck
@@ -757,6 +764,21 @@ for (let z = -SHIP_L2; z < SHIP_L2; z += STATION) {
   // emitted, not a prop.
   slab(M.white, -hb, -hb + 0.55, z, z + STATION, DECK_Y - 0.22, DECK_Y + sheer + 1.15);
   slab(M.white, hb - 0.55, hb, z, z + STATION, DECK_Y - 0.22, DECK_Y + sheer + 1.15);
+
+  // Riser closing the step. Each station's bulwark is only as wide as ITS
+  // OWN half-beam, so wherever the beam changes from one station to the
+  // next, the narrower of the pair falls short of the wider one's outer
+  // edge and leaves an open notch at the joint — sea and sky showing
+  // straight through the ship's own side, and a gap a person could walk
+  // out through. A thin cross-wall at the joint, spanning the two half-beams,
+  // plugs it — the plan-view equivalent of a stair riser.
+  if (prevHb !== null && Math.abs(prevHb - hb) > 0.001) {
+    const lo = Math.min(prevHb, hb), hi = Math.max(prevHb, hb);
+    const topY = DECK_Y + Math.max(prevSheer, sheer) + 1.15;
+    slab(M.white, lo, hi, z - 0.05, z + 0.05, DECK_Y - 0.22, topY);
+    slab(M.white, -hi, -lo, z - 0.05, z + 0.05, DECK_Y - 0.22, topY);
+  }
+  prevHb = hb; prevSheer = sheer;
 }
 
 // Transom and stem: cap the two ends so the stations do not read as a stack of
@@ -842,13 +864,19 @@ function railRun(x0, x1, z0, z1, y, h = 1.05) {
   });
 }
 
-// Rail along both sides of the promenade deck, following the stations.
-for (let z = -SHIP_L2; z < SHIP_L2 - STATION; z += STATION * 4) {
-  const z1 = Math.min(z + STATION * 4, SHIP_L2 - 0.1);
-  const hbA = halfBeam(z + STATION / 2), hbB = halfBeam(z1 - STATION / 2);
-  if (Math.min(hbA, hbB) < 1.2) continue;
-  const sheer = Math.max(0, ((z + z1) / 2 / SHIP_L2)) ** 2 * 1.6;
-  const hb = Math.min(hbA, hbB) - 0.28;
+// Rail along both sides of the promenade deck, following the stations. One
+// run PER STATION, using that station's own hb and sheer — grouping several
+// stations into one straight run averaged their hb and sheer instead, and
+// toward the bow (where both change fastest) the rail sat on a flat line
+// while the bulwark beneath it climbed and stepped in every 2.5 m, so the
+// rail floated clear of it with daylight showing underneath.
+for (let z = -SHIP_L2; z < SHIP_L2; z += STATION) {
+  const zc = z + STATION / 2;
+  const hbFull = halfBeam(zc);
+  if (hbFull < 1.2) continue;
+  const z1 = Math.min(z + STATION, SHIP_L2 - 0.1);
+  const sheer = Math.max(0, zc / SHIP_L2) ** 2 * 1.6;
+  const hb = hbFull - 0.28;
   railRun(-hb, -hb, z, z1, DECK_Y + sheer + 1.15, 0.62);
   railRun(hb, hb, z, z1, DECK_Y + sheer + 1.15, 0.62);
 }
@@ -941,11 +969,12 @@ function windowBand(along, fixed, a0, a1, yA, yB, step = 3.2) {
     longSlab(M.white, x - WALL_T / 2, x + WALL_T / 2, -8, -8 + DOOR_W, y0 + DOOR_H, sillB);
   }
 
-  // Fore and aft end walls of the house.
-  wallWithHoles(M.white, 'x', SUP_Z1, WALL_T, -SUP_X2, SUP_X2, y0, y1, []);
-  wallWithHoles(M.white, 'x', SUP_Z0, WALL_T, -SUP_X2, SUP_X2, y0, y1, []);
-  windowBand('x', SUP_Z1, -SUP_X2 + 0.5, SUP_X2 - 0.5, sillA, sillB);
-  windowBand('x', SUP_Z0, -SUP_X2 + 0.5, SUP_X2 - 0.5, sillA, sillB);
+  // Fore and aft end walls of the house, with the window band cut open.
+  for (const z of [SUP_Z0, SUP_Z1]) {
+    wallWithHoles(M.white, 'x', z, WALL_T, -SUP_X2, SUP_X2, y0, sillA, []);
+    wallWithHoles(M.white, 'x', z, WALL_T, -SUP_X2, SUP_X2, sillB, y1, []);
+    windowBand('x', z, -SUP_X2 + 0.5, SUP_X2 - 0.5, sillA, sillB);
+  }
 
   // Transverse bulkheads between the rooms, each with a doorway on the
   // centreline. Wide ones: these are the public routes fore and aft, and a
@@ -1997,6 +2026,7 @@ function setCruiseTime(name) {
   scene.fog.color.setHex(s.fog.color);
   scene.fog.near = s.fog.near;
   scene.fog.far = s.fog.far;
+  scene.background.copy(scene.fog.color);
   renderer.toneMappingExposure = s.exposure;
   scene.environmentIntensity = s.env;
 
@@ -2084,11 +2114,15 @@ try {
       });
     };
 
-    // Promenade deck, both sides.
+    // Promenade deck, both sides. The teak stops 0.55 m short of the hull's
+    // half-beam and the bulwark fills the rest — a lane at +3.4 left the
+    // outer walker's hip only 5 cm from the bulwark's inner face, so she
+    // walked with half her body sunk into the wall the whole length of the
+    // ship. +2.6 clears it while still reading as the lane closer to the rail.
     patrol(0, SUP_X2 + 2.2, DECK_Y, -40, 40, 0);
-    patrol(1, SUP_X2 + 3.4, DECK_Y, 30, -30, Math.PI);
+    patrol(1, SUP_X2 + 2.6, DECK_Y, 30, -30, Math.PI);
     patrol(2, -(SUP_X2 + 2.2), DECK_Y, -34, 36, 0);
-    patrol(3, -(SUP_X2 + 3.4), DECK_Y, 42, -20, Math.PI);
+    patrol(3, -(SUP_X2 + 2.6), DECK_Y, 42, -20, Math.PI);
     stand(4, SUP_X2 + 3.0, DECK_Y, 52, Math.PI / 2);      // at the rail, forward
     stand(5, -(SUP_X2 + 3.0), DECK_Y, -52, -Math.PI / 2);
 
@@ -2374,13 +2408,6 @@ function animate() {
     m.material.opacity = TIME_STATES[cruiseTime].wake
       * (0.82 + 0.18 * Math.sin(t * 1.7 + i));
   }
-  // Keep the sea and the sky centred on the camera: both are finite, and the
-  // player can walk 190 m along the ship.
-  sea.position.x = camera.position.x;
-  sea.position.z = camera.position.z;
-  skyDome.position.copy(camera.position);
-  stars.position.copy(camera.position);
-
   for (const gu of gulls) {
     const g = gu.g;
     g.position.z += gu.speed * 6 * dt;
@@ -2395,6 +2422,14 @@ function animate() {
   updateSunShadow(ctrl.pos);
   updateAvatar(dt);
   rig.update(dt, input, ctrl);
+  // Keep the sea and the sky centred on the camera: both are finite, and the
+  // player can walk 190 m along the ship. After the rig so the dome sits on
+  // this frame's camera, not last frame's — a 3000 m sphere one tick behind
+  // the third-person camera was clipping a black wedge out of the sky.
+  sea.position.x = camera.position.x;
+  sea.position.z = camera.position.z;
+  skyDome.position.copy(camera.position);
+  stars.position.copy(camera.position);
   updateHud();
   renderer.render(scene, camera);
   input.endFrame();
