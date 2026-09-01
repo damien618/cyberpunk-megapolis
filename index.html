@@ -102,23 +102,28 @@
     overflow-x: hidden; overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: none;
-    display: flex; align-items: center; justify-content: center;
+    /* Cross-axis start + auto margins: the hub stays vertically centred when it
+       fits, but a taller constellation (the cruise hanging off the beach) can
+       scroll all the way to the top satellites. align-items:center would clip
+       that overflow above the viewport with scrollTop already at 0. */
+    display: flex; align-items: flex-start; justify-content: center;
   }
   #menuHubScroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
   #menuHubArea {
     position: relative;
-    width: 100%; min-height: 100%;
+    width: 100%;
     max-width: 1360px;
-    margin: 0 auto;
-    padding: 36px clamp(24px, 4vw, 68px);
+    margin: auto;
+    flex: 0 0 auto;
+    padding: 36px clamp(24px, 4vw, 68px) 48px;
     display: grid;
     grid-template-columns: minmax(230px, 1fr) minmax(280px, 1.25fr) minmax(230px, 1fr);
-    grid-template-rows: 1fr auto 1fr;
+    grid-template-rows: 1fr auto 1fr auto;
     align-items: center;
     justify-items: center;
     gap: clamp(16px, 2.5vw, 44px);
-    min-height: max(680px, 100vh);
+    min-height: 100%;
   }
 
   #panelCyber   { grid-column: 1; grid-row: 1; justify-self: start; align-self: start; }
@@ -127,6 +132,7 @@
   #panelZoo     { grid-column: 1; grid-row: 3; justify-self: start; align-self: end; }
   #panelShinto  { grid-column: 3; grid-row: 3; justify-self: end;   align-self: end; }
   #panelBeach   { grid-column: 2; grid-row: 3; justify-self: center; align-self: end; }
+  #panelCruise  { grid-column: 2; grid-row: 4; justify-self: center; align-self: end; }
 
   /* Circuit Board SVG overlay */
   .circuit-svg {
@@ -371,11 +377,33 @@
     box-shadow: 0 0 26px rgba(255,168,92,.26); }
   #enterBtnBeach:hover { background: linear-gradient(90deg, rgba(255,168,92,.58), rgba(255,168,92,.32)); }
 
+  /* Cruise — hangs off satellite 05, not the L.A. pivot: the ticket office
+     on the beach is the only way aboard, so the circuit is drawn from there. */
+  .cruise-panel {
+    border-color: rgba(255, 217, 138, 0.38);
+    align-items: center; text-align: center;
+  }
+  .cruise-panel:hover {
+    border-color: rgba(255, 217, 138, 0.85);
+    box-shadow: 0 0 32px rgba(255, 217, 138, 0.35), 0 14px 40px rgba(0, 0, 0, 0.7);
+  }
+  .cruise-panel .kicker { color: #ffe9b8; }
+  .cruise-panel .accent-cruise { color: var(--cruise-accent); text-shadow: 0 0 24px rgba(255,217,138,.42); }
+  .cruise-panel .m-name { color: var(--cruise-accent); text-shadow: 0 0 12px rgba(255,217,138,.4); }
+  #brandRuleCruise { margin-top: 10px; width: 64px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cruise-accent), transparent); }
+  #enterBtnCruise {
+    color: #2a1c05; background: linear-gradient(90deg, rgba(255,217,138,.38), rgba(255,217,138,.14));
+    border-color: var(--cruise-accent); text-shadow: 0 0 8px rgba(255,217,138,.9);
+    box-shadow: 0 0 26px rgba(255,217,138,.26); }
+  #enterBtnCruise:hover { background: linear-gradient(90deg, rgba(255,217,138,.58), rgba(255,217,138,.32)); }
+
   .la-card { margin-top: 12px; display: flex; flex-direction: column; gap: 3px; }
   .cyber-panel .la-card, .zoo-panel .la-card { align-items: flex-start; }
   .airport-panel .la-card, .shinto-panel .la-card { align-items: flex-end; }
-  .pivot-panel .la-card, .beach-panel .la-card { align-items: center; }
+  .pivot-panel .la-card, .beach-panel .la-card, .cruise-panel .la-card { align-items: center; }
   .beach-panel .m-tag { color: var(--beach-accent); }
+  .cruise-panel .m-tag { color: var(--cruise-accent); }
 
   .kicker { font-size: 11px; font-weight: 300; letter-spacing: .52em;
     color: #93a8e8; text-transform: uppercase; margin-bottom: 8px; }
@@ -400,7 +428,7 @@
   @media (max-width: 980px) {
     #menuHubArea {
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: auto auto auto;
+      grid-template-rows: auto auto auto auto auto;
       gap: 20px;
     }
     #panelLA { grid-column: 1 / -1; grid-row: 1; justify-self: center; }
@@ -409,11 +437,12 @@
     #panelZoo { grid-column: 1; grid-row: 3; justify-self: center; }
     #panelShinto { grid-column: 2; grid-row: 3; justify-self: center; }
     #panelBeach { grid-column: 1 / -1; grid-row: 4; justify-self: center; }
+    #panelCruise { grid-column: 1 / -1; grid-row: 5; justify-self: center; }
   }
   @media (max-width: 640px) {
     #menuHubArea {
       grid-template-columns: 1fr;
-      grid-template-rows: repeat(6, auto);
+      grid-template-rows: repeat(7, auto);
       gap: 16px;
       padding: 20px 14px;
     }
@@ -423,6 +452,7 @@
     #panelZoo { grid-column: 1; grid-row: 4; }
     #panelShinto { grid-column: 1; grid-row: 5; }
     #panelBeach { grid-column: 1; grid-row: 6; }
+    #panelCruise { grid-column: 1; grid-row: 7; }
     .la-panel { align-items: center !important; text-align: center !important; }
     .la-card { align-items: center !important; }
   }
@@ -697,7 +727,7 @@
         <stop offset="100%" stop-color="#8ec8e0" stop-opacity="1" />
       </linearGradient>
       <linearGradient id="grad-shinto" gradientUnits="userSpaceOnUse">
-        <stop offset="0%" stop-color="#5fd7ff" stop-opacity="1" />
+        <stop offset="0%" stop-color="#8ec8e0" stop-opacity="1" />
         <stop offset="50%" stop-color="#ff6050" stop-opacity="1" />
         <stop offset="100%" stop-color="#ff6050" stop-opacity="1" />
       </linearGradient>
@@ -705,6 +735,11 @@
         <stop offset="0%" stop-color="#5fd7ff" stop-opacity="1" />
         <stop offset="50%" stop-color="#ffa85c" stop-opacity="1" />
         <stop offset="100%" stop-color="#ffa85c" stop-opacity="1" />
+      </linearGradient>
+      <linearGradient id="grad-cruise" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#ffa85c" stop-opacity="1" />
+        <stop offset="50%" stop-color="#ffd98a" stop-opacity="1" />
+        <stop offset="100%" stop-color="#ffd98a" stop-opacity="1" />
       </linearGradient>
     </defs>
     <!-- Dynamic paths generated & updated via JS -->
@@ -765,7 +800,8 @@
         <button id="enterBtnZoo" class="enter-btn ready">Enter Game</button>
       </div>
 
-      <!-- BOTTOM-RIGHT SATELLITE: VISIT TO A SHINTO SHRINE -->
+      <!-- BOTTOM-RIGHT SATELLITE: VISIT TO A SHINTO SHRINE — hangs off
+           satellite 02 (the airport), the only way to reach Japan from L.A. -->
       <div class="la-panel shinto-panel" id="panelShinto" data-target="shinto">
         <div class="kicker">Satellite 04 · Kyoto</div>
         <h2>VISIT TO A<br><span class="accent-shinto">SHINTO SHRINE</span></h2>
@@ -788,6 +824,20 @@
           <span class="m-name">Baywatch Girl</span>
         </div>
         <button id="enterBtnBeach" class="enter-btn ready">Enter Game</button>
+      </div>
+
+      <!-- HANGS OFF SATELLITE 05: LA CROISIÈRE S'AMUSE — the beach ticket
+           office is the only way aboard, so this card sits under the shoreline
+           and the circuit is drawn from there, not from the L.A. pivot. -->
+      <div class="la-panel cruise-panel" id="panelCruise" data-target="cruise">
+        <div class="kicker">Satellite 06 · Paquebot</div>
+        <h2>LA CROISIÈRE<br><span class="accent-cruise">S'AMUSE</span></h2>
+        <div id="brandRuleCruise"></div>
+        <div class="la-card">
+          <span class="m-tag">Runner 01</span>
+          <span class="m-name">Cruise Girl</span>
+        </div>
+        <button id="enterBtnCruise" class="enter-btn ready">Enter Game</button>
       </div>
     </div>
   </div>
@@ -959,13 +1009,32 @@
   document.getElementById('enterBtnBeach')?.addEventListener('click', () => {
     location.href = 'index.html?map=beach';
   });
+  document.getElementById('enterBtnCruise')?.addEventListener('click', () => {
+    location.href = 'index.html?map=cruise';
+  });
   document.getElementById('enterBtn')?.addEventListener('click', () => {
     if (document.documentElement.dataset.mode !== 'menu') {
       location.href = 'index.html';
     }
   });
 
-  // Circuit lines rendering between pivot and surrounding corners
+  // Circuit lines: most satellites hang off the L.A. pivot. Two branches hang
+  // off another satellite instead: the shrine off the airport (02→04), and
+  // the cruise off the beach (05→06).
+  function panelCircuitBox(el, svgRect) {
+    const r = el.getBoundingClientRect();
+    return {
+      x: r.left + r.width / 2 - svgRect.left,
+      y: r.top + r.height / 2 - svgRect.top,
+      left: r.left - svgRect.left,
+      right: r.right - svgRect.left,
+      top: r.top - svgRect.top,
+      bottom: r.bottom - svgRect.top,
+      w: r.width,
+      h: r.height
+    };
+  }
+
   function updateCircuitLines() {
     const svg = document.getElementById('circuitSvg');
     const scrollContainer = document.getElementById('menuHubScroll');
@@ -975,25 +1044,19 @@
     const svgRect = svg.getBoundingClientRect();
     if (svgRect.width === 0 || svgRect.height === 0) return;
 
-    const laRect = panelLA.getBoundingClientRect();
-    const cLA = {
-      x: laRect.left + laRect.width / 2 - svgRect.left,
-      y: laRect.top + laRect.height / 2 - svgRect.top,
-      left: laRect.left - svgRect.left,
-      right: laRect.right - svgRect.left,
-      top: laRect.top - svgRect.top,
-      bottom: laRect.bottom - svgRect.top,
-      w: laRect.width,
-      h: laRect.height
-    };
+    const hubs = { panelLA: panelCircuitBox(panelLA, svgRect) };
 
     const satellites = [
-      { id: 'panelCyber',   color: '#ff4fd8', grad: 'grad-cyber',   pos: 'tl' },
-      { id: 'panelAirport', color: '#8ec8e0', grad: 'grad-airport', pos: 'tr' },
-      { id: 'panelZoo',     color: '#ffbe5c', grad: 'grad-zoo',     pos: 'bl' },
-      { id: 'panelShinto',  color: '#ff6050', grad: 'grad-shinto',  pos: 'br' },
+      { id: 'panelCyber',   color: '#ff4fd8', grad: 'grad-cyber' },
+      { id: 'panelAirport', color: '#8ec8e0', grad: 'grad-airport' },
+      { id: 'panelZoo',     color: '#ffbe5c', grad: 'grad-zoo' },
+      // Branch from satellite 02 (the airport), not from the pivot: the shrine
+      // is reached by flying out of L.A., so the circuit hangs off the runway.
+      { id: 'panelShinto',  color: '#ff6050', grad: 'grad-shinto', hub: 'panelAirport', hubColor: '#8ec8e0' },
       // Directly under the pivot, so it takes the vertical-stack fallback below.
-      { id: 'panelBeach',   color: '#ffa85c', grad: 'grad-beach',   pos: 'bc' }
+      { id: 'panelBeach',   color: '#ffa85c', grad: 'grad-beach' },
+      // Branch from satellite 05, not from the pivot.
+      { id: 'panelCruise',  color: '#ffd98a', grad: 'grad-cruise', hub: 'panelBeach', hubColor: '#ffa85c' }
     ];
 
     let tracksHTML = '';
@@ -1003,30 +1066,29 @@
     satellites.forEach(sat => {
       const el = document.getElementById(sat.id);
       if (!el) return;
-      const r = el.getBoundingClientRect();
-      const cTarget = {
-        x: r.left + r.width / 2 - svgRect.left,
-        y: r.top + r.height / 2 - svgRect.top,
-        left: r.left - svgRect.left,
-        right: r.right - svgRect.left,
-        top: r.top - svgRect.top,
-        bottom: r.bottom - svgRect.top,
-        w: r.width,
-        h: r.height
-      };
+      const cTarget = panelCircuitBox(el, svgRect);
+      const hubId = sat.hub || 'panelLA';
+      let cHub = hubs[hubId];
+      if (!cHub) {
+        const hubEl = document.getElementById(hubId);
+        if (!hubEl) return;
+        cHub = panelCircuitBox(hubEl, svgRect);
+        hubs[hubId] = cHub;
+      }
+      const hubColor = sat.hubColor || '#5fd7ff';
 
       let p1 = { x: 0, y: 0 };
       let p2 = { x: 0, y: 0 };
       let pathD = '';
       let parallelPathD = '';
 
-      const isLeft = cTarget.x < cLA.x - 50;
-      const isRight = cTarget.x > cLA.x + 50;
-      const isTop = cTarget.y < cLA.y;
+      const isLeft = cTarget.x < cHub.x - 50;
+      const isRight = cTarget.x > cHub.x + 50;
+      const isTop = cTarget.y < cHub.y;
 
       if (isLeft && isTop) {
         // Top-Left (Cyberpunk Megapolis)
-        p1 = { x: cLA.left, y: cLA.top + cLA.h * 0.28 };
+        p1 = { x: cHub.left, y: cHub.top + cHub.h * 0.28 };
         p2 = { x: cTarget.right, y: cTarget.top + cTarget.h * 0.72 };
         const midX = p2.x + (p1.x - p2.x) * 0.45;
         const cornerR = Math.min(18, Math.max(2, Math.abs(p1.x - midX) * 0.4), Math.max(2, Math.abs(p1.y - p2.y) * 0.4));
@@ -1034,7 +1096,7 @@
         parallelPathD = `M ${p1.x} ${p1.y + 6} L ${midX + cornerR + 3} ${p1.y + 6} L ${midX + 6} ${p1.y - cornerR + 2} L ${midX + 6} ${p2.y + cornerR + 6} L ${midX - cornerR + 3} ${p2.y + 6} L ${p2.x} ${p2.y + 6}`;
       } else if (isRight && isTop) {
         // Top-Right (Airport)
-        p1 = { x: cLA.right, y: cLA.top + cLA.h * 0.28 };
+        p1 = { x: cHub.right, y: cHub.top + cHub.h * 0.28 };
         p2 = { x: cTarget.left, y: cTarget.top + cTarget.h * 0.72 };
         const midX = p1.x + (p2.x - p1.x) * 0.55;
         const cornerR = Math.min(18, Math.max(2, Math.abs(p2.x - midX) * 0.4), Math.max(2, Math.abs(p1.y - p2.y) * 0.4));
@@ -1042,7 +1104,7 @@
         parallelPathD = `M ${p1.x} ${p1.y + 6} L ${midX - cornerR - 3} ${p1.y + 6} L ${midX - 6} ${p1.y - cornerR + 2} L ${midX - 6} ${p2.y + cornerR + 6} L ${midX + cornerR - 3} ${p2.y + 6} L ${p2.x} ${p2.y + 6}`;
       } else if (isLeft && !isTop) {
         // Bottom-Left (Zoo)
-        p1 = { x: cLA.left, y: cLA.top + cLA.h * 0.72 };
+        p1 = { x: cHub.left, y: cHub.top + cHub.h * 0.72 };
         p2 = { x: cTarget.right, y: cTarget.top + cTarget.h * 0.28 };
         const midX = p2.x + (p1.x - p2.x) * 0.45;
         const cornerR = Math.min(18, Math.max(2, Math.abs(p1.x - midX) * 0.4), Math.max(2, Math.abs(p2.y - p1.y) * 0.4));
@@ -1050,19 +1112,19 @@
         parallelPathD = `M ${p1.x} ${p1.y - 6} L ${midX + cornerR + 3} ${p1.y - 6} L ${midX + 6} ${p1.y + cornerR - 2} L ${midX + 6} ${p2.y - cornerR - 6} L ${midX - cornerR + 3} ${p2.y - 6} L ${p2.x} ${p2.y - 6}`;
       } else if (isRight && !isTop) {
         // Bottom-Right (Shinto)
-        p1 = { x: cLA.right, y: cLA.top + cLA.h * 0.72 };
+        p1 = { x: cHub.right, y: cHub.top + cHub.h * 0.72 };
         p2 = { x: cTarget.left, y: cTarget.top + cTarget.h * 0.28 };
         const midX = p1.x + (p2.x - p1.x) * 0.55;
         const cornerR = Math.min(18, Math.max(2, Math.abs(p2.x - midX) * 0.4), Math.max(2, Math.abs(p2.y - p1.y) * 0.4));
         pathD = `M ${p1.x} ${p1.y} L ${midX - cornerR} ${p1.y} L ${midX} ${p1.y + cornerR} L ${midX} ${p2.y - cornerR} L ${midX + cornerR} ${p2.y} L ${p2.x} ${p2.y}`;
         parallelPathD = `M ${p1.x} ${p1.y - 6} L ${midX - cornerR - 3} ${p1.y - 6} L ${midX - 6} ${p1.y + cornerR - 2} L ${midX - 6} ${p2.y - cornerR - 6} L ${midX + cornerR - 3} ${p2.y - 6} L ${p2.x} ${p2.y - 6}`;
       } else {
-        // Fallback vertical stack
+        // Fallback vertical stack (beach under L.A., cruise under the beach)
         if (isTop) {
-          p1 = { x: cLA.x, y: cLA.top };
+          p1 = { x: cHub.x, y: cHub.top };
           p2 = { x: cTarget.x, y: cTarget.bottom };
         } else {
-          p1 = { x: cLA.x, y: cLA.bottom };
+          p1 = { x: cHub.x, y: cHub.bottom };
           p2 = { x: cTarget.x, y: cTarget.top };
         }
         pathD = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
@@ -1081,8 +1143,8 @@
 
       nodesHTML += `
         <g class="circuit-node" transform="translate(${p1.x}, ${p1.y})">
-          <circle r="7" fill="#0a0c10" stroke="#5fd7ff" stroke-width="2" />
-          <circle r="3" fill="#5fd7ff" class="node-dot-pulse" />
+          <circle r="7" fill="#0a0c10" stroke="${hubColor}" stroke-width="2" />
+          <circle r="3" fill="${hubColor}" class="node-dot-pulse" />
         </g>
         <g class="circuit-node" transform="translate(${p2.x}, ${p2.y})">
           <circle r="7" fill="#0a0c10" stroke="${sat.color}" stroke-width="2" />
@@ -1189,6 +1251,7 @@
     if (window.__startZoo) window.__startZoo();
     if (window.__startShinto) window.__startShinto();
     if (window.__startBeach) window.__startBeach();
+    if (window.__startCruise) window.__startCruise();
   }, true);
   window.addEventListener('error', e => {
     console.error('[Page Error]', e.error || e.message);
