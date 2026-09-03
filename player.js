@@ -541,14 +541,6 @@ export class Player {
 
     const sleeves = buildSleeves(this.model, tshirtMaterial);
     const swimLegs = buildBareLegs(this.model, skinMaterial);
-    // Same hex as the lofted legs, but the body's roughness. The legs' 0.66
-    // caught a highlight the pack's forearm (roughness 1) does not, which
-    // read as a pale band at the elbow.
-    const armSkinMaterial = new THREE.MeshStandardMaterial({
-      color: 0xd3a189,
-      roughness: this.bodyMaterial?.roughness ?? 0.92,
-      metalness: 0,
-    });
     const flipFlops = buildFlipFlops(this.model, rubberMaterial);
 
     const pants = this.clothing.pants.mesh;
@@ -637,13 +629,26 @@ export class Player {
     });
 
     let swimsuitTop = null;
-    let swimsuitFill = null;
-    // 0.72 is the vest's shoulder seam. The cropped black shell is hollow —
-    // there is no torso under the tee — so any deeper cut opened a sightline
-    // through the scapula. The fill is the uncropped tee, skinned in flesh:
-    // its sleeves are the missing upper arms, and they close the volume so
-    // the armholes no longer see the sky. A few millimetres of standoff keep
-    // the black sitting on that fill instead of fighting it.
+    // 0.72 is the vest's shoulder seam: the black shell is the tee cut on two
+    // vertical planes there, so it keeps the shoulder and a short cap of the
+    // sleeve and lets the arm out below.
+    //
+    // It used to be worn over a "fill" — the whole tee again, skinned in flesh
+    // — on the theory that the shell is hollow and the fill both closed the
+    // armhole and stood in for the upper arms. Neither held up. The pack's own
+    // arm mesh is on under the swimsuit, so the fill's sleeve was a second,
+    // baggier arm: 7 cm of it hung past the black at the shoulder, hem and
+    // all, reading as a t-shirt the colour of skin. Worse, the fill sat on the
+    // tee surface while the black is the tee pushed out along its normals, and
+    // an eighth of those normals point INWARD — the armpit and the underside
+    // of the sleeve are concave — so right across the deltoid the shell
+    // inflates into the body and the flesh copy surfaces through it. That
+    // patch, not the sleeve alone, is what showed on the pool deck. Cropping
+    // the fill to the armhole fixed the sleeve and left the patch; deflating
+    // it 14 mm did not move the patch either, because the fold is centimetres
+    // deep. Nothing needs it: with the fill gone the shell reads solid from
+    // every angle the ship can put the camera in — the arm fills the armhole
+    // in all of them, and there is no swinging on a cruise deck to raise it.
     const SWIMSUIT_ARMHOLE = 0.72;
     const SWIMSUIT_STANDOFF = 0.008;
     if (tshirt) {
@@ -656,8 +661,6 @@ export class Player {
       swimsuitTop = this.createSkinnedClone(
         tshirt, inflatedGeometry(shell, SWIMSUIT_STANDOFF), blackSwimMaterial,
         'Wardrobe_SwimsuitTop');
-      swimsuitFill = this.createSkinnedClone(
-        tshirt, tshirt.geometry, armSkinMaterial, 'Wardrobe_SwimsuitFill');
     }
 
     const SWIMSUIT_HEM = 0.81;
@@ -848,7 +851,7 @@ export class Player {
     this.wardrobe = {
       sleeves, swimLegs, swimShorts, nightTop, nightShorts,
       denimShorts, flipFlops, vest, zooTrousers, hairCrown: null,
-      swimsuitTop, swimsuitBottom, swimsuitFill,
+      swimsuitTop, swimsuitBottom,
       kimonoParts,
       casinoTop, casinoPants, casinoShoes, casinoSleeves, casinoJewelry: casinoJewelryGroup,
       casinoLooseHair: casinoLooseHairGroup,
@@ -916,7 +919,6 @@ export class Player {
     if (this.wardrobe.swimShorts) this.wardrobe.swimShorts.visible = outfit.swim && !outfit.swimsuit && dressed;
     if (this.wardrobe.swimsuitTop) this.wardrobe.swimsuitTop.visible = outfit.swimsuit;
     if (this.wardrobe.swimsuitBottom) this.wardrobe.swimsuitBottom.visible = outfit.swimsuit;
-    if (this.wardrobe.swimsuitFill) this.wardrobe.swimsuitFill.visible = outfit.swimsuit;
     if (this.wardrobe.nightTop) this.wardrobe.nightTop.visible = outfit.night;
     if (this.wardrobe.nightShorts) this.wardrobe.nightShorts.visible = outfit.night;
     if (this.wardrobe.denimShorts) this.wardrobe.denimShorts.visible = false;
