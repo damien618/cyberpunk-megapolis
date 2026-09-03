@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { buildBareLegs, buildFlipFlops, buildSleeves } from './limbs.js?v=38';
+import { buildBareLegs, buildFlipFlops, buildSleeves } from './limbs.js?v=43';
 import { buildKimono } from './kimono.js?v=25';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
@@ -541,6 +541,14 @@ export class Player {
 
     const sleeves = buildSleeves(this.model, tshirtMaterial);
     const swimLegs = buildBareLegs(this.model, skinMaterial);
+    // Same hex as the lofted legs, but the body's roughness. The legs' 0.66
+    // caught a highlight the pack's forearm (roughness 1) does not, which
+    // read as a pale band at the elbow.
+    const armSkinMaterial = new THREE.MeshStandardMaterial({
+      color: 0xd3a189,
+      roughness: this.bodyMaterial?.roughness ?? 0.92,
+      metalness: 0,
+    });
     const flipFlops = buildFlipFlops(this.model, rubberMaterial);
 
     const pants = this.clothing.pants.mesh;
@@ -620,6 +628,219 @@ export class Player {
       )
       : null;
 
+    // --- Black One-Piece Swimsuit (Maillot de bain une pièce noir) ----------
+    const blackSwimMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0f0f12,
+      roughness: 0.28,
+      metalness: 0.12,
+      side: THREE.DoubleSide,
+    });
+
+    let swimsuitTop = null;
+    let swimsuitFill = null;
+    // 0.72 is the vest's shoulder seam. The cropped black shell is hollow —
+    // there is no torso under the tee — so any deeper cut opened a sightline
+    // through the scapula. The fill is the uncropped tee, skinned in flesh:
+    // its sleeves are the missing upper arms, and they close the volume so
+    // the armholes no longer see the sky. A few millimetres of standoff keep
+    // the black sitting on that fill instead of fighting it.
+    const SWIMSUIT_ARMHOLE = 0.72;
+    const SWIMSUIT_STANDOFF = 0.008;
+    if (tshirt) {
+      tshirt.geometry.computeBoundingBox();
+      const bb = tshirt.geometry.boundingBox;
+      const armhole = Math.max(Math.abs(bb.min.x), Math.abs(bb.max.x)) * SWIMSUIT_ARMHOLE;
+      const shell = croppedGeometry(
+        croppedGeometry(tshirt.geometry, armhole, { axis: 'x', keep: -1, standoff: false }),
+        -armhole, { axis: 'x', keep: 1, standoff: false });
+      swimsuitTop = this.createSkinnedClone(
+        tshirt, inflatedGeometry(shell, SWIMSUIT_STANDOFF), blackSwimMaterial,
+        'Wardrobe_SwimsuitTop');
+      swimsuitFill = this.createSkinnedClone(
+        tshirt, tshirt.geometry, armSkinMaterial, 'Wardrobe_SwimsuitFill');
+    }
+
+    const SWIMSUIT_HEM = 0.81;
+    const swimsuitBottom = pants
+      ? this.createSkinnedClone(
+        pants,
+        croppedGeometry(pants.geometry, SWIMSUIT_HEM),
+        blackSwimMaterial,
+        'Wardrobe_SwimsuitBottom'
+      )
+      : null;
+
+    const casinoTopMaterial = new THREE.MeshStandardMaterial({
+      color: 0x18181c,
+      roughness: 0.32,
+      metalness: 0.08,
+      side: THREE.DoubleSide,
+    });
+    const casinoPantsMaterial = new THREE.MeshStandardMaterial({
+      color: 0x121318,
+      roughness: 0.48,
+      metalness: 0.04,
+      side: THREE.DoubleSide,
+    });
+    const casinoShoesMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0c0c10,
+      roughness: 0.15,
+      metalness: 0.22,
+    });
+    const casinoGoldMaterial = new THREE.MeshStandardMaterial({
+      color: 0xe8c063,
+      roughness: 0.22,
+      metalness: 0.85,
+    });
+    const casinoGemMaterial = new THREE.MeshStandardMaterial({
+      color: 0x00e676,
+      roughness: 0.1,
+      metalness: 0.1,
+      emissive: 0x005522,
+      emissiveIntensity: 0.4,
+    });
+
+    const casinoSleeves = buildSleeves(this.model, casinoTopMaterial);
+    const casinoTop = tshirt
+      ? this.createSkinnedClone(tshirt, tshirt.geometry, casinoTopMaterial, 'Wardrobe_CasinoTop')
+      : null;
+    const casinoPants = pants
+      ? this.createSkinnedClone(pants, pants.geometry, casinoPantsMaterial, 'Wardrobe_CasinoPants')
+      : null;
+    const shoes = this.clothing.shoes.mesh;
+    const casinoShoes = shoes
+      ? this.createSkinnedClone(shoes, shoes.geometry, casinoShoesMaterial, 'Wardrobe_CasinoShoes')
+      : null;
+
+    const casinoJewelryGroup = new THREE.Group();
+    casinoJewelryGroup.name = 'Wardrobe_CasinoJewelry';
+    if (this.bones.neck_01) {
+      const chokerGeo = new THREE.TorusGeometry(0.085, 0.007, 8, 24);
+      chokerGeo.rotateX(Math.PI / 2);
+      const choker = new THREE.Mesh(chokerGeo, casinoGoldMaterial);
+      choker.position.set(0, 0.02, 0.01);
+      const gemGeo = new THREE.SphereGeometry(0.016, 8, 8);
+      gemGeo.scale(1, 1.4, 0.8);
+      const gem = new THREE.Mesh(gemGeo, casinoGemMaterial);
+      gem.position.set(0, -0.015, 0.09);
+      choker.add(gem);
+      const gemMount = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.006, 8), casinoGoldMaterial);
+      gemMount.position.set(0, -0.005, 0.088);
+      choker.add(gemMount);
+      this.bones.neck_01.add(choker);
+      casinoJewelryGroup.userData.choker = choker;
+    }
+    if (this.bones.lowerarm_l) {
+      const bangleGeo = new THREE.TorusGeometry(0.042, 0.006, 8, 20);
+      bangleGeo.rotateX(Math.PI / 2);
+      const bangle = new THREE.Mesh(bangleGeo, casinoGoldMaterial);
+      bangle.position.set(0, -0.18, 0);
+      this.bones.lowerarm_l.add(bangle);
+      casinoJewelryGroup.userData.bangle = bangle;
+    }
+
+    const casinoLooseHairGroup = new THREE.Group();
+    casinoLooseHairGroup.name = 'Wardrobe_CasinoLooseHair';
+    casinoLooseHairGroup.visible = false;
+    if (this.bones.head) {
+      // Une mèche est mate et sombre, avec juste ce qu'il faut de violet pour
+      // répondre aux mèches teintes de l'atlas. L'émissif fort et le métal qu'il y
+      // avait ici allumaient les rubans de l'intérieur: à côté des cartes de
+      // cheveux du pack, qui ne renvoient que la lumière de la salle, ça ne lisait
+      // pas comme des cheveux mais comme du plastique.
+      const lockMat = new THREE.MeshStandardMaterial({
+        color: 0x2a1630,
+        emissive: 0x4a1170,
+        emissiveIntensity: 0.12,
+        roughness: 0.78,
+        metalness: 0,
+        side: THREE.DoubleSide,
+      });
+
+      function buildHairRibbon(pts, widthTop = 0.032, widthBot = 0.012, segs = 8) {
+        const curve = new THREE.CatmullRomCurve3(pts);
+        const curvePts = curve.getPoints(segs);
+        const pos = [], uv = [], idx = [];
+        for (let i = 0; i <= segs; i++) {
+          const p = curvePts[i];
+          const u = i / segs;
+          const w = widthTop * (1 - u) + widthBot * u;
+          const tan = i < segs ? curvePts[i + 1].clone().sub(p).normalize() : curvePts[i].clone().sub(curvePts[i - 1]).normalize();
+          let binorm = new THREE.Vector3(-tan.z, 0, tan.x).normalize();
+          if (binorm.lengthSq() < 0.1) binorm.set(1, 0, 0);
+
+          pos.push(p.x - binorm.x * w, p.y, p.z - binorm.z * w);
+          uv.push(0, u);
+          pos.push(p.x + binorm.x * w, p.y, p.z + binorm.z * w);
+          uv.push(1, u);
+
+          if (i < segs) {
+            const a = i * 2, b = i * 2 + 1, c = (i + 1) * 2, d = (i + 1) * 2 + 1;
+            idx.push(a, b, c, b, d, c);
+          }
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        geo.setIndex(idx);
+        geo.computeVertexNormals();
+        return new THREE.Mesh(geo, lockMat);
+      }
+
+      // Les points sont en mètres, depuis l'origine de l'os `head` — qui est en bas
+      // du crâne, à hauteur de mâchoire, pas au sommet: le haut du crâne est vers
+      // y = +0.20, la tempe vers +0.11, la mâchoire vers 0, la clavicule vers -0.18.
+      // Les mèches partaient d'y = +0.05 et descendaient à -0.22, c'est-à-dire de la
+      // pommette au milieu du buste, en travers du visage.
+      //
+      // Deux choses les font lire comme des cheveux plutôt que comme des rubans
+      // pendus. Le premier point est haut ET rentré contre le crâne, sous les cartes
+      // de la coiffure: une mèche part de la masse, elle ne commence pas en l'air à
+      // côté de l'oreille. Et la pointe se ferme presque complètement — un ruban qui
+      // s'arrête net sur 8 mm de large se voit, une mèche s'effile.
+
+      // Mèche avant gauche: naît au-dessus de l'oreille, passe devant, tombe à l'épaule
+      casinoLooseHairGroup.add(buildHairRibbon([
+        new THREE.Vector3(-0.062, 0.150, -0.005),
+        new THREE.Vector3(-0.078, 0.060, 0.028),
+        new THREE.Vector3(-0.084, -0.045, 0.050),
+        new THREE.Vector3(-0.078, -0.155, 0.048),
+      ], 0.010, 0.0012));
+
+      // Mèche avant droite
+      casinoLooseHairGroup.add(buildHairRibbon([
+        new THREE.Vector3(0.062, 0.150, -0.005),
+        new THREE.Vector3(0.078, 0.060, 0.028),
+        new THREE.Vector3(0.084, -0.045, 0.050),
+        new THREE.Vector3(0.078, -0.155, 0.048),
+      ], 0.010, 0.0012));
+
+      // Mèches latérales, en arrière de l'oreille, tombant vers l'épaule
+      casinoLooseHairGroup.add(buildHairRibbon([
+        new THREE.Vector3(-0.058, 0.160, -0.035),
+        new THREE.Vector3(-0.086, 0.045, -0.028),
+        new THREE.Vector3(-0.096, -0.070, -0.008),
+      ], 0.009, 0.0010));
+
+      casinoLooseHairGroup.add(buildHairRibbon([
+        new THREE.Vector3(0.058, 0.160, -0.035),
+        new THREE.Vector3(0.086, 0.045, -0.028),
+        new THREE.Vector3(0.096, -0.070, -0.008),
+      ], 0.009, 0.0010));
+
+      // Les courbes ci-dessus sont écrites dans le repère du personnage: Y vers le
+      // haut, -Y le long de la joue, +Z devant. L'os `head` ne travaille pas dans
+      // ce repère — c'est un rig à axe d'os, son +X local sort du crâne et son +Y
+      // regarde devant — donc telles quelles les mèches sortaient à plat sur les
+      // côtés du visage au lieu de tomber. On oriente le groupe pour annuler
+      // l'écart entre les deux repères: dedans, Y est de nouveau la verticale.
+      this.model.updateMatrixWorld(true);
+      const headQuaternion = this.bones.head.getWorldQuaternion(new THREE.Quaternion());
+      const modelQuaternion = this.model.getWorldQuaternion(new THREE.Quaternion());
+      casinoLooseHairGroup.quaternion.copy(headQuaternion.invert().multiply(modelQuaternion));
+      this.bones.head.add(casinoLooseHairGroup);
+    }
+
     let kimonoParts = [];
     try { kimonoParts = buildKimono(this.model) ?? []; }
     catch (err) { console.warn('[wardrobe] kimono', err); }
@@ -627,7 +848,10 @@ export class Player {
     this.wardrobe = {
       sleeves, swimLegs, swimShorts, nightTop, nightShorts,
       denimShorts, flipFlops, vest, zooTrousers, hairCrown: null,
+      swimsuitTop, swimsuitBottom, swimsuitFill,
       kimonoParts,
+      casinoTop, casinoPants, casinoShoes, casinoSleeves, casinoJewelry: casinoJewelryGroup,
+      casinoLooseHair: casinoLooseHairGroup,
     };
   }
 
@@ -658,9 +882,11 @@ export class Player {
       shoes: options.shoes !== false,
       longSleeves: options.longSleeves === true,
       swim: options.swim === true,
+      swimsuit: options.swimsuit === true,
       night: options.night === true,
       zoo: options.zoo === true,
       kimono: options.kimono === true,
+      casino: options.casino === true,
     };
     const key = JSON.stringify(outfit);
     if (key === this.outfitKey || !this.wardrobe) return;
@@ -671,22 +897,26 @@ export class Player {
     // replaces the whole outfit, silk top and all, because nobody sleeps in a
     // backpack — and the zoo's, which keeps the trousers and only needs the legs
     // for the bare feet coming out from under them.
-    const legs = outfit.swim || outfit.night || outfit.zoo;
-    const noTrousers = outfit.swim || outfit.night;
-    const dressed = !outfit.night && !outfit.zoo && !outfit.kimono;
+    const legs = outfit.swim || outfit.night || outfit.zoo || outfit.swimsuit;
+    const noTrousers = outfit.swim || outfit.night || outfit.swimsuit;
+    const isSpecial = outfit.night || outfit.zoo || outfit.kimono || outfit.casino || outfit.swimsuit;
+    const dressed = !isSpecial;
     const hat = outfit.hat && dressed;
     this.setPartVisible('hat', hat);
     this.setPartVisible('backpack', outfit.backpack && dressed);
     // Kimono keeps the tee and trousers on as the nagajuban: the lofted
     // robe sits over them, and they plug any hole the shells leave at the
     // collar or the stride.
-    this.setPartVisible('tshirt', (outfit.tshirt && !outfit.night) || outfit.kimono);
-    this.setPartVisible('pants', (outfit.pants && !noTrousers && !outfit.zoo) || outfit.kimono);
-    this.setPartVisible('shoes', outfit.shoes && !legs);
+    this.setPartVisible('tshirt', (outfit.tshirt && !outfit.night && !outfit.casino && !outfit.swimsuit) || outfit.kimono);
+    this.setPartVisible('pants', (outfit.pants && !noTrousers && !outfit.zoo && !outfit.casino) || outfit.kimono);
+    this.setPartVisible('shoes', outfit.shoes && !legs && !outfit.casino);
     if (this.wardrobe.sleeves) this.wardrobe.sleeves.visible = outfit.longSleeves && dressed;
-    if (this.armsMesh) this.armsMesh.visible = !((outfit.longSleeves && dressed) || outfit.kimono);
+    if (this.armsMesh) this.armsMesh.visible = !((outfit.longSleeves && dressed) || outfit.kimono || (outfit.casino && this.wardrobe.casinoSleeves));
     if (this.wardrobe.swimLegs) this.wardrobe.swimLegs.visible = legs;
-    if (this.wardrobe.swimShorts) this.wardrobe.swimShorts.visible = outfit.swim && dressed;
+    if (this.wardrobe.swimShorts) this.wardrobe.swimShorts.visible = outfit.swim && !outfit.swimsuit && dressed;
+    if (this.wardrobe.swimsuitTop) this.wardrobe.swimsuitTop.visible = outfit.swimsuit;
+    if (this.wardrobe.swimsuitBottom) this.wardrobe.swimsuitBottom.visible = outfit.swimsuit;
+    if (this.wardrobe.swimsuitFill) this.wardrobe.swimsuitFill.visible = outfit.swimsuit;
     if (this.wardrobe.nightTop) this.wardrobe.nightTop.visible = outfit.night;
     if (this.wardrobe.nightShorts) this.wardrobe.nightShorts.visible = outfit.night;
     if (this.wardrobe.denimShorts) this.wardrobe.denimShorts.visible = false;
@@ -696,6 +926,94 @@ export class Player {
     for (const mesh of this.wardrobe.kimonoParts ?? []) {
       if (mesh) mesh.visible = outfit.kimono;
     }
+    if (this.wardrobe.casinoTop) this.wardrobe.casinoTop.visible = outfit.casino;
+    if (this.wardrobe.casinoPants) this.wardrobe.casinoPants.visible = outfit.casino;
+    if (this.wardrobe.casinoShoes) this.wardrobe.casinoShoes.visible = outfit.casino;
+    if (this.wardrobe.casinoSleeves) this.wardrobe.casinoSleeves.visible = outfit.casino;
+    if (this.wardrobe.casinoJewelry) {
+      if (this.wardrobe.casinoJewelry.userData.choker)
+        this.wardrobe.casinoJewelry.userData.choker.visible = outfit.casino;
+      if (this.wardrobe.casinoJewelry.userData.bangle)
+        this.wardrobe.casinoJewelry.userData.bangle.visible = outfit.casino;
+    }
+
+    // Casino Hairstyle: mèches violettes & cheveux détachés
+    if (this.casinoHairTex && this.hairMaterial) {
+      this.hairMaterial.map = outfit.casino ? this.casinoHairTex : this.normalHairTex;
+      this.hairMaterial.needsUpdate = true;
+    }
+    if (this.wardrobe?.hairCrown && this.casinoCrownTex) {
+      this.wardrobe.hairCrown.material.map = outfit.casino ? this.casinoCrownTex : this.normalCrownTex;
+      this.wardrobe.hairCrown.material.needsUpdate = true;
+    }
+    if (this.bones.ponytail_01) {
+      if (outfit.casino) {
+        // Détache les cheveux. Le pack ne livre qu'une coiffure, une queue de cheval,
+        // et la moitié de son maillage — 4099 sommets sur ponytail_02/03/04 — est la
+        // queue elle-même. Ce qui fait lire « attaché » n'est pas la longueur, c'est
+        // que cette masse est resserrée en un seul faisceau: on la détache en la
+        // laissant retomber et en l'étalant, pas en déplaçant quoi que ce soit.
+        //
+        // Ce qui suppose de savoir ce que chaque axe fait vraiment ici, parce que les
+        // trois font des choses différentes et qu'aucune n'est celle qu'on croit. Le
+        // rig est à axe d'os: chaque os porte le suivant le long de son propre +X, donc
+        // X est la PORTÉE de la chaîne — le grossir allonge la queue en pique, c'est
+        // lui qui l'envoyait au plafond. Les cartes de cheveux, elles, tombent selon Y:
+        // Y est donc la LONGUEUR de la chevelure (à 4.8 elle descend à la hanche comme
+        // une cape). Reste Z, le seul qui écarte les cartes: c'est lui qui porte le
+        // VOLUME, et donc le passage du faisceau à la masse libre.
+        //
+        // Deux fois trois, X reste à 1, Y donne juste ce que des cheveux dénoués
+        // gagnent en longueur, Z fait le reste — le plus large à la nuque, là où
+        // l'élastique serrait, et se referme vers les pointes.
+        //
+        // Enfin la rotation de repos n'est PAS touchée: c'est elle (euler ~(-3.1, 0,
+        // -2.2) sur le premier os) qui couche la chevelure dans le dos, et l'écraser
+        // par des angles absolus réalignait la chaîne sur l'axe du crâne — soit, ce +X
+        // de l'os `head` qui pointe vers le ciel, la mèche verticale du bug.
+        const CASINO_HAIR_DOWN = [
+          // os              portée, longueur, volume
+          ['ponytail_01', [1.0, 1.30, 3.4]],
+          ['ponytail_02', [1.0, 1.40, 4.0]],
+          ['ponytail_03', [1.0, 1.30, 3.6]],
+          ['ponytail_04', [1.0, 1.12, 2.6]],
+        ];
+        const composed = [1, 1, 1];
+        for (const [name, scale] of CASINO_HAIR_DOWN) {
+          const bone = this.bones[name];
+          if (!bone) continue;
+          bone.scale.set(
+            scale[0] / composed[0], scale[1] / composed[1], scale[2] / composed[2]);
+          for (let c = 0; c < 3; c++) composed[c] = scale[c];
+          const rest = this.restRotation?.get(name);
+          if (rest) bone.quaternion.copy(rest);
+        }
+      } else {
+        // Queue de cheval attachée normale
+        this.bones.ponytail_01.scale.set(1, 1, 1);
+        const r1 = this.restRotation?.get('ponytail_01');
+        if (r1) this.bones.ponytail_01.quaternion.copy(r1);
+        if (this.bones.ponytail_02) {
+          this.bones.ponytail_02.scale.set(1, 1, 1);
+          const r2 = this.restRotation?.get('ponytail_02');
+          if (r2) this.bones.ponytail_02.quaternion.copy(r2);
+        }
+        if (this.bones.ponytail_03) {
+          this.bones.ponytail_03.scale.set(1, 1, 1);
+          const r3 = this.restRotation?.get('ponytail_03');
+          if (r3) this.bones.ponytail_03.quaternion.copy(r3);
+        }
+        if (this.bones.ponytail_04) {
+          this.bones.ponytail_04.scale.set(1, 1, 1);
+          const r4 = this.restRotation?.get('ponytail_04');
+          if (r4) this.bones.ponytail_04.quaternion.copy(r4);
+        }
+      }
+    }
+    if (this.wardrobe?.casinoLooseHair) {
+      this.wardrobe.casinoLooseHair.visible = outfit.casino;
+    }
+
     // Strictly the cap's understudy. The crown stands a centimetre off the
     // skull, which is inside Hat02 — worn together, it punches through the cap.
     if (this.wardrobe.hairCrown) this.wardrobe.hairCrown.visible = !hat;

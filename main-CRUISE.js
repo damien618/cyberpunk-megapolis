@@ -1,11 +1,13 @@
 import * as THREE from 'three';
-import { Player } from './player.js?v=74';
-import { harmoniseHair } from './hair.js?v=8';
+import { Player } from './player.js?v=85';
+import { harmoniseHair } from './hair.js?v=11';
 import { Input } from './input.js';
-import { Controller } from './controller.js?v=7';
+import { Controller } from './controller.js?v=8';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes } from './cityBoxes.js?v=5';
 import { loadGuestRig, makeVisitor, rootBoneOf } from './crowd.js?v=57';
+
+console.log('[cruise] starting module evaluation');
 
 // ---------------------------------------------------------------------------
 // Croisière de luxe — the ship you board from the ticket office at the end of
@@ -55,6 +57,7 @@ const renderer = new THREE.WebGLRenderer({
   antialias: true,
   powerPreference: 'high-performance',
   logarithmicDepthBuffer: true,
+  preserveDrawingBuffer: true,
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -409,31 +412,212 @@ const parquetTex = canvasTex(256, 256, (g, W, H) => {
   }
 }, 6, 8);
 
-// Casino carpet. Loud on purpose: a casino floor is the one room aboard that
-// is not trying to be tasteful, and a plain carpet there reads as an office.
-const casinoCarpetTex = canvasTex(256, 256, (g, W, H) => {
-  g.fillStyle = '#5a1424';
+// Casino carpet: opulent rich burgundy damask with art-deco gold flourishes (Casino Royale style)
+const casinoCarpetTex = canvasTex(512, 512, (g, W, H) => {
+  g.fillStyle = '#320612';
   g.fillRect(0, 0, W, H);
+  const S = W / 4;
   for (let i = 0; i < 4; i++) {
     for (let j = 0; j < 4; j++) {
-      const cx = (i + 0.5) * W / 4, cy = (j + 0.5) * H / 4;
-      g.strokeStyle = 'rgba(220,180,90,0.5)';
-      g.lineWidth = 2.5;
+      const cx = (i + 0.5) * S, cy = (j + 0.5) * S;
+      const rg = g.createRadialGradient(cx, cy, 4, cx, cy, S * 0.48);
+      rg.addColorStop(0, '#560e22');
+      rg.addColorStop(0.7, '#3e0818');
+      rg.addColorStop(1, '#28040f');
+      g.fillStyle = rg;
       g.beginPath();
-      g.arc(cx, cy, 20, 0, Math.PI * 2);
-      g.stroke();
-      g.fillStyle = 'rgba(40,90,120,0.45)';
-      g.beginPath();
-      g.arc(cx, cy, 9, 0, Math.PI * 2);
+      g.arc(cx, cy, S * 0.46, 0, Math.PI * 2);
       g.fill();
-      g.strokeStyle = 'rgba(160,40,60,0.6)';
-      g.lineWidth = 6;
+
+      g.strokeStyle = 'rgba(218, 165, 32, 0.45)';
+      g.lineWidth = 2.2;
       g.beginPath();
-      g.arc(cx, cy, 32, 0, Math.PI * 2);
+      g.arc(cx, cy, S * 0.38, 0, Math.PI * 2);
+      g.stroke();
+
+      g.strokeStyle = 'rgba(218, 165, 32, 0.28)';
+      g.lineWidth = 1.4;
+      g.beginPath();
+      g.arc(cx, cy, S * 0.26, 0, Math.PI * 2);
+      g.stroke();
+
+      g.fillStyle = 'rgba(230, 185, 75, 0.6)';
+      g.beginPath();
+      g.moveTo(cx, cy - 14);
+      g.lineTo(cx + 4, cy - 4);
+      g.lineTo(cx + 14, cy);
+      g.lineTo(cx + 4, cy + 4);
+      g.lineTo(cx, cy + 14);
+      g.lineTo(cx - 4, cy + 4);
+      g.lineTo(cx - 14, cy);
+      g.lineTo(cx - 4, cy - 4);
+      g.closePath();
+      g.fill();
+
+      g.strokeStyle = 'rgba(218, 165, 32, 0.18)';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(i * S, j * S);
+      g.lineTo((i + 1) * S, (j + 1) * S);
+      g.moveTo((i + 1) * S, j * S);
+      g.lineTo(i * S, (j + 1) * S);
       g.stroke();
     }
   }
-}, 6, 10);
+}, 8, 14);
+
+// European roulette layout felt texture
+const rouletteFeltTex = canvasTex(512, 256, (g, W, H) => {
+  g.fillStyle = '#0f4827';
+  g.fillRect(0, 0, W, H);
+  g.strokeStyle = '#e5c158';
+  g.lineWidth = 3;
+  g.strokeRect(8, 8, W - 16, H - 16);
+  g.lineWidth = 1.5;
+  g.strokeRect(12, 12, W - 24, H - 24);
+
+  const gx0 = 70, gy0 = 20, gw = 420, gh = 150;
+  const colW = gw / 12, rowH = gh / 3;
+
+  g.fillStyle = '#166e37';
+  g.fillRect(18, gy0, gx0 - 22, gh);
+  g.strokeStyle = '#e5c158';
+  g.lineWidth = 2;
+  g.strokeRect(18, gy0, gx0 - 22, gh);
+  g.fillStyle = '#ffffff';
+  g.font = 'bold 28px "Georgia", serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('0', (18 + gx0 - 4) / 2, gy0 + gh / 2);
+
+  const redNums = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+  for (let c = 0; c < 12; c++) {
+    for (let r = 0; r < 3; r++) {
+      const num = c * 3 + (3 - r);
+      const isRed = redNums.has(num);
+      const bx = gx0 + c * colW, by = gy0 + r * rowH;
+      g.fillStyle = isRed ? '#9e1818' : '#141416';
+      g.fillRect(bx + 1, by + 1, colW - 2, rowH - 2);
+      g.strokeStyle = '#e5c158';
+      g.lineWidth = 1.5;
+      g.strokeRect(bx, by, colW, rowH);
+      g.fillStyle = '#ffffff';
+      g.font = 'bold 15px "Georgia", serif';
+      g.fillText(num.toString(), bx + colW / 2, by + rowH / 2);
+    }
+  }
+
+  const by0 = gy0 + gh + 6;
+  const dozW = gw / 3;
+  const dozens = ['1st 12', '2nd 12', '3rd 12'];
+  for (let i = 0; i < 3; i++) {
+    const dx = gx0 + i * dozW;
+    g.fillStyle = '#0a3a1f';
+    g.fillRect(dx + 1, by0, dozW - 2, 28);
+    g.strokeStyle = '#e5c158';
+    g.strokeRect(dx, by0, dozW, 28);
+    g.fillStyle = '#e5c158';
+    g.font = 'bold 13px "Georgia", serif';
+    g.fillText(dozens[i], dx + dozW / 2, by0 + 14);
+  }
+
+  const oy0 = by0 + 32;
+  const outW = gw / 6;
+  const outs = ['1-18', 'EVEN', '♦ RED', '♣ BLK', 'ODD', '19-36'];
+  for (let i = 0; i < 6; i++) {
+    const ox = gx0 + i * outW;
+    g.fillStyle = i === 2 ? '#8a1616' : i === 3 ? '#161618' : '#0a3a1f';
+    g.fillRect(ox + 1, oy0, outW - 2, 24);
+    g.strokeStyle = '#e5c158';
+    g.strokeRect(ox, oy0, outW, 24);
+    g.fillStyle = i === 2 ? '#ffc2c2' : '#e5c158';
+    g.font = 'bold 11px "Georgia", serif';
+    g.fillText(outs[i], ox + outW / 2, oy0 + 12);
+  }
+});
+
+// Dynamic canvas for animated slot machine reels & flashing lights
+const slotReelCanvas = Object.assign(document.createElement('canvas'), { width: 512, height: 256 });
+const slotReelCtx = slotReelCanvas.getContext('2d');
+const slotReelTex = new THREE.CanvasTexture(slotReelCanvas);
+slotReelTex.colorSpace = THREE.SRGBColorSpace;
+const slotScreenMat = new THREE.MeshStandardMaterial({
+  map: slotReelTex,
+  emissive: 0xffffff,
+  emissiveMap: slotReelTex,
+  emissiveIntensity: 0.95,
+  roughness: 0.25,
+});
+
+const slotIcons = ['🍒', '7️⃣', '💎', '👑', '🔔', '💰', '⭐', '🍇'];
+let lastSlotUpdate = 0;
+function updateSlotScreens(t) {
+  if (t - lastSlotUpdate < 0.055) return;
+  if (typeof ctrl !== 'undefined' && ctrl?.pos && (ctrl.pos.z < CASINO_Z[0] - 10 || ctrl.pos.z > CASINO_Z[1] + 10)) return;
+  lastSlotUpdate = t;
+  const g = slotReelCtx;
+  const W = 512, H = 256;
+  g.fillStyle = '#06070a';
+  g.fillRect(0, 0, W, H);
+
+  // Flashing rainbow/gold border chase LEDs
+  const ledCount = 28;
+  for (let i = 0; i < ledCount; i++) {
+    const hue = ((i / ledCount) + t * 0.9) % 1;
+    g.fillStyle = `hsl(${Math.floor(hue * 360)}, 100%, 65%)`;
+    const bx = (i / ledCount) * (W - 16) + 8;
+    g.beginPath();
+    g.arc(bx, 8, 4, 0, Math.PI * 2);
+    g.arc(bx, H - 8, 4, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  // 3 Spinning Reels
+  const rw = 120, rh = 176, ry = 28;
+  for (let r = 0; r < 3; r++) {
+    const rx = 40 + r * 150;
+    g.fillStyle = '#101118';
+    g.fillRect(rx, ry, rw, rh);
+    g.strokeStyle = '#d4af37';
+    g.lineWidth = 3;
+    g.strokeRect(rx, ry, rw, rh);
+
+    const speed = [2.2, 3.0, 3.8][r];
+    const scroll = (t * speed) % slotIcons.length;
+    const baseIdx = Math.floor(scroll);
+    const frac = scroll - baseIdx;
+
+    g.save();
+    g.beginPath();
+    g.rect(rx, ry, rw, rh);
+    g.clip();
+
+    for (let offset = -1; offset <= 2; offset++) {
+      const iconIdx = (baseIdx + offset + slotIcons.length) % slotIcons.length;
+      const sy = ry + rh / 2 + (offset - frac) * 58;
+      g.font = '36px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(slotIcons[iconIdx], rx + rw / 2, sy);
+    }
+    g.restore();
+
+    g.strokeStyle = 'rgba(255, 50, 50, 0.45)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(rx, ry + rh / 2);
+    g.lineTo(rx + rw, ry + rh / 2);
+    g.stroke();
+  }
+
+  const pulse = Math.sin(t * 7) > 0;
+  g.fillStyle = pulse ? '#ffd700' : '#ff3344';
+  g.font = 'bold 16px "Impact", sans-serif';
+  g.textAlign = 'center';
+  g.fillText('★ 777 JACKPOT $1,000,000 ★', W / 2, 226);
+
+  slotReelTex.needsUpdate = true;
+}
 
 // Cabin carpet: quiet, because the suite is the one room that has to feel
 // like somewhere you would actually sleep.
@@ -463,6 +647,7 @@ const corridorCarpetTex = canvasTex(128, 256, (g, W, H) => {
     g.fill();
   }
 }, 1, 6);
+console.log('[cruise] textures initialized');
 
 const M = {
   // --- Hull and structure --------------------------------------------------
@@ -488,6 +673,9 @@ const M = {
   midWood: new THREE.MeshStandardMaterial({
     map: woodA, normalMap: woodN, color: 0xb08453, roughness: 0.76,
   }),
+  mahoganyGloss: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0x3d1b0d, roughness: 0.38, metalness: 0.05,
+  }),
   // Ship's glass. Not a mirror: at high metalness under this map's environment
   // every window went black and the superstructure read as a burnt-out hulk.
   // Ship's glass. Not a mirror, and after dark not a hole either: the emissive
@@ -505,6 +693,7 @@ const M = {
   cabinCarpet: new THREE.MeshStandardMaterial({ map: cabinCarpetTex, roughness: 0.96 }),
   corridorCarpet: new THREE.MeshStandardMaterial({ map: corridorCarpetTex, roughness: 0.95 }),
   baize: new THREE.MeshStandardMaterial({ color: 0x14603c, roughness: 0.93 }),
+  rouletteFelt: new THREE.MeshStandardMaterial({ map: rouletteFeltTex, roughness: 0.92 }),
   velvetRed: new THREE.MeshStandardMaterial({ color: 0x7a1f2c, roughness: 0.9 }),
   velvetGold: new THREE.MeshStandardMaterial({ color: 0xb8913f, roughness: 0.72, metalness: 0.2 }),
   linen: new THREE.MeshStandardMaterial({ color: 0xf6f1e4, roughness: 0.92 }),
@@ -513,12 +702,34 @@ const M = {
   bedRunner: new THREE.MeshStandardMaterial({ color: 0x1d3d5c, roughness: 0.82 }),
   towel: new THREE.MeshStandardMaterial({ color: 0xf4f0e6, roughness: 0.95 }),
   cushionTeal: new THREE.MeshStandardMaterial({ color: 0x2c6b78, roughness: 0.88 }),
+  leatherBurgundy: new THREE.MeshStandardMaterial({ color: 0x4a121c, roughness: 0.48, metalness: 0.06 }),
+  leatherBlack: new THREE.MeshStandardMaterial({ color: 0x18181c, roughness: 0.45, metalness: 0.05 }),
+
+  // --- Casino Royale gaming tokens, plaques & bar glassware ----------------
+  goldPlaque: new THREE.MeshStandardMaterial({ color: 0xe5c158, roughness: 0.22, metalness: 0.82 }),
+  rubyPlaque: new THREE.MeshStandardMaterial({ color: 0xd91438, roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.85 }),
+  emeraldPlaque: new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.85 }),
+  blackChip: new THREE.MeshStandardMaterial({ color: 0x18181c, roughness: 0.58 }),
+  blueChip: new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.58 }),
+  greenChip: new THREE.MeshStandardMaterial({ color: 0x059669, roughness: 0.58 }),
+  redChip: new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.58 }),
+  amberBottle: new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.82, emissive: 0x78350f, emissiveIntensity: 0.4 }),
+  emeraldBottle: new THREE.MeshStandardMaterial({ color: 0x059669, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.82, emissive: 0x064e3b, emissiveIntensity: 0.4 }),
+  rubyBottle: new THREE.MeshStandardMaterial({ color: 0xbe123c, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.82, emissive: 0x881337, emissiveIntensity: 0.4 }),
+  sapphireBottle: new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.82, emissive: 0x1e3a8a, emissiveIntensity: 0.4 }),
+  crystalGlass: new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.06, metalness: 0.2, transparent: true, opacity: 0.55 }),
+  champagneGold: new THREE.MeshStandardMaterial({ color: 0xfde047, roughness: 0.25, metalness: 0.75 }),
+  goldTrim: new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.26, metalness: 0.78 }),
 
   // --- Lit things ----------------------------------------------------------
-  // Emissive rather than real lights: a liner needs a hundred glowing points,
-  // and a hundred point lights is a hundred lights' worth of nothing.
   lamp: new THREE.MeshStandardMaterial({
     color: 0xfff0cc, emissive: 0xffdf9e, emissiveIntensity: 0.9, roughness: 0.4,
+  }),
+  warmLamp: new THREE.MeshStandardMaterial({
+    color: 0xffedd5, emissive: 0xffaa44, emissiveIntensity: 1.5, roughness: 0.3,
+  }),
+  warmLampBright: new THREE.MeshStandardMaterial({
+    color: 0xfffaf0, emissive: 0xffc870, emissiveIntensity: 2.2, roughness: 0.2,
   }),
   neonPink: new THREE.MeshStandardMaterial({
     color: 0xff5fbf, emissive: 0xff4fb0, emissiveIntensity: 1.6, roughness: 0.4,
@@ -716,73 +927,114 @@ function halfBeam(z) {
 // ---------------------------------------------------------------------------
 // Hull and the promenade deck.
 //
-// Built as transverse STATIONS — one box per 2.5 m of length, each as wide as
+// Built as transverse STATIONS — one box per station gap, each as wide as
 // halfBeam says — rather than as one tapered mesh. That is not a shortcut: the
 // collision world is a set of AABBs, so a smooth tapered hull would collide as
 // its own bounding box and the player would walk on thin air out past the bow.
 // Stations give the deck edge a real staircase of boxes that follows the sheer.
 // ---------------------------------------------------------------------------
 const STATION = 2.5;
-let prevHb = null, prevSheer = 0;
-for (let z = -SHIP_L2; z < SHIP_L2; z += STATION) {
-  const zc = z + STATION / 2;
-  const hb = halfBeam(zc);
-  if (hb < 0.4) { prevHb = null; continue; }
-  // Sheer: the deck EDGE lifts toward the bow, the way a real hull does. It is
-  // the difference between a ship and a barge — but it is carried by the hull
-  // side and the bulwark only, NOT by the deck you walk on.
-  //
-  // The walking surface stays dead flat at DECK_Y across the whole ship. Given
-  // the sheer, it did not: by z = 35 the teak stood 22 cm proud of the flat
-  // floor finishes laid inside the house, and by the ballroom's forward end it
-  // stood 64 cm proud — so the parquet, the casino carpet and cabin 214's
-  // carpet were all buried and the forward half of the interior was bare deck
-  // planking. Sheer is read off the RAIL LINE in profile anyway, which is
-  // exactly what this still gives.
-  const sheer = Math.max(0, (zc / SHIP_L2)) ** 2 * 1.6;
+
+// The stations are NOT evenly spaced. Amidships the beam is constant and a
+// 2.5 m box is invisible, but over the last 20 m of the bow halfBeam loses
+// 1.7 m per station — and at that rate the deck edge, built as Z-aligned
+// boxes, read from the foredeck as a flight of white steps with a cross-wall
+// closing each one. So the edge line is sampled where it actually bends:
+// quarter stations where it turns fastest, half stations through the
+// shoulders, full stations along the parallel middle body.
+const EDGE = [];
+{
+  let z = -SHIP_L2;
+  while (z < SHIP_L2 - 1e-6) {
+    EDGE.push({ z, hb: halfBeam(z) });
+    const slope = Math.abs(halfBeam(z + 0.4) - halfBeam(z - 0.4)) / 0.8;
+    const step = slope > 0.35 ? STATION / 4 : slope > 0.10 ? STATION / 2 : STATION;
+    z = Math.min(z + step, SHIP_L2);
+  }
+  EDGE.push({ z: SHIP_L2, hb: halfBeam(SHIP_L2) });
+}
+
+// Sheer: the deck EDGE lifts toward the bow, the way a real hull does. It is
+// the difference between a ship and a barge — but it is carried by the hull
+// side, the bulwark and the rail only, NOT by the deck you walk on.
+//
+// The walking surface stays dead flat at DECK_Y across the whole ship. Given
+// the sheer, it did not: by z = 35 the teak stood 22 cm proud of the flat
+// floor finishes laid inside the house, and by the ballroom's forward end it
+// stood 64 cm proud — so the parquet, the casino carpet and cabin 214's
+// carpet were all buried and the forward half of the interior was bare deck
+// planking. Sheer is read off the RAIL LINE in profile anyway, which is
+// exactly what this still gives.
+const sheerAt = (z) => Math.max(0, z / SHIP_L2) ** 2 * 1.6;
+
+// Bulwark: the solid coaming round the deck edge. One ANGLED panel per station
+// gap, yawed to that gap's heading and laid nose to tail along the edge line,
+// so the joint between two panels IS the line and needs no riser to plug it.
+// Panels squared off to Z instead left an open notch at every joint wherever
+// the beam changed — sea and sky showing through the ship's own side, and a
+// gap a person could walk out through — which the old cross-walls closed at
+// the price of the stepped look.
+//
+// A panel is thickened inboard by the beam its own length loses, so its inner
+// face still reaches the teak of the narrower end: the deck and hull below are
+// Z-aligned boxes as wide as that narrower end, and without the extra
+// thickness a slot of daylight opened between deck and bulwark at the bow.
+// It starts at the DECK, not at the sheered edge, for the same reason. This is
+// the thing that actually keeps the player aboard, so it is emitted, not a prop.
+function bulwarkPanel(a, b) {
+  const dx = b.hb - a.hb, dz = b.z - a.z;
+  const L = Math.hypot(dx, dz);
+  const ry = Math.atan2(dx, dz);
+  const T = 0.55 + Math.abs(dx);
+  const cx = (a.hb + b.hb) / 2 - (dz / L) * (T / 2);   // inboard normal: (-dz, dx) / L
+  const cz = (a.z + b.z) / 2 + (dx / L) * (T / 2);
+  const y0 = DECK_Y - 0.22, y1 = DECK_Y + sheerAt((a.z + b.z) / 2) + 1.15;
+  box(M.white, cx, (y0 + y1) / 2, cz, T, y1 - y0, L + 0.08, ry);
+  box(M.white, -cx, (y0 + y1) / 2, cz, T, y1 - y0, L + 0.08, -ry);
+}
+
+for (let i = 0; i < EDGE.length - 1; i++) {
+  const a = EDGE[i], b = EDGE[i + 1];
+  const z = a.z, z1 = b.z;
+  // The solid part of a station is only as wide as its NARROWER end, so hull
+  // and teak both stay inboard of the angled bulwark that caps them. Taking
+  // the mid-station beam instead left the deck poking out past the bulwark
+  // over open water at the forward end of every station up the bow.
+  const hb = Math.min(a.hb, b.hb);
+  if (hb < 0.4) continue;
 
   // Topsides, waterline to the UNDERSIDE of the teak. This is a full-width
   // block — the hull is solid, not a shell — so if its top shares DECK_Y with
   // the teak, the two coplanar faces z-fight and the promenade flickers navy
   // through the planks. Stop the hull at the teak's bottom; the sheer is
   // carried by the bulwark above instead, which is where the eye reads it.
-  slab(M.hullNavy, -hb, hb, z, z + STATION, 1.1, DECK_Y - 0.22);
+  slab(M.hullNavy, -hb, hb, z, z1, 1.1, DECK_Y - 0.22);
   // Boot-topping, the band at the waterline.
-  slab(M.hullBoot, -hb - 0.02, hb + 0.02, z, z + STATION, 0.2, 1.1);
+  slab(M.hullBoot, -hb - 0.02, hb + 0.02, z, z1, 0.2, 1.1);
   // Below the water: never seen from the deck, but seen from the pool deck
   // looking down through the swell, and its absence read as a floating box.
-  slab(M.hullBelow, -hb * 0.94, hb * 0.94, z, z + STATION, HULL_BOTTOM, 0.2);
+  slab(M.hullBelow, -hb * 0.94, hb * 0.94, z, z1, HULL_BOTTOM, 0.2);
 
   // The deck you walk on. Teak, laid flat over the whole plan; the house is
   // built on top of it, so this runs right through under the rooms and their
   // own floor finishes sit 2 cm proud of it.
-  slab(M.teak, -hb + 0.55, hb - 0.55, z, z + STATION, DECK_Y - 0.22, DECK_Y);
-  // Bulwark: the solid coaming round the deck edge, rising with the sheer.
-  // It starts at the DECK, not at the sheered edge, or a slot of daylight
-  // opens between the deck and the bottom of the bulwark toward the bow.
-  // This is the thing that actually keeps the player aboard, so it is
-  // emitted, not a prop.
-  slab(M.white, -hb, -hb + 0.55, z, z + STATION, DECK_Y - 0.22, DECK_Y + sheer + 1.15);
-  slab(M.white, hb - 0.55, hb, z, z + STATION, DECK_Y - 0.22, DECK_Y + sheer + 1.15);
+  slab(M.teak, -hb + 0.55, hb - 0.55, z, z1, DECK_Y - 0.22, DECK_Y);
 
-  // Riser closing the step. Each station's bulwark is only as wide as ITS
-  // OWN half-beam, so wherever the beam changes from one station to the
-  // next, the narrower of the pair falls short of the wider one's outer
-  // edge and leaves an open notch at the joint — sea and sky showing
-  // straight through the ship's own side, and a gap a person could walk
-  // out through. A thin cross-wall at the joint, spanning the two half-beams,
-  // plugs it — the plan-view equivalent of a stair riser.
-  if (prevHb !== null && Math.abs(prevHb - hb) > 0.001) {
-    const lo = Math.min(prevHb, hb), hi = Math.max(prevHb, hb);
-    const topY = DECK_Y + Math.max(prevSheer, sheer) + 1.15;
-    slab(M.white, lo, hi, z - 0.05, z + 0.05, DECK_Y - 0.22, topY);
-    slab(M.white, -hi, -lo, z - 0.05, z + 0.05, DECK_Y - 0.22, topY);
-  }
-  prevHb = hb; prevSheer = sheer;
+  bulwarkPanel(a, b);
 }
 
-// Transom and stem: cap the two ends so the stations do not read as a stack of
-// slices when you walk to the rail and look over.
+// Stem. The forwardmost station still ends in a flat face a couple of metres
+// wide, and the two side bulwarks stop short of each other across it — an
+// opening at the very bow you could walk straight out of.
+{
+  const hb = halfBeam(SHIP_L2);
+  slab(M.white, -hb, hb, SHIP_L2 - 0.55, SHIP_L2,
+    DECK_Y - 0.22, DECK_Y + sheerAt(SHIP_L2) + 1.15);
+  slab(M.hullNavy, -hb, hb, SHIP_L2, SHIP_L2 + 0.8, 1.1, DECK_Y - 0.22);
+}
+
+// Transom: cap the stern so the stations do not read as a stack of slices
+// when you walk to the rail and look over.
 slab(M.hullNavy, -halfBeam(-SHIP_L2), halfBeam(-SHIP_L2), -SHIP_L2 - 1.2, -SHIP_L2,
   0.2, DECK_Y);
 slab(M.white, -halfBeam(-SHIP_L2), halfBeam(-SHIP_L2), -SHIP_L2 - 1.2, -SHIP_L2,
@@ -792,13 +1044,24 @@ slab(M.white, -halfBeam(-SHIP_L2), halfBeam(-SHIP_L2), -SHIP_L2 - 1.2, -SHIP_L2,
 // a bow read as a bow rather than as a wedge. Emitted as two SIDE bands, not as
 // one full-width slab: full width it roofed the whole foredeck a metre above
 // the deck, and walking forward meant climbing an invisible step onto it.
-for (let i = 0; i < 10; i++) {
-  const z = SHIP_L2 - 22 + i * 2.2;
-  const hb = halfBeam(z);
-  const top = DECK_Y + (z / SHIP_L2) ** 2 * 1.6;
+// The bands ride the same edge line as the bulwark above them. Laid Z-aligned
+// they stood a metre proud of it at the forward end of every station, and the
+// bow carried a row of navy shelves you could see from the rail.
+const FLARE_Z0 = SHIP_L2 - 22;
+for (let i = 0; i < EDGE.length - 1; i++) {
+  const a = EDGE[i], b = EDGE[i + 1];
+  if (a.z < FLARE_Z0) continue;
+  const dx = b.hb - a.hb, dz = b.z - a.z;
+  const L = Math.hypot(dx, dz);
+  const ry = Math.atan2(dx, dz);
+  const zc = (a.z + b.z) / 2;
+  const bot = DECK_Y - 2.6 + Math.min(1, (zc - FLARE_Z0) / 22) * 1.6;
+  const top = DECK_Y + (zc / SHIP_L2) ** 2 * 1.6;
+  // 0.5 m band, hung outboard of the line: outboard normal is (dz, -dx) / L.
+  const cx = (a.hb + b.hb) / 2 + (dz / L) * 0.25;
+  const cz = zc - (dx / L) * 0.25;
   for (const sx of [-1, 1])
-    slab(M.hullNavy, sx * hb, sx * (hb + 0.5), z, z + 2.2,
-      DECK_Y - 2.6 + i * 0.18, top);
+    box(M.hullNavy, sx * cx, (bot + top) / 2, cz, 0.5, top - bot, L + 0.08, sx * ry);
 }
 prop(() => {
   // Anchors, in their hawse pipes.
@@ -864,21 +1127,51 @@ function railRun(x0, x1, z0, z1, y, h = 1.05) {
   });
 }
 
-// Rail along both sides of the promenade deck, following the stations. One
-// run PER STATION, using that station's own hb and sheer — grouping several
-// stations into one straight run averaged their hb and sheer instead, and
-// toward the bow (where both change fastest) the rail sat on a flat line
-// while the bulwark beneath it climbed and stepped in every 2.5 m, so the
-// rail floated clear of it with daylight showing underneath.
-for (let z = -SHIP_L2; z < SHIP_L2; z += STATION) {
-  const zc = z + STATION / 2;
-  const hbFull = halfBeam(zc);
-  if (hbFull < 1.2) continue;
-  const z1 = Math.min(z + STATION, SHIP_L2 - 0.1);
-  const sheer = Math.max(0, zc / SHIP_L2) ** 2 * 1.6;
-  const hb = hbFull - 0.28;
-  railRun(-hb, -hb, z, z1, DECK_Y + sheer + 1.15, 0.62);
-  railRun(hb, hb, z, z1, DECK_Y + sheer + 1.15, 0.62);
+// One length of rail between two points on the deck-edge line: top rail, mid
+// rail and stanchions, all yawed to the segment's own heading. `acc` is the
+// distance already walked along the line, so the stanchions keep a constant
+// 2.1 m pitch across segments of any length instead of one post per station —
+// at quarter stations that would have been a picket fence round the bow.
+const RAIL_POST = 2.1;
+function railSpan(ax, az, bx, bz, y, h, acc) {
+  const dx = bx - ax, dz = bz - az;
+  const L = Math.hypot(dx, dz);
+  if (L < 1e-4) return;
+  const ry = Math.atan2(dx, dz);
+  const t = 0.07;
+  prop(() => {
+    box(M.steel, (ax + bx) / 2, y + h - 0.06, (az + bz) / 2, 2 * t, 0.12, L + 2 * t, ry);
+    box(M.steel, (ax + bx) / 2, y + h * 0.55, (az + bz) / 2, 2 * t, 0.08, L + 2 * t, ry);
+    for (let d = Math.ceil(acc / RAIL_POST - 1e-6) * RAIL_POST; d <= acc + L + 1e-6; d += RAIL_POST) {
+      const u = (d - acc) / L;
+      shape(G.cylBase, M.steel, ax + dx * u, y, az + dz * u, 0.09, h, 0.09);
+    }
+  });
+}
+
+// Rail along both sides of the promenade deck, laid on the SAME edge line as
+// the bulwark under it: one span per station gap, yawed to that gap's heading,
+// each span sharing its endpoints with its neighbours so the rail reads as one
+// continuous line from stern to stem. Built from Z-aligned runs per station it
+// did not: toward the bow, where the line turns and the sheer climbs fastest,
+// the rail sat flat while the bulwark beneath it stepped inboard every 2.5 m,
+// so the runs stood apart as separate fence panels with the corners of the
+// bulwark showing between them.
+const RAIL_INSET = 0.28;
+let railAcc = 0;
+for (let i = 0; i < EDGE.length - 1; i++) {
+  const a = EDGE[i], b = EDGE[i + 1];
+  if (Math.min(a.hb, b.hb) < 1.0) continue;
+  const y = DECK_Y + sheerAt((a.z + b.z) / 2) + 1.15;
+  railSpan(a.hb - RAIL_INSET, a.z, b.hb - RAIL_INSET, b.z, y, 0.62, railAcc);
+  railSpan(-(a.hb - RAIL_INSET), a.z, -(b.hb - RAIL_INSET), b.z, y, 0.62, railAcc);
+  railAcc += Math.hypot(b.hb - a.hb, b.z - a.z);
+}
+// Across the stem, closing the two side rails into each other.
+{
+  const hb = halfBeam(SHIP_L2) - RAIL_INSET;
+  railSpan(-hb, SHIP_L2 - 0.28, hb, SHIP_L2 - 0.28,
+    DECK_Y + sheerAt(SHIP_L2) + 1.15, 0.62, 0);
 }
 railRun(-halfBeam(-SHIP_L2) + 0.3, halfBeam(-SHIP_L2) - 0.3, -SHIP_L2 - 0.6, -SHIP_L2 - 0.6,
   DECK_Y + 1.15, 0.62);
@@ -944,7 +1237,16 @@ function windowBand(along, fixed, a0, a1, yA, yB, step = 3.2) {
   // The shell runs to the POOL DECK, not to the ceiling: above the rooms there
   // is a 1.9 m void carrying the pool, and a shell that stopped at CEIL_Y left
   // that void open to the weather all the way round the ship.
-  const y1 = POOL_Y;
+  //
+  // It stops just UNDER the pool deck's walking surface, not level with it.
+  // Taken all the way to POOL_Y the shell's top face was exactly coplanar with
+  // the teak, and since the shell is 34 cm thick and 120 m long that put a
+  // 34 cm z-fighting band down BOTH sides of the pool deck and across both
+  // ends — the white stripes that flickered as you walked the sun deck. The
+  // deck slab is 0.3 m thick (POOL_Y - 0.3 → POOL_Y), so ending 12 cm down
+  // still buries the shell 18 cm into it: the void stays sealed, and no face
+  // of the shell reaches the surface you walk on.
+  const y1 = POOL_Y - 0.12;
   const sillA = y0 + 1.15, sillB = y0 + 3.7;      // the window band, both sides
 
   // Side walls, with the window band left open and the two atrium doors cut in.
@@ -990,136 +1292,434 @@ function windowBand(along, fixed, a0, a1, yA, yB, step = 3.2) {
 }
 
 // ---------------------------------------------------------------------------
-// Room 1 — the CASINO, aft. The loudest room on the ship and the darkest: a
-// casino has no daylight by design, so its window band is curtained and the
-// light comes off the machines.
+// Room 1 — the CASINO, aft. Luxurious, subdued "ambiance feutrée" (Casino Royale).
+// Rich velvet draperies, coffered mahogany ceiling, opulent chandeliers,
+// animated spinning roulette wheels, dynamic slot machines, high stakes VIP poker,
+// and grand mahogany & brass bar lounge.
 // ---------------------------------------------------------------------------
 const casinoNeon = [];
+const rouletteRotors = [];
+const casinoLights = [];
+console.log('[cruise] casino room start');
 {
   const [z0, z1] = CASINO_Z;
   const F = DECK_Y + 0.02;
   longSlab(M.casinoCarpet, -SUP_X2 + WALL_T, SUP_X2 - WALL_T, z0 + WALL_T, z1 - WALL_T,
     DECK_Y, F);
 
-  // Curtains over the window band, drawn back to swags at each mullion.
+  // Ambiance feutrée: Rich crimson velvet draperies covering the window bands
+  // completely to shut out daylight and create an intimate, cozy, luxury Monte Carlo setting.
   prop(() => {
     for (const sx of [-1, 1]) {
-      for (let z = z0 + 3; z < z1 - 2; z += 6.4) {
-        box(M.velvetRed, sx * (SUP_X2 - 0.5), DECK_Y + 2.45, z, 0.3, 2.7, 1.1);
+      const x = sx * (SUP_X2 - 0.35);
+      box(M.velvetRed, x, DECK_Y + 2.45, (z0 + z1) / 2, 0.25, 2.7, Math.abs(z1 - z0) - 1.0);
+      box(M.goldTrim, sx * (SUP_X2 - 0.38), DECK_Y + 3.75, (z0 + z1) / 2, 0.32, 0.24, Math.abs(z1 - z0) - 0.8);
+      for (let z = z0 + 4; z < z1 - 2; z += 5.5) {
+        box(M.darkWood, sx * (SUP_X2 - 0.45), DECK_Y + 2.0, z, 0.42, 4.0, 0.6);
+        box(M.goldTrim, sx * (SUP_X2 - 0.5), DECK_Y + 0.8, z, 0.46, 0.08, 0.64);
+        box(M.goldTrim, sx * (SUP_X2 - 0.5), DECK_Y + 3.4, z, 0.46, 0.08, 0.64);
+        shape(G.cylBase, M.brass, sx * (SUP_X2 - 0.7), DECK_Y + 2.2, z, 0.08, 0.25, 0.08);
+        shape(G.cyl, M.warmLamp, sx * (SUP_X2 - 0.72), DECK_Y + 2.38, z - 0.14, 0.14, 0.24, 0.14);
+        shape(G.cyl, M.warmLamp, sx * (SUP_X2 - 0.72), DECK_Y + 2.38, z + 0.14, 0.14, 0.24, 0.14);
       }
     }
+    // Aft wall (z0): solid wainscoting across width behind the bar
+    box(M.darkWood, 0, DECK_Y + 0.55, z0 + WALL_T + 0.1, SUP_X2 * 2 - 1.5, 1.1, 0.15);
+    box(M.goldTrim, 0, DECK_Y + 1.12, z0 + WALL_T + 0.1, SUP_X2 * 2 - 1.4, 0.06, 0.18);
+
+    // Forward wall (z1): wainscoting on flanks only, leaving the central doorway [-2.6, 2.6] wide open
+    const doorHalfW = 2.6;
+    const flankW = (SUP_X2 - 0.75) - doorHalfW;
+    const flankX = (doorHalfW + (SUP_X2 - 0.75)) / 2;
+    for (const sx of [-1, 1]) {
+      box(M.darkWood, sx * flankX, DECK_Y + 0.55, z1 - WALL_T - 0.1, flankW, 1.1, 0.15);
+      box(M.goldTrim, sx * flankX, DECK_Y + 1.12, z1 - WALL_T - 0.1, flankW, 0.06, 0.18);
+
+      // Grand Casino Royale doorway architrave flanking the opening
+      box(M.darkWood, sx * (doorHalfW + 0.12), DECK_Y + 1.5, z1 - WALL_T - 0.08, 0.24, 3.0, 0.20);
+      box(M.goldTrim, sx * (doorHalfW + 0.12), DECK_Y + 1.5, z1 - WALL_T - 0.06, 0.06, 3.0, 0.24);
+    }
+    box(M.darkWood, 0, DECK_Y + 3.08, z1 - WALL_T - 0.08, doorHalfW * 2 + 0.48, 0.16, 0.20);
+    box(M.goldTrim, 0, DECK_Y + 3.0, z1 - WALL_T - 0.06, doorHalfW * 2 + 0.48, 0.04, 0.24);
   });
 
-  // Roulette. Two wheels, each on its own oval baize with a rail round it.
-  function roulette(cx, cz) {
+  // Doorway threshold between Atrium and Casino (not a prop: walkable floor)
+  longSlab(M.casinoCarpet, -2.6, 2.6, z1 - WALL_T, z1, DECK_Y, F);
+  longSlab(M.parquet, -2.6, 2.6, z1, z1 + WALL_T, DECK_Y, F);
+  box(M.brass, 0, F + 0.005, z1, 5.2, 0.01, 0.14);
+
+  function addCasinoLight(x, y, z, color = 0xffcc77, intensity = 22, dist = 18) {
+    const pl = new THREE.PointLight(color, intensity, dist, 1.0);
+    pl.position.set(x, y, z);
+    scene.add(pl);
+    casinoLights.push(pl);
+  }
+
+  function chandelier(cx, cz, cy = CEIL_Y - 0.1) {
     prop(() => {
-      box(M.darkWood, cx, DECK_Y + 0.38, cz, 3.4, 0.76, 1.7);
-      box(M.baize, cx, DECK_Y + 0.78, cz, 3.3, 0.06, 1.62);
-      // The wheel itself, at one end.
-      shape(G.cyl32, M.darkWood, cx - 1.15, DECK_Y + 0.86, cz, 1.15, 0.2, 1.15);
-      shape(G.cyl32, M.black, cx - 1.15, DECK_Y + 0.96, cz, 0.92, 0.06, 0.92);
-      shape(G.cyl32, M.brass, cx - 1.15, DECK_Y + 1.00, cz, 0.22, 0.09, 0.22);
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * Math.PI * 2;
-        box(i % 2 ? M.hullBoot : M.black,
-          cx - 1.15 + Math.cos(a) * 0.62, DECK_Y + 0.99, cz + Math.sin(a) * 0.62,
-          0.3, 0.03, 0.12, -a);
+      shape(G.cyl, M.brass, cx, cy - 0.2, cz, 0.12, 0.4, 0.12);
+      shape(G.cyl32, M.brass, cx, cy - 0.45, cz, 2.2, 0.08, 2.2);
+      shape(G.cyl32, M.goldTrim, cx, cy - 0.85, cz, 1.4, 0.06, 1.4);
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2;
+        shape(G.cyl, M.warmLampBright, cx + Math.cos(a) * 1.0, cy - 0.52, cz + Math.sin(a) * 1.0,
+          0.09, 0.18, 0.09);
       }
-      // The layout, painted on the baize.
-      for (let i = 0; i < 12; i++)
-        box(i % 3 ? M.linen : M.hullBoot,
-          cx + 0.1 + (i % 6) * 0.36, DECK_Y + 0.82, cz - 0.45 + Math.floor(i / 6) * 0.5,
-          0.3, 0.01, 0.42);
-      // Chip stacks and the dealer's rack.
-      for (let i = 0; i < 7; i++)
-        shape(G.cyl, i % 2 ? M.neonCyan : M.velvetGold,
-          cx + 0.6 + i * 0.2, DECK_Y + 0.86, cz + 0.62, 0.12, 0.09, 0.12);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + 0.3;
+        shape(G.cyl, M.warmLampBright, cx + Math.cos(a) * 0.6, cy - 0.88, cz + Math.sin(a) * 0.6,
+          0.08, 0.16, 0.08);
+      }
+      for (let i = 0; i < 20; i++) {
+        const a = (i / 20) * Math.PI * 2;
+        const rad = 0.4 + (i % 3) * 0.25;
+        shape(G.cyl, M.crystalGlass, cx + Math.cos(a) * rad, cy - 0.65 - (i % 4) * 0.08, cz + Math.sin(a) * rad,
+          0.04, 0.22, 0.04);
+      }
     });
   }
-  roulette(-6.4, z0 + 13);
-  roulette(6.4, z0 + 13);
 
-  // Blackjack: a crescent table with a dealer's stand behind it.
-  function blackjack(cx, cz, ry) {
-    atY(0, cx, cz, ry, () => prop(() => {
-      box(M.darkWood, 0, DECK_Y + 0.38, 0, 2.5, 0.76, 1.25);
-      box(M.baize, 0, DECK_Y + 0.78, 0, 2.4, 0.06, 1.18);
-      shape(G.cyl, M.baize, 0, DECK_Y + 0.78, -0.6, 2.4, 0.06, 1.6);
-      for (let i = 0; i < 5; i++) {
-        box(M.linen, -0.9 + i * 0.45, DECK_Y + 0.82, -0.35, 0.3, 0.01, 0.3);
-        shape(G.cyl, M.velvetGold, -0.9 + i * 0.45, DECK_Y + 0.87, -0.1, 0.11, 0.1, 0.11);
+  // 4 Master Casino PointLights for smooth performance and optimal ambiance
+  addCasinoLight(0, DECK_Y + 3.4, z0 + 14.5, 0xffd98a, 24, 20); // Roulette gaming tables
+  addCasinoLight(0, DECK_Y + 3.4, z0 + 25.0, 0xffd98a, 24, 18); // Salon Privé VIP Poker
+  addCasinoLight(0, DECK_Y + 3.4, z0 + 35.0, 0xffd98a, 24, 20); // Blackjack & Baccarat tables
+
+  // -------------------------------------------------------------------------
+  // 1. Live 3D European Roulette Tables with spinning rotors & orbiting balls
+  // -------------------------------------------------------------------------
+  for (const sx of [-1, 1]) {
+    const cx = sx * 6.4, cz = z0 + 14.5;
+    prop(() => {
+      // Table base & green baize felt
+      box(M.darkWood, cx, DECK_Y + 0.44, cz, 3.4, 0.88, 5.2);
+      box(M.mahoganyGloss, cx, DECK_Y + 0.90, cz, 3.6, 0.06, 5.4);
+      box(M.leatherBurgundy, cx, DECK_Y + 0.93, cz, 3.7, 0.08, 5.5);
+      shape(G.card, M.rouletteFelt, cx, DECK_Y + 0.95, cz - 0.45, 3.0, 3.8, 1, { rx: -Math.PI / 2 });
+
+      // Wheel base cylinder
+      shape(G.cyl, M.darkWood, cx, DECK_Y + 0.96, cz + 1.6, 1.25, 0.12, 1.25);
+      shape(G.cyl, M.brass, cx, DECK_Y + 0.98, cz + 1.6, 1.28, 0.04, 1.28);
+    });
+
+    // 3D Spinning Roulette Rotor Assembly
+    const rotorGroup = new THREE.Group();
+    rotorGroup.position.set(cx, DECK_Y + 1.02, cz + 1.6);
+    const coneGeo = new THREE.ConeGeometry(0.56, 0.08, 37);
+    coneGeo.rotateX(Math.PI);
+    const rotorMesh = new THREE.Mesh(coneGeo, M.brass);
+    rotorGroup.add(rotorMesh);
+
+    // 37 pocket facets (alternating red/black + green 0)
+    for (let p = 0; p < 37; p++) {
+      const pa = (p / 37) * Math.PI * 2;
+      const pmat = p === 0 ? M.feltGreen : (p % 2 === 0 ? M.rubyBottle : M.black);
+      const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.02, 0.09), pmat);
+      pocket.position.set(Math.cos(pa) * 0.50, 0.02, Math.sin(pa) * 0.50);
+      pocket.rotation.y = -pa;
+      rotorGroup.add(pocket);
+    }
+    // Center brass turret
+    const turret = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.10, 0.14, 16), M.brass);
+    turret.position.y = 0.07;
+    rotorGroup.add(turret);
+    const cross1 = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.02, 0.03), M.goldTrim);
+    cross1.position.y = 0.14;
+    rotorGroup.add(cross1);
+    const cross2 = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.24), M.goldTrim);
+    cross2.position.y = 0.14;
+    rotorGroup.add(cross2);
+
+    scene.add(rotorGroup);
+
+    // Orbiting ivory ball
+    const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(0.022, 12, 12), M.linen);
+    ballMesh.position.set(0.48, 0.08, 0);
+    rotorGroup.add(ballMesh);
+
+    rouletteRotors.push({
+      rotor: rotorGroup,
+      ball: ballMesh,
+      speed: 0.75 + sx * 0.2,
+      ballSpeed: 2.8 + sx * 0.4,
+      ballRadius: 0.48,
+      ballAngle: Math.random() * Math.PI * 2,
+    });
+
+    // Casino chips stacks, croupier rake, champagne flutes
+    prop(() => {
+      const chipColors = [M.rubyPlaque, M.emeraldPlaque, M.goldPlaque, M.blueChip, M.redChip];
+      for (let s = 0; s < 6; s++) {
+        const mat = chipColors[s % chipColors.length];
+        shape(G.cyl, mat, cx - 0.8 + (s % 3) * 0.35, DECK_Y + 0.99, cz + 0.3 + Math.floor(s / 3) * 0.3,
+          0.16, 0.08 + (s % 4) * 0.04, 0.16);
       }
-      box(M.black, 0, DECK_Y + 0.9, 0.5, 0.35, 0.2, 0.24);      // shoe
-      // Stools round the curved side.
-      for (let i = 0; i < 5; i++) {
-        const a = -0.9 + i * 0.45;
-        shape(G.cylBase, M.steel, a, DECK_Y, -1.55, 0.1, 0.62, 0.1);
-        shape(G.cyl, M.velvetRed, a, DECK_Y + 0.66, -1.55, 0.44, 0.14, 0.44);
-      }
-    }));
+      // Croupier rake
+      box(M.darkWood, cx + 0.7, DECK_Y + 0.98, cz + 0.8, 0.04, 0.03, 1.4);
+      box(M.brass, cx + 0.7, DECK_Y + 0.98, cz + 0.1, 0.28, 0.04, 0.06);
+      // Crystal flutes
+      shape(G.cyl, M.crystalGlass, cx + 1.2, DECK_Y + 1.05, cz - 1.2, 0.08, 0.18, 0.08);
+      shape(G.cyl, M.crystalGlass, cx + 1.2, DECK_Y + 1.05, cz - 0.9, 0.08, 0.18, 0.08);
+    });
+
+    chandelier(cx, cz);
   }
-  blackjack(-6.8, z0 + 25, 0);
-  blackjack(0, z0 + 24, 0);
-  blackjack(6.8, z0 + 25, 0);
-  blackjack(-6.8, z0 + 33, Math.PI);
-  blackjack(6.8, z0 + 33, Math.PI);
 
-  // Slot machines, in banks back to back down both sides.
-  function slotBank(cx, cz, ry, n) {
-    atY(0, cx, cz, ry, () => prop(() => {
-      for (let i = 0; i < n; i++) {
-        const x = (i - (n - 1) / 2) * 0.92;
-        box(M.black, x, DECK_Y + 0.55, 0, 0.86, 1.1, 0.72);
-        box(M.hullBoot, x, DECK_Y + 1.32, 0, 0.86, 0.44, 0.72);
-        // The screen, and the light box over it: this is where the room's
-        // light actually comes from after dark.
-        const glow = i % 2 ? M.neonPink : M.neonCyan;
-        box(glow, x, DECK_Y + 1.02, -0.38, 0.66, 0.5, 0.04);
-        box(glow, x, DECK_Y + 1.5, -0.3, 0.7, 0.16, 0.1);
-        box(M.brass, x + 0.36, DECK_Y + 0.98, -0.4, 0.06, 0.3, 0.06);   // the arm
-        shape(G.sphere, M.hullBoot, x + 0.36, DECK_Y + 1.14, -0.4, 0.13, 0.13, 0.13);
+  // -------------------------------------------------------------------------
+  // 2. High Stakes VIP James Bond Texas Hold'em Poker Table (Salon Privé)
+  // -------------------------------------------------------------------------
+  {
+    const px = 0, pz = z0 + 25.0;
+    prop(() => {
+      // Grand oval poker table with burgundy padded armrest
+      box(M.darkWood, px, DECK_Y + 0.44, pz, 4.2, 0.88, 2.6);
+      box(M.mahoganyGloss, px, DECK_Y + 0.90, pz, 4.4, 0.06, 2.8);
+      box(M.leatherBurgundy, px, DECK_Y + 0.94, pz, 4.6, 0.08, 3.0);
+      box(M.baize, px, DECK_Y + 0.96, pz, 3.8, 0.02, 2.2);
+
+      // Dealt cards in the center (Royal Flush in Spades)
+      for (let i = 0; i < 5; i++) {
+        box(M.goldTrim, px - 0.6 + i * 0.30, DECK_Y + 0.975, pz, 0.18, 0.005, 0.25);
       }
-    }));
+
+      // Rectangular Montenegro high-value plaques ($100k Ruby, $500k Emerald, $1M Gold)
+      box(M.rubyPlaque, px - 1.1, DECK_Y + 0.985, pz + 0.45, 0.32, 0.03, 0.20);
+      box(M.rubyPlaque, px - 1.1, DECK_Y + 1.015, pz + 0.45, 0.32, 0.03, 0.20);
+      box(M.emeraldPlaque, px - 0.6, DECK_Y + 0.985, pz + 0.50, 0.32, 0.03, 0.20);
+      box(M.emeraldPlaque, px - 0.6, DECK_Y + 1.015, pz + 0.50, 0.32, 0.03, 0.20);
+      box(M.goldPlaque, px + 0.7, DECK_Y + 0.985, pz + 0.45, 0.34, 0.04, 0.22);
+      box(M.goldPlaque, px + 0.7, DECK_Y + 1.025, pz + 0.45, 0.34, 0.04, 0.22);
+
+      // Chips stacks and Vesper Martini glasses
+      for (let s = 0; s < 4; s++) {
+        shape(G.cyl, M.goldPlaque, px + 1.1 + (s % 2) * 0.25, DECK_Y + 1.02, pz - 0.4 + Math.floor(s / 2) * 0.25,
+          0.16, 0.12, 0.16);
+      }
+      // Vesper Martinis with olives
+      shape(G.cyl, M.crystalGlass, px - 1.4, DECK_Y + 1.06, pz - 0.6, 0.14, 0.20, 0.14);
+      shape(G.cyl, M.crystalGlass, px + 1.4, DECK_Y + 1.06, pz + 0.6, 0.14, 0.20, 0.14);
+
+      // VIP Leather Armchairs
+      for (const ox of [-1.8, -0.9, 0, 0.9, 1.8]) {
+        box(M.leatherBurgundy, px + ox, DECK_Y + 0.42, pz + 1.8, 0.68, 0.52, 0.68);
+        box(M.darkWood, px + ox, DECK_Y + 0.82, pz + 2.1, 0.68, 0.68, 0.14);
+        box(M.leatherBurgundy, px + ox, DECK_Y + 0.42, pz - 1.8, 0.68, 0.52, 0.68);
+        box(M.darkWood, px + ox, DECK_Y + 0.82, pz - 2.1, 0.68, 0.68, 0.14);
+      }
+
+      // VIP Brass Stanchions and Crimson Velvet Ropes delimiting Salon Privé
+      for (const sx of [-3.2, 3.2]) {
+        for (const sz of [-2.4, 2.4]) {
+          shape(G.cylBase, M.brass, px + sx, DECK_Y, pz + sz, 0.28, 0.95, 0.28);
+          shape(G.sphere, M.brass, px + sx, DECK_Y + 0.98, pz + sz, 0.16, 0.16, 0.16);
+        }
+        box(M.velvetRed, px + sx, DECK_Y + 0.72, pz, 0.08, 0.08, 4.6);
+      }
+    });
+
+    chandelier(px, pz);
+  }
+
+  // -------------------------------------------------------------------------
+  // 3. Blackjack & Baccarat Gaming Tables
+  // -------------------------------------------------------------------------
+  for (const sx of [-1, 1]) {
+    const cx = sx * 6.8, cz = z0 + 35.0;
+    prop(() => {
+      box(M.darkWood, cx, DECK_Y + 0.44, cz, 3.8, 0.88, 2.4);
+      box(M.mahoganyGloss, cx, DECK_Y + 0.90, cz, 4.0, 0.06, 2.6);
+      box(M.leatherBurgundy, cx, DECK_Y + 0.93, cz, 4.1, 0.08, 2.7);
+      box(M.baize, cx, DECK_Y + 0.95, cz, 3.6, 0.02, 2.2);
+
+      // Card shoe & discard rack
+      box(M.black, cx + 1.2, DECK_Y + 1.04, cz + 0.4, 0.25, 0.16, 0.42);
+      box(M.crystalGlass, cx + 1.2, DECK_Y + 1.04, cz - 0.4, 0.22, 0.14, 0.32);
+
+      // Betting spots & chip stacks
+      for (let b = 0; b < 5; b++) {
+        const bx = cx - 1.2 + b * 0.60;
+        shape(G.cyl, M.goldPlaque, bx, DECK_Y + 0.99, cz - 0.3, 0.14, 0.06, 0.14);
+      }
+
+      // Bar stools for players
+      for (let b = 0; b < 5; b++) {
+        const bx = cx - 1.2 + b * 0.60;
+        shape(G.cylBase, M.brass, bx, DECK_Y, cz - 1.6, 0.10, 0.68, 0.10);
+        shape(G.cyl, M.velvetRed, bx, DECK_Y + 0.72, cz - 1.6, 0.42, 0.14, 0.42);
+      }
+    });
+
+    chandelier(cx, cz);
+  }
+
+  // -------------------------------------------------------------------------
+  // 4. Dynamic Animated Slot Machine Banks
+  // -------------------------------------------------------------------------
+  function slotBank(bx, bz, ry, count = 6) {
+    prop(() => {
+      box(M.darkWood, bx, DECK_Y + 0.18, bz, count * 0.84 + 0.2, 0.36, 1.1, { ry });
+      for (let i = 0; i < count; i++) {
+        const off = (i - (count - 1) / 2) * 0.84;
+        const x = bx + Math.cos(ry) * off;
+        const z = bz - Math.sin(ry) * off;
+
+        // Gloss black cabinet with beveled gold border
+        box(M.black, x, DECK_Y + 1.05, z, 0.76, 1.38, 0.72, { ry });
+        box(M.goldTrim, x, DECK_Y + 1.05, z, 0.78, 1.40, 0.04, { ry });
+        box(M.goldTrim, x, DECK_Y + 1.74, z, 0.74, 0.06, 0.68, { ry });
+
+        // Screen plane
+        shape(G.card, slotScreenMat, x, DECK_Y + 1.12, z + (ry > 0 ? 0.37 : -0.37), 0.72, 0.54, 1, { ry });
+
+        // Pull lever with red ball knob
+        shape(G.cyl, M.brass, x + (ry > 0 ? 0 : 0.40), DECK_Y + 1.15, z + (ry > 0 ? 0.40 : 0), 0.03, 0.42, 0.03, { ry, rz: 0.25 });
+        shape(G.sphere, M.rubyBottle, x + (ry > 0 ? 0 : 0.48), DECK_Y + 1.34, z + (ry > 0 ? 0.48 : 0), 0.08, 0.08, 0.08);
+
+        // Stool in front
+        const sx = x + Math.sin(ry) * 1.0;
+        const sz = z + Math.cos(ry) * 1.0;
+        shape(G.cylBase, M.brass, sx, DECK_Y, sz, 0.09, 0.64, 0.09);
+        shape(G.cyl, M.velvetRed, sx, DECK_Y + 0.68, sz, 0.38, 0.12, 0.38);
+      }
+    });
   }
   for (let i = 0; i < 3; i++) {
     slotBank(-10.6, z0 + 8 + i * 11, Math.PI / 2, 6);
     slotBank(10.6, z0 + 8 + i * 11, -Math.PI / 2, 6);
   }
 
-  // The bar, across the aft end under a neon sign.
+  // -------------------------------------------------------------------------
+  // 5. THE GRAND CASINO ROYALE BAR & LUXURY LOUNGE
+  // -------------------------------------------------------------------------
   {
-    const bz = z0 + 3.4;
+    const backZ = z0 + 1.2;  // -58.8 against aft wall
+    const barZ = z0 + 3.6;   // -56.4 counter position
+    const stoolZ = z0 + 5.0; // -55.0 stools in front
+
     prop(() => {
-      box(M.darkWood, 0, DECK_Y + 0.56, bz, 13.0, 1.12, 1.0);
-      box(M.brass, 0, DECK_Y + 1.16, bz - 0.55, 13.2, 0.08, 0.28);
-      box(M.darkWood, 0, DECK_Y + 1.1, bz + 1.5, 13.0, 2.2, 0.36);   // back fitting
-      for (let i = 0; i < 30; i++)                                   // bottles
-        shape(G.cyl, i % 3 === 0 ? M.velvetGold : i % 3 === 1 ? M.neonCyan : M.hullBoot,
-          -6 + i * 0.42, DECK_Y + 1.62, bz + 1.3, 0.13, 0.42, 0.13);
-      for (let i = 0; i < 9; i++) {                                  // stools
-        shape(G.cylBase, M.steel, -6.4 + i * 1.6, DECK_Y, bz - 1.5, 0.11, 0.74, 0.11);
-        shape(G.cyl, M.velvetRed, -6.4 + i * 1.6, DECK_Y + 0.78, bz - 1.5, 0.46, 0.16, 0.46);
+      // Back-bar dark mahogany backboard with gold trim
+      box(M.darkWood, 0, DECK_Y + 1.8, backZ, 14.0, 3.6, 0.35);
+      box(M.goldTrim, 0, DECK_Y + 3.6, backZ + 0.18, 14.2, 0.08, 0.08);
+      box(M.goldTrim, 0, DECK_Y + 0.04, backZ + 0.18, 14.2, 0.08, 0.08);
+
+      // 3 Illuminated glass bottle shelves
+      const bottleMats = [M.amberBottle, M.emeraldBottle, M.rubyBottle, M.sapphireBottle, M.champagneGold];
+      for (let s = 0; s < 3; s++) {
+        const sy = DECK_Y + 1.1 + s * 0.62;
+        box(M.crystalGlass, 0, sy, backZ + 0.28, 13.4, 0.03, 0.30);
+        box(M.warmLampBright, 0, sy - 0.02, backZ + 0.28, 13.2, 0.02, 0.24);
+
+        for (let i = 0; i < 18; i++) {
+          const bx = -5.8 + i * 0.68 + (s % 2) * 0.34;
+          const mat = bottleMats[(i + s * 3) % bottleMats.length];
+          shape(G.cyl, mat, bx, sy + 0.20, backZ + 0.28, 0.11, 0.38, 0.11);
+        }
+      }
+
+      // Bar counter (mahogany base + black marble top + brass moldings)
+      box(M.darkWood, 0, DECK_Y + 0.56, barZ, 14.0, 1.12, 1.0);
+      box(M.black, 0, DECK_Y + 1.15, barZ + 0.05, 14.2, 0.08, 1.2);
+      box(M.brass, 0, DECK_Y + 1.18, barZ + 0.62, 14.3, 0.06, 0.14);
+      box(M.brass, 0, DECK_Y + 0.18, barZ + 0.66, 14.2, 0.06, 0.06);
+
+      // On-counter: silver cocktail shakers & Dom Pérignon champagne bucket
+      shape(G.cyl, M.steel, -2.5, DECK_Y + 1.32, barZ, 0.13, 0.32, 0.13);
+      shape(G.cyl, M.steel, 2.5, DECK_Y + 1.32, barZ, 0.13, 0.32, 0.13);
+      shape(G.cyl, M.steel, 0, DECK_Y + 1.32, barZ, 0.28, 0.26, 0.28);
+      shape(G.cyl, M.champagneGold, 0, DECK_Y + 1.48, barZ, 0.12, 0.35, 0.12, { rz: 0.2 });
+
+      // Crystal cocktail glasses on counter
+      for (let i = 0; i < 7; i++) {
+        shape(G.cyl, M.crystalGlass, -4.5 + i * 1.5, DECK_Y + 1.25, barZ + 0.2, 0.09, 0.14, 0.09);
+      }
+
+      // 9 Red velvet and brass bar stools in front of counter
+      for (let i = 0; i < 9; i++) {
+        shape(G.cylBase, M.brass, -6.0 + i * 1.5, DECK_Y, stoolZ, 0.12, 0.74, 0.12);
+        shape(G.cyl, M.velvetRed, -6.0 + i * 1.5, DECK_Y + 0.78, stoolZ, 0.46, 0.16, 0.46);
+      }
+
+      // Side Lounge corners (Chesterfield tufted red velvet sofas & cocktail tables)
+      for (const lx of [-9.5, 9.5]) {
+        box(M.velvetRed, lx, DECK_Y + 0.32, barZ + 0.6, 2.8, 0.48, 1.2);
+        box(M.velvetRed, lx, DECK_Y + 0.75, barZ - 0.05, 2.8, 0.60, 0.25);
+        box(M.mahoganyGloss, lx, DECK_Y + 0.38, barZ + 2.0, 1.6, 0.08, 1.0);
+        shape(G.cylBase, M.brass, lx - 0.6, DECK_Y, barZ + 2.0, 0.08, 0.36, 0.08);
+        shape(G.cylBase, M.brass, lx + 0.6, DECK_Y, barZ + 2.0, 0.08, 0.36, 0.08);
+        shape(G.cyl, M.amberBottle, lx, DECK_Y + 0.52, barZ + 2.0, 0.15, 0.25, 0.15);
       }
     });
-    const sign = canvasMat(512, 128, (g, W, H) => {
-      g.fillStyle = '#120a14';
+
+    // Master High-Resolution CASINO ROYALE Sign (Mounted high on back-bar facing +Z into room)
+    const sign = canvasMat(1024, 256, (g, W, H) => {
+      const bg = g.createLinearGradient(0, 0, W, H);
+      bg.addColorStop(0, '#060305');
+      bg.addColorStop(0.5, '#160812');
+      bg.addColorStop(1, '#060305');
+      g.fillStyle = bg;
       g.fillRect(0, 0, W, H);
-      paintText(g, 'CASINO ROYALE', W / 2, H / 2, 62, '#ff7fd0', '#5fe8ff');
-    }, { emissive: 0xffffff, emissiveIntensity: 1.4, roughness: 0.4 });
+
+      g.strokeStyle = '#d4af37';
+      g.lineWidth = 5;
+      g.strokeRect(12, 12, W - 24, H - 24);
+      g.strokeStyle = '#fff0b5';
+      g.lineWidth = 1.5;
+      g.strokeRect(18, 18, W - 36, H - 36);
+
+      g.font = '22px "Georgia", serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = '#f3dd9e';
+      g.fillText('♠   ♥   ♦   ♣', W / 2, 48);
+
+      const goldGrad = g.createLinearGradient(0, 75, 0, 150);
+      goldGrad.addColorStop(0, '#ffffff');
+      goldGrad.addColorStop(0.3, '#fff4cc');
+      goldGrad.addColorStop(0.6, '#e8c063');
+      goldGrad.addColorStop(1, '#9e7208');
+
+      g.shadowColor = 'rgba(232, 192, 99, 0.95)';
+      g.shadowBlur = 20;
+      g.font = 'bold 54px "Cinzel", "Times New Roman", "Playfair Display", serif';
+      g.fillStyle = goldGrad;
+      g.fillText('CASINO ROYALE', W / 2, 116);
+      g.shadowBlur = 0;
+
+      g.font = '600 20px "Geist Mono", "Century Gothic", sans-serif';
+      g.fillStyle = '#fdf4d7';
+      g.fillText('· SALON PRIVÉ & GRAND LUXE ·', W / 2, 180);
+
+      g.strokeStyle = '#e8c063';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(W / 2 - 220, 210);
+      g.lineTo(W / 2 + 220, 210);
+      g.stroke();
+    }, { emissive: 0xffffff, emissiveIntensity: 1.5, roughness: 0.25 });
     casinoNeon.push(sign);
-    prop(() => shape(G.card, sign, 0, DECK_Y + 3.1, bz + 1.3, 6.4, 1.6, 1));
+    prop(() => shape(G.card, sign, 0, DECK_Y + 3.25, backZ + 0.20, 7.6, 1.9, 1));
+
+    chandelier(-3.5, barZ);
+    chandelier(3.5, barZ);
+    addCasinoLight(0, DECK_Y + 2.8, barZ, 0xffd280, 24, 18);
   }
 
-  // Ceiling lights: a grid of small warm panels, plus neon coves down the room.
+  // Coffered dark mahogany ceiling beams across the room
   prop(() => {
-    for (let z = z0 + 4; z < z1 - 2; z += 5)
-      for (const x of [-8.4, -2.8, 2.8, 8.4])
-        box(M.lamp, x, CEIL_Y - 0.1, z, 1.0, 0.08, 1.0);
-    for (const sx of [-1, 1])
-      for (let z = z0 + 3; z < z1 - 2; z += 8)
-        box(M.neonPink, sx * 11.9, CEIL_Y - 0.5, z, 0.1, 0.1, 6.4);
+    for (let z = z0 + 5; z < z1 - 2; z += 6.0) {
+      box(M.darkWood, 0, CEIL_Y - 0.12, z, SUP_X2 * 2 - 1.2, 0.22, 0.35);
+      box(M.goldTrim, 0, CEIL_Y - 0.23, z, SUP_X2 * 2 - 1.2, 0.04, 0.12);
+    }
+    for (const x of [-6.4, 0, 6.4]) {
+      box(M.darkWood, x, CEIL_Y - 0.12, (z0 + z1) / 2, 0.35, 0.22, Math.abs(z1 - z0) - 1.2);
+    }
+    for (const sx of [-1, 1]) {
+      for (let z = z0 + 3; z < z1 - 2; z += 8) {
+        box(M.warmLampBright, sx * 11.9, CEIL_Y - 0.35, z, 0.1, 0.1, 6.4);
+      }
+    }
   });
 }
+console.log('[cruise] casino room done');
 
 // ---------------------------------------------------------------------------
 // Room 2 — the ATRIUM, amidships. The room you arrive in: doors port and
@@ -1210,11 +1810,11 @@ const casinoNeon = [];
     const m = canvasMat(512, 96, (g, W, H) => {
       g.fillStyle = '#12314f';
       g.fillRect(0, 0, W, H);
-      paintText(g, label, W / 2, H / 2, 46, '#e8c063');
+      paintText(g, label, W / 2, H / 2, 38, '#e8c063');
     }, { emissive: 0xffffff, emissiveIntensity: 0.35 });
-    prop(() => shape(G.card, m, 0, DECK_Y + 3.35, z, 3.6, 0.68, 1, { ry }));
+    prop(() => shape(G.card, m, 0, DECK_Y + 3.35, z, 3.8, 0.68, 1, { ry }));
   };
-  wayfind('◄ CASINO', z0 + 0.4, 0);
+  wayfind('◄ CASINO ROYALE', z0 + 0.4, 0);
   wayfind('CABINES · SALLE DE BAL ►', z1 - 0.4, Math.PI);
 }
 
@@ -1520,28 +2120,66 @@ const POOL_WATER = POOL_Y - 0.28;
 
   // The basin: tiled floor, tiled sides, and a coping round the rim.
   slab(M.poolTile, POOL_X0, POOL_X1, POOL_Z_A, POOL_Z_B, POOL_FLOOR - 0.25, POOL_FLOOR);
+  // Basin walls: port and starboard (full length), forward (full width),
+  // and aft broken around the wide walk-in stairs (-2.2 to 2.2)
   for (const sx of [[POOL_X0 - 0.3, POOL_X0], [POOL_X1, POOL_X1 + 0.3]])
     slab(M.poolTile, sx[0], sx[1], POOL_Z_A, POOL_Z_B, POOL_FLOOR, POOL_Y);
-  for (const sz of [[POOL_Z_A - 0.3, POOL_Z_A], [POOL_Z_B, POOL_Z_B + 0.3]])
-    slab(M.poolTile, POOL_X0 - 0.3, POOL_X1 + 0.3, sz[0], sz[1], POOL_FLOOR, POOL_Y);
+  slab(M.poolTile, POOL_X0 - 0.3, POOL_X1 + 0.3, POOL_Z_B, POOL_Z_B + 0.3, POOL_FLOOR, POOL_Y);
+  slab(M.poolTile, POOL_X0 - 0.3, -2.2, POOL_Z_A - 0.3, POOL_Z_A, POOL_FLOOR, POOL_Y);
+  slab(M.poolTile, 2.2, POOL_X1 + 0.3, POOL_Z_A - 0.3, POOL_Z_A, POOL_FLOOR, POOL_Y);
+
+  // Coping around the rim — broken across the stairs so the entrance is clear
   prop(() => {
     for (const sx of [POOL_X0 - 0.15, POOL_X1 + 0.15])
       box(M.poolCoping, sx, POOL_Y + 0.04, (POOL_Z_A + POOL_Z_B) / 2,
         0.6, 0.08, POOL_Z_B - POOL_Z_A + 1.2);
-    for (const sz of [POOL_Z_A - 0.15, POOL_Z_B + 0.15])
-      box(M.poolCoping, 0, POOL_Y + 0.04, sz, POOL_X1 - POOL_X0 + 1.2, 0.08, 0.6);
+    box(M.poolCoping, 0, POOL_Y + 0.04, POOL_Z_B + 0.15, POOL_X1 - POOL_X0 + 1.2, 0.08, 0.6);
+    const aftLeftW = -2.2 - (POOL_X0 - 0.45);
+    box(M.poolCoping, (POOL_X0 - 0.45 + -2.2) / 2, POOL_Y + 0.04, POOL_Z_A - 0.15, aftLeftW, 0.08, 0.6);
+    const aftRightW = (POOL_X1 + 0.45) - 2.2;
+    box(M.poolCoping, (2.2 + POOL_X1 + 0.45) / 2, POOL_Y + 0.04, POOL_Z_A - 0.15, aftRightW, 0.08, 0.6);
   });
-  // Steps down into the shallow end, so the pool can be got out of again —
-  // the basin is 1.15 m deep and the controller steps up 0.5.
-  for (let i = 0; i < 3; i++) {
-    const top = POOL_FLOOR + (i + 1) * ((POOL_Y - POOL_FLOOR) / 3);
-    slab(M.poolTile, -2.2, 2.2, POOL_Z_A + i * 0.55, POOL_Z_A + 1.8,
-      POOL_FLOOR, top);
+
+  // Steps down into the pool: 5 progressive 0.25 m steps (< 0.3 m ground-snap limit)
+  // allowing the player to walk smoothly down into the water and right back up.
+  const STEPS_COUNT = 5;
+  const poolStepRise = (POOL_Y - POOL_FLOOR) / STEPS_COUNT;
+  const poolStepRun = 0.45;
+  for (let i = 0; i < STEPS_COUNT; i++) {
+    const zEnd = POOL_Z_A + (STEPS_COUNT - i) * poolStepRun;
+    const top = POOL_FLOOR + (i + 1) * poolStepRise;
+    slab(M.poolTile, -2.2, 2.2, POOL_Z_A, zEnd, POOL_FLOOR, top);
   }
+
+  // Stainless steel pool handrails flanking the stairs on both sides
   prop(() => {
-    for (const sx of [-2.6, 2.6]) {
-      shape(G.cylBase, M.steel, sx, POOL_Y, POOL_Z_A + 0.5, 0.07, 1.1, 0.07);
-      shape(G.torus, M.steel, sx, POOL_Y + 1.1, POOL_Z_A + 0.9, 0.8, 0.8, 0.8);
+    const postTopY = POOL_Y + 0.90;
+    const postBotY = POOL_Y + 0.25;
+    const zTop = POOL_Z_A - 0.15;
+    const zBot = POOL_Z_A + 2.0;
+    const dz = zBot - zTop;
+    const dy = postBotY - postTopY;
+    const railL = Math.hypot(dz, dy);
+    const railRx = Math.atan2(-dz, -dy);
+    const zMid = (zTop + zBot) / 2;
+    const yMid = (postTopY + postBotY) / 2;
+
+    for (const sx of [-2.35, 2.35]) {
+      // Upper stanchion (on deck coping edge)
+      shape(G.cyl, M.steel, sx, POOL_Y + 0.015, zTop, 0.15, 0.03, 0.15);
+      shape(G.cylBase, M.steel, sx, POOL_Y, zTop, 0.07, 0.90, 0.07);
+      shape(G.sphere, M.steel, sx, postTopY, zTop, 0.08, 0.08, 0.08);
+
+      // Lower stanchion (anchored on step 4 in the pool)
+      const stepY = POOL_FLOOR + poolStepRise;
+      const lowerH = postBotY - stepY;
+      shape(G.cyl, M.steel, sx, stepY + 0.015, zBot, 0.15, 0.03, 0.15);
+      shape(G.cylBase, M.steel, sx, stepY, zBot, 0.07, lowerH, 0.07);
+      shape(G.sphere, M.steel, sx, postBotY, zBot, 0.08, 0.08, 0.08);
+
+      // Sloped handrail & mid-rail
+      shape(G.cyl, M.steel, sx, yMid, zMid, 0.07, railL, 0.07, { rx: railRx });
+      shape(G.cyl, M.steel, sx, yMid - 0.32, zMid, 0.05, railL, 0.05, { rx: railRx });
     }
   });
 
@@ -1549,15 +2187,17 @@ const POOL_WATER = POOL_Y - 0.28;
   // rank of them at deck level would carpet the pool deck in false floor.
   function lounger(cx, cz, ry, hasTowel) {
     atY(0, cx, cz, ry, () => prop(() => {
+      const pad = hasTowel ? M.towel : M.cushionTeal;
+      const head = hasTowel ? M.cushionTeal : M.pillow;
       for (const dx of [-0.32, 0.32]) {
         shape(G.cylBase, M.steel, dx, POOL_Y, -0.7, 0.05, 0.34, 0.05);
         shape(G.cylBase, M.steel, dx, POOL_Y, 0.7, 0.05, 0.34, 0.05);
       }
       box(M.white, 0, POOL_Y + 0.36, 0, 0.78, 0.06, 1.9);
-      box(hasTowel ? M.towel : M.cushionTeal, 0, POOL_Y + 0.43, 0.05, 0.72, 0.08, 1.7);
-      // The raised back, at a lounger's angle rather than a chair's.
-      box(M.white, 0, POOL_Y + 0.72, -1.02, 0.78, 0.06, 0.9, 0);
-      box(hasTowel ? M.towel : M.cushionTeal, 0, POOL_Y + 0.78, -1.0, 0.72, 0.08, 0.84);
+      box(pad, 0, POOL_Y + 0.43, 0.05, 0.72, 0.08, 1.7);
+      // Head pillow on the pad. box() has no rx, so a raised back here
+      // was a second slab floating 35 cm up.
+      box(head, 0, POOL_Y + 0.51, -0.62, 0.56, 0.10, 0.36);
     }));
   }
   for (let i = 0; i < 7; i++) {
@@ -1632,10 +2272,13 @@ const POOL_WATER = POOL_Y - 0.28;
     lounger(4.5 + (i % 3) * 3.2, -46 - Math.floor(i / 3) * 2.8, 0, i % 2 === 1);
   }
   // A shuffleboard court painted on the sun deck. Paint, so it is emitted as
-  // floor rather than as a prop — see the atrium's compass rose.
+  // floor rather than as a prop — see the atrium's compass rose. Like that
+  // rose it is sunk 5 mm INTO the deck rather than floated above it: paint
+  // laid flat on a floor wants to overlap the floor, never to hover over it
+  // with a hairline of air between.
   for (let i = 0; i < 6; i++)
-    box(M.linen, 0, POOL_Y + 0.01, -54 + i * 1.6, 3.2, 0.01, 0.08);
-  box(M.hullBoot, 0, POOL_Y + 0.012, -55.6, 3.2, 0.01, 0.1);
+    box(M.linen, 0, POOL_Y + 0.005, -54 + i * 1.6, 3.2, 0.02, 0.08);
+  box(M.hullBoot, 0, POOL_Y + 0.005, -55.6, 3.2, 0.02, 0.1);
   prop(() => {
     // Benches and telescopes on the observation deck.
     for (const bx of [-9, 0, 9]) {
@@ -1741,6 +2384,7 @@ prop(() => {
 }
 
 flushKits();
+console.log('[cruise] flushKits completed');
 
 // ---------------------------------------------------------------------------
 // The sea. One big plane on `scene` (never `world`: the sea must not collide,
@@ -1931,6 +2575,7 @@ const ctrl = new Controller(bw, groundFn, castFn, {
   onReset: () => ctrl.rescueTo(spawnPoint),
   onLand: impact => { if (player) player.onLand(impact); },
 });
+ctrl.speedMult = 1.25;
 
 const travelParams = new URLSearchParams(location.search);
 // You arrive at the starboard door, on the promenade deck, facing inboard —
@@ -1946,9 +2591,7 @@ function requestGamePointerLock() {
   try {
     const pending = renderer.domElement.requestPointerLock?.();
     pending?.catch?.(() => {});
-  } catch (_) {
-    // Embedded previews may refuse pointer lock; keyboard play still works.
-  }
+  } catch (_) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -2056,22 +2699,50 @@ document.querySelectorAll('.tt-btn').forEach(btn => {
   btn.addEventListener('click', () => setCruiseTime(btn.dataset.time));
 });
 
+const people = [];
+const hook = {
+  THREE, scene, camera, renderer, world, ctrl, rig, input, spawnPoint, bw,
+  setCruiseTime, TIME_STATES, seaUniforms,
+  DECK_Y, POOL_Y, CEIL_Y, SHIP_L2, BEAM2, SUP_X2, SUP_Z0, SUP_Z1,
+  CASINO_Z, ATRIUM_Z, CABIN_Z, BALL_Z,
+  get BED_SPOT() { return typeof BED_SPOT !== 'undefined' ? BED_SPOT : null; },
+  get BED_X() { return typeof BED_X !== 'undefined' ? BED_X : null; },
+  get BED_Z() { return typeof BED_Z !== 'undefined' ? BED_Z : null; },
+  get BED_TOP() { return typeof BED_TOP !== 'undefined' ? BED_TOP : null; },
+  nearBed: (...a) => nearBed(...a),
+  lieDown: (...a) => lieDown(...a),
+  updateLie: (...a) => updateLie(...a),
+  POOL_X0, POOL_X1, POOL_Z_A, POOL_Z_B, POOL_FLOOR,
+  people,
+  halfBeam,
+  get player() { return player; },
+  get cruiseTime() { return cruiseTime; },
+  get lieState() { return typeof lieState !== 'undefined' ? lieState : null; },
+  get cabinAskOpen() { return typeof cabinAskOpen !== 'undefined' ? cabinAskOpen : false; },
+};
+window.__cruise = hook;
+window.__villa = hook;
+console.log('[cruise] hook set on window early');
+
 // ---------------------------------------------------------------------------
-// Avatar.
-// ---------------------------------------------------------------------------
-player = new Player(scene);
-await player.load('girl', girlMatFor);
-player.addWardrobePart('hairCrown', harmoniseHair(player, {
-  scalp: await charImage(CHAR_MATS?.MAT_SurvGirl_Head?.tex || 'survgirl_head_diff.webp'),
-  strands: await charImage(CHAR_MATS?.MAT_SurvGirl_Hair?.tex || 'survgirl_hair_diff.webp'),
-  strandsAO: await charImage(CHAR_MATS?.MAT_SurvGirl_Hair?.aoTex || 'survgirl_hair_ao.webp'),
-}));
+console.log('[cruise] loading player...');
+try {
+  player = new Player(scene);
+  await player.load('girl', girlMatFor);
+  player.addWardrobePart('hairCrown', harmoniseHair(player, {
+    scalp: await charImage(CHAR_MATS?.MAT_SurvGirl_Head?.tex || 'survgirl_head_diff.webp'),
+    strands: await charImage(CHAR_MATS?.MAT_SurvGirl_Hair?.tex || 'survgirl_hair_diff.webp'),
+    strandsAO: await charImage(CHAR_MATS?.MAT_SurvGirl_Hair?.aoTex || 'survgirl_hair_ao.webp'),
+  }));
+  console.log('[cruise] player loaded successfully');
+} catch (err) {
+  console.error('[cruise] player load error:', err);
+}
 
 // ---------------------------------------------------------------------------
 // Passengers. Ready Player Me guests, never the pack rig — a crowd built from
 // the player's own base is a crowd wearing the player's face.
 // ---------------------------------------------------------------------------
-const people = [];
 try {
   const guests = [];
   for (const [model, walk, idle, h, rc] of [
@@ -2079,14 +2750,17 @@ try {
     ['man.glb', 'walk_m.glb', 'idle_m.glb', 1.80, 'atlas-dark'],
   ]) {
     try {
+      console.log('[cruise] loading guest rig:', model);
       guests.push(await loadGuestRig({
         model: `./glb/visitors/${model}?v=1`,
         walk: `./glb/visitors/${walk}?v=1`,
         idle: `./glb/visitors/${idle}?v=1`,
         height: h, recolor: rc,
       }));
+      console.log('[cruise] loaded guest rig:', model);
     } catch (e) { console.warn('[cruise] guest rig', model, e); }
   }
+  console.log('[cruise] all guests loaded, count:', guests.length);
   const Gg = i => guests[i % guests.length];
   const visitor = (i, opts = {}) => makeVisitor(Gg(i).scene, Gg(i).walkClip, rnd, {
     guest: Gg(i), idleClip: Gg(i).idleClip, look: 'beach', ...opts,
@@ -2094,8 +2768,8 @@ try {
 
   if (guests.length) {
     // Someone standing still, wherever you put them.
-    const stand = (i, x, y, z, yaw) => {
-      const v = visitor(i, { playIdle: true });
+    const stand = (i, x, y, z, yaw, opts = {}) => {
+      const v = visitor(i, { playIdle: true, ...opts });
       v.group.position.set(x, y, z);
       v.group.rotation.y = yaw;
       scene.add(v.group);
@@ -2103,8 +2777,8 @@ try {
       return v;
     };
     // Someone walking a beat, back and forth along Z.
-    const patrol = (i, x, y, z0, z1, yaw) => {
-      const v = visitor(i);
+    const patrol = (i, x, y, z0, z1, yaw, opts = {}) => {
+      const v = visitor(i, opts);
       v.group.position.set(x, y, z0);
       v.group.rotation.y = yaw;
       scene.add(v.group);
@@ -2114,11 +2788,7 @@ try {
       });
     };
 
-    // Promenade deck, both sides. The teak stops 0.55 m short of the hull's
-    // half-beam and the bulwark fills the rest — a lane at +3.4 left the
-    // outer walker's hip only 5 cm from the bulwark's inner face, so she
-    // walked with half her body sunk into the wall the whole length of the
-    // ship. +2.6 clears it while still reading as the lane closer to the rail.
+    // Promenade deck, both sides.
     patrol(0, SUP_X2 + 2.2, DECK_Y, -40, 40, 0);
     patrol(1, SUP_X2 + 2.6, DECK_Y, 30, -30, Math.PI);
     patrol(2, -(SUP_X2 + 2.2), DECK_Y, -34, 36, 0);
@@ -2126,38 +2796,97 @@ try {
     stand(4, SUP_X2 + 3.0, DECK_Y, 52, Math.PI / 2);      // at the rail, forward
     stand(5, -(SUP_X2 + 3.0), DECK_Y, -52, -Math.PI / 2);
 
-    // Casino: dealers behind two tables and players round them.
-    stand(6, -6.4, DECK_Y, CASINO_Z[0] + 15.2, Math.PI);   // roulette croupier
-    stand(7, -5.2, DECK_Y, CASINO_Z[0] + 11.0, 0);
-    stand(8, -7.6, DECK_Y, CASINO_Z[0] + 11.0, 0);
-    stand(9, 6.4, DECK_Y, CASINO_Z[0] + 15.2, Math.PI);
-    stand(10, 6.8, DECK_Y, CASINO_Z[0] + 26.6, Math.PI);   // blackjack dealer
-    stand(11, 0, DECK_Y, CASINO_Z[0] + 5.2, Math.PI);      // barman
-    stand(12, -10.6, DECK_Y, CASINO_Z[0] + 6.6, Math.PI / 2);
+    // =========================================================================
+    // Casino Royale: Staff (croupiers, dealers, barmen) & Players / Guests
+    // =========================================================================
+    const casinoStaff = { look: null, uniform: { shirt: 0x16161c, pants: 0x121216, shoes: 0x08080a, hat: false } };
+    const casinoGuest = { look: null };
+    let npcIdx = 6;
+
+    // 1. Port Roulette Table (cx = -6.4, cz = z0 + 14.5)
+    // Croupier standing cleanly behind the wheel at z0 + 17.8 (outside table geometry)
+    stand(npcIdx++, -6.4, DECK_Y, CASINO_Z[0] + 17.8, Math.PI, casinoStaff);
+    stand(npcIdx++, -5.2, DECK_Y, CASINO_Z[0] + 11.2, 0, casinoGuest);
+    stand(npcIdx++, -7.6, DECK_Y, CASINO_Z[0] + 11.2, 0, casinoGuest);
+    stand(npcIdx++, -8.8, DECK_Y, CASINO_Z[0] + 14.5, Math.PI / 2, casinoGuest);
+    stand(npcIdx++, -4.0, DECK_Y, CASINO_Z[0] + 15.0, -Math.PI / 2, casinoGuest);
+
+    // 2. Starboard Roulette Table (cx = 6.4, cz = z0 + 14.5)
+    // Croupier standing cleanly behind the wheel at z0 + 17.8
+    stand(npcIdx++, 6.4, DECK_Y, CASINO_Z[0] + 17.8, Math.PI, casinoStaff);
+    stand(npcIdx++, 5.2, DECK_Y, CASINO_Z[0] + 11.2, 0, casinoGuest);
+    stand(npcIdx++, 7.6, DECK_Y, CASINO_Z[0] + 11.2, 0, casinoGuest);
+    stand(npcIdx++, 4.0, DECK_Y, CASINO_Z[0] + 14.5, Math.PI / 2, casinoGuest);
+    stand(npcIdx++, 8.8, DECK_Y, CASINO_Z[0] + 15.0, -Math.PI / 2, casinoGuest);
+
+    // 3. Salon Privé VIP High Stakes Poker Table (px = 0, pz = z0 + 25.0)
+    stand(npcIdx++, 0, DECK_Y, CASINO_Z[0] + 26.8, Math.PI, casinoStaff); // VIP Dealer
+    stand(npcIdx++, -1.4, DECK_Y, CASINO_Z[0] + 23.2, 0.2, casinoGuest);
+    stand(npcIdx++, 0, DECK_Y, CASINO_Z[0] + 23.0, 0, casinoGuest);
+    stand(npcIdx++, 1.4, DECK_Y, CASINO_Z[0] + 23.2, -0.2, casinoGuest);
+    stand(npcIdx++, -3.5, DECK_Y, CASINO_Z[0] + 25.0, Math.PI / 2, casinoGuest);
+    stand(npcIdx++, 3.5, DECK_Y, CASINO_Z[0] + 25.0, -Math.PI / 2, casinoGuest);
+
+    // 4. Blackjack & Baccarat Tables (cz = z0 + 35.0)
+    // Port Blackjack: Dealer & Players
+    stand(npcIdx++, -6.8, DECK_Y, CASINO_Z[0] + 36.8, Math.PI, casinoStaff);
+    stand(npcIdx++, -7.8, DECK_Y, CASINO_Z[0] + 33.2, 0, casinoGuest);
+    stand(npcIdx++, -6.8, DECK_Y, CASINO_Z[0] + 33.0, 0, casinoGuest);
+    stand(npcIdx++, -5.8, DECK_Y, CASINO_Z[0] + 33.2, 0, casinoGuest);
+
+    // Starboard Blackjack: Dealer & Players
+    stand(npcIdx++, 6.8, DECK_Y, CASINO_Z[0] + 36.8, Math.PI, casinoStaff);
+    stand(npcIdx++, 5.8, DECK_Y, CASINO_Z[0] + 33.2, 0, casinoGuest);
+    stand(npcIdx++, 6.8, DECK_Y, CASINO_Z[0] + 33.0, 0, casinoGuest);
+    stand(npcIdx++, 7.8, DECK_Y, CASINO_Z[0] + 33.2, 0, casinoGuest);
+
+    // 5. Slot Machine Banks
+    stand(npcIdx++, -9.6, DECK_Y, CASINO_Z[0] + 8.0, -Math.PI / 2, casinoGuest);
+    stand(npcIdx++, -9.6, DECK_Y, CASINO_Z[0] + 19.0, -Math.PI / 2, casinoGuest);
+    stand(npcIdx++, -9.6, DECK_Y, CASINO_Z[0] + 30.0, -Math.PI / 2, casinoGuest);
+    stand(npcIdx++, 9.6, DECK_Y, CASINO_Z[0] + 8.0, Math.PI / 2, casinoGuest);
+    stand(npcIdx++, 9.6, DECK_Y, CASINO_Z[0] + 19.0, Math.PI / 2, casinoGuest);
+    stand(npcIdx++, 9.6, DECK_Y, CASINO_Z[0] + 30.0, Math.PI / 2, casinoGuest);
+
+    // 6. Grand Casino Royale Bar & Lounge
+    stand(npcIdx++, -1.6, DECK_Y, CASINO_Z[0] + 2.3, 0, casinoStaff); // Barman 1
+    stand(npcIdx++, 1.6, DECK_Y, CASINO_Z[0] + 2.3, 0, casinoStaff);  // Barman 2
+    stand(npcIdx++, -3.0, DECK_Y, CASINO_Z[0] + 5.0, Math.PI, casinoGuest);
+    stand(npcIdx++, 0.0, DECK_Y, CASINO_Z[0] + 5.0, Math.PI, casinoGuest);
+    stand(npcIdx++, 3.0, DECK_Y, CASINO_Z[0] + 5.0, Math.PI, casinoGuest);
+    stand(npcIdx++, -9.5, DECK_Y, CASINO_Z[0] + 4.2, 0.4, casinoGuest);
+    stand(npcIdx++, 9.5, DECK_Y, CASINO_Z[0] + 4.2, -0.4, casinoGuest);
+
+    // 7. Casino Floor Patrolling server & walker
+    patrol(npcIdx++, -2.2, DECK_Y, CASINO_Z[0] + 10, CASINO_Z[0] + 38, 0, casinoStaff);
+    patrol(npcIdx++, 2.2, DECK_Y, CASINO_Z[0] + 38, CASINO_Z[0] + 12, Math.PI, casinoGuest);
 
     // Ballroom: a couple on the floor, and the band on the stage.
-    stand(13, -1.2, DECK_Y, BALL_Z[0] + 18, 0.4);
-    stand(14, 0.6, DECK_Y, BALL_Z[0] + 18.6, Math.PI + 0.4);
-    stand(15, -3.6, DECK_Y + 0.62, BALL_Z[0] + 35.2, Math.PI); // at the piano
-    stand(16, 2.4, DECK_Y + 0.62, BALL_Z[0] + 36.4, Math.PI);  // double bass
-    stand(17, -10.2, DECK_Y, BALL_Z[0] + 12.4, -Math.PI / 2);
+    stand(npcIdx++, -1.2, DECK_Y, BALL_Z[0] + 18, 0.4);
+    stand(npcIdx++, 0.6, DECK_Y, BALL_Z[0] + 18.6, Math.PI + 0.4);
+    stand(npcIdx++, -3.6, DECK_Y + 0.62, BALL_Z[0] + 35.2, Math.PI); // at the piano
+    stand(npcIdx++, 2.4, DECK_Y + 0.62, BALL_Z[0] + 36.4, Math.PI);  // double bass
+    stand(npcIdx++, -10.2, DECK_Y, BALL_Z[0] + 12.4, -Math.PI / 2);
 
     // Atrium: the purser behind the desk, and someone waiting.
-    stand(18, -6.5, DECK_Y, 1.5, Math.PI);
-    stand(19, 4.5, DECK_Y, -4.0, Math.PI / 2);
+    stand(npcIdx++, -6.5, DECK_Y, 1.5, Math.PI);
+    stand(npcIdx++, 4.5, DECK_Y, -4.0, Math.PI / 2);
 
     // Pool deck.
-    stand(20, 0, POOL_Y, 16.6, 0);                          // barman at the Lido
-    stand(21, -3.0, POOL_Y, 16.0, Math.PI);
-    stand(22, 7.2, POOL_Y, -1.0, -Math.PI / 2);
-    patrol(23, 11.5, POOL_Y, -20, 30, 0);
+    stand(npcIdx++, 0, POOL_Y, 16.6, 0);                          // barman at the Lido
+    stand(npcIdx++, -3.0, POOL_Y, 16.0, Math.PI);
+    stand(npcIdx++, 7.2, POOL_Y, -1.0, -Math.PI / 2);
+    patrol(npcIdx++, 11.5, POOL_Y, -20, 30, 0);
   }
 } catch (e) {
   console.warn('[cruise] people', e);
 }
+console.log('[cruise] people placed, total:', people.length);
 
 function tickPeople(dt) {
+  const pPos = ctrl?.pos;
   for (const p of people) {
+    if (pPos && p.group.position.distanceTo(pPos) > 55) continue;
     switch (p.kind) {
       case 'patrol': {
         const g = p.group;
@@ -2330,13 +3059,15 @@ renderer.domElement.addEventListener('click', () => {
 function updateAvatar(dt) {
   if (!player) return;
   const lying = ctrl.mode === 'lie';
-  // Swimwear in the pool, evening dress everywhere else. Keyed to actually
-  // being IN the basin, not to standing near it.
-  const inPool = ctrl.pos.y < POOL_Y - 0.35 && ctrl.pos.y > POOL_FLOOR - 0.6
-    && ctrl.pos.x > POOL_X0 - 0.5 && ctrl.pos.x < POOL_X1 + 0.5
-    && ctrl.pos.z > POOL_Z_A - 0.5 && ctrl.pos.z < POOL_Z_B + 0.5;
-  player.setOutfit(inPool
-    ? { hat: false, backpack: false, pants: false, shoes: false, longSleeves: false, swim: true }
+  // Black one-piece swimsuit on the upper deck (pool deck & pool), chic dress in casino, cruise attire elsewhere.
+  const onUpperDeck = ctrl.pos.y >= POOL_Y - 1.5;
+  const inCasino = !onUpperDeck && ctrl.pos.z >= CASINO_Z[0] - 0.5 && ctrl.pos.z <= CASINO_Z[1] + 0.5
+    && Math.abs(ctrl.pos.x) <= SUP_X2 && ctrl.pos.y >= DECK_Y - 0.5 && ctrl.pos.y <= DECK_Y + SUP_H;
+
+  player.setOutfit(onUpperDeck
+    ? { hat: false, backpack: false, pants: false, shoes: false, longSleeves: false, swimsuit: true }
+    : inCasino
+    ? { hat: false, backpack: false, casino: true }
     : { hat: false, backpack: false, longSleeves: cruiseTime === 'night' });
   player.update({
     dt,
@@ -2396,6 +3127,17 @@ function animate() {
       updatePrompts(dt);
     }
   }
+
+  // Live casino animations: spinning roulette wheels and scrolling slot reels
+  for (let i = 0; i < rouletteRotors.length; i++) {
+    const r = rouletteRotors[i];
+    r.rotor.rotation.y += dt * r.speed;
+    r.ballAngle -= dt * r.ballSpeed;
+    r.ball.position.x = Math.cos(r.ballAngle) * r.ballRadius;
+    r.ball.position.z = Math.sin(r.ballAngle) * r.ballRadius;
+    r.ball.position.y = 0.08 + Math.sin(t * 12 + i) * 0.003;
+  }
+  updateSlotScreens(t);
 
   // Making way. The sea scrolls astern under a ship that never moves.
   seaUniforms.uTime.value = t;
@@ -2487,20 +3229,3 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
-
-// Inspection hook. Named `__villa` as well so the shared capture tooling that
-// frames the other maps works here without knowing which world it is in.
-const hook = {
-  THREE, scene, camera, renderer, world, ctrl, rig, input, player, spawnPoint, bw,
-  setCruiseTime, TIME_STATES, seaUniforms,
-  DECK_Y, POOL_Y, CEIL_Y, SHIP_L2, BEAM2, SUP_X2, SUP_Z0, SUP_Z1,
-  CASINO_Z, ATRIUM_Z, CABIN_Z, BALL_Z,
-  BED_SPOT, BED_X, BED_Z, BED_TOP, nearBed, lieDown, updateLie,
-  POOL_X0, POOL_X1, POOL_Z_A, POOL_Z_B, POOL_FLOOR,
-  people, halfBeam,
-  get cruiseTime() { return cruiseTime; },
-  get lieState() { return lieState; },
-  get cabinAskOpen() { return cabinAskOpen; },
-};
-window.__cruise = hook;
-window.__villa = hook;

@@ -82,6 +82,15 @@ const TUCK_REACH = 0.64;    // cards further out than this are the ponytail
  * thing that has to go. Every shape survives it — the strand silhouettes and
  * the soft tips live in the alpha, which is untouched.
  *
+ * `violetStreaks` is the strength of the casino tint, 0 to 1, not a flag, and
+ * `streakScale` the fineness of its bands. The two sheets do not take either the
+ * same way: the atlas is a strand sheet, its cards run with the bands and the
+ * result reads as dyed locks. The scalp is a head unwrap, so the same bands land
+ * as one broad field across the skull — at full strength and atlas frequency
+ * that is the solid magenta cap the crown was wearing. The crown therefore asks
+ * for a fraction of the strength over several times the frequency, which is what
+ * turns the field back into streaks.
+ *
  * `align` brings a sheet onto the ramp's register before the lookup. `ao` folds
  * in an occlusion sheet: the pack ships one for the hair and the material asks
  * for it, but the pack's meshes have no second UV set, so three drops it on the
@@ -90,7 +99,9 @@ const TUCK_REACH = 0.64;    // cards further out than this are the ponytail
  * luminance, so it still finds the hairline after an alignment — which is how
  * the painted hairline is allowed to keep fading into skin.
  */
-function rampToHair(source, { align = null, ao = null, keepAbove = null } = {}) {
+function rampToHair(source, {
+  align = null, ao = null, keepAbove = null, violetStreaks = 0, streakScale = 1,
+} = {}) {
   const width = source.width, height = source.height;
   const canvas = Object.assign(document.createElement('canvas'), { width, height });
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -108,7 +119,21 @@ function rampToHair(source, { align = null, ao = null, keepAbove = null } = {}) 
     const lit = shade ? 1 - AO_DEPTH + AO_DEPTH * (shade[i] / 255) : 1;
     const hair = keepAbove ? 1 - THREE.MathUtils.smoothstep(luma, keepAbove[0], keepAbove[1]) : 1;
     for (let c = 0; c < 3; c++) {
-      const ramped = (HAIR_ROOT[c] + (HAIR_TIP[c] - HAIR_ROOT[c]) * t) * lit;
+      let ramped = (HAIR_ROOT[c] + (HAIR_TIP[c] - HAIR_ROOT[c]) * t) * lit;
+      if (violetStreaks && hair > 0.15) {
+        const x = (i / 4) % width;
+        const y = Math.floor((i / 4) / width);
+        const u = x / width, v = y / height;
+        const k = streakScale;
+        const s1 = Math.sin(u * 36.0 * k + Math.sin(v * 10.0 * k) * 1.5);
+        const s2 = Math.cos(u * 16.0 * k + v * 5.0 * k);
+        const streak = Math.max(0, s1 * 0.6 + s2 * 0.4);
+        if (streak > 0.38) {
+          const factor = THREE.MathUtils.smoothstep(streak, 0.38, 0.9) * violetStreaks;
+          const purple = [175 + 50 * t, 40 + 40 * t, 240 + 15 * t];
+          ramped = ramped * (1 - factor) + purple[c] * lit * factor;
+        }
+      }
       px[i + c] = px[i + c] + (ramped - px[i + c]) * hair;
     }
   }
@@ -405,17 +430,34 @@ export function harmoniseHair(player, images) {
   if (!headMesh || !hairMesh) return null;
 
   if (hairMaterial && images.strands) {
-    recolourStrands(hairMaterial, images.strands, images.strandsAO);
+    player.normalHairTex = rampToHair(images.strands, { ao: images.strandsAO });
+    player.casinoHairTex = rampToHair(images.strands, { ao: images.strandsAO, violetStreaks: 0.85 });
+    player.normalHairTex.anisotropy = hairMaterial.map?.anisotropy ?? 1;
+    player.casinoHairTex.anisotropy = hairMaterial.map?.anisotropy ?? 1;
+    hairMaterial.map = player.normalHairTex;
+    hairMaterial.aoMap = null;
+    hairMaterial.color.setRGB(1, 1, 1);
+    hairMaterial.metalness = 0;
+    hairMaterial.roughness = HAIR_ROUGHNESS;
+    hairMaterial.needsUpdate = true;
   }
   if (!images.scalp) return null;
 
   const box = new THREE.Box3().setFromBufferAttribute(headMesh.geometry.attributes.position);
   const headHeight = box.max.y - box.min.y;
-  // Centre of the skull, not of the head: the box runs down to the chin, and
-  // everything here is measured off the ball the hair sits on.
   const centre = box.getCenter(new THREE.Vector3()).setY(box.max.y - SKULL_DROP * headHeight);
 
   const crown = buildCrown(headMesh, images.scalp, headHeight, centre);
+  if (crown) {
+    player.normalCrownTex = crown.material.map;
+    player.casinoCrownTex = rampToHair(images.scalp, {
+      align: SCALP_ALIGN,
+      keepAbove: [SCALP_LUMA * 255, SCALP_SKIN * 255],
+      violetStreaks: 0.28,
+      streakScale: 3.2,
+    });
+    if (player.normalCrownTex) player.casinoCrownTex.anisotropy = player.normalCrownTex.anisotropy;
+  }
   tuckToScalp(hairMesh, headHeight, centre);
   return crown;
 }

@@ -118,9 +118,10 @@ export class Controller {
         this.hasSafe = true;
         this.safeTimer = 0;
       }
-      const maxSp = shift ? SPRINT : WALK;
+      const mult = this.speedMult || 1;
+      const maxSp = (shift ? SPRINT : WALK) * mult;
       const hsp = Math.hypot(this.vel.x, this.vel.z);
-      const rate = hsp > SPRINT + 1 ? 2.2 : 10;      // preserve landing momentum
+      const rate = hsp > SPRINT * mult + 1 ? 2.2 : 10;      // preserve landing momentum
       const k = 1 - Math.exp(-rate * dt);
       this.vel.x += (_move.x * maxSp - this.vel.x) * k;
       this.vel.z += (_move.z * maxSp - this.vel.z) * k;
