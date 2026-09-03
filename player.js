@@ -295,6 +295,32 @@ function inflatedGeometry(geometry, amount) {
   return geometry;
 }
 
+// Paints a horizontal band across a garment as vertex colours, positioned by
+// fraction of the geometry's own (post-crop) height rather than an absolute
+// Y — so the band stays put on the hem it was measured against regardless of
+// where that hem sits on the body. Needs a material with vertexColors: true;
+// the base colour is baked in here rather than left to material.color so the
+// same geometry cannot silently pick up the wrong garment's tint later.
+function bandedGeometry(geometry, baseColor, bandColor, t0, t1, feather = 0.05) {
+  geometry.computeBoundingBox();
+  const { min, max } = geometry.boundingBox;
+  const span = (max.y - min.y) || 1;
+  const position = geometry.attributes.position;
+  const base = new THREE.Color(baseColor);
+  const band = new THREE.Color(bandColor);
+  const colors = new Float32Array(position.count * 3);
+  const tmp = new THREE.Color();
+  for (let i = 0; i < position.count; i++) {
+    const f = (position.getY(i) - min.y) / span;
+    const rise = THREE.MathUtils.smoothstep(f, t0 - feather, t0);
+    const fall = 1 - THREE.MathUtils.smoothstep(f, t1, t1 + feather);
+    tmp.copy(base).lerp(band, Math.min(rise, fall));
+    colors[i * 3] = tmp.r; colors[i * 3 + 1] = tmp.g; colors[i * 3 + 2] = tmp.b;
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geometry;
+}
+
 // Lifts a cropped garment off the skin along its own normals, fading out with
 // height above the hem. See FABRIC_STANDOFF.
 function withStandoff(geometry, minY) {
@@ -628,6 +654,28 @@ export class Player {
       side: THREE.DoubleSide,
     });
 
+    // A dark red band above the hip, running the full ring of the shell —
+    // the classic lifeguard-suit accent. Painted as vertex colour on the
+    // TOP piece, not the shorts below it: the shell's own hem is what a
+    // front-on view actually shows at hip height (its lowest reach, ≈ y
+    // 0.974, is only 3 mm under the hip joint, so it covers the shorts'
+    // waistband from every angle a camera on this ship can reach). A band
+    // painted on the shorts therefore hid under the shell from the front and
+    // only showed from directly behind — and read as trim on a pair of
+    // shorts peeking out under a plain top, not as part of the swimsuit.
+    // Binning this mesh's vertices by angle round the torso put the shell's
+    // hem between y 0.974 (front) and 1.027 (the high side); anything above
+    // 1.03 is inside the shell everywhere on the ring, so the band sits
+    // there — just above the hip line, on the piece the eye reads as "the
+    // swimsuit".
+    const swimStripeMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      vertexColors: true,
+      roughness: 0.28,
+      metalness: 0.12,
+      side: THREE.DoubleSide,
+    });
+
     let swimsuitTop = null;
     // 0.72 is the vest's shoulder seam: the black shell is the tee cut on two
     // vertical planes there, so it keeps the shoulder and a short cap of the
@@ -651,6 +699,7 @@ export class Player {
     // in all of them, and there is no swinging on a cruise deck to raise it.
     const SWIMSUIT_ARMHOLE = 0.72;
     const SWIMSUIT_STANDOFF = 0.008;
+    const SWIMSUIT_STRIPE = [0.09, 0.20];
     if (tshirt) {
       tshirt.geometry.computeBoundingBox();
       const bb = tshirt.geometry.boundingBox;
@@ -659,7 +708,12 @@ export class Player {
         croppedGeometry(tshirt.geometry, armhole, { axis: 'x', keep: -1, standoff: false }),
         -armhole, { axis: 'x', keep: 1, standoff: false });
       swimsuitTop = this.createSkinnedClone(
-        tshirt, inflatedGeometry(shell, SWIMSUIT_STANDOFF), blackSwimMaterial,
+        tshirt,
+        bandedGeometry(
+          inflatedGeometry(shell, SWIMSUIT_STANDOFF),
+          0x0f0f12, 0x6e0f16, SWIMSUIT_STRIPE[0], SWIMSUIT_STRIPE[1], 0.02
+        ),
+        swimStripeMaterial,
         'Wardrobe_SwimsuitTop');
     }
 

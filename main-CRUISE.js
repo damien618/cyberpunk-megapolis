@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { Player } from './player.js?v=85';
+import { Player } from './player.js?v=89';
 import { harmoniseHair } from './hair.js?v=11';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=8';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes } from './cityBoxes.js?v=5';
 import { loadGuestRig, makeVisitor, rootBoneOf } from './crowd.js?v=57';
+import { buildDesertedIsland, createMarineFauna, updateMarineLife } from './marineLife.js?v=1';
 
 console.log('[cruise] starting module evaluation');
 
@@ -2470,42 +2471,78 @@ const wakeParts = [];
 
 // A pair of gulls following the ship, and a distant island off the beam —
 // without something out there the sea reads as a shader, not a place.
+//
+// A gull is a body + a wing, not a lozenge with a stick through it: the old
+// wing was a bare rectangle, which face-on to the camera reads as the thin
+// grey bar it visibly was. The wing below is a swept, tapered shape (root
+// wide, tip narrow and raked back) so it silhouettes as a wing from every
+// angle the flap passes through, and its outer third is tinted toward
+// charcoal — the dark primary-tip marking that is most of what makes a gull
+// read as a gull rather than a paper airplane.
+function buildGullWingGeometry() {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0.16);
+  shape.quadraticCurveTo(0.7, 0.32, 1.35, 0.24);
+  shape.quadraticCurveTo(2.0, 0.14, 2.4, -0.08);
+  shape.lineTo(1.75, -0.2);
+  shape.quadraticCurveTo(0.9, -0.16, 0.15, -0.08);
+  shape.lineTo(0, 0.16);
+  const geo = new THREE.ShapeGeometry(shape);
+  const pos = geo.attributes.position;
+  const white = new THREE.Color(0xf2f0e9);
+  const tip = new THREE.Color(0x2c2c30);
+  const colors = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const t = THREE.MathUtils.smoothstep(pos.getX(i), 1.25, 2.35);
+    const c = white.clone().lerp(tip, t);
+    colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geo;
+}
+const gullWingGeo = buildGullWingGeometry();
+const gullWingMat = new THREE.MeshStandardMaterial({
+  color: 0xffffff, vertexColors: true, roughness: 0.85, side: THREE.DoubleSide,
+});
+const gullBodyMat = new THREE.MeshStandardMaterial({ color: 0xf4f2ec, roughness: 0.8 });
+const gullBeakMat = new THREE.MeshStandardMaterial({ color: 0xe0a53c, roughness: 0.5 });
 const gulls = [];
 for (let i = 0; i < 5; i++) {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6),
-    new THREE.MeshStandardMaterial({ color: 0xf4f2ec, roughness: 0.8 }));
-  body.scale.set(0.7, 0.6, 1.5);
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), gullBodyMat);
+  body.scale.set(0.62, 0.55, 1.55);
   g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), gullBodyMat);
+  head.position.set(0, 0.08, 0.52);
+  g.add(head);
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.24, 6), gullBeakMat);
+  beak.rotation.x = Math.PI / 2;
+  beak.position.set(0, 0.06, 0.74);
+  g.add(beak);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.6, 4), gullBodyMat);
+  tail.rotation.x = -Math.PI / 2;
+  tail.scale.set(1, 0.28, 1);
+  tail.position.z = -0.68;
+  g.add(tail);
   for (const sx of [-1, 1]) {
-    const w = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.5),
-      new THREE.MeshStandardMaterial({
-        color: 0xf0eee6, roughness: 0.85, side: THREE.DoubleSide,
-      }));
-    w.position.x = sx * 1.15;
-    w.rotation.y = 0;
+    const w = new THREE.Mesh(gullWingGeo, gullWingMat);
+    w.scale.x = sx;
+    w.position.x = sx * 0.16;
     g.add(w);
     g.userData[sx > 0 ? 'wR' : 'wL'] = w;
   }
   g.position.set((rnd() - 0.5) * 70, 26 + rnd() * 16, -60 - rnd() * 60);
+  g.rotation.y = (rnd() - 0.5) * 0.6;
   scene.add(g);
   gulls.push({ g, phase: rnd() * 6.28, speed: 0.6 + rnd() * 0.5 });
 }
-{
-  // The island: a silhouette on the horizon, well outside the fog's far plane
-  // so it fades rather than pops.
-  const island = new THREE.Group();
-  for (let i = 0; i < 5; i++) {
-    const h = 60 + rnd() * 90;
-    const c = new THREE.Mesh(new THREE.ConeGeometry(90 + rnd() * 70, h, 7),
-      new THREE.MeshStandardMaterial({ color: 0x3a5468, roughness: 1 }));
-    c.position.set(-260 + i * 150, h / 2 - 12, 0);
-    island.add(c);
-  }
-  island.position.set(-1500, 0, 700);
-  island.rotation.y = 0.4;
-  scene.add(island);
-}
+// ---------------------------------------------------------------------------
+// Deserted mountainous island off the port beam, and lively oceanic fauna
+// (jumping dolphins and breaching orcas with dynamic splashes & foam).
+// ---------------------------------------------------------------------------
+const islandData = buildDesertedIsland(scene);
+const marineFauna = createMarineFauna(scene);
+
 
 // ---------------------------------------------------------------------------
 // Collision world, ground probe, controller.
@@ -2719,6 +2756,8 @@ const hook = {
   get cruiseTime() { return cruiseTime; },
   get lieState() { return typeof lieState !== 'undefined' ? lieState : null; },
   get cabinAskOpen() { return typeof cabinAskOpen !== 'undefined' ? cabinAskOpen : false; },
+  islandData,
+  marineFauna,
 };
 window.__cruise = hook;
 window.__villa = hook;
@@ -3159,6 +3198,7 @@ function animate() {
     if (g.userData.wL) g.userData.wL.rotation.z = -flap;
     if (g.userData.wR) g.userData.wR.rotation.z = flap;
   }
+  updateMarineLife(dt, t, marineFauna, islandData);
 
   tickPeople(dt);
   updateSunShadow(ctrl.pos);
