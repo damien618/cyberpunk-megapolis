@@ -721,16 +721,340 @@ function updateSlotScreens(t) {
   slotReelTex.needsUpdate = true;
 }
 
-// Cabin carpet: quiet, because the suite is the one room that has to feel
-// like somewhere you would actually sleep.
-const cabinCarpetTex = canvasTex(128, 128, (g, W, H) => {
-  g.fillStyle = '#3f4f63';
+// ---------------------------------------------------------------------------
+// Cabin 214's patterns.
+//
+// This is the one room the player is INSIDE at arm's length, and the one room
+// she is asked to stop walking and go to sleep in. Everything in it is a woven
+// or a veneered PATTERN rather than a flat colour, because at two metres a
+// flat colour is exactly what makes a room read as a budget hotel corridor —
+// which is what the first cabin was: a blue speckle on the floor, cream on the
+// walls and a sheet of ship's glass where a window should have been.
+//
+// The reference is the Queen Mary's first-class staterooms: figured burr
+// veneers in mirror-matched panels with boxwood and gilt inlay banding, a
+// stepped Deco Axminster, parchment silk above a dado rail, concealed cove
+// lighting, and a brass porthole with its dogs and its deadlight.
+// ---------------------------------------------------------------------------
+
+// A tiny deterministic PRNG per texture, for the reason the ballroom carpet
+// has one: two loads of this ship have to be the same ship.
+function texRandom(s) {
+  let state = s >>> 0;
+  return () => ((state = (state * 1664525 + 1013904223) >>> 0) / 4294967296);
+}
+
+// Burr veneer, painted into whatever canvas the caller hands over. A burr is
+// NOT straight grain: it is a cap of nested, wobbling rings round a cluster of
+// dormant eyes, and drawn as stripes it comes out as pine decking.
+function paintBurr(g, W, H, seedValue, base, dark, light) {
+  const rand = texRandom(seedValue);
+  g.fillStyle = base;
   g.fillRect(0, 0, W, H);
-  for (let i = 0; i < 900; i++) {
-    g.fillStyle = `rgba(${180 + Math.random() * 50},${190 + Math.random() * 40},${200 + Math.random() * 40},${Math.random() * 0.09})`;
-    g.fillRect(Math.random() * W, Math.random() * H, 2, 2);
+  for (let n = 0; n < 16; n++) {
+    const cx = rand() * W, cy = rand() * H, rr = 10 + rand() * 44;
+    for (let k = 0; k < 7; k++) {
+      g.strokeStyle = k % 2 ? dark : light;
+      g.lineWidth = 0.9 + rand() * 1.5;
+      g.beginPath();
+      for (let a = 0; a <= 28; a++) {
+        const t = (a / 28) * Math.PI * 2;
+        const w = rr * (0.24 + k * 0.13) * (1 + 0.24 * Math.sin(t * 3 + n));
+        const x = cx + Math.cos(t) * w, y = cy + Math.sin(t) * w * 0.74;
+        if (a) g.lineTo(x, y); else g.moveTo(x, y);
+      }
+      g.closePath();
+      g.stroke();
+    }
+    g.fillStyle = dark;
+    g.beginPath(); g.ellipse(cx, cy, 2.4, 1.7, 0, 0, Math.PI * 2); g.fill();
   }
-}, 6, 8);
+  g.globalAlpha = 0.34;
+  for (let i = 0; i < 620; i++) {
+    const y = rand() * H;
+    g.strokeStyle = rand() < 0.5 ? dark : light;
+    g.lineWidth = 0.7;
+    g.beginPath();
+    g.moveTo(0, y);
+    g.bezierCurveTo(W * 0.33, y + (rand() - 0.5) * 12,
+                    W * 0.66, y + (rand() - 0.5) * 12, W, y + (rand() - 0.5) * 7);
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+}
+
+// Loose burr, for carcase work: wardrobe sides, drawer fronts, the bedhead.
+const burrWalnutTex = canvasTex(256, 256, (g, W, H) =>
+  paintBurr(g, W, H, 3141, '#6b4526', 'rgba(46,26,12,0.55)', 'rgba(178,134,84,0.42)'), 2, 2);
+// The same tree, bleached: Canadian maple, the Queen Mary's other veneer.
+const mapleTex = canvasTex(256, 256, (g, W, H) =>
+  paintBurr(g, W, H, 8677, '#b08d5c', 'rgba(88,58,28,0.42)', 'rgba(228,202,158,0.45)'), 2, 2);
+
+// ONE wall panel, drawn whole — dark stile round the edge, a boxwood-and-gilt
+// inlay line inside it, a mirror-matched burr field, and a painted bevel so
+// the field stands proud without costing geometry. Hung one panel per wall
+// SEGMENT rather than stretched along a whole bulkhead, so the panels come out
+// the same width on the 9.8 m hull side and on the 11.6 m corridor side.
+const cabinPanelTex = canvasTex(256, 512, (g, W, H) => {
+  g.fillStyle = '#3f2714';
+  g.fillRect(0, 0, W, H);
+  paintBurr(g, W, H, 5533, '#4a2e17', 'rgba(28,15,6,0.5)', 'rgba(126,92,54,0.3)');
+  const m = W * 0.13;
+  g.save();
+  g.beginPath(); g.rect(m, m, W - m * 2, H - m * 2); g.clip();
+  paintBurr(g, W, H, 271828, '#7c5330', 'rgba(48,28,14,0.5)', 'rgba(198,154,100,0.44)');
+  const gl = g.createLinearGradient(0, m, 0, H - m);
+  gl.addColorStop(0, 'rgba(255,228,184,0.20)');
+  gl.addColorStop(0.45, 'rgba(255,228,184,0)');
+  gl.addColorStop(1, 'rgba(18,9,3,0.30)');
+  g.fillStyle = gl;
+  g.fillRect(m, m, W - m * 2, H - m * 2);
+  g.restore();
+  // The banding: a gilt line, a boxwood line, and a shadow inside them.
+  g.strokeStyle = '#d9c290'; g.lineWidth = 3;
+  g.strokeRect(m - 7, m - 7, W - m * 2 + 14, H - m * 2 + 14);
+  g.strokeStyle = '#241407'; g.lineWidth = 2;
+  g.strokeRect(m - 2, m - 2, W - m * 2 + 4, H - m * 2 + 4);
+}, 1, 1);
+
+// The parchment silk above the dado rail. A tone-on-tone Deco fan, faint
+// enough that from the middle of the room it reads as a woven texture and not
+// as wallpaper with a motif.
+const cabinSilkTex = canvasTex(256, 256, (g, W, H) => {
+  const rand = texRandom(1618);
+  g.fillStyle = '#ddcaa6';
+  g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 2800; i++) {
+    g.fillStyle = rand() < 0.5 ? 'rgba(188,168,132,0.30)' : 'rgba(246,236,212,0.30)';
+    g.fillRect(rand() * W, rand() * H, 1.7, 1.7);
+  }
+  g.strokeStyle = 'rgba(172,144,98,0.32)';
+  for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+    const cx = (i + 0.5) * W / 2, cy = (j + 1) * H / 2;
+    for (let k = 1; k <= 5; k++) {
+      g.lineWidth = k % 2 ? 1.7 : 1;
+      g.beginPath();
+      g.arc(cx, cy, k * (W / 22), Math.PI, 0);
+      g.stroke();
+    }
+  }
+}, 4, 1.4);
+
+// The stateroom Axminster. Stepped Deco lozenges in gold and dusty rose over a
+// warm aubergine-taupe ground. Warm, deliberately: the cold blue speckle it
+// replaces was the single biggest reason cabin 214 read as a waiting room.
+const cabinCarpetTex = canvasTex(512, 512, (g, W, H) => {
+  const rand = texRandom(90210);
+  g.fillStyle = '#4a3937';
+  g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 6000; i++) {
+    g.fillStyle = rand() < 0.5 ? 'rgba(28,18,20,0.32)' : 'rgba(126,98,86,0.20)';
+    g.fillRect(rand() * W, rand() * H, 2.6, 2.6);
+  }
+  const S = W / 2;
+  for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+    const cx = (i + 0.5) * S, cy = (j + 0.5) * S;
+    const diamond = (r, fill, stroke, lw) => {
+      g.beginPath();
+      g.moveTo(cx, cy - r); g.lineTo(cx + r, cy);
+      g.lineTo(cx, cy + r); g.lineTo(cx - r, cy);
+      g.closePath();
+      if (fill) { g.fillStyle = fill; g.fill(); }
+      if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw || 3; g.stroke(); }
+    };
+    diamond(S * 0.45, 'rgba(96,68,60,0.55)', null);
+    diamond(S * 0.41, null, 'rgba(190,152,90,0.55)');
+    diamond(S * 0.30, 'rgba(56,40,42,0.5)', 'rgba(208,174,106,0.42)', 2);
+    diamond(S * 0.17, 'rgba(150,84,76,0.55)', null);
+    diamond(S * 0.075, 'rgba(216,184,118,0.72)', null);
+    // Chevrons filling the field between four lozenges — the Deco tell.
+    g.strokeStyle = 'rgba(180,144,82,0.24)';
+    g.lineWidth = 2.4;
+    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      for (let k = 0; k < 3; k++) {
+        const r = S * (0.09 + k * 0.055);
+        g.beginPath();
+        g.moveTo(cx + sx * (S * 0.5 - r), cy + sy * S * 0.5);
+        g.lineTo(cx + sx * S * 0.5, cy + sy * (S * 0.5 - r));
+        g.stroke();
+      }
+    }
+  }
+}, 5, 6);
+
+// The bedside rug: a Deco sunburst medallion, cream and gold on deep teal,
+// with a stepped border. It is the one strong pattern in the room and it sits
+// where the player always stands — beside the bed.
+const cabinRugTex = canvasTex(256, 256, (g, W, H) => {
+  const rand = texRandom(4242);
+  g.fillStyle = '#1f4a4e';
+  g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 2400; i++) {
+    g.fillStyle = rand() < 0.5 ? 'rgba(10,28,30,0.34)' : 'rgba(90,140,140,0.18)';
+    g.fillRect(rand() * W, rand() * H, 2.2, 2.2);
+  }
+  g.strokeStyle = 'rgba(206,174,108,0.75)';
+  for (const [inset, lw] of [[10, 3], [18, 1.4], [26, 2]]) {
+    g.lineWidth = lw;
+    g.strokeRect(inset, inset, W - inset * 2, H - inset * 2);
+  }
+  const cx = W / 2, cy = H / 2;
+  // The sunburst: alternating gold and ivory rays out of an amber eye.
+  for (let k = 0; k < 32; k++) {
+    const a0 = (k / 32) * Math.PI * 2, a1 = ((k + 1) / 32) * Math.PI * 2;
+    g.fillStyle = k % 2 ? 'rgba(214,182,114,0.42)' : 'rgba(238,228,204,0.26)';
+    g.beginPath();
+    g.moveTo(cx, cy);
+    g.arc(cx, cy, W * 0.30, a0, a1);
+    g.closePath();
+    g.fill();
+  }
+  for (const [r, col] of [[W * 0.30, 'rgba(226,196,128,0.8)'], [W * 0.19, 'rgba(226,196,128,0.55)'],
+                          [W * 0.10, 'rgba(150,84,76,0.8)']]) {
+    g.strokeStyle = col; g.lineWidth = 2.4;
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+  }
+  g.fillStyle = 'rgba(226,196,128,0.85)';
+  g.beginPath(); g.arc(cx, cy, W * 0.055, 0, Math.PI * 2); g.fill();
+}, 1, 1);
+
+// The counterpane: ivory silk, diamond-quilted, with a Greek-key border. It is
+// the largest single surface in the room after the carpet and it was a plain
+// off-white box, which is why the bed read as a mattress on a plinth.
+const counterpaneTex = canvasTex(256, 256, (g, W, H) => {
+  const rand = texRandom(7777);
+  g.fillStyle = '#efe6d2';
+  g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 2200; i++) {
+    g.fillStyle = rand() < 0.5 ? 'rgba(206,194,170,0.26)' : 'rgba(255,252,244,0.30)';
+    g.fillRect(rand() * W, rand() * H, 1.8, 1.8);
+  }
+  // Quilting: a diamond lattice of stitched shadow with a highlight beside it,
+  // so each lozenge reads as padded rather than as drawn on.
+  const step = W / 8;
+  for (const [off, col, lw] of [[0, 'rgba(176,160,130,0.5)', 1.6],
+                                [-1.6, 'rgba(255,253,246,0.7)', 1.2]]) {
+    g.strokeStyle = col; g.lineWidth = lw;
+    for (let k = -8; k <= 16; k++) {
+      g.beginPath(); g.moveTo(k * step + off, off); g.lineTo(k * step + H + off, H + off); g.stroke();
+      g.beginPath(); g.moveTo(k * step + off, H + off); g.lineTo(k * step + H + off, off); g.stroke();
+    }
+  }
+  // Greek key along the two long edges — the turn-down of the counterpane.
+  g.strokeStyle = 'rgba(168,132,70,0.62)';
+  g.lineWidth = 3;
+  for (const base of [16, H - 16]) {
+    const d = base < H / 2 ? 1 : -1;
+    for (let x = 6; x < W - 10; x += 26) {
+      g.beginPath();
+      g.moveTo(x, base);
+      g.lineTo(x, base + 11 * d); g.lineTo(x + 16, base + 11 * d);
+      g.lineTo(x + 16, base + 4 * d); g.lineTo(x + 7, base + 4 * d);
+      g.stroke();
+    }
+  }
+}, 1, 1);
+
+// What is actually out there. The suite is on the lower deck with a solid hull
+// block outboard of it, so the porthole cannot be a hole cut through to the
+// sea: it is a PAINTED view, and it gets away with it because a real porthole
+// gives you a 45 cm disc of horizon and nothing else. Two of them, swapped by
+// the day/night switch.
+function paintPortholeView(g, W, H, night) {
+  const rand = texRandom(night ? 24601 : 13579);
+  const HOR = H * 0.44;
+  const sky = g.createLinearGradient(0, 0, 0, HOR);
+  if (night) {
+    sky.addColorStop(0, '#050a18'); sky.addColorStop(0.7, '#0d1a30'); sky.addColorStop(1, '#22354e');
+  } else {
+    sky.addColorStop(0, '#5f95cf'); sky.addColorStop(0.62, '#a8c8e2'); sky.addColorStop(1, '#e6eef2');
+  }
+  g.fillStyle = sky; g.fillRect(0, 0, W, HOR);
+  if (night) {
+    for (let i = 0; i < 90; i++) {
+      g.fillStyle = 'rgba(255,255,240,' + (0.25 + rand() * 0.6).toFixed(3) + ')';
+      g.fillRect(rand() * W, rand() * HOR * 0.9, 1.4, 1.4);
+    }
+    const moon = g.createRadialGradient(W * 0.68, HOR * 0.34, 2, W * 0.68, HOR * 0.34, 30);
+    moon.addColorStop(0, 'rgba(255,250,224,0.95)');
+    moon.addColorStop(0.25, 'rgba(255,246,206,0.5)');
+    moon.addColorStop(1, 'rgba(255,246,206,0)');
+    g.fillStyle = moon; g.fillRect(0, 0, W, HOR);
+  } else {
+    // A bank of low cloud on the horizon, which is what makes it read as sea
+    // air rather than as a blue card.
+    for (let i = 0; i < 26; i++) {
+      const x = rand() * W, y = HOR * (0.35 + rand() * 0.55), r = 8 + rand() * 22;
+      g.fillStyle = 'rgba(255,255,255,' + (0.16 + rand() * 0.22).toFixed(3) + ')';
+      g.beginPath(); g.ellipse(x, y, r, r * 0.34, 0, 0, Math.PI * 2); g.fill();
+    }
+  }
+  const sea = g.createLinearGradient(0, HOR, 0, H);
+  if (night) {
+    sea.addColorStop(0, '#12283c'); sea.addColorStop(1, '#04101c');
+  } else {
+    sea.addColorStop(0, '#3f83a8'); sea.addColorStop(1, '#0f4f74');
+  }
+  g.fillStyle = sea; g.fillRect(0, HOR, W, H - HOR);
+  // Swell. The crests get longer and further apart toward the bottom of the
+  // disc, which is the whole reason a painted sea reads as distance.
+  for (let i = 0; i < 260; i++) {
+    const t = rand();
+    const y = HOR + Math.pow(t, 1.7) * (H - HOR);
+    const len = 3 + t * 26;
+    g.strokeStyle = night
+      ? 'rgba(150,180,214,' + (0.05 + t * 0.16).toFixed(3) + ')'
+      : 'rgba(236,248,255,' + (0.10 + t * 0.34).toFixed(3) + ')';
+    g.lineWidth = 0.8 + t * 1.6;
+    const x = rand() * W;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + len, y); g.stroke();
+  }
+  // The moon path by night, the sun's glare by day — straight down the swell.
+  const path = g.createLinearGradient(W * 0.5, HOR, W * 0.5, H);
+  path.addColorStop(0, night ? 'rgba(255,246,206,0.30)' : 'rgba(255,248,214,0.26)');
+  path.addColorStop(1, 'rgba(255,246,206,0)');
+  g.fillStyle = path;
+  g.beginPath();
+  g.moveTo(W * 0.60, HOR); g.lineTo(W * 0.76, HOR);
+  g.lineTo(W * 0.96, H); g.lineTo(W * 0.40, H);
+  g.closePath(); g.fill();
+  // Glass: a rim shadow, and a diagonal reflection across the pane.
+  const vig = g.createRadialGradient(W / 2, H / 2, W * 0.26, W / 2, H / 2, W * 0.52);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(12,16,22,0.62)');
+  g.fillStyle = vig; g.fillRect(0, 0, W, H);
+  g.save();
+  g.beginPath(); g.arc(W / 2, H / 2, W * 0.5, 0, Math.PI * 2); g.clip();
+  g.fillStyle = 'rgba(255,255,255,0.13)';
+  g.beginPath();
+  g.moveTo(0, H * 0.66); g.lineTo(W * 0.52, 0); g.lineTo(W * 0.76, 0); g.lineTo(0, H * 0.94);
+  g.closePath(); g.fill();
+  g.restore();
+}
+// Looking glass. Three.js gives a MeshStandardMaterial nothing to reflect in
+// an interior, so a mirror painted as one flat grey is a sheet of card. What
+// sells it is the CONTENT of a reflection at a glance: a bright band where the
+// deckhead is, a dark one where the carpet is, and a sheen across the pane.
+const mirrorTex = canvasTex(128, 256, (g, W, H) => {
+  const gl = g.createLinearGradient(0, 0, 0, H);
+  gl.addColorStop(0.00, '#cfd8d8');
+  gl.addColorStop(0.16, '#e6e4d6');   // the lit deckhead
+  gl.addColorStop(0.34, '#b9c2c2');
+  gl.addColorStop(0.62, '#8a8478');   // the panelled dado opposite
+  gl.addColorStop(0.78, '#6a5a4c');
+  gl.addColorStop(1.00, '#4a3c36');   // carpet
+  g.fillStyle = gl;
+  g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(255,255,255,0.16)';
+  g.beginPath();
+  g.moveTo(0, H * 0.78); g.lineTo(W * 0.72, 0); g.lineTo(W, 0); g.lineTo(0, H);
+  g.closePath(); g.fill();
+  g.fillStyle = 'rgba(255,246,220,0.20)';
+  g.fillRect(0, H * 0.13, W, H * 0.05);
+}, 1, 1);
+
+const portholeDayTex = canvasTex(256, 256, (g, W, H) => paintPortholeView(g, W, H, false));
+const portholeNightTex = canvasTex(256, 256, (g, W, H) => paintPortholeView(g, W, H, true));
 
 // The corridor runner. Its two gold stripes are drawn at fixed U, so on the
 // corridor's floor slab they run fore-and-aft down the middle of the ship —
@@ -957,6 +1281,76 @@ const M = {
     emissive: 0xffffff, emissiveIntensity: 0.85,
     roughness: 0.35, metalness: 0.05, side: THREE.DoubleSide,
   }),
+
+  // --- Cabin 214 -----------------------------------------------------------
+  // The suite's own kit. Kept separate from the ballroom's oaks: this is a
+  // 1930s stateroom, not a 1912 saloon, and the difference is entirely in the
+  // veneers — burr walnut and bleached maple with gilt banding, not stained
+  // oak and gesso.
+  walnutBurr: new THREE.MeshStandardMaterial({
+    map: burrWalnutTex, normalMap: woodN, normalScale: new THREE.Vector2(0.22, 0.22),
+    color: 0xd8c0a4, roughness: 0.36, metalness: 0.04,
+  }),
+  maple: new THREE.MeshStandardMaterial({
+    map: mapleTex, normalMap: woodN, normalScale: new THREE.Vector2(0.18, 0.18),
+    color: 0xe8dcc6, roughness: 0.40, metalness: 0.03,
+  }),
+  // The panelled dado. One panel per texture repeat, so the material carries
+  // the whole joint — stile, banding, field and bevel — and the wall costs one
+  // thin box per panel instead of five.
+  cabinPanel: new THREE.MeshStandardMaterial({
+    map: cabinPanelTex, roughness: 0.34, metalness: 0.04,
+  }),
+  // Parchment silk above the rail. It carries a faint warm emissive of its own
+  // so the upper wall never goes to a flat grey when the cove lights are the
+  // only thing burning.
+  cabinSilk: new THREE.MeshStandardMaterial({
+    map: cabinSilkTex, roughness: 0.88,
+    emissive: 0x281c0c, emissiveIntensity: 1,
+  }),
+  cabinRug: new THREE.MeshStandardMaterial({ map: cabinRugTex, roughness: 0.95 }),
+  counterpane: new THREE.MeshStandardMaterial({ map: counterpaneTex, roughness: 0.9 }),
+  // The deckhead. Warmer and flatter than the hull's white — a stateroom
+  // ceiling is painted plaster under concealed light, not enamelled steel.
+  cabinDeckhead: new THREE.MeshStandardMaterial({
+    color: 0xd6c5a2, roughness: 0.94, emissive: 0x181005, emissiveIntensity: 1,
+  }),
+  // Polished brass, brighter than M.brass: the porthole ring, the dogs and the
+  // lamp stems are the only things in the room anyone looks at up close.
+  brassPolished: new THREE.MeshStandardMaterial({
+    color: 0xe6c274, roughness: 0.22, metalness: 0.72,
+    emissive: 0x2a1d06, emissiveIntensity: 1,
+  }),
+  brassDark: new THREE.MeshStandardMaterial({
+    color: 0x8a6a30, roughness: 0.42, metalness: 0.6,
+  }),
+  // The view through the glass. The map is swapped between the day and the
+  // night plate by setCruiseTime; the emissive is the same map, so the disc
+  // carries its own light and stays a WINDOW rather than a dark coin when the
+  // cabin's own lamps are the only source.
+  portholeView: new THREE.MeshStandardMaterial({
+    map: portholeDayTex, emissiveMap: portholeDayTex,
+    emissive: 0xffffff, emissiveIntensity: 0.55,
+    roughness: 0.14, metalness: 0.05, side: THREE.DoubleSide,
+  }),
+  // A real looking glass, not the ship's window glass: the old cabin used
+  // M.glass for its mirror, which is why the wall over the desk was a sheet of
+  // pale blue.
+  // A looking glass. Metalness stays LOW for the reason M.gilt's does: this
+  // map runs environmentIntensity at 0.55 by day and 0.14 at night, and a
+  // mirror with nothing to reflect renders BLACK — at 0.9 the dressing table's
+  // triple glass was three navy holes cut in the forward bulkhead.
+  mirrorGlass: new THREE.MeshStandardMaterial({
+    map: mirrorTex, color: 0xd6e2e2, roughness: 0.10, metalness: 0.28,
+    emissive: 0x2a3236, emissiveIntensity: 1, side: THREE.DoubleSide,
+  }),
+  // Upholstery. Rose-taupe velvet against the carpet's aubergine, and a
+  // bottle-green leather for the writing chair.
+  velvetRose: new THREE.MeshStandardMaterial({ color: 0x7c4148, roughness: 0.93 }),
+  velvetRoseDeep: new THREE.MeshStandardMaterial({ color: 0x4e262c, roughness: 0.94 }),
+  // Steamer-trunk leather and its canvas, for the luggage at the foot.
+  trunkLeather: new THREE.MeshStandardMaterial({ color: 0x5c3a22, roughness: 0.58 }),
+  trunkCanvas: new THREE.MeshStandardMaterial({ color: 0xc4ad82, roughness: 0.94 }),
 };
 
 // ---------------------------------------------------------------------------
@@ -1037,6 +1431,15 @@ G.baluster = withUV2(new THREE.LatheGeometry([
 // A shallow flute-and-fillet column shaft. Twenty sides reads as fluting from
 // three metres away, which is as close as anyone gets to these.
 G.columnShaft = withUV2(new THREE.CylinderGeometry(0.5, 0.53, 1, 20).translate(0, 0.5, 0));
+
+// --- Cabin 214's own primitives ----------------------------------------------
+// A flat disc, front face only. The porthole glass and its brass deadlight: a
+// cylinder CAP's UVs run round the axis, so a sea-and-sky view mapped onto one
+// arrives on its side and spinning — a circle's run straight across it.
+G.disc = withUV2(new THREE.CircleGeometry(0.5, 32));
+// A tapered Deco leg: fat at the top, narrow at the foot, hung from its top
+// face so a leg is placed by the thing it holds up rather than by the floor.
+G.taperLeg = withUV2(new THREE.CylinderGeometry(0.5, 0.28, 1, 10).translate(0, -0.5, 0));
 
 // Project deck UVs in metres, so seams align across differently sized slabs.
 M.teak.onBeforeCompile = shader => {
@@ -2196,6 +2599,12 @@ console.log('[cruise] casino room done');
 }
 
 // ---------------------------------------------------------------------------
+// Cabin 214's own point lights. Trimmed between day and night rather than
+// switched, for the same reason the ballroom's are: the suite is on the lower
+// deck with no daylight in it at any hour, so its scheme is concealed cove
+// wash plus lamps around the clock.
+const cabinLights = [];
+
 // Room 3 — the CABIN DECK. A corridor down the centreline with the suites off
 // it. Cabin 214, to starboard, is the only one that opens: it is the way home,
 // and a corridor of doors that all open is a corridor of empty boxes.
@@ -2279,59 +2688,648 @@ console.log('[cruise] casino room done');
     }
   });
 
-  // ---- Cabin 214 ---------------------------------------------------------
-  longSlab(M.cabinCarpet, CAB_X0, CAB_X1, CAB_Z0, CAB_Z1, DECK_Y, F);
+  // ---- Cabin 214 — the first-class stateroom ------------------------------
+  //
+  // Rebuilt to the Queen Mary's standard rather than to a motel's: figured
+  // burr-walnut panelling under a parchment-silk upper wall, a dropped
+  // deckhead with concealed cove lighting, a stepped Deco Axminster, and a
+  // real brass porthole where there used to be a rectangle of the ship's own
+  // window glass hung on the wall like a television.
+  //
+  // Two things were doing most of the damage. The room is a 9.8 × 11.7 m box
+  // with a 3.98 m deckhead — a squash court, and no quantity of furniture put
+  // into a squash court will ever read as feutré — and everything in it was a
+  // flat colour, which at arm's length is exactly what makes an interior read
+  // as a corridor. So the ceiling comes down to 2.50 m, an entrance lobby is
+  // screened off the door, and every surface carries a woven or veneered
+  // pattern.
+  //
+  // Every dimension the rest of the file depends on is UNCHANGED: BED_X,
+  // BED_Z, BED_TOP, BED_W and BED_L still describe the mattress BED_SPOT parks
+  // the player on, so the lie-down and its three-answer prompt are untouched.
+  // The inside FACES of the four bulkheads. RX1 is 12.83 and not the hull's
+  // 13.0: the lower deck carries its own cream bulkhead just inboard of the
+  // hull block, so anything hung on x = 13 — the ship's-side panelling, the
+  // porthole's glass — is buried inside 17 cm of wall and never seen.
+  const RX0 = 3.17, RX1 = SUP_X2 - WALL_T / 2;
+  const RZ0 = 4.17, RZ1 = 15.83;       // inside faces: aft and forward bulkheads
+  const CAB_SOFFIT = DECK_Y + 2.50;    // the deckhead you actually see
+  const CAB_CEIL = DECK_Y + 2.62;      // the top of its slab
+  const LOBBY_Z = 8.2, LOBBY_X = 6.3;  // the screen that makes an entrance hall
+
+  longSlab(M.cabinCarpet, RX0, RX1, RZ0, RZ1, DECK_Y, F);
   // Fore and aft walls of the suite (the corridor wall is already up, and the
-  // hull side is the house's own starboard wall).
+  // ship's side is the hull block's own inner face).
   wallWithHoles(M.cream, 'x', CAB_Z0, WALL_T, CAB_X0, CAB_X1, DECK_Y, CEIL_Y, []);
   wallWithHoles(M.cream, 'x', CAB_Z1, WALL_T, CAB_X0, CAB_X1, DECK_Y, CEIL_Y, []);
+  // The lobby screen. Not decoration: you come in off a corridor of closed
+  // doors, and without it the door opens straight onto twelve metres of empty
+  // carpet with a bed at the far end of it. It is a real wall — the player
+  // walks round its open end at x = LOBBY_X — so it is emitted outside prop().
+  wallWithHoles(M.cream, 'x', LOBBY_Z, 0.20, RX0, LOBBY_X, DECK_Y, CAB_CEIL, []);
+
+  // -------------------------------------------------------------------------
+  // The joinery. One run of this puts up a whole wall: skirting with its brass
+  // bead, a panelled burr dado, the maple rail, parchment silk above it, and
+  // the cornice with the concealed cove behind it.
+  //
+  // The panels are drawn ONE PER BOX, each box carrying a single repeat of
+  // cabinPanelTex, rather than one map stretched down a bulkhead. That is what
+  // makes a panel the same 1.15 m wide on the 9.8 m ship's side as on the
+  // 11.7 m corridor side — stretched, the two walls met at a corner with a
+  // half-metre panel butting a two-metre one.
+  // -------------------------------------------------------------------------
+  function lining(along, face, dir, a0, a1) {
+    const lo = Math.min(a0, a1), hi = Math.max(a0, a1);
+    const n = Math.max(1, Math.round((hi - lo) / 1.15));
+    const step = (hi - lo) / n;
+    // A band of wall: `near`/`far` are depths measured off the structural face
+    // into the room, `p`/`q` the ends of the run, `yA`/`yB` heights off the
+    // carpet.
+    const band = (mat, near, far, yA, yB, p, q) => {
+      const f0 = face + dir * near, f1 = face + dir * far;
+      const c0 = Math.min(f0, f1), c1 = Math.max(f0, f1);
+      if (along === 'x') slab(mat, p, q, c0, c1, DECK_Y + yA, DECK_Y + yB);
+      else slab(mat, c0, c1, p, q, DECK_Y + yA, DECK_Y + yB);
+    };
+    prop(() => {
+      band(M.walnutBurr, 0, 0.055, 0.00, 0.145, lo, hi);        // skirting
+      band(M.brassDark, 0.050, 0.062, 0.145, 0.170, lo, hi);    // its brass bead
+      band(M.cabinSilk, 0, 0.020, 1.46, 2.50, lo, hi);          // parchment silk
+      band(M.giltPale, 0.068, 0.082, 1.295, 1.345, lo, hi);     // gilt under the rail
+      band(M.maple, 0, 0.075, 1.345, 1.46, lo, hi);             // the dado rail
+      // The cornice stops 8 cm SHORT of the deckhead. The trough that leaves is
+      // where the cove strip lives, and from anywhere on the floor you are
+      // looking up at the cornice's underside, so the trough is never in shot.
+      band(M.walnutBurr, 0, 0.12, 2.30, 2.42, lo, hi);
+      band(M.giltPale, 0.113, 0.128, 2.295, 2.335, lo, hi);
+      if (along === 'x')
+        longSlab(M.warmLamp, lo + 0.12, hi - 0.12,
+          face + dir * 0.02, face + dir * 0.09, DECK_Y + 2.43, DECK_Y + 2.465);
+      else
+        longSlab(M.warmLamp, face + dir * 0.02, face + dir * 0.09,
+          lo + 0.12, hi - 0.12, DECK_Y + 2.43, DECK_Y + 2.465);
+      // Panels and the stiles between them.
+      for (let i = 0; i < n; i++) {
+        const q0 = lo + i * step;
+        band(M.cabinPanel, 0, 0.035, 0.145, 1.345, q0 + 0.05, q0 + step - 0.05);
+        band(M.walnutBurr, 0, 0.05, 0.145, 1.345, q0 - 0.05, q0 + 0.05);
+      }
+      band(M.walnutBurr, 0, 0.05, 0.145, 1.345, hi - 0.05, hi + 0.05);
+    });
+  }
+
+  // The corridor side, broken either side of 214's own doorway.
+  lining('z', RX0, 1, RZ0, 4.94);
+  lining('z', RX0, 1, 6.26, RZ1);
+  lining('z', RX1, -1, RZ0, RZ1);          // the ship's side, with the portholes
+  lining('x', RZ0, 1, RX0, RX1);           // aft bulkhead
+  lining('x', RZ1, -1, RX0, RX1);          // forward bulkhead
+  lining('x', LOBBY_Z - 0.10, -1, RX0, LOBBY_X);   // the screen, lobby face
+  lining('x', LOBBY_Z + 0.10, 1, RX0, LOBBY_X);    // the screen, room face
+  // The screen's free end, capped as a pilaster so it does not read as a wall
+  // sliced through with a knife.
+  prop(() => {
+    box(M.walnutBurr, LOBBY_X + 0.09, DECK_Y + 1.31, LOBBY_Z, 0.18, 2.62, 0.46);
+    box(M.giltPale, LOBBY_X + 0.09, DECK_Y + 1.36, LOBBY_Z, 0.20, 0.03, 0.48);
+    shape(G.cyl, M.brassPolished, LOBBY_X + 0.09, DECK_Y + 2.66, LOBBY_Z, 0.22, 0.08, 0.5);
+  });
+
+  // -------------------------------------------------------------------------
+  // The deckhead, dropped to 2.50 m over the whole suite.
+  // -------------------------------------------------------------------------
+  prop(() => {
+    longSlab(M.cabinDeckhead, RX0 - 0.05, RX1 + 0.05, RZ0 - 0.05, RZ1 + 0.05,
+      CAB_SOFFIT, CAB_CEIL);
+  });
+
+  // A stepped Deco pendant: three frosted tiers on brass rods off a walnut
+  // rose. Hung rather than recessed, because a flush panel in a ceiling is a
+  // lit rectangle and this room has had enough of those.
+  function pendant(px, pz, scale) {
+    prop(() => {
+      shape(G.cyl32, M.walnutBurr, px, CAB_SOFFIT - 0.04, pz, 0.42 * scale, 0.07, 0.42 * scale);
+      shape(G.ring, M.giltPale, px, CAB_SOFFIT - 0.08, pz, 0.44 * scale, 2.4, 0.44 * scale);
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2 + 0.4;
+        shape(G.cyl, M.brassPolished, px + Math.cos(a) * 0.24 * scale, CAB_SOFFIT - 0.26,
+          pz + Math.sin(a) * 0.24 * scale, 0.022, 0.44, 0.022);
+      }
+      const tiers = [[0.94, 0.50], [0.72, 0.58], [0.50, 0.65]];
+      for (const [d, y] of tiers) {
+        shape(G.cyl32, M.silkShade, px, CAB_SOFFIT - y, pz, d * scale, 0.085, d * scale);
+        shape(G.ring, M.brassPolished, px, CAB_SOFFIT - y - 0.05, pz,
+          d * scale, 1.6, d * scale);
+      }
+      shape(G.sphere, M.brassPolished, px, CAB_SOFFIT - 0.73, pz,
+        0.10, 0.13, 0.10);
+    });
+  }
+  pendant(8.6, 9.6, 1.0);
+  pendant(9.4, 14.5, 0.82);
+  pendant(4.7, 6.3, 0.72);
+
+  // -------------------------------------------------------------------------
+  // The porthole. Built the way a real one is: a brass spigot let into the
+  // ship's side, glass at the back of it, eight dogs round the rim and a
+  // deadlight hinged back against the lining, with a walnut reveal and a pair
+  // of drapes on a brass rod.
+  //
+  // The view is PAINTED. This suite is on the lower deck with a solid hull
+  // block outboard of it, so a hole cut through would look into the inside of
+  // an AABB — and it does not matter, because a real porthole gives you a
+  // 45 cm disc of horizon and nothing else. The plate is swapped between day
+  // and night by setCruiseTime.
+  // -------------------------------------------------------------------------
+  function porthole(cz) {
+    const cy = DECK_Y + 1.86;
+    prop(() => {
+      // The reveal, and the rivets that hold it to the ship's side.
+      shape(G.torus, M.walnutBurr, RX1 - 0.04, cy, cz, 1.00, 1.5, 1.00, { rz: Math.PI / 2 });
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        shape(G.sphere, M.brassDark, RX1 - 0.055, cy + Math.sin(a) * 0.58,
+          cz + Math.cos(a) * 0.58, 0.042, 0.042, 0.026);
+      }
+      // The spigot's throat, then the glass in FRONT of it. G.cyl is capped, so
+      // laid over the glass it is a solid brass coin with the sea sealed up
+      // behind it — which is exactly what the first pass rendered: a gold disc
+      // in a walnut frame, and no horizon anywhere in the room.
+      shape(G.cyl, M.brassDark, RX1 - 0.01, cy, cz, 0.70, 0.14, 0.70, { rz: Math.PI / 2 });
+      shape(G.disc, M.portholeView, RX1 - 0.085, cy, cz, 0.60, 0.60, 1, { ry: -Math.PI / 2 });
+      // The rim the glass is bedded into, and the dogs that clamp it down.
+      shape(G.torus, M.brassPolished, RX1 - 0.105, cy, cz, 0.66, 1.3, 0.66, { rz: Math.PI / 2 });
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+        const dy = cy + Math.sin(a) * 0.36, dz = cz + Math.cos(a) * 0.36;
+        shape(G.cyl, M.brassPolished, RX1 - 0.15, dy, dz, 0.05, 0.16, 0.05, { rz: Math.PI / 2 });
+        shape(G.sphere, M.brassPolished, RX1 - 0.23, dy, dz, 0.075, 0.075, 0.05);
+      }
+      // The deadlight, swung back on its hinge and clipped against the lining.
+      shape(G.cyl, M.brassPolished, RX1 - 0.14, cy, cz - 0.62, 0.60, 0.045, 0.60,
+        { rz: Math.PI / 2, ry: 0.62 });
+      for (const dy of [-0.11, 0.11])
+        shape(G.cyl, M.brassDark, RX1 - 0.10, cy + dy, cz - 0.33, 0.07, 0.09, 0.07,
+          { rx: Math.PI / 2 });
+      // The sill shelf under it, with its brass gallery.
+      box(M.maple, RX1 - 0.15, cy - 0.52, cz, 0.26, 0.045, 1.12);
+      box(M.walnutBurr, RX1 - 0.27, cy - 0.52, cz, 0.03, 0.05, 1.12);
+      for (const dz of [-0.54, 0.54])
+        shape(G.cyl, M.brassPolished, RX1 - 0.21, cy - 0.44, cz + dz, 0.02, 0.14, 0.02);
+      shape(G.cyl, M.brassPolished, RX1 - 0.21, cy - 0.38, cz, 0.02, 1.08, 0.02,
+        { rx: Math.PI / 2 });
+      // Pelmet, rod and a pair of drapes drawn back off the glass.
+      box(M.walnutBurr, RX1 - 0.08, cy + 0.74, cz, 0.15, 0.11, 1.62);
+      box(M.giltPale, RX1 - 0.10, cy + 0.695, cz, 0.14, 0.02, 1.60);
+      shape(G.cyl, M.brassPolished, RX1 - 0.13, cy + 0.64, cz, 0.030, 1.56, 0.030,
+        { rx: Math.PI / 2 });
+      for (const sz of [-1, 1]) {
+        for (let k = 0; k < 4; k++) {
+          shape(G.cyl, k % 2 ? M.velvetRose : M.velvetRoseDeep, RX1 - 0.10 - (k % 2) * 0.022,
+            cy + 0.06, cz + sz * (0.58 + k * 0.058), 0.075, 1.14, 0.075);
+        }
+      }
+    });
+  }
+  porthole(6.6);
+  porthole(14.5);
+
+  // -------------------------------------------------------------------------
+  // Joinery helpers. Everything in the room is drawer-fronted casework in the
+  // same two veneers, so it is worth having them.
+  // -------------------------------------------------------------------------
+  // A brass drawer pull: a bar on two posts. `ax` is the axis the drawer front
+  // faces along — 'x' for casework standing against a fore-and-aft wall.
+  function pull(x, y, z, w, ax, sgn) {
+    if (ax === 'x') {
+      shape(G.cyl, M.brassPolished, x, y, z, 0.028, w, 0.028, { rx: Math.PI / 2 });
+      for (const dz of [-w / 2 + 0.03, w / 2 - 0.03])
+        shape(G.cyl, M.brassPolished, x - sgn * 0.025, y, z + dz, 0.03, 0.06, 0.03,
+          { rz: Math.PI / 2 });
+    } else {
+      shape(G.cyl, M.brassPolished, x, y, z, 0.028, w, 0.028, { rz: Math.PI / 2 });
+      for (const dx of [-w / 2 + 0.03, w / 2 - 0.03])
+        shape(G.cyl, M.brassPolished, x + dx, y, z - sgn * 0.025, 0.03, 0.06, 0.03,
+          { rx: Math.PI / 2 });
+    }
+  }
+  // A table lamp: turned brass column, silk shade, and a warm core so the
+  // shade is lit from inside rather than painted pale.
+  function tableLamp(x, y, z, scale) {
+    shape(G.cyl32, M.brassDark, x, y + 0.015 * scale, z, 0.20 * scale, 0.03 * scale, 0.20 * scale);
+    shape(G.cylBase, M.brassPolished, x, y + 0.02 * scale, z, 0.055 * scale, 0.30 * scale, 0.055 * scale);
+    shape(G.sphere, M.brassPolished, x, y + 0.20 * scale, z, 0.11 * scale, 0.13 * scale, 0.11 * scale);
+    shape(G.cyl32, M.silkShade, x, y + 0.42 * scale, z, 0.34 * scale, 0.26 * scale, 0.34 * scale);
+    shape(G.cyl32, M.warmLampBright, x, y + 0.40 * scale, z, 0.16 * scale, 0.18 * scale, 0.16 * scale);
+    shape(G.ring, M.brassPolished, x, y + 0.55 * scale, z, 0.30 * scale, 1.4, 0.30 * scale);
+  }
+  // A framed picture. Drawn into its own canvas, because a print is a PATTERN
+  // and the alternative is a brown rectangle nailed to the wall. `ax`/`sgn`
+  // give the wall's outward normal: a frame is thin along THAT, and passing a
+  // yaw to box() instead swings the thin axis flat into the bulkhead.
+  function framed(x, y, z, w, hgt, ax, sgn, draw) {
+    const art = canvasMat(192, 144, draw, { roughness: 0.6 });
+    // The print stands PROUD of the gilt liner. Set flush with it the liner
+    // won by a millimetre and both pictures in the suite hung as blank cream
+    // rectangles in a walnut surround.
+    if (ax === 'x') {
+      box(M.walnutBurr, x, y, z, 0.05, hgt + 0.13, w + 0.13);
+      box(M.giltPale, x, y, z, 0.054, hgt + 0.05, w + 0.05);
+      shape(G.card, art, x + sgn * 0.05, y, z, w, hgt, 1, { ry: sgn * Math.PI / 2 });
+    } else {
+      box(M.walnutBurr, x, y, z, w + 0.13, hgt + 0.13, 0.05);
+      box(M.giltPale, x, y, z, w + 0.05, hgt + 0.05, 0.054);
+      shape(G.card, art, x, y, z + sgn * 0.05, w, hgt, 1, { ry: sgn > 0 ? 0 : Math.PI });
+    }
+  }
 
   prop(() => {
-    // The bed. Base, mattress, duvet, a runner across the foot, two pillows
-    // and a padded headboard against the forward bulkhead.
-    box(M.darkWood, BED_X, DECK_Y + 0.22, BED_Z, BED_W + 0.16, 0.44, BED_L + 0.16);
-    box(M.linen, BED_X, DECK_Y + 0.55, BED_Z, BED_W, 0.24, BED_L);
-    box(M.duvet, BED_X, BED_TOP - 0.02, BED_Z - 0.15, BED_W + 0.06, 0.14, BED_L - 0.3);
-    box(M.bedRunner, BED_X, BED_TOP + 0.02, BED_Z - BED_L / 2 + 0.35, BED_W + 0.08, 0.08, 0.62);
-    for (const dx of [-0.46, 0.46])
-      box(M.pillow, BED_X + dx, BED_TOP + 0.08, BED_Z + BED_L / 2 - 0.34, 0.82, 0.18, 0.5);
-    box(M.velvetGold, BED_X, DECK_Y + 1.15, BED_Z + BED_L / 2 + 0.16, BED_W + 0.3, 1.5, 0.14);
+    // ---- The bed ---------------------------------------------------------
+    // A divan on a recessed plinth so it floats a little, a quilted
+    // counterpane, a turned-down sheet and four pillows against a bedhead that
+    // spans the nightstands. The old bed was a plinth, a slab and a gold box.
+    box(M.brassDark, BED_X, DECK_Y + 0.075, BED_Z, BED_W - 0.24, 0.15, BED_L - 0.24);
+    box(M.walnutBurr, BED_X, DECK_Y + 0.30, BED_Z, BED_W + 0.14, 0.30, BED_L + 0.14);
+    box(M.giltPale, BED_X, DECK_Y + 0.435, BED_Z, BED_W + 0.17, 0.025, BED_L + 0.17);
+    box(M.linen, BED_X, DECK_Y + 0.54, BED_Z, BED_W, 0.24, BED_L);
+    // The counterpane, over everything but the turn-down at the head.
+    box(M.counterpane, BED_X, DECK_Y + 0.685, BED_Z - 0.26, BED_W + 0.09, 0.075, BED_L - 0.52);
+    box(M.counterpane, BED_X, DECK_Y + 0.52, BED_Z - BED_L / 2 + 0.06, BED_W + 0.09, 0.30, 0.10);
+    // The turn-down: a band of white sheet folded back over the counterpane.
+    box(M.linen, BED_X, DECK_Y + 0.70, BED_Z + 0.30, BED_W + 0.06, 0.055, 0.44);
+    // A velvet runner across the foot, which is what a ship's bed always has.
+    box(M.velvetRoseDeep, BED_X, DECK_Y + 0.725, BED_Z - BED_L / 2 + 0.42, BED_W + 0.12, 0.055, 0.66);
+    box(M.giltPale, BED_X, DECK_Y + 0.754, BED_Z - BED_L / 2 + 0.42, BED_W + 0.13, 0.006, 0.60);
+    // Pillows: two square ones standing against the bedhead, two soft ones in
+    // front, and a bolster across.
+    for (const dx of [-0.48, 0.48]) {
+      box(M.pillow, BED_X + dx, DECK_Y + 0.90, BED_Z + BED_L / 2 - 0.14, 0.86, 0.42, 0.16);
+      box(M.pillow, BED_X + dx, DECK_Y + 0.755, BED_Z + BED_L / 2 - 0.40, 0.84, 0.16, 0.44);
+    }
+    shape(G.cyl, M.velvetRose, BED_X, DECK_Y + 0.79, BED_Z + BED_L / 2 - 0.66,
+      0.20, 1.72, 0.20, { rz: Math.PI / 2 });
 
-    // Nightstands and their lamps, one either side of the headboard.
-    for (const dx of [-1.35, 1.35]) {
-      box(M.darkWood, BED_X + dx, DECK_Y + 0.28, BED_Z + BED_L / 2 - 0.25, 0.6, 0.56, 0.6);
-      shape(G.cylBase, M.brass, BED_X + dx, DECK_Y + 0.56, BED_Z + BED_L / 2 - 0.25,
-        0.07, 0.34, 0.07);
-      shape(G.cone, M.lamp, BED_X + dx, DECK_Y + 0.88, BED_Z + BED_L / 2 - 0.25,
-        0.46, 0.36, 0.46);
+    // ---- The bedhead -----------------------------------------------------
+    // Free-standing, spanning both nightstands: a veneered carcase with a
+    // channel-tufted velvet centre and the reading lamps growing out of it.
+    const HZ = BED_Z + BED_L / 2 + 0.19;      // 12.89
+    box(M.walnutBurr, BED_X, DECK_Y + 0.78, HZ, 3.74, 1.56, 0.20);
+    box(M.maple, BED_X, DECK_Y + 1.585, HZ, 3.86, 0.09, 0.28);
+    box(M.giltPale, BED_X, DECK_Y + 1.535, HZ, 3.80, 0.025, 0.30);
+    // The tufted centre, built as flutes: nine flattened cylinders, which is
+    // what channel tufting actually is and what a flat velvet box never is.
+    for (let i = 0; i < 9; i++) {
+      const fx = BED_X - 0.96 + i * 0.24;
+      shape(G.cyl, M.velvetRose, fx, DECK_Y + 0.92, HZ - 0.13, 0.225, 1.02, 0.16);
+    }
+    box(M.giltPale, BED_X, DECK_Y + 0.92, HZ - 0.115, 2.30, 1.10, 0.012);
+    box(M.walnutBurr, BED_X, DECK_Y + 0.92, HZ - 0.10, 2.24, 1.04, 0.012);
+    // The maple side panels, with their inlay banding.
+    for (const sx of [-1, 1]) {
+      box(M.maple, BED_X + sx * 1.53, DECK_Y + 0.92, HZ - 0.115, 0.60, 1.16, 0.03);
+      box(M.giltPale, BED_X + sx * 1.53, DECK_Y + 0.92, HZ - 0.13, 0.50, 1.02, 0.008);
     }
 
-    // Wardrobe against the corridor wall, and a luggage bench at the foot.
-    box(M.darkWood, CAB_X0 + 0.42, DECK_Y + 1.15, 13.2, 0.7, 2.3, 2.6);
-    for (const dz of [12.6, 13.8])
-      shape(G.cyl, M.brass, CAB_X0 + 0.79, DECK_Y + 1.15, dz, 0.05, 0.12, 0.05,
+    // ---- Nightstands and their lamps -------------------------------------
+    for (const dx of [-1.35, 1.35]) {
+      const nx = BED_X + dx, nz = BED_Z + BED_L / 2 - 0.36;
+      box(M.brassDark, nx, DECK_Y + 0.06, nz, 0.50, 0.12, 0.48);
+      box(M.walnutBurr, nx, DECK_Y + 0.36, nz, 0.62, 0.48, 0.58);
+      box(M.maple, nx, DECK_Y + 0.615, nz, 0.68, 0.04, 0.64);
+      box(M.giltPale, nx, DECK_Y + 0.592, nz, 0.66, 0.008, 0.62);
+      for (const dy of [0.22, 0.47]) {
+        box(M.cabinPanel, nx, DECK_Y + dy, nz - 0.295, 0.50, 0.19, 0.02);
+        pull(nx, DECK_Y + dy, nz - 0.315, 0.22, 'z', -1);
+      }
+      tableLamp(nx, DECK_Y + 0.635, nz, 0.92);
+      // A book on one, a glass of water on the other.
+      if (dx < 0) {
+        box(M.velvetCrimson, nx + 0.16, DECK_Y + 0.665, nz - 0.16, 0.16, 0.04, 0.22, 0.4);
+        box(M.linen, nx + 0.16, DECK_Y + 0.687, nz - 0.16, 0.14, 0.006, 0.20, 0.4);
+      } else {
+        shape(G.cyl, M.crystalGlass, nx - 0.17, DECK_Y + 0.695, nz - 0.16, 0.09, 0.14, 0.09);
+      }
+      // The reading lamp, on a swan neck out of the bedhead.
+      shape(G.cyl, M.brassPolished, nx, DECK_Y + 1.30, HZ - 0.10, 0.03, 0.22, 0.03,
+        { rx: Math.PI / 2 });
+      shape(G.cone, M.silkShade, nx, DECK_Y + 1.36, HZ - 0.28, 0.24, 0.20, 0.24,
+        { rx: Math.PI });
+      shape(G.sphere, M.warmLampBright, nx, DECK_Y + 1.30, HZ - 0.30, 0.11, 0.11, 0.11);
+    }
+
+    // ---- The steamer trunk at the foot ------------------------------------
+    // Canvas over a leather-bound frame with brass corners: it is a liner, and
+    // the old luggage bench was a plank on a box.
+    {
+      const tz = 9.78, TY = DECK_Y + 0.28;
+      // Canvas body, leather-bound at every edge, with wooden battens: a
+      // steamer trunk is a BOX MADE OF BANDS, and without them it is a slab.
+      box(M.trunkCanvas, BED_X, TY, tz, 1.26, 0.40, 0.54);
+      box(M.trunkLeather, BED_X, TY, tz, 1.20, 0.42, 0.56);
+      box(M.trunkLeather, BED_X, TY, tz, 1.28, 0.36, 0.50);
+      for (const dx of [-0.63, 0.63])            // the ends
+        box(M.trunkLeather, BED_X + dx, TY, tz, 0.06, 0.44, 0.58);
+      for (const dx of [-0.30, 0.30])            // the battens
+        box(M.midWood, BED_X + dx, TY, tz, 0.09, 0.44, 0.58);
+      // The lid, a shade proud of the body all round.
+      box(M.trunkLeather, BED_X, DECK_Y + 0.535, tz, 1.32, 0.11, 0.60);
+      box(M.trunkCanvas, BED_X, DECK_Y + 0.545, tz, 1.16, 0.08, 0.46);
+      box(M.brassDark, BED_X, DECK_Y + 0.475, tz, 1.34, 0.03, 0.62);
+      // Brass corner caps, the lock plate and its two catches.
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        shape(G.sphere, M.brassDark, BED_X + sx * 0.64, DECK_Y + 0.575, tz + sz * 0.29,
+          0.08, 0.07, 0.08);
+        shape(G.sphere, M.brassDark, BED_X + sx * 0.64, DECK_Y + 0.075, tz + sz * 0.29,
+          0.08, 0.07, 0.08);
+      }
+      box(M.brassPolished, BED_X, DECK_Y + 0.45, tz - 0.285, 0.20, 0.16, 0.03);
+      for (const dx of [-0.42, 0.42])
+        box(M.brassPolished, BED_X + dx, DECK_Y + 0.47, tz - 0.285, 0.10, 0.13, 0.03);
+      // Two straps over the lid, and the handle on the near end.
+      for (const dx of [-0.42, 0.42])
+        box(M.trunkLeather, BED_X + dx, DECK_Y + 0.545, tz, 0.09, 0.10, 0.62);
+      shape(G.cyl, M.trunkLeather, BED_X + 0.78, DECK_Y + 0.30, tz, 0.05, 0.26, 0.05,
         { rz: Math.PI / 2 });
-    box(M.midWood, BED_X, DECK_Y + 0.24, BED_Z - BED_L / 2 - 0.75, 1.7, 0.48, 0.55);
+      // A folded travelling rug thrown over one end of the lid.
+      box(M.velvetRoseDeep, BED_X - 0.34, DECK_Y + 0.615, tz, 0.50, 0.09, 0.46, 0.1);
+      box(M.velvetRose, BED_X - 0.34, DECK_Y + 0.66, tz, 0.46, 0.04, 0.42, 0.1);
+    }
 
-    // Desk and chair under the window; a mirror over the desk.
-    box(M.darkWood, CAB_X1 - 0.55, DECK_Y + 0.72, 6.4, 0.75, 0.08, 2.4);
-    for (const dz of [5.4, 7.4])
-      box(M.darkWood, CAB_X1 - 0.55, DECK_Y + 0.36, dz, 0.7, 0.72, 0.08);
-    box(M.velvetRed, CAB_X1 - 1.35, DECK_Y + 0.44, 6.4, 0.5, 0.1, 0.5);
-    box(M.darkWood, CAB_X1 - 1.58, DECK_Y + 0.75, 6.4, 0.08, 0.72, 0.5);
-    shape(G.card, M.glass, CAB_X1 - 0.16, DECK_Y + 1.6, 6.4, 1.6, 1.1, 1, { ry: -Math.PI / 2 });
+    // ---- The writing desk under the aft porthole --------------------------
+    {
+      const dz = 6.6, dx = RX1 - 0.43;
+      box(M.maple, dx, DECK_Y + 0.735, dz, 0.70, 0.05, 1.62);
+      box(M.walnutBurr, dx, DECK_Y + 0.70, dz, 0.72, 0.03, 1.64);
+      box(M.leatherBurgundy, dx + 0.02, DECK_Y + 0.762, dz, 0.46, 0.006, 1.10);
+      box(M.giltPale, dx + 0.02, DECK_Y + 0.763, dz, 0.50, 0.004, 1.16);
+      // A three-drawer pedestal one side, tapered legs the other.
+      box(M.walnutBurr, dx + 0.06, DECK_Y + 0.355, dz - 0.56, 0.58, 0.71, 0.46);
+      for (let k = 0; k < 3; k++) {
+        box(M.cabinPanel, dx - 0.235, DECK_Y + 0.16 + k * 0.21, dz - 0.56, 0.02, 0.17, 0.40);
+        pull(dx - 0.255, DECK_Y + 0.16 + k * 0.21, dz - 0.56, 0.20, 'x', -1);
+      }
+      for (const lx of [dx - 0.28, dx + 0.28])
+        shape(G.taperLeg, M.walnutBurr, lx, DECK_Y + 0.71, dz + 0.72, 0.075, 0.71, 0.075);
+      // A brass lamp, a blotter and an open letter.
+      tableLamp(dx + 0.16, DECK_Y + 0.762, dz + 0.52, 0.86);
+      box(M.linen, dx - 0.02, DECK_Y + 0.768, dz - 0.10, 0.26, 0.004, 0.20, -0.25);
+      shape(G.cyl, M.brassDark, dx + 0.20, DECK_Y + 0.79, dz - 0.34, 0.07, 0.06, 0.07);
 
-    // An armchair and a low table by the window, facing out.
-    box(M.velvetRed, CAB_X1 - 1.6, DECK_Y + 0.3, 9.6, 0.9, 0.44, 0.9);
-    box(M.velvetRed, CAB_X1 - 1.25, DECK_Y + 0.72, 9.6, 0.2, 0.56, 0.9);
-    box(M.darkWood, CAB_X1 - 2.7, DECK_Y + 0.36, 9.6, 0.6, 0.07, 0.6);
+      // The writing chair, on four real legs. The old one was a velvet pad
+      // hanging 44 cm off the carpet with a plank behind it.
+      const cx = 11.72;
+      for (const sx of [-1, 1]) for (const sz of [-1, 1])
+        shape(G.taperLeg, M.walnutBurr, cx + sx * 0.20, DECK_Y + 0.44, dz + sz * 0.20,
+          0.062, 0.44, 0.062);
+      box(M.walnutBurr, cx, DECK_Y + 0.455, dz, 0.50, 0.05, 0.50);
+      box(M.velvetRose, cx, DECK_Y + 0.515, dz, 0.46, 0.09, 0.46);
+      box(M.giltPale, cx, DECK_Y + 0.478, dz, 0.51, 0.008, 0.51);
+      for (const sz of [-1, 1])
+        box(M.walnutBurr, cx - 0.21, DECK_Y + 0.72, dz + sz * 0.21, 0.05, 0.58, 0.05);
+      box(M.walnutBurr, cx - 0.21, DECK_Y + 0.99, dz, 0.06, 0.11, 0.48);
+      box(M.velvetRose, cx - 0.195, DECK_Y + 0.80, dz, 0.04, 0.24, 0.40);
+      for (const sz of [-0.12, 0, 0.12])
+        box(M.walnutBurr, cx - 0.21, DECK_Y + 0.66, dz + sz, 0.04, 0.24, 0.05);
+    }
 
-    // Ceiling light.
-    box(M.lamp, BED_X, CEIL_Y - 0.09, 9.4, 1.2, 0.07, 1.2);
+    // ---- The lounge end, under the forward porthole -----------------------
+    {
+      // A club armchair: plinth, sprung seat, scrolled arms, buttoned back.
+      const ax = 11.55, az = 14.5;
+      box(M.walnutBurr, ax, DECK_Y + 0.09, az, 0.92, 0.18, 0.94);
+      box(M.velvetRose, ax, DECK_Y + 0.31, az, 0.96, 0.30, 0.98);
+      box(M.velvetRoseDeep, ax, DECK_Y + 0.48, az, 0.78, 0.14, 0.82);
+      box(M.velvetRose, ax + 0.36, DECK_Y + 0.72, az, 0.26, 0.62, 0.98);
+      for (let k = 0; k < 3; k++)
+        shape(G.sphere, M.velvetRoseDeep, ax + 0.235, DECK_Y + 0.62 + k * 0.16, az,
+          0.05, 0.05, 0.05);
+      for (const sz of [-1, 1]) {
+        box(M.velvetRose, ax - 0.06, DECK_Y + 0.50, az + sz * 0.42, 0.78, 0.36, 0.16);
+        shape(G.cyl, M.velvetRose, ax - 0.42, DECK_Y + 0.60, az + sz * 0.42,
+          0.18, 0.16, 0.18, { rx: Math.PI / 2 });
+      }
+      box(M.giltPale, ax, DECK_Y + 0.185, az, 0.94, 0.02, 0.96);
+
+      // A round occasional table with a brass gallery, and a decanter on it.
+      const tx = 10.9, tz2 = 13.3;
+      shape(G.cyl32, M.walnutBurr, tx, DECK_Y + 0.545, tz2, 0.62, 0.05, 0.62);
+      shape(G.ring, M.brassPolished, tx, DECK_Y + 0.575, tz2, 0.64, 1.6, 0.64);
+      shape(G.cylBase, M.walnutBurr, tx, DECK_Y + 0.03, tz2, 0.10, 0.50, 0.10);
+      shape(G.cyl32, M.brassDark, tx, DECK_Y + 0.03, tz2, 0.36, 0.05, 0.36);
+      shape(G.cyl, M.crystalGlass, tx - 0.10, DECK_Y + 0.66, tz2, 0.16, 0.18, 0.16);
+      shape(G.sphere, M.brassPolished, tx - 0.10, DECK_Y + 0.77, tz2, 0.07, 0.07, 0.07);
+      for (const d of [[0.14, 0.10], [0.18, -0.10]])
+        shape(G.cyl, M.crystalGlass, tx + d[0], DECK_Y + 0.615, tz2 + d[1], 0.08, 0.10, 0.08);
+
+      // A standard lamp in the corner, which is where the room's warmth
+      // actually comes from after dark.
+      shape(G.cyl32, M.brassDark, 12.30, DECK_Y + 0.03, 15.30, 0.34, 0.06, 0.34);
+      shape(G.cylBase, M.brassPolished, 12.30, DECK_Y + 0.05, 15.30, 0.055, 1.28, 0.055);
+      shape(G.cyl32, M.silkShade, 12.30, DECK_Y + 1.48, 15.30, 0.56, 0.36, 0.56);
+      shape(G.cyl32, M.warmLampBright, 12.30, DECK_Y + 1.46, 15.30, 0.30, 0.26, 0.30);
+      shape(G.ring, M.brassPolished, 12.30, DECK_Y + 1.66, 15.30, 0.50, 1.6, 0.50);
+    }
+
+    // ---- The dressing table on the forward bulkhead -----------------------
+    {
+      const dx = 5.6, dz = RZ1 - 0.34;
+      box(M.walnutBurr, dx, DECK_Y + 0.71, dz, 1.50, 0.06, 0.52);
+      box(M.maple, dx, DECK_Y + 0.742, dz, 1.44, 0.02, 0.46);
+      for (const sx of [-1, 1]) {
+        box(M.walnutBurr, dx + sx * 0.58, DECK_Y + 0.34, dz, 0.34, 0.68, 0.48);
+        for (let k = 0; k < 2; k++) {
+          box(M.cabinPanel, dx + sx * 0.58, DECK_Y + 0.22 + k * 0.26, dz - 0.245, 0.28, 0.22, 0.02);
+          pull(dx + sx * 0.58, DECK_Y + 0.22 + k * 0.26, dz - 0.265, 0.18, 'z', -1);
+        }
+      }
+      // The triple looking glass: a tall centre with two canted wings.
+      box(M.walnutBurr, dx, DECK_Y + 1.30, dz + 0.14, 0.86, 1.06, 0.05);
+      shape(G.card, M.mirrorGlass, dx, DECK_Y + 1.30, dz + 0.11, 0.74, 0.94, 1, { ry: Math.PI });
+      for (const sx of [-1, 1]) {
+        box(M.walnutBurr, dx + sx * 0.66, DECK_Y + 1.20, dz + 0.02, 0.46, 0.82, 0.05, sx * 0.42);
+        shape(G.card, M.mirrorGlass, dx + sx * 0.655, DECK_Y + 1.20, dz - 0.01,
+          0.38, 0.72, 1, { ry: Math.PI + sx * 0.42 });
+      }
+      box(M.giltPale, dx, DECK_Y + 1.855, dz + 0.14, 0.92, 0.03, 0.07);
+      tableLamp(dx + 0.56, DECK_Y + 0.752, dz - 0.06, 0.7);
+      // A brush, a scent bottle and a folded silk scarf.
+      box(M.walnutBurr, dx - 0.34, DECK_Y + 0.772, dz - 0.06, 0.20, 0.04, 0.09, 0.3);
+      shape(G.cyl, M.crystalGlass, dx - 0.06, DECK_Y + 0.80, dz - 0.02, 0.09, 0.11, 0.09);
+      shape(G.sphere, M.giltPale, dx - 0.06, DECK_Y + 0.87, dz - 0.02, 0.05, 0.05, 0.05);
+      box(M.velvetRose, dx + 0.22, DECK_Y + 0.775, dz + 0.06, 0.26, 0.05, 0.18, -0.2);
+
+      // The stool, on four tapered legs with a buttoned top.
+      const sz2 = dz - 0.86;
+      for (const sx of [-1, 1]) for (const sd of [-1, 1])
+        shape(G.taperLeg, M.walnutBurr, dx + sx * 0.22, DECK_Y + 0.42, sz2 + sd * 0.16,
+          0.058, 0.42, 0.058);
+      box(M.walnutBurr, dx, DECK_Y + 0.435, sz2, 0.58, 0.05, 0.40);
+      box(M.velvetRose, dx, DECK_Y + 0.50, sz2, 0.56, 0.10, 0.38);
+      for (const sx of [-0.16, 0.16])
+        shape(G.sphere, M.velvetRoseDeep, dx + sx, DECK_Y + 0.545, sz2, 0.05, 0.03, 0.05);
+    }
+
+    // ---- The chest of drawers on the corridor side ------------------------
+    {
+      const cx = RX0 + 0.58, cz = 13.1;
+      box(M.brassDark, cx, DECK_Y + 0.06, cz, 0.90, 0.12, 1.30);
+      box(M.walnutBurr, cx, DECK_Y + 0.55, cz, 0.96, 0.86, 1.36);
+      box(M.maple, cx, DECK_Y + 1.00, cz, 1.02, 0.05, 1.42);
+      box(M.giltPale, cx, DECK_Y + 0.972, cz, 1.00, 0.008, 1.40);
+      for (let k = 0; k < 3; k++) {
+        box(M.cabinPanel, cx + 0.49, DECK_Y + 0.28 + k * 0.26, cz, 0.02, 0.22, 1.20);
+        pull(cx + 0.51, DECK_Y + 0.28 + k * 0.26, cz, 0.34, 'x', 1);
+      }
+      // A ship's clock and an aneroid barometer over it — the pair a liner
+      // always carries, and the reason this wall is not just a chest.
+      for (const [dz2, isClock] of [[-0.34, true], [0.34, false]]) {
+        const face = canvasMat(160, 160, (g, W, H) => {
+          g.fillStyle = '#f2e8d2';
+          g.beginPath(); g.arc(W / 2, H / 2, W * 0.48, 0, Math.PI * 2); g.fill();
+          g.strokeStyle = '#2a1c08';
+          for (let i = 0; i < 12; i++) {
+            const a = (i / 12) * Math.PI * 2;
+            g.lineWidth = i % 3 ? 2 : 4;
+            g.beginPath();
+            g.moveTo(W / 2 + Math.cos(a) * W * 0.40, H / 2 + Math.sin(a) * W * 0.40);
+            g.lineTo(W / 2 + Math.cos(a) * W * 0.45, H / 2 + Math.sin(a) * W * 0.45);
+            g.stroke();
+          }
+          g.lineWidth = 5; g.lineCap = 'round';
+          if (isClock) {
+            g.beginPath(); g.moveTo(W / 2, H / 2); g.lineTo(W / 2 + 34, H / 2 - 20); g.stroke();
+            g.lineWidth = 3.5;
+            g.beginPath(); g.moveTo(W / 2, H / 2); g.lineTo(W / 2 - 12, H / 2 - 52); g.stroke();
+          } else {
+            g.beginPath(); g.moveTo(W / 2, H / 2); g.lineTo(W / 2 + 44, H / 2 - 30); g.stroke();
+          }
+          paintText(g, isClock ? 'PACIFIC EMPRESS' : 'BEAU FIXE', W / 2, H * 0.70, 13, '#6a4a1a');
+          g.fillStyle = '#2a1c08';
+          g.beginPath(); g.arc(W / 2, H / 2, 6, 0, Math.PI * 2); g.fill();
+        }, { roughness: 0.4 });
+        const wx = RX0 + 0.08;          // the WALL, not the front of the chest
+        shape(G.cyl, M.brassPolished, wx, DECK_Y + 1.66, cz + dz2, 0.30, 0.09, 0.30,
+          { rz: Math.PI / 2 });
+        shape(G.disc, face, wx + 0.047, DECK_Y + 1.66, cz + dz2, 0.25, 0.25, 1,
+          { ry: Math.PI / 2 });
+        shape(G.torus, M.brassPolished, wx + 0.042, DECK_Y + 1.66, cz + dz2, 0.30, 1.4, 0.30,
+          { rz: Math.PI / 2 });
+      }
+    }
+
+    // ---- The entrance lobby ----------------------------------------------
+    {
+      // The wardrobe, standing off the aft bulkhead where you drop your coat.
+      const wx = 4.82, wz = RZ0 + 0.44;
+      box(M.brassDark, wx, DECK_Y + 0.07, wz, 2.56, 0.14, 0.58);
+      box(M.walnutBurr, wx, DECK_Y + 1.16, wz, 2.70, 2.04, 0.64);
+      box(M.maple, wx, DECK_Y + 2.235, wz, 2.84, 0.11, 0.72);
+      box(M.giltPale, wx, DECK_Y + 2.165, wz, 2.78, 0.025, 0.70);
+      for (const dx of [-0.88, 0.88]) {
+        box(M.cabinPanel, wx + dx, DECK_Y + 1.16, wz + 0.335, 0.80, 1.86, 0.025);
+        shape(G.cyl, M.brassPolished, wx + dx + (dx > 0 ? -0.34 : 0.34), DECK_Y + 1.10,
+          wz + 0.355, 0.035, 0.24, 0.035);
+      }
+      // The centre door is a looking glass — which is the one thing every
+      // cabin has and this one did not.
+      box(M.walnutBurr, wx, DECK_Y + 1.16, wz + 0.335, 0.82, 1.90, 0.03);
+      shape(G.card, M.mirrorGlass, wx, DECK_Y + 1.16, wz + 0.354, 0.68, 1.74, 1);
+      box(M.giltPale, wx, DECK_Y + 1.16, wz + 0.349, 0.76, 1.82, 0.006);
+
+      // A console against the screen, with the muster notice framed over it.
+      const kx = 4.6, kz = LOBBY_Z - 0.34;
+      box(M.walnutBurr, kx, DECK_Y + 0.73, kz, 1.10, 0.05, 0.38);
+      box(M.maple, kx, DECK_Y + 0.758, kz, 1.04, 0.02, 0.32);
+      for (const sx of [-1, 1])
+        shape(G.taperLeg, M.walnutBurr, kx + sx * 0.46, DECK_Y + 0.71, kz - 0.10,
+          0.07, 0.71, 0.07);
+      box(M.walnutBurr, kx, DECK_Y + 0.40, kz + 0.13, 1.02, 0.10, 0.10);
+      // A bowl for the keys, and a vase of stems.
+      shape(G.cyl32, M.silverPlate, kx - 0.28, DECK_Y + 0.79, kz, 0.22, 0.06, 0.22);
+      shape(G.cyl32, M.crystalGlass, kx + 0.30, DECK_Y + 0.86, kz, 0.14, 0.22, 0.14);
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        shape(G.cyl, M.palmLeafLight, kx + 0.30 + Math.cos(a) * 0.05, DECK_Y + 1.06,
+          kz + Math.sin(a) * 0.05, 0.012, 0.34, 0.012, { rz: Math.cos(a) * 0.2 });
+        shape(G.sphere, M.velvetRose, kx + 0.30 + Math.cos(a) * 0.10, DECK_Y + 1.22,
+          kz + Math.sin(a) * 0.10, 0.07, 0.08, 0.07);
+      }
+      // Coat hooks on the screen, beside the console.
+      for (const dx of [-0.62, -0.30, 0.30, 0.62]) {
+        shape(G.cyl, M.brassPolished, kx + dx, DECK_Y + 1.68, kz + 0.16, 0.03, 0.14, 0.03,
+          { rx: Math.PI / 2 });
+        shape(G.sphere, M.brassPolished, kx + dx, DECK_Y + 1.66, kz + 0.08, 0.055, 0.055, 0.055);
+      }
+      box(M.walnutBurr, kx, DECK_Y + 1.78, kz + 0.20, 1.70, 0.09, 0.06);
+    }
+
+    // ---- Pictures --------------------------------------------------------
+    // A Deco sailing card for the ship, on the lobby screen; a profile of the
+    // Empress herself on the corridor side of the room.
+    framed(RX0 + 0.05, DECK_Y + 1.88, 10.6, 0.82, 1.10, 'x', 1, (g, W, H) => {
+      const sky = g.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, '#1d3b63'); sky.addColorStop(0.55, '#c8763c'); sky.addColorStop(1, '#f0c07a');
+      g.fillStyle = sky; g.fillRect(0, 0, W, H);
+      g.strokeStyle = 'rgba(255,228,168,0.55)';
+      g.lineWidth = 3;
+      for (let i = 0; i < 18; i++) {
+        const a = -Math.PI / 2 + (i - 8.5) * 0.14;
+        g.beginPath();
+        g.moveTo(W / 2, H * 0.52);
+        g.lineTo(W / 2 + Math.cos(a) * W, H * 0.52 + Math.sin(a) * W);
+        g.stroke();
+      }
+      g.fillStyle = '#10233c';
+      g.fillRect(0, H * 0.70, W, H * 0.30);
+      g.fillStyle = '#f2ece0';
+      g.beginPath();
+      g.moveTo(W * 0.14, H * 0.70); g.lineTo(W * 0.86, H * 0.70);
+      g.lineTo(W * 0.78, H * 0.60); g.lineTo(W * 0.22, H * 0.60);
+      g.closePath(); g.fill();
+      for (const [fx, fh] of [[0.36, 0.20], [0.50, 0.22], [0.64, 0.20]]) {
+        g.fillStyle = '#a8362f';
+        g.fillRect(W * fx - 9, H * (0.60 - fh), 18, H * fh);
+        g.fillStyle = '#1b1e24';
+        g.fillRect(W * fx - 9, H * (0.60 - fh), 18, H * 0.04);
+      }
+      paintText(g, 'PACIFIC EMPRESS', W / 2, H * 0.86, 20, '#f0c07a');
+      paintText(g, 'PREMIÈRE CLASSE', W / 2, H * 0.94, 12, '#d8b98a');
+    });
+
   });
-  // The rug goes down OUTSIDE prop(): it is 1 cm of floor, and as a prop it
-  // would be a wall between the door and the bed.
-  box(M.cushionTeal, BED_X + 0.4, F + 0.004, BED_Z - 2.2, 3.2, 0.01, 2.2);
+
+  // The muster card by the door, on the room face of the lobby screen.
+  prop(() => {
+    framed(LOBBY_X - 0.42, DECK_Y + 1.74, LOBBY_Z + 0.13, 0.70, 0.52, 'z', 1, (g, W, H) => {
+      g.fillStyle = '#e8dcc0'; g.fillRect(0, 0, W, H);
+      g.strokeStyle = '#7a1f2c'; g.lineWidth = 4; g.strokeRect(7, 7, W - 14, H - 14);
+      paintText(g, 'CABINE 214', W / 2, H * 0.32, 22, '#2a1c08');
+      paintText(g, 'CANOT No 7 · PONT SUPÉRIEUR', W / 2, H * 0.58, 12, '#5a4020');
+      paintText(g, 'RASSEMBLEMENT AU SIGNAL', W / 2, H * 0.78, 11, '#7a1f2c');
+    });
+  });
+
+  // Five point lights, and they are TRIMMED between day and night rather than
+  // switched: this suite is on the lower deck with no daylight in it at any
+  // hour, so its scheme is cove wash plus lamps around the clock, exactly like
+  // the ballroom's candles.
+  function addCabinLight(x, y, z, color, intensity, dist) {
+    const pl = new THREE.PointLight(color, intensity, dist, 1.0);
+    pl.position.set(x, y, z);
+    pl.userData.base = intensity;
+    scene.add(pl);
+    cabinLights.push(pl);
+  }
+  addCabinLight(8.6, DECK_Y + 2.10, 9.6, 0xffcf94, 11, 10);      // the pendant
+  addCabinLight(9.4, DECK_Y + 1.95, 14.5, 0xffc888, 8, 8);       // the lounge end
+  addCabinLight(BED_X, DECK_Y + 1.25, 12.4, 0xffbd78, 7, 6);     // the bedside pair
+  addCabinLight(12.3, DECK_Y + 1.05, 6.9, 0xffc888, 6, 5.5);     // the desk lamp
+  addCabinLight(4.7, DECK_Y + 1.95, 6.3, 0xffcf94, 6, 6);        // the lobby
+
+  // The rugs go down OUTSIDE prop(): they are 1 cm of floor, and as props they
+  // would be walls between the door and the bed.
+  box(M.cabinRug, BED_X, F + 0.004, 8.9, 3.10, 0.012, 2.10);
+  box(M.cabinRug, 9.2, F + 0.004, 14.4, 3.40, 0.012, 2.40);
 
   // This lower-deck suite is enclosed by its own outer bulkhead.
 }
@@ -3969,6 +4967,19 @@ function setCruiseTime(name) {
   // went out at dawn and the dance floor was lit by the sea through a gap in
   // the drapes.
   for (const l of ballLights) l.intensity = l.userData.base * (cruiseTime === 'night' ? 1 : 0.6);
+  // Cabin 214, on the same principle and for the same reason.
+  for (const l of cabinLights) l.intensity = l.userData.base * (cruiseTime === 'night' ? 1 : 0.62);
+  // What is out of the porthole. The view is a painted plate rather than a
+  // hole in the ship's side, so it has to be SWAPPED at dusk — left on the day
+  // plate it was the one bright blue disc in a room lit by candle-coloured
+  // lamps, and it read as a lightbox rather than as the sea.
+  {
+    const view = cruiseTime === 'night' ? portholeNightTex : portholeDayTex;
+    M.portholeView.map = view;
+    M.portholeView.emissiveMap = view;
+    M.portholeView.emissiveIntensity = cruiseTime === 'night' ? 0.30 : 0.62;
+    M.portholeView.needsUpdate = true;
+  }
   // The leaded screens are a BACKLIT panel, not a window: after dark the sea
   // behind them is black and the glass has to carry its own light, and by day
   // it has to sit over M.glass, which the same dimmer drives to a bright warm
