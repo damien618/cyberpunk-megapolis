@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { Player } from './player.js?v=89';
 import { harmoniseHair } from './hair.js?v=11';
 import { Input } from './input.js';
-import { Controller } from './controller.js?v=8';
+import { Controller } from './controller.js?v=10';
 import { CameraRig } from './cameraRig.js?v=7';
-import { buildCityBoxes } from './cityBoxes.js?v=5';
+import { buildCityBoxes } from './cityBoxes.js?v=6';
 import { loadGuestRig, makeVisitor, rootBoneOf } from './crowd.js?v=57';
 import { buildDesertedIsland, createMarineFauna, updateMarineLife } from './marineLife.js?v=1';
 
@@ -351,7 +351,10 @@ function canvasMat(W, H, draw, opts = {}) {
   });
 }
 function paintText(g, text, x, y, px, fill, stroke) {
+  const maxWidth = x * 2 - px * 0.6;
   g.font = `bold ${px}px "Arial Black", Impact, sans-serif`;
+  const w = g.measureText(text).width;
+  if (w > maxWidth) { px *= maxWidth / w; g.font = `bold ${px}px "Arial Black", Impact, sans-serif`; }
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   if (stroke) { g.lineWidth = Math.max(2, px * 0.08); g.strokeStyle = stroke; g.strokeText(text, x, y); }
@@ -367,6 +370,8 @@ const pick = arr => arr[Math.floor(rnd() * arr.length) % arr.length];
 
 const woodA = tex('./textures/nature/wood_diff.jpg', 3, 1);
 const woodN = ntex('./textures/nature/wood_n.jpg', 3, 1);
+const palmBarkA = tex('./textures/nature/bark_diff.jpg', 2, 4);
+const palmBarkN = ntex('./textures/nature/bark_n.jpg', 2, 4);
 const waterN = ntex('./textures/la/water_normal.jpg', 60, 60);
 const concreteN = ntex('./textures/CP_Concrete_01_N.webp', 8, 2);
 
@@ -378,20 +383,32 @@ const concreteN = ntex('./textures/CP_Concrete_01_N.webp', 8, 2);
 // the way a deck is actually laid, and the way that makes the ship look long.
 // Drawn as horizontal bands they ran athwartships and the promenade read as a
 // boardwalk.
-const teakTex = canvasTex(256, 256, (g, W, H) => {
-  g.fillStyle = '#c9a068';
-  g.fillRect(0, 0, W, H);
+const teakTex = canvasTex(1024, 1024, (g, W, H) => {
+  let state = 731;
+  const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const colors = ['#ae895e', '#b7966c', '#c0a079', '#b18e65', '#bda078', '#ac8a62', '#c3a580', '#b99a70'];
   for (let i = 0; i < 8; i++) {
-    const x = i * (W / 8);
-    g.fillStyle = `rgba(38,22,10,${0.30 + (i % 3) * 0.05})`;
-    g.fillRect(x, 0, 2.5, H);                     // caulking
-    for (let k = 0; k < 26; k++) {                // grain
-      g.fillStyle = `rgba(120,84,48,${0.06 + Math.random() * 0.09})`;
-      g.fillRect(x + 3 + Math.random() * (W / 8 - 6), Math.random() * H,
-        1, 6 + Math.random() * 40);
+    const x = i * 128;
+    g.fillStyle = colors[i]; g.fillRect(x, 0, 128, H);
+    for (let k = 0; k < 200; k++) {
+      const gx = x + 4 + random() * 120;
+      g.strokeStyle = k % 3 ? `rgba(72,44,23,${0.03 + random() * 0.10})` : 'rgba(255,238,202,0.16)';
+      g.lineWidth = 0.5 + random();
+      g.beginPath(); g.moveTo(gx, 0);
+      for (let y = 0; y <= H; y += 32)
+        g.lineTo(gx + Math.sin(y * 0.009 + k) * 1.8, y);
+      g.stroke();
     }
+    // Narrow caulking and staggered end joints; the tile covers 1.44 × 4 m.
+    g.fillStyle = '#554b3b'; g.fillRect(x, 0, 2.5, H);
+    g.fillStyle = 'rgba(244,223,185,0.4)'; g.fillRect(x + 3, 0, 1, H);
+    const joint = ((i * 3) % 8) * 128;
+    g.fillStyle = '#665543'; g.fillRect(x, joint, 128, 2);
   }
-}, 10, 10);
+});
+const teakRelief = teakTex.clone();
+teakRelief.colorSpace = THREE.NoColorSpace;
+teakRelief.needsUpdate = true;
 
 // Ballroom parquet, laid as a chequer of alternating grain.
 const parquetTex = canvasTex(256, 256, (g, W, H) => {
@@ -412,6 +429,89 @@ const parquetTex = canvasTex(256, 256, (g, W, H) => {
     }
   }
 }, 6, 8);
+
+// Ballroom Axminster. The Edwardian saloon carpet the tables stand on: a deep
+// crimson ground, a gold medallion in every repeat, and a strapwork of gold
+// scroll between them. Repeated 7×13 over a 26 × 44 m room, which puts a
+// medallion about every 1.8 m: at 5×9 they were 2.5 m across and the floor
+// read as a row of dinner plates rather than as a woven carpet.
+const ballCarpetTex = canvasTex(512, 512, (g, W, H) => {
+  g.fillStyle = '#4a0d18';
+  g.fillRect(0, 0, W, H);
+  // A woven tooth over the whole ground, so the crimson is a pile and not paint.
+  let state = 20477;
+  const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 4294967296);
+  for (let i = 0; i < 5200; i++) {
+    const x = random() * W, y = random() * H;
+    g.fillStyle = random() < 0.5 ? 'rgba(28,4,10,0.30)' : 'rgba(122,32,48,0.26)';
+    g.fillRect(x, y, 2.4, 2.4);
+  }
+  const S = W / 2;
+  const petal = (cx, cy, r, n, phase, fill) => {
+    g.fillStyle = fill;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + phase;
+      g.beginPath();
+      g.ellipse(cx + Math.cos(a) * r, cy + Math.sin(a) * r, r * 0.52, r * 0.28, a, 0, Math.PI * 2);
+      g.fill();
+    }
+  };
+  for (let i = 0; i < 2; i++) {
+    for (let j = 0; j < 2; j++) {
+      const cx = (i + 0.5) * S, cy = (j + 0.5) * S;
+      // The medallion: a navy cartouche under a gold rosette.
+      const rg = g.createRadialGradient(cx, cy, 6, cx, cy, S * 0.42);
+      rg.addColorStop(0, '#6d1526');
+      rg.addColorStop(0.62, '#3d0b16');
+      rg.addColorStop(1, '#4a0d18');
+      g.fillStyle = rg;
+      g.beginPath(); g.arc(cx, cy, S * 0.42, 0, Math.PI * 2); g.fill();
+      petal(cx, cy, S * 0.27, 8, 0, 'rgba(178,136,52,0.34)');
+      petal(cx, cy, S * 0.16, 6, 0.5, 'rgba(208,168,84,0.5)');
+      g.fillStyle = 'rgba(228,192,110,0.75)';
+      g.beginPath(); g.arc(cx, cy, S * 0.055, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(206,164,72,0.5)';
+      g.lineWidth = 2.4;
+      g.beginPath(); g.arc(cx, cy, S * 0.38, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = 'rgba(206,164,72,0.28)';
+      g.lineWidth = 1.4;
+      g.beginPath(); g.arc(cx, cy, S * 0.44, 0, Math.PI * 2); g.stroke();
+      // Corner scroll, filling the space between four medallions.
+      g.strokeStyle = 'rgba(178,140,60,0.26)';
+      g.lineWidth = 2;
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        g.beginPath();
+        g.arc(cx + sx * S * 0.5, cy + sy * S * 0.5, S * 0.17, 0, Math.PI * 2);
+        g.stroke();
+      }
+    }
+  }
+}, 7, 13);
+
+// Leaded amber glass for the dome and the alcove lights: a lattice of came
+// over warm cathedral glass. Drawn once and used emissive, so the dome reads
+// as lit from above at every hour instead of as a painted ceiling.
+const leadedGlassTex = canvasTex(256, 256, (g, W, H) => {
+  g.fillStyle = '#f0cd88';
+  g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 240; i++) {
+    const x = (i * 37) % W, y = (i * 91) % H;
+    g.fillStyle = i % 3 ? 'rgba(255,242,206,0.30)' : 'rgba(214,158,74,0.26)';
+    g.fillRect(x, y, 22, 22);
+  }
+  g.strokeStyle = 'rgba(96,72,34,0.72)';
+  g.lineWidth = 3;
+  for (let k = 0; k <= 8; k++) {
+    g.beginPath(); g.moveTo(k * W / 8, 0); g.lineTo(k * W / 8, H); g.stroke();
+    g.beginPath(); g.moveTo(0, k * H / 8); g.lineTo(W, k * H / 8); g.stroke();
+  }
+  g.strokeStyle = 'rgba(96,72,34,0.45)';
+  g.lineWidth = 2;
+  for (let k = -8; k <= 8; k++) {
+    g.beginPath(); g.moveTo(k * W / 8, 0); g.lineTo(k * W / 8 + W, H); g.stroke();
+    g.beginPath(); g.moveTo(k * W / 8, H); g.lineTo(k * W / 8 + W, 0); g.stroke();
+  }
+}, 3, 3);
 
 // Casino carpet: opulent rich burgundy damask with art-deco gold flourishes (Casino Royale style)
 const casinoCarpetTex = canvasTex(512, 512, (g, W, H) => {
@@ -664,7 +764,10 @@ const M = {
     color: 0xf2ece0, roughness: 0.72, metalness: 0.04,
   }),
   cream: new THREE.MeshStandardMaterial({ color: 0xe8dcc4, roughness: 0.8 }),
-  teak: new THREE.MeshStandardMaterial({ map: teakTex, roughness: 0.78, metalness: 0 }),
+  teak: new THREE.MeshStandardMaterial({ map: teakTex, bumpMap: teakRelief, bumpScale: 0.008, roughness: 0.82, metalness: 0 }),
+  benchWood: new THREE.MeshStandardMaterial({ map: woodA, normalMap: woodN,
+    normalScale: new THREE.Vector2(0.18, 0.18), color: 0xcba77a, roughness: 0.54 }),
+  benchMetal: new THREE.MeshStandardMaterial({ color: 0x465760, roughness: 0.42, metalness: 0.55 }),
   steel: new THREE.MeshStandardMaterial({ color: 0xcdd3d8, roughness: 0.42, metalness: 0.35 }),
   brass: new THREE.MeshStandardMaterial({ color: 0xd8ae5c, roughness: 0.32, metalness: 0.62 }),
   black: new THREE.MeshStandardMaterial({ color: 0x1b1e24, roughness: 0.5 }),
@@ -694,6 +797,22 @@ const M = {
   cabinCarpet: new THREE.MeshStandardMaterial({ map: cabinCarpetTex, roughness: 0.96 }),
   corridorCarpet: new THREE.MeshStandardMaterial({ map: corridorCarpetTex, roughness: 0.95 }),
   baize: new THREE.MeshStandardMaterial({ color: 0x14603c, roughness: 0.93 }),
+  palmLeaf: new THREE.MeshStandardMaterial({
+    color: 0x245d32, roughness: 0.88, side: THREE.DoubleSide,
+  }),
+  palmLeafLight: new THREE.MeshStandardMaterial({
+    color: 0x3f7d43, roughness: 0.9, side: THREE.DoubleSide,
+  }),
+  palmTrunk: new THREE.MeshStandardMaterial({
+    map: palmBarkA, normalMap: palmBarkN, color: 0x8b6844, roughness: 0.96,
+  }),
+  potCeramic: new THREE.MeshStandardMaterial({
+    color: 0xb8aaa0, roughness: 0.32, metalness: 0.03,
+  }),
+  potRim: new THREE.MeshStandardMaterial({
+    color: 0xd1c6bc, roughness: 0.25, metalness: 0.04,
+  }),
+  potSoil: new THREE.MeshStandardMaterial({ color: 0x24170f, roughness: 1 }),
   rouletteFelt: new THREE.MeshStandardMaterial({ map: rouletteFeltTex, roughness: 0.92 }),
   velvetRed: new THREE.MeshStandardMaterial({ color: 0x7a1f2c, roughness: 0.9 }),
   velvetGold: new THREE.MeshStandardMaterial({ color: 0xb8913f, roughness: 0.72, metalness: 0.2 }),
@@ -742,6 +861,101 @@ const M = {
   // --- Pool ----------------------------------------------------------------
   poolTile: new THREE.MeshStandardMaterial({ color: 0x2aa6c4, roughness: 0.24, metalness: 0.05 }),
   poolCoping: new THREE.MeshStandardMaterial({ color: 0xeae2d2, roughness: 0.7 }),
+
+  // --- Safety equipment ----------------------------------------------------
+  // The orange is deliberately warm and slightly desaturated: it stays
+  // legible in daylight without becoming a pair of flat neon blobs.
+  boatOrange: new THREE.MeshStandardMaterial({ color: 0xe76528, roughness: 0.56, metalness: 0.02 }),
+  boatOrangeLight: new THREE.MeshStandardMaterial({ color: 0xffa45a, roughness: 0.48, metalness: 0.01 }),
+  boatWindow: new THREE.MeshStandardMaterial({
+    color: 0x173b55, roughness: 0.16, metalness: 0.18,
+    emissive: 0x061522, emissiveIntensity: 0.22,
+  }),
+  boatRubber: new THREE.MeshStandardMaterial({ color: 0x20262d, roughness: 0.78 }),
+  boatRope: new THREE.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.94 }),
+
+  // --- The ballroom, Edwardian ---------------------------------------------
+  // Carved oak, cream plaster and water-gilt bronze: the three materials the
+  // whole room is made of, and the reason it reads as 1912 rather than as the
+  // casino with the lights turned up. The oaks are the shared wood maps under
+  // three different stains, so the panelling, the chairs and the stage all
+  // came out of the same tree.
+  oakDark: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, normalScale: new THREE.Vector2(0.4, 0.4),
+    color: 0x53341c, roughness: 0.52, metalness: 0.03,
+  }),
+  oakMid: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, normalScale: new THREE.Vector2(0.35, 0.35),
+    color: 0x7d5228, roughness: 0.5, metalness: 0.03,
+  }),
+  oakPale: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, normalScale: new THREE.Vector2(0.3, 0.3),
+    color: 0xa9793f, roughness: 0.48, metalness: 0.03,
+  }),
+  // Plaster, not the hull's white: warmer, flatter, and with none of the
+  // concrete normal map — under a chandelier that map read as stucco render.
+  plasterCream: new THREE.MeshStandardMaterial({
+    color: 0xe8dabb, roughness: 0.88, emissive: 0x30230f, emissiveIntensity: 1,
+  }),
+  plasterShade: new THREE.MeshStandardMaterial({
+    color: 0xd2bf9b, roughness: 0.9, emissive: 0x2a1d0c, emissiveIntensity: 1,
+  }),
+  // Gilding. Two of them, because real gilt bronze has a burnished face and a
+  // shadowed one, and a single flat gold turns every moulding into a stripe.
+  // Gilding. Metalness is deliberately LOW for gold: this map's environment
+  // intensity is 0.55 by day and 0.14 at night, and a metal with nothing to
+  // reflect renders as dark grey — at 0.85 every gilt bead, capital and rib in
+  // the ballroom came out the colour of lead. Half-metal plus a warm emissive
+  // is what actually reads as water gilding under candlelight.
+  gilt: new THREE.MeshStandardMaterial({
+    color: 0xcaa338, roughness: 0.34, metalness: 0.45,
+    emissive: 0x2b1e06, emissiveIntensity: 1,
+  }),
+  giltPale: new THREE.MeshStandardMaterial({
+    color: 0xedd89e, roughness: 0.3, metalness: 0.38,
+    emissive: 0x33280c, emissiveIntensity: 1,
+  }),
+  ballCarpet: new THREE.MeshStandardMaterial({ map: ballCarpetTex, roughness: 0.96 }),
+  velvetCrimson: new THREE.MeshStandardMaterial({ color: 0x5d1421, roughness: 0.94 }),
+  velvetCrimsonDeep: new THREE.MeshStandardMaterial({ color: 0x3a0b13, roughness: 0.95 }),
+  leatherGreen: new THREE.MeshStandardMaterial({ color: 0x1d4433, roughness: 0.46, metalness: 0.05 }),
+  silverPlate: new THREE.MeshStandardMaterial({ color: 0xdde2e8, roughness: 0.2, metalness: 0.82 }),
+  // Candle light. Held at a fixed intensity rather than joining M.lamp on the
+  // day/night dimmer: the point of this room is that the candles are lit at
+  // noon, with the drapes half drawn over the sea.
+  candleWax: new THREE.MeshStandardMaterial({ color: 0xf5ead2, roughness: 0.72 }),
+  // A silk sconce shade with a candle inside it. Given the plaster's colour it
+  // read as a paper cup: a shade is lit from WITHIN, so it carries its own
+  // warm emissive or it is just a cone.
+  silkShade: new THREE.MeshStandardMaterial({
+    color: 0xf4dcae, roughness: 0.62, emissive: 0xb06a18, emissiveIntensity: 0.75,
+    side: THREE.DoubleSide,
+  }),
+  // Table linen under candlelight, not laundry: M.linen at 0xf6f1e4 made every
+  // cloth in the room a white drum.
+  clothIvory: new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.93 }),
+  candleFlame: new THREE.MeshStandardMaterial({
+    color: 0xfff3d0, emissive: 0xffb545, emissiveIntensity: 2.6, roughness: 0.3,
+  }),
+  // The dome and the alcove lights. DoubleSide because you stand UNDER the
+  // dome and look up at its inner face; front faces only and the ceiling
+  // simply had a hole in it.
+  // The same glass hung across the window band, where it has the sea behind it
+  // rather than a ceiling: transparent enough to keep the horizon, warm enough
+  // that what arrives is candle-coloured. depthWrite off for the reason
+  // M.glass has it off — a transparent panel that writes depth punches a hole
+  // in the sea behind it.
+  leadedWindow: new THREE.MeshStandardMaterial({
+    map: leadedGlassTex, emissiveMap: leadedGlassTex,
+    emissive: 0xffffff, emissiveIntensity: 0.22,
+    roughness: 0.3, metalness: 0.04, side: THREE.DoubleSide,
+    transparent: true, opacity: 0.88, depthWrite: false,
+  }),
+  leadedGlass: new THREE.MeshStandardMaterial({
+    map: leadedGlassTex, emissiveMap: leadedGlassTex,
+    emissive: 0xffffff, emissiveIntensity: 0.85,
+    roughness: 0.35, metalness: 0.05, side: THREE.DoubleSide,
+  }),
 };
 
 // ---------------------------------------------------------------------------
@@ -762,19 +976,110 @@ const G = {
   // Half a capsule on its side: the lifeboats, and the model in the office.
   hull: withUV2(new THREE.SphereGeometry(0.5, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2)
     .rotateX(Math.PI)),
+  // A whole capsule on its side: the enclosed lifeboats. Rounded at both
+  // ends, so bow-on down the promenade it still reads as a boat instead of
+  // the flat-cut plank a stacked hull-plus-lid shows from that angle.
+  lifeboat: withUV2(new THREE.CapsuleGeometry(0.5, 1, 4, 12).rotateX(Math.PI / 2)),
+  // Low rounded cabin laid over the hull. Keeping it as a second primitive
+  // gives the boat a readable shoulder and leaves room for the side windows,
+  // rather than turning the whole rescue craft into one orange blob.
+  lifeboatCabin: withUV2(new THREE.CapsuleGeometry(0.5, 1.1, 4, 12).rotateX(Math.PI / 2)),
   // A funnel is not a cylinder — it rakes aft and is oval in plan.
   funnel: withUV2(new THREE.CylinderGeometry(0.42, 0.5, 1, 20)),
 };
+
+// A tapered, gently arched palm frond. The segmented silhouette catches light
+// like a real leaf and avoids the intersecting rectangular cards used before.
+function palmFrondGeometry() {
+  const segments = 10;
+  const positions = [], uvs = [], indices = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const width = 0.02 + 0.16 * Math.pow(Math.sin(Math.PI * t), 0.7);
+    const y = 0.15 * Math.sin(Math.PI * t) - 0.34 * t * t;
+    for (const side of [-1, 1]) {
+      positions.push(side * width, y, t);
+      uvs.push(side < 0 ? 0 : 1, t);
+    }
+    if (i < segments) {
+      const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return withUV2(geo);
+}
+G.palmFrond = palmFrondGeometry();
+G.palmTrunk = withUV2(new THREE.CylinderGeometry(0.36, 0.5, 1, 14).translate(0, 0.5, 0));
+G.plantPot = withUV2(new THREE.CylinderGeometry(0.43, 0.34, 1, 32));
+
+// --- The ballroom's own primitives -------------------------------------------
+// An upper hemisphere, used for the saloon dome. Hung under the deckhead and
+// seen from below — which is why the material it takes is DoubleSide.
+G.domeUp = withUV2(new THREE.SphereGeometry(0.5, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2));
+// A thin gilt ring: chandelier tiers, dome ribs, jardinière bands.
+G.ring = withUV2(new THREE.TorusGeometry(0.5, 0.035, 6, 32).rotateX(Math.PI / 2));
+// A cut-crystal drop. An octahedron catches a chandelier's light in facets the
+// way a sphere never does, and costs eight triangles to do it.
+G.crystalDrop = withUV2(new THREE.OctahedronGeometry(0.5));
+// A turned baluster, lathed from a profile rather than stacked out of boxes:
+// the entrance balustrade has 40 of them and stacked they were 200 instances.
+G.baluster = withUV2(new THREE.LatheGeometry([
+  [0.20, 0.00], [0.20, 0.05], [0.13, 0.09], [0.13, 0.14], [0.17, 0.20],
+  [0.10, 0.30], [0.075, 0.44], [0.115, 0.56], [0.15, 0.68], [0.13, 0.80],
+  [0.085, 0.86], [0.085, 0.92], [0.16, 0.96], [0.16, 1.00], [0.0, 1.00],
+].map(([r, y]) => new THREE.Vector2(r, y)), 14));
+// A shallow flute-and-fillet column shaft. Twenty sides reads as fluting from
+// three metres away, which is as close as anyone gets to these.
+G.columnShaft = withUV2(new THREE.CylinderGeometry(0.5, 0.53, 1, 20).translate(0, 0.5, 0));
+
+// Project deck UVs in metres, so seams align across differently sized slabs.
+M.teak.onBeforeCompile = shader => {
+  shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', `
+    #include <uv_vertex>
+    vec4 deckPosition = vec4(position, 1.0);
+    #ifdef USE_INSTANCING
+      deckPosition = instanceMatrix * deckPosition;
+    #endif
+    deckPosition = modelMatrix * deckPosition;
+    vMapUv = deckPosition.xz / vec2(1.44, 4.0);
+    vBumpMapUv = vMapUv;
+  `);
+};
+M.teak.customProgramCacheKey = () => 'teak-world-metres-v1';
+
+// Rounded timber with bevels measured in metres, shared by all bench instances.
+function benchTimber(width, height, length) {
+  const r = 0.012;
+  const outline = new THREE.Shape();
+  outline.moveTo(-width / 2 + r, -height / 2 + r);
+  outline.lineTo(width / 2 - r, -height / 2 + r);
+  outline.lineTo(width / 2 - r, height / 2 - r);
+  outline.lineTo(-width / 2 + r, height / 2 - r);
+  outline.closePath();
+  const geo = new THREE.ExtrudeGeometry(outline, { depth: length - 2 * r,
+    bevelEnabled: true, bevelThickness: r, bevelSize: r, bevelSegments: 3, steps: 1 });
+  geo.translate(0, 0, -length / 2 + r);
+  return withUV2(geo);
+}
+const benchSeatSlat = benchTimber(0.095, 0.055, 2.2);
+const benchBackSlat = benchTimber(0.055, 0.10, 2.2);
+const benchArm = benchTimber(0.57, 0.055, 0.075);
 
 const kits = new Map();
 function emit(geo, mat, item) {
   const key = `${geo.uuid}|${mat.uuid}`;
   let k = kits.get(key);
-  if (!k) kits.set(key, (k = { geo, mat, items: [], propFlags: [] }));
+  if (!k) kits.set(key, (k = { geo, mat, items: [], propFlags: [], groundOnlyFlags: [] }));
   k.items.push(item);
   k.propFlags.push(PROP);
+  k.groundOnlyFlags.push(GROUND_ONLY);
 }
-function addInstancedPrimitive(geometry, material, items, propFlags) {
+function addInstancedPrimitive(geometry, material, items, propFlags, groundOnlyFlags) {
   if (!items.length) return null;
   const im = new THREE.InstancedMesh(geometry, material, items.length);
   const m = new THREE.Matrix4();
@@ -795,11 +1100,13 @@ function addInstancedPrimitive(geometry, material, items, propFlags) {
   im.receiveShadow = true;
   im.instanceMatrix.needsUpdate = true;
   if (propFlags?.some(Boolean)) im.userData.prop = propFlags;
+  if (groundOnlyFlags?.some(Boolean)) im.userData.groundOnly = groundOnlyFlags;
   world.add(im);
   return im;
 }
 function flushKits() {
-  for (const k of kits.values()) addInstancedPrimitive(k.geo, k.mat, k.items, k.propFlags);
+  for (const k of kits.values())
+    addInstancedPrimitive(k.geo, k.mat, k.items, k.propFlags, k.groundOnlyFlags);
   kits.clear();
 }
 
@@ -816,12 +1123,21 @@ function frame(x, z, ry, fn) {
 // Scenery you walk AROUND rather than ON. Every table, chair, slot machine and
 // lounger is a prop: without the flag the ground probe stands the player on the
 // roulette table the moment she brushes past it.
-let PROP = false;
+let PROP = false, GROUND_ONLY = false;
 function prop(fn) {
   const outer = PROP;
   PROP = true;
   fn();
   PROP = outer;
+}
+// Walkable geometry that supplies a floor but must not push the player's
+// horizontal capsule. Used by stairs: their stacked boxes otherwise overlap
+// the capsule from behind and shove it over several treads during descent.
+function groundOnly(fn) {
+  const outer = GROUND_ONLY;
+  GROUND_ONLY = true;
+  fn();
+  GROUND_ONLY = outer;
 }
 function box(mat, x, y, z, sx, sy, sz, ry = 0) {
   const c = Math.cos(FR), s = Math.sin(FR);
@@ -1779,12 +2095,43 @@ console.log('[cruise] casino room done');
 
     // Potted palms, because every liner lobby has them.
     for (const [px, pz] of [[-11, -3], [-11, -9.5], [11, -3], [11, -9.5]]) {
-      shape(G.cyl, M.cream, px, DECK_Y + 0.32, pz, 0.72, 0.64, 0.72);
-      shape(G.cylBase, M.darkWood, px, DECK_Y + 0.6, pz, 0.1, 1.1, 0.1);
-      for (let i = 0; i < 9; i++) {
-        const a = (i / 9) * Math.PI * 2;
-        shape(G.card, M.baize, px + Math.sin(a) * 0.5, DECK_Y + 1.6, pz + Math.cos(a) * 0.5,
-          1.5, 0.42, 1, { ry: a, rz: 0.5 });
+      // Tapered ceramic planter, raised rim and visible soil.
+      shape(G.plantPot, M.potCeramic, px, DECK_Y + 0.36, pz, 1.05, 0.72, 1.05);
+      shape(G.torus, M.potRim, px, DECK_Y + 0.72, pz, 1.0, 0.18, 1.0);
+      shape(G.cyl, M.potSoil, px, DECK_Y + 0.705, pz, 0.82, 0.035, 0.82);
+
+      // The trunk is built in tapered sections. Small offsets and collar rings
+      // give it an organic lean and the scars left by old fronds.
+      const trunkBase = DECK_Y + 0.72;
+      const trunkSegments = 5;
+      for (let i = 0; i < trunkSegments; i++) {
+        const t = i / trunkSegments;
+        const x = px + Math.sin(i * 0.8) * 0.025;
+        const z = pz + Math.cos(i * 0.7) * 0.018;
+        const radius = 0.24 - t * 0.07;
+        shape(G.palmTrunk, M.palmTrunk, x, trunkBase + i * 0.25, z,
+          radius, 0.27, radius);
+        if (i > 0)
+          shape(G.torus, M.palmTrunk, x, trunkBase + i * 0.25, z,
+            radius * 1.05, 0.55, radius * 1.05);
+      }
+
+      const crownY = trunkBase + trunkSegments * 0.25;
+      shape(G.sphere, M.palmTrunk, px, crownY - 0.03, pz, 0.30, 0.22, 0.30);
+
+      // Two irregular crowns: broad mature leaves outside, younger upright
+      // leaves within. Every frond curves and droops along its own length.
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * Math.PI * 2 + (i % 2) * 0.11;
+        const length = 1.25 + (i % 4) * 0.11;
+        shape(G.palmFrond, i % 3 ? M.palmLeaf : M.palmLeafLight,
+          px, crownY + (i % 2) * 0.055, pz,
+          1.0, 1.0, length, { ry: a, rz: (i % 3 - 1) * 0.06 });
+      }
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + 0.25;
+        shape(G.palmFrond, M.palmLeafLight, px, crownY + 0.04, pz,
+          0.72, 1.35, 0.82, { ry: a, rx: -0.38 });
       }
     }
   });
@@ -1949,114 +2296,808 @@ console.log('[cruise] casino room done');
 // Room 4 — the BALLROOM, forward. The biggest volume aboard, and the only one
 // built around a single view: you come through the door at the aft end and the
 // whole room runs away from you to the band on the stage.
+//
+// It is an EDWARDIAN saloon, not a modern function room: carved oak below the
+// chair rail, cream plaster above it, water-gilt bronze on every moulding, and
+// a leaded dome over the dance floor. The reference is the Olympic-class first
+// class dining saloon and the grand staircase that led down into it.
+//
+// Ambiance FEUTRÉE. That is a lighting decision before it is a decorating one,
+// and it is made three times over:
+//   · the crimson velvet portières are drawn across the outer third of every
+//     window bay, so daylight arrives as slots between drapes rather than as a
+//     wall of sea. The room is candlelit at noon, which is the whole point.
+//   · nothing in here uses M.lamp, which the day/night dimmer takes down to
+//     0.16 by day. The candles, the sconces and the dome burn at a fixed warm
+//     intensity, and only the five PointLights are trimmed between day and
+//     night — and only from 0.6 to 1.0, never off.
+//   · every emissive is warm amber against crimson and gilt. There is no white
+//     light anywhere in the room.
 // ---------------------------------------------------------------------------
+const ballLights = [];
 {
-  const [z0, z1] = BALL_Z;
+  const [z0, z1] = BALL_Z;                  // 18 → 62
   const F = DECK_Y + 0.02;
-  // A parquet dance floor in the middle, carpet round the edge where the
-  // tables are — which is exactly how the boundary of a dance floor is drawn.
-  longSlab(M.velvetRed, -SUP_X2 + WALL_T, SUP_X2 - WALL_T, z0 + WALL_T, z1 - WALL_T,
-    DECK_Y, F);
-  longSlab(M.parquet, -7.5, 7.5, z0 + 8, z0 + 30, F, F + 0.02);
-  // Brass edging round the floor, so it reads as inlaid rather than as a rug.
-  // Emitted plain, not as a prop — see the atrium's compass rose: a 3 cm strip
-  // marked `prop` is a full-height fence round the dance floor.
-  for (const sx of [-7.6, 7.6]) box(M.brass, sx, F + 0.03, z0 + 19, 0.16, 0.03, 22);
-  for (const sz of [z0 + 7.9, z0 + 30.1]) box(M.brass, 0, F + 0.03, sz, 15.2, 0.03, 0.16);
+  const IX = SUP_X2 - WALL_T / 2;           // 12.83 — inner face of the side wall
+  const LX = IX - 0.13;                     // where the oak lining stands
+  const FX = 7.8;                           // dance floor, half width
+  const FZ0 = z0 + 10, FZ1 = z0 + 30;       // 28 → 48
+  const DOME_Z = (FZ0 + FZ1) / 2;           // 38
+  const DOME_R = 4.9;
+  const SZ = z0 + 36;                       // 54 — stage centre
+  const COL_X = 8.7;                        // the arcade, both sides
+  const TBL_X = 10.9;                       // the ring of dining tables
+  const SILL_A = DECK_Y + 1.15, SILL_B = DECK_Y + 3.7;   // the house's window band
 
-  // The stage, forward, raised two steps with a proscenium over it.
+  function addBallLight(x, y, z, color, intensity, dist) {
+    const pl = new THREE.PointLight(color, intensity, dist, 1.0);
+    pl.position.set(x, y, z);
+    pl.userData.base = intensity;
+    scene.add(pl);
+    ballLights.push(pl);
+  }
+
+  // -------------------------------------------------------------------------
+  // The floor. Axminster over the whole room, a parquet dance floor laid into
+  // the middle of it, and a compass medallion inlaid at the centre of that.
+  //
+  // The carpet reaches the WALL FACE, not the old -SUP_X2 + WALL_T: stopped
+  // 17 cm short it left a band of bare promenade teak showing round the whole
+  // room, under the very skirting that was meant to sit on it.
+  // -------------------------------------------------------------------------
+  longSlab(M.ballCarpet, -IX, IX, z0 + WALL_T / 2, z1 - WALL_T / 2, DECK_Y, F);
+  longSlab(M.parquet, -FX, FX, FZ0, FZ1, F, F + 0.02);
+
+  // The medallion, laid as flat discs. Emitted PLAIN, never as a prop: the
+  // atrium's compass rose learned this the hard way — a 1 cm inlay marked
+  // `prop` is a full-height bollard standing in the middle of the dance floor.
   {
-    const sz = z0 + 36;
-    box(M.darkWood, 0, DECK_Y + 0.3, sz, 15.0, 0.6, 8.0);
-    box(M.midWood, 0, DECK_Y + 0.62, sz, 14.6, 0.04, 7.6);
-    for (let i = 0; i < 2; i++)
-      box(M.darkWood, 0, DECK_Y + 0.1 + i * 0.2, sz - 4.2 - (2 - i) * 0.4,
-        6.0, 0.2, 0.4);
+    const rings = [
+      [5.9, M.gilt], [5.72, M.oakDark], [4.1, M.gilt], [3.94, M.oakPale],
+      [1.7, M.gilt], [1.54, M.oakDark],
+    ];
+    rings.forEach(([r, m], i) => {
+      shape(G.cyl32, m, 0, F + 0.022 + i * 0.0016, DOME_Z, r * 2, 0.006, r * 2);
+    });
+    // Sixteen inlaid rays between the two outer bands, and a gilt star at the
+    // hub, so the medallion reads as marquetry and not as a target.
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      shape(G.box, i % 2 ? M.oakPale : M.gilt,
+        Math.sin(a) * 2.82, F + 0.032, DOME_Z + Math.cos(a) * 2.82,
+        0.30, 0.006, 2.2, { ry: a });
+    }
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+      shape(G.box, M.gilt, Math.sin(a) * 0.72, F + 0.034, DOME_Z + Math.cos(a) * 0.72,
+        0.16, 0.006, 1.4, { ry: a });
+    }
+  }
+
+  // Gilt edging round the dance floor, so it reads as inlaid rather than laid
+  // on. Plain, for the same reason as the medallion.
+  for (const sx of [-FX - 0.09, FX + 0.09])
+    box(M.gilt, sx, F + 0.03, (FZ0 + FZ1) / 2, 0.18, 0.026, FZ1 - FZ0 + 0.18);
+  for (const sz of [FZ0 - 0.09, FZ1 + 0.09])
+    box(M.gilt, 0, F + 0.03, sz, FX * 2 + 0.18, 0.026, 0.18);
+
+  // The threshold under the aft door, carrying the carpet through the opening.
+  longSlab(M.ballCarpet, -2.6, 2.6, z0 - WALL_T / 2, z0 + WALL_T / 2, DECK_Y, F);
+  box(M.gilt, 0, F + 0.006, z0, 5.2, 0.012, 0.16);
+
+  // -------------------------------------------------------------------------
+  // The side walls, lined port and starboard. Built as discrete bays between
+  // pilasters rather than as one long textured run: a 43 m box stretches any
+  // map into stripes, and the casino's per-bay loop is the idiom that works.
+  // -------------------------------------------------------------------------
+  const PIER_Z = [];
+  for (let z = z0 + 3.2; z < z1 - 2.4; z += 6.4) PIER_Z.push(z);
+
+  prop(() => {
+    for (const sx of [-1, 1]) {
+      const x = sx * LX;
+
+      // Skirting, dado field and chair rail — the oak wainscot, deck to sill.
+      longSlab(M.oakDark, x - 0.13, x + 0.13, z0 + 0.2, z1 - 0.2, DECK_Y, DECK_Y + 0.22);
+      longSlab(M.oakMid, x - 0.10, x + 0.10, z0 + 0.2, z1 - 0.2, DECK_Y + 0.22, SILL_A - 0.16);
+      longSlab(M.oakDark, x - 0.15, x + 0.15, z0 + 0.2, z1 - 0.2, SILL_A - 0.16, SILL_A - 0.02);
+      longSlab(M.gilt, x - 0.17, x + 0.17, z0 + 0.2, z1 - 0.2, SILL_A - 0.05, SILL_A - 0.015);
+
+      // Raised panels in the dado, one every 1.6 m, with a gilt bead round
+      // each. Two boxes and a frame is a fielded panel from across a room.
+      for (let z = z0 + 1.4; z < z1 - 1.4; z += 1.6) {
+        shape(G.box, M.oakPale, x - sx * 0.055, DECK_Y + 0.62, z, 0.06, 0.66, 1.16);
+        shape(G.box, M.gilt, x - sx * 0.075, DECK_Y + 0.62, z, 0.02, 0.74, 1.26);
+      }
+
+      // Pilasters: carved oak below the sill, fluted plaster above it, with a
+      // gilt capital under the entablature. They land on the mullions of the
+      // house's own window band, so drape and glass share a rhythm.
+      for (const z of PIER_Z) {
+        shape(G.box, M.oakDark, x - sx * 0.06, DECK_Y + 0.58, z, 0.30, 1.16, 0.72);
+        shape(G.columnShaft, M.plasterCream, x - sx * 0.10, SILL_A - 0.02, z,
+          0.56, DECK_Y + 4.34 - SILL_A, 0.34);
+        shape(G.ring, M.gilt, x - sx * 0.10, DECK_Y + 4.30, z, 0.62, 1.4, 0.40);
+        shape(G.cone, M.gilt, x - sx * 0.10, DECK_Y + 4.66, z, 0.72, 0.30, 0.46,
+          { rx: Math.PI });
+        shape(G.box, M.gilt, x - sx * 0.10, DECK_Y + 4.73, z, 0.34, 0.12, 0.80);
+      }
+
+      // Entablature and frieze, above the window head. The frieze is plaster,
+      // the two beads are gilt, and the cornice is the oak the room started in.
+      longSlab(M.oakDark, x - 0.16, x + 0.16, z0 + 0.2, z1 - 0.2,
+        DECK_Y + 4.36, DECK_Y + 4.80);
+      longSlab(M.gilt, x - 0.19, x + 0.19, z0 + 0.2, z1 - 0.2,
+        DECK_Y + 4.80, DECK_Y + 4.86);
+      longSlab(M.plasterCream, x - 0.12, x + 0.12, z0 + 0.2, z1 - 0.2,
+        DECK_Y + 4.86, CEIL_Y - 0.30);
+      longSlab(M.gilt, x - 0.16, x + 0.16, z0 + 0.2, z1 - 0.2,
+        CEIL_Y - 0.30, CEIL_Y - 0.24);
+      longSlab(M.plasterShade, x - 0.22, x + 0.22, z0 + 0.2, z1 - 0.2,
+        CEIL_Y - 0.24, CEIL_Y - 0.02);
+
+      // Rosettes in the frieze, between the pilasters.
+      for (const z of PIER_Z) {
+        for (const dz of [-3.2, 3.2]) {
+          if (z + dz < z0 + 1 || z + dz > z1 - 1) continue;
+          shape(G.cyl, M.gilt, x - sx * 0.13, DECK_Y + 5.15, z + dz, 0.34, 0.06, 0.34,
+            { rx: Math.PI / 2 });
+          shape(G.sphere, M.giltPale, x - sx * 0.16, DECK_Y + 5.15, z + dz, 0.13, 0.13, 0.13);
+        }
+      }
+
+      // -----------------------------------------------------------------
+      // The portières. Crimson velvet hung at every pier and drawn across
+      // the OUTER THIRD of each bay — which is what makes the room feutrée
+      // rather than dark. Drawn right across, the sea disappears and the
+      // ballroom becomes a windowless box; left open, the window band is a
+      // 43 m light box and no candle in here reads at all.
+      // -----------------------------------------------------------------
+      const dropTop = SILL_B + 0.42, dropBot = DECK_Y + 0.25;
+      const dropY = (dropTop + dropBot) / 2, dropH = dropTop - dropBot;
+      for (const z of PIER_Z) {
+        for (const dz of [-2.35, 2.35]) {
+          // The fall itself, plus a narrower dark fold behind its leading
+          // edge: two boxes is the cheapest thing that reads as gathered
+          // cloth instead of as a painted board.
+          shape(G.box, M.velvetCrimson, x - sx * 0.20, dropY, z + dz, 0.26, dropH, 1.35);
+          shape(G.box, M.velvetCrimsonDeep, x - sx * 0.30, dropY, z + dz + Math.sign(dz) * 0.52,
+            0.20, dropH, 0.34);
+          shape(G.box, M.velvetCrimsonDeep, x - sx * 0.30, dropY, z + dz - Math.sign(dz) * 0.55,
+            0.18, dropH, 0.22);
+          // Silk rope and tassel, gathering the fall at hip height.
+          shape(G.ring, M.giltPale, x - sx * 0.22, DECK_Y + 1.5, z + dz, 0.44, 2.2, 0.44);
+          shape(G.cone, M.giltPale, x - sx * 0.30, DECK_Y + 1.32, z + dz, 0.13, 0.24, 0.13);
+        }
+      }
+      // A continuous swagged pelmet over the whole band, with a gilt cornice
+      // and a bullion fringe under it.
+      longSlab(M.velvetCrimsonDeep, x - 0.34, x + 0.34, z0 + 0.6, z1 - 0.6,
+        SILL_B + 0.10, SILL_B + 0.62);
+      longSlab(M.gilt, x - 0.38, x + 0.38, z0 + 0.6, z1 - 0.6,
+        SILL_B + 0.62, SILL_B + 0.72);
+      for (let z = z0 + 1.0; z < z1 - 1.0; z += 0.9) {
+        shape(G.sphere, M.velvetCrimson, x - sx * 0.30, SILL_B + 0.10, z, 0.9, 0.44, 0.9);
+        shape(G.cone, M.giltPale, x - sx * 0.30, SILL_B - 0.06, z, 0.09, 0.18, 0.09);
+      }
+
+      // A leaded amber screen hung inboard of the house's own window band —
+      // the single biggest thing that makes this room feutrée. Left as clear
+      // glass the band is a 43 m light box: at noon the sea washed the whole
+      // saloon out to white and not one of the candles read. Behind coloured
+      // came the horizon is still there, and it arrives the colour of the
+      // candles instead of against them.
+      longSlab(M.leadedWindow, x - sx * 0.08 - 0.03, x - sx * 0.08 + 0.03,
+        z0 + 0.5, z1 - 0.5, SILL_A + 0.02, SILL_B - 0.02);
+      // The came is carried onto the room side as gilt glazing bars, so the
+      // screen reads as a window and not as a sheet of amber film.
+      for (let z = z0 + 1.0; z < z1 - 0.9; z += 1.55)
+        shape(G.box, M.gilt, x - sx * 0.13, (SILL_A + SILL_B) / 2, z,
+          0.06, SILL_B - SILL_A, 0.07);
+      for (const y of [SILL_A + 0.02, (SILL_A + SILL_B) / 2, SILL_B - 0.02])
+        longSlab(M.gilt, x - sx * 0.13 - 0.03, x - sx * 0.13 + 0.03,
+          z0 + 0.6, z1 - 0.6, y - 0.035, y + 0.035);
+
+      // Sconces on the pilasters: a gilt bracket carrying two candles under a
+      // pleated silk shade. These, not the chandeliers, are what light the
+      // faces of the people standing at the tables.
+      for (const z of PIER_Z) {
+        shape(G.box, M.gilt, x - sx * 0.26, DECK_Y + 2.55, z, 0.16, 0.62, 0.14);
+        shape(G.sphere, M.giltPale, x - sx * 0.26, DECK_Y + 2.88, z, 0.20, 0.20, 0.20);
+        for (const dz of [-0.26, 0.26]) {
+          shape(G.cyl, M.gilt, x - sx * 0.34, DECK_Y + 2.90, z + dz, 0.09, 0.30, 0.09);
+          shape(G.cyl, M.candleWax, x - sx * 0.34, DECK_Y + 3.14, z + dz, 0.065, 0.22, 0.065);
+          shape(G.cone, M.candleFlame, x - sx * 0.34, DECK_Y + 3.24, z + dz, 0.065, 0.14, 0.065);
+          shape(G.canopy, M.silkShade, x - sx * 0.34, DECK_Y + 3.19, z + dz, 0.28, 0.24, 0.28);
+        }
+      }
+    }
+
+    // The FORWARD end wall carries the same band, and the stage is only 15 m
+    // of a 26 m beam — so outboard of the proscenium the sea came through in
+    // a bright slot on both quarters. Screen it with the same leaded glass.
+    longSlab(M.leadedWindow, -SUP_X2 + 0.6, SUP_X2 - 0.6,
+      z1 - WALL_T / 2 - 0.12, z1 - WALL_T / 2 - 0.06, SILL_A + 0.02, SILL_B - 0.02);
+    for (let x = -SUP_X2 + 1.0; x < SUP_X2 - 0.9; x += 1.55)
+      shape(G.box, M.gilt, x, (SILL_A + SILL_B) / 2, z1 - WALL_T / 2 - 0.17,
+        0.07, SILL_B - SILL_A, 0.06);
+  });
+
+  // -------------------------------------------------------------------------
+  // The aft wall — what you see when you turn round on the dance floor. Oak
+  // panelling either side of the door, and over it the carved clock panel:
+  // Honour and Glory Crowning Time, which is the one piece of joinery anybody
+  // recognises from these ships.
+  // -------------------------------------------------------------------------
+  {
+    const wz = z0 + WALL_T / 2 + 0.09;
+    const clockPanel = canvasMat(768, 512, (g, W, H) => {
+      // Oak ground with a vertical grain, so the carving sits IN something.
+      g.fillStyle = '#4a2f18';
+      g.fillRect(0, 0, W, H);
+      let state = 9311;
+      const random = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 4294967296);
+      for (let i = 0; i < 500; i++) {
+        const x = random() * W;
+        g.strokeStyle = random() < 0.5 ? 'rgba(28,16,7,0.35)' : 'rgba(126,88,44,0.28)';
+        g.lineWidth = 0.7 + random() * 1.8;
+        g.beginPath(); g.moveTo(x, 0);
+        for (let y = 0; y <= H; y += 40) g.lineTo(x + Math.sin(y * 0.01 + i) * 3, y);
+        g.stroke();
+      }
+      // A carved arch round the whole panel.
+      g.strokeStyle = '#c8a24a';
+      g.lineWidth = 7;
+      g.beginPath();
+      g.moveTo(26, H - 20); g.lineTo(26, 190);
+      g.quadraticCurveTo(W / 2, -66, W - 26, 190);
+      g.lineTo(W - 26, H - 20);
+      g.stroke();
+      g.strokeStyle = 'rgba(214,176,92,0.5)';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(46, H - 20); g.lineTo(46, 200);
+      g.quadraticCurveTo(W / 2, -32, W - 46, 200);
+      g.lineTo(W - 46, H - 20);
+      g.stroke();
+      // The two allegorical figures, flanking. Drawn as draped silhouettes in
+      // a paler oak — the carving is read by its OUTLINE at this distance, and
+      // any attempt at a face at 768 px is a smudge.
+      const figure = (cx, lean) => {
+        g.save();
+        g.translate(cx, 0);
+        g.rotate(lean);
+        g.fillStyle = '#a3743c';
+        g.beginPath();
+        g.moveTo(0, 128);
+        g.bezierCurveTo(-34, 176, -46, 320, -34, H - 26);
+        g.lineTo(36, H - 26);
+        g.bezierCurveTo(46, 320, 34, 178, 0, 128);
+        g.fill();
+        g.fillStyle = '#bb8b4d';
+        g.beginPath(); g.arc(1, 104, 21, 0, Math.PI * 2); g.fill();
+        // An arm reaching in toward the dial.
+        g.strokeStyle = '#a3743c';
+        g.lineWidth = 14;
+        g.lineCap = 'round';
+        g.beginPath(); g.moveTo(4, 156); g.lineTo(56, 196); g.stroke();
+        // Folds in the drapery.
+        g.strokeStyle = 'rgba(58,34,14,0.45)';
+        g.lineWidth = 3;
+        for (let k = -2; k <= 2; k++) {
+          g.beginPath();
+          g.moveTo(k * 11, 200);
+          g.quadraticCurveTo(k * 15, 330, k * 10, H - 30);
+          g.stroke();
+        }
+        g.restore();
+      };
+      figure(126, 0.07);
+      g.save(); g.translate(W, 0); g.scale(-1, 1); figure(126, 0.07); g.restore();
+      // The dial.
+      const cx = W / 2, cy = 250, r = 112;
+      g.fillStyle = '#2b1a0c';
+      g.beginPath(); g.arc(cx, cy, r + 20, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#d8b45c';
+      g.beginPath(); g.arc(cx, cy, r + 14, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#f3e7cd';
+      g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#5a4222';
+      g.lineWidth = 4;
+      g.beginPath(); g.arc(cx, cy, r - 10, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = '#3a2a14';
+      g.font = 'bold 21px Georgia, "Times New Roman", serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      const numerals = ['XII', 'I', 'II', 'III', 'IIII', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI'];
+      numerals.forEach((n, i) => {
+        const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
+        g.fillText(n, cx + Math.cos(a) * (r - 24), cy + Math.sin(a) * (r - 24));
+      });
+      // Hands at ten past ten — the hour every clock face is drawn at.
+      g.strokeStyle = '#241708';
+      g.lineWidth = 9; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx - 48, cy - 34); g.stroke();
+      g.lineWidth = 6;
+      g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + 62, cy - 44); g.stroke();
+      g.fillStyle = '#241708';
+      g.beginPath(); g.arc(cx, cy, 9, 0, Math.PI * 2); g.fill();
+      // The legend, cut into the rail below.
+      g.fillStyle = '#d9b768';
+      g.font = 'bold 34px Georgia, "Times New Roman", serif';
+      g.fillText('HONOUR AND GLORY', cx, H - 78);
+      g.font = 'bold 28px Georgia, "Times New Roman", serif';
+      g.fillText('CROWNING TIME', cx, H - 40);
+    }, { roughness: 0.5, emissive: 0x150c04, emissiveIntensity: 0.35 });
+
     prop(() => {
-      // Swagged curtain behind the band, and the proscenium arch.
-      box(M.velvetRed, 0, DECK_Y + 3.2, sz + 3.7, 14.6, 5.2, 0.3);
-      for (let i = 0; i < 14; i++)
-        box(M.velvetRed, -6.8 + i * 1.05, DECK_Y + 3.2, sz + 3.45, 0.55, 5.2, 0.3);
-      for (const sx of [-1, 1])
-        box(M.velvetGold, sx * 7.3, DECK_Y + 3.2, sz - 0.2, 0.5, 5.2, 0.5);
-      box(M.velvetGold, 0, DECK_Y + 5.5, sz - 0.2, 15.0, 0.6, 0.5);
-
-      // The band: a grand piano, a double bass, a drum kit, brass on stands.
-      box(M.black, -3.6, DECK_Y + 0.95, sz + 0.4, 2.6, 0.3, 1.9);
-      shape(G.cyl, M.black, -4.5, DECK_Y + 0.95, sz - 0.3, 1.5, 0.3, 1.5);
-      box(M.black, -3.6, DECK_Y + 1.16, sz - 0.15, 2.4, 0.12, 1.0);   // raised lid
-      for (const dx of [-4.5, -2.6, -3.6])
-        shape(G.cylBase, M.black, dx, DECK_Y + 0.62, sz + 0.4, 0.09, 0.2, 0.09);
-      box(M.linen, -3.6, DECK_Y + 0.98, sz - 0.62, 1.3, 0.04, 0.16);   // keys
-
-      shape(G.hull, M.darkWood, 2.4, DECK_Y + 1.5, sz + 0.6, 0.8, 1.5, 0.5,
-        { rx: -0.18 });
-      shape(G.cylBase, M.darkWood, 2.4, DECK_Y + 1.9, sz + 0.75, 0.07, 1.0, 0.07);
-
-      shape(G.cyl, M.linen, 4.8, DECK_Y + 1.0, sz + 1.0, 1.0, 0.7, 1.0);
-      for (const [dx, dz, r] of [[4.0, 0.2, 0.32], [5.4, 0.2, 0.28], [6.2, 0.9, 0.4]]) {
-        shape(G.cyl, M.brass, dx, DECK_Y + 1.5, sz + dz, r, 0.04, r);   // cymbals
-        shape(G.cylBase, M.steel, dx, DECK_Y + 0.62, sz + dz, 0.05, 0.88, 0.05);
+      // Panelling either side of the doorway, matched to the side walls.
+      for (const sx of [-1, 1]) {
+        const w = (IX - 0.4) - 2.9;
+        const cx = sx * (2.9 + w / 2);
+        box(M.oakDark, cx, DECK_Y + 0.11, wz, w, 0.22, 0.26);
+        box(M.oakMid, cx, DECK_Y + 1.45, wz, w, 2.46, 0.20);
+        box(M.oakDark, cx, DECK_Y + 2.76, wz, w, 0.18, 0.28);
+        box(M.gilt, cx, DECK_Y + 2.86, wz, w, 0.05, 0.32);
+        for (let i = 0; i < 3; i++) {
+          const px = sx * (3.5 + i * (w - 1.4) / 2.6);
+          box(M.oakPale, px, DECK_Y + 1.5, wz + 0.09, 1.1, 2.0, 0.05);
+          box(M.gilt, px, DECK_Y + 1.5, wz + 0.11, 1.22, 2.12, 0.02);
+        }
+        // Sideboard: carved oak, marble top, silver service on it.
+        const bz = z0 + 1.5;
+        const bx = sx * 8.2;
+        box(M.oakDark, bx, DECK_Y + 0.45, bz, 3.4, 0.9, 0.7);
+        box(M.plasterShade, bx, DECK_Y + 0.93, bz, 3.6, 0.08, 0.82);
+        for (const dx of [-1.1, 0, 1.1]) {
+          shape(G.cyl, M.silverPlate, bx + dx, DECK_Y + 1.06, bz, 0.34, 0.18, 0.34);
+          shape(G.cyl, M.silverPlate, bx + dx, DECK_Y + 1.18, bz, 0.13, 0.12, 0.13);
+        }
+        shape(G.cyl, M.silverPlate, bx - 1.5, DECK_Y + 1.14, bz, 0.20, 0.34, 0.20);
+        shape(G.cyl, M.silverPlate, bx + 1.5, DECK_Y + 1.14, bz, 0.20, 0.34, 0.20);
+      }
+      // The clock panel over the door, in an oak surround.
+      // The board is 3:2, because the CANVAS is 768 × 512 and a card stretches
+      // its map to whatever shape you give it: hung on the 6.2 × 2.5 surround
+      // this started as, the two carved figures came out 70 % too wide and the
+      // clock face was an ellipse.
+      box(M.oakDark, 0, DECK_Y + 4.15, wz + 0.02, 4.35, 2.95, 0.22);
+      box(M.gilt, 0, DECK_Y + 4.15, wz + 0.10, 4.10, 2.76, 0.06);
+      shape(G.card, clockPanel, 0, DECK_Y + 4.15, wz + 0.16, 3.75, 2.5, 1);
+      // Panelling either side of the board, carrying the oak across the wall.
+      // It starts ABOVE the dado's top rail: run down to the same height as
+      // the lower panelling it sits on, the two sheets are coplanar and the
+      // whole aft wall z-fights and reads as one flat blaze of pale wood.
+      for (const sx of [-1, 1]) {
+        box(M.oakDark, sx * 4.95, DECK_Y + 4.25, wz + 0.05, 4.9, 2.36, 0.14);
+        for (const dx of [-1.15, 1.15]) {
+          box(M.oakMid, sx * 4.95 + dx, DECK_Y + 4.25, wz + 0.12, 1.9, 1.86, 0.04);
+          box(M.gilt, sx * 4.95 + dx, DECK_Y + 4.25, wz + 0.14, 2.05, 2.0, 0.02);
+        }
+      }
+      // A broken pediment over it, and two candles standing on the cornice.
+      box(M.oakDark, 0, DECK_Y + 5.42, wz + 0.02, 20.0, 0.20, 0.34);
+      box(M.gilt, 0, DECK_Y + 5.53, wz + 0.02, 20.2, 0.06, 0.40);
+      for (const dx of [-2.85, 2.85]) {
+        shape(G.cyl, M.gilt, dx, DECK_Y + 5.60, wz - 0.06, 0.24, 0.16, 0.24);
+        shape(G.cyl, M.candleWax, dx, DECK_Y + 5.78, wz - 0.06, 0.09, 0.30, 0.09);
+        shape(G.cone, M.candleFlame, dx, DECK_Y + 5.92, wz - 0.06, 0.08, 0.16, 0.08);
       }
     });
   }
 
-  // Tables round the floor: cloth to the ground, a candle, and six chairs.
-  function ballTable(cx, cz) {
+  // -------------------------------------------------------------------------
+  // The entrance wings — two curved balustrades flanking the door, standing
+  // where the grand staircase would land. They are outboard of the 2.6 m
+  // doorway on both sides, so the walk in from the cabins is never blocked.
+  // -------------------------------------------------------------------------
+  prop(() => {
+    for (const sx of [-1, 1]) {
+      const bz = z0 + 2.9;
+      const a0 = 3.3, a1 = 6.9;
+      // Handrail and base rail.
+      box(M.oakDark, sx * (a0 + a1) / 2, DECK_Y + 0.98, bz, a1 - a0, 0.13, 0.28);
+      box(M.gilt, sx * (a0 + a1) / 2, DECK_Y + 1.06, bz, a1 - a0 + 0.1, 0.04, 0.34);
+      box(M.oakDark, sx * (a0 + a1) / 2, DECK_Y + 0.09, bz, a1 - a0, 0.18, 0.30);
+      // Turned balusters between them.
+      for (let t = a0 + 0.28; t < a1 - 0.1; t += 0.34)
+        shape(G.baluster, M.oakPale, sx * t, DECK_Y + 0.18, bz, 0.62, 0.76, 0.62);
+      // Newels, with the gilt cherub lamp on the inboard one — the single
+      // most photographed object on these ships.
+      for (const [t, cherub] of [[a0 - 0.14, true], [a1 + 0.14, false]]) {
+        box(M.oakDark, sx * t, DECK_Y + 0.56, bz, 0.34, 1.12, 0.34);
+        box(M.gilt, sx * t, DECK_Y + 1.14, bz, 0.40, 0.08, 0.40);
+        if (!cherub) {
+          shape(G.cone, M.oakDark, sx * t, DECK_Y + 1.18, bz, 0.30, 0.34, 0.30);
+          continue;
+        }
+        // A small draped figure holding a torchère overhead.
+        shape(G.cyl, M.gilt, sx * t, DECK_Y + 1.20, bz, 0.28, 0.12, 0.28);
+        shape(G.cone, M.gilt, sx * t, DECK_Y + 1.26, bz, 0.30, 0.46, 0.30, { rx: Math.PI });
+        shape(G.sphere, M.gilt, sx * t, DECK_Y + 1.52, bz, 0.26, 0.34, 0.22);
+        shape(G.sphere, M.giltPale, sx * t, DECK_Y + 1.78, bz, 0.17, 0.19, 0.17);
+        // Two wings, and the arm holding the light.
+        for (const w of [-1, 1])
+          shape(G.card, M.gilt, sx * t + w * 0.20, DECK_Y + 1.62, bz - 0.06, 0.34, 0.46, 1,
+            { ry: w * 0.5 });
+        shape(G.cyl, M.gilt, sx * t, DECK_Y + 2.00, bz, 0.07, 0.42, 0.07);
+        shape(G.sphere, M.candleFlame, sx * t, DECK_Y + 2.28, bz, 0.24, 0.30, 0.24);
+        addBallLight(sx * t, DECK_Y + 2.4, bz, 0xffb055, 6, 9);
+      }
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // The arcade. Eight columns, four a side, standing just outboard of the
+  // dance floor and carrying a plaster architrave up to the deckhead. They are
+  // what gives a 43 m room a middle, and they frame the dome.
+  // -------------------------------------------------------------------------
+  const COL_Z = [z0 + 8, z0 + 15, z0 + 22, z0 + 29];
+  prop(() => {
+    for (const sx of [-1, 1]) {
+      const x = sx * COL_X;
+      for (const cz of COL_Z) {
+        box(M.oakDark, x, DECK_Y + 0.11, cz, 0.98, 0.22, 0.98);
+        box(M.gilt, x, DECK_Y + 0.24, cz, 0.88, 0.05, 0.88);
+        shape(G.columnShaft, M.plasterCream, x, DECK_Y + 0.27, cz, 0.66, 4.05, 0.66);
+        shape(G.ring, M.gilt, x, DECK_Y + 4.28, cz, 0.74, 1.6, 0.74);
+        shape(G.cone, M.gilt, x, DECK_Y + 4.70, cz, 0.98, 0.40, 0.98, { rx: Math.PI });
+        box(M.gilt, x, DECK_Y + 4.79, cz, 1.06, 0.14, 1.06);
+        // Acanthus volutes at the four corners of the capital.
+        for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]])
+          shape(G.sphere, M.giltPale, x + dx * 0.40, DECK_Y + 4.62, cz + dz * 0.40,
+            0.26, 0.22, 0.26);
+        // The shaft carried on up to the deckhead behind the architrave.
+        box(M.plasterCream, x, (DECK_Y + 4.86 + CEIL_Y) / 2, cz,
+          0.56, CEIL_Y - DECK_Y - 4.86, 0.56);
+      }
+      // The architrave the columns carry, running the length of the arcade.
+      const a0 = COL_Z[0] - 0.6, a1 = COL_Z[COL_Z.length - 1] + 0.6;
+      longSlab(M.plasterCream, x - 0.30, x + 0.30, a0, a1, DECK_Y + 4.86, DECK_Y + 5.34);
+      longSlab(M.gilt, x - 0.34, x + 0.34, a0, a1, DECK_Y + 5.34, DECK_Y + 5.42);
+      longSlab(M.plasterShade, x - 0.22, x + 0.22, a0, a1, DECK_Y + 5.42, CEIL_Y - 0.02);
+      // Gilt drops between the capitals, so the arcade reads as bays.
+      for (let i = 0; i < COL_Z.length - 1; i++) {
+        const mz = (COL_Z[i] + COL_Z[i + 1]) / 2;
+        shape(G.cyl, M.gilt, x, DECK_Y + 5.02, mz, 0.46, 0.10, 0.46, { rx: Math.PI / 2 });
+        shape(G.sphere, M.giltPale, x - sx * 0.16, DECK_Y + 5.02, mz, 0.20, 0.20, 0.20);
+      }
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // The deckhead: a coffered plaster ceiling with gilt ribs, and the leaded
+  // dome over the dance floor.
+  //
+  // The dome hangs BELOW the deckhead rather than sitting in a hole cut
+  // through it. The house's ceiling slab is 35 cm of solid plaster with the
+  // pool deck's void over it — opening a well through both would have put the
+  // sun deck's teak in the ceiling of the ballroom. Hung, it reads exactly the
+  // same from the only place anybody sees it: standing under it.
+  // -------------------------------------------------------------------------
+  prop(() => {
+    longSlab(M.plasterCream, -IX, IX, z0 + 0.2, z1 - 0.2, CEIL_Y - 0.06, CEIL_Y);
+
+    const inDome = z => Math.abs(z - DOME_Z) < DOME_R + 0.5;
+    // Transverse ribs.
+    for (let z = z0 + 3.6; z < z1 - 3; z += 4.6) {
+      if (inDome(z)) continue;
+      box(M.plasterShade, 0, CEIL_Y - 0.17, z, IX * 2 - 0.6, 0.22, 0.42);
+      box(M.gilt, 0, CEIL_Y - 0.29, z, IX * 2 - 0.6, 0.05, 0.18);
+    }
+    // Longitudinal ribs. The inner pair break for the dome; the outer pair
+    // clear it and run the length of the room.
+    for (const x of [-9.0, 9.0]) {
+      box(M.plasterShade, x, CEIL_Y - 0.17, (z0 + z1) / 2, 0.42, 0.22, z1 - z0 - 1.2);
+      box(M.gilt, x, CEIL_Y - 0.29, (z0 + z1) / 2, 0.18, 0.05, z1 - z0 - 1.2);
+    }
+    for (const x of [-4.4, 4.4]) {
+      for (const [a, b] of [[z0 + 0.6, DOME_Z - DOME_R - 0.5], [DOME_Z + DOME_R + 0.5, z1 - 0.6]]) {
+        box(M.plasterShade, x, CEIL_Y - 0.17, (a + b) / 2, 0.42, 0.22, b - a);
+        box(M.gilt, x, CEIL_Y - 0.29, (a + b) / 2, 0.18, 0.05, b - a);
+      }
+    }
+    // Rosettes in the coffers.
+    for (let z = z0 + 5.9; z < z1 - 3; z += 4.6) {
+      if (inDome(z)) continue;
+      for (const x of [-11, -6.7, 0, 6.7, 11]) {
+        if (x === 0 && inDome(z)) continue;
+        shape(G.cyl32, M.plasterShade, x, CEIL_Y - 0.13, z, 1.1, 0.09, 1.1);
+        shape(G.ring, M.gilt, x, CEIL_Y - 0.19, z, 0.9, 1.8, 0.9);
+        shape(G.sphere, M.candleFlame, x, CEIL_Y - 0.24, z, 0.24, 0.20, 0.24);
+      }
+    }
+
+    // --- the dome ---------------------------------------------------------
+    const base = CEIL_Y - 1.58, rise = 1.44;
+    // The curb the dome springs from is an ANNULUS, built out of tori. Laid as
+    // a G.cyl32 disc — which is what it was — it is a solid plaster lid 11.7 m
+    // across hung under the dome, and the dome behind it is invisible: from
+    // the dance floor the ceiling had a flat grey plate where the glass should
+    // have been, and nothing about the material was wrong.
+    shape(G.torus, M.plasterCream, 0, base - 0.11, DOME_Z, 11.7, 4.2, 11.7);
+    shape(G.torus, M.plasterShade, 0, base - 0.24, DOME_Z, 12.9, 2.6, 12.9);
+    shape(G.ring, M.gilt, 0, base - 0.26, DOME_Z, 11.1, 3.6, 11.1);
+    shape(G.ring, M.gilt, 0, base + 0.02, DOME_Z, DOME_R * 2, 3.0, DOME_R * 2);
+    // The glass itself. G.domeUp is HALF a unit sphere, so it stands 0.5 tall
+    // in its own space: the scale that gives it a rise of `rise` is 2 × rise.
+    shape(G.domeUp, M.leadedGlass, 0, base, DOME_Z, DOME_R * 2, rise * 2, DOME_R * 2);
+    // Gilt ribs following the curve, and two hoops across them.
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const r0 = 0.55, r1 = DOME_R - 0.12;
+      const y0 = base + rise - 0.20, y1 = base + 0.10;
+      const L = Math.hypot(r1 - r0, y0 - y1);
+      shape(G.box, M.gilt,
+        Math.sin(a) * (r0 + r1) / 2, (y0 + y1) / 2, DOME_Z + Math.cos(a) * (r0 + r1) / 2,
+        0.075, 0.075, L, { ry: a, rx: Math.atan2(y0 - y1, r1 - r0) });
+    }
+    for (const [rr, yy] of [[DOME_R * 0.82, base + 0.52], [DOME_R * 0.5, base + 1.02]])
+      shape(G.ring, M.gilt, 0, yy, DOME_Z, rr * 2, 2.2, rr * 2);
+    // The oculus boss, and the cove of little lamps hidden behind the curb.
+    shape(G.cyl32, M.gilt, 0, base + rise - 0.12, DOME_Z, 1.1, 0.14, 1.1);
+    shape(G.sphere, M.candleFlame, 0, base + rise - 0.24, DOME_Z, 0.66, 0.44, 0.66);
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      shape(G.sphere, M.candleFlame, Math.sin(a) * (DOME_R + 0.22), base + 0.06,
+        DOME_Z + Math.cos(a) * (DOME_R + 0.22), 0.18, 0.14, 0.18);
+    }
+  });
+  addBallLight(0, DECK_Y + 4.2, DOME_Z, 0xffc477, 26, 24);
+
+  // -------------------------------------------------------------------------
+  // Crystal chandeliers. Gilt bronze, three tiers of candles, and cut-glass
+  // drops swagged between them — the fitting that makes the difference
+  // between a saloon and a function room.
+  // -------------------------------------------------------------------------
+  function chandelier(cx, cz, s = 1) {
     prop(() => {
-      shape(G.cyl, M.linen, cx, DECK_Y + 0.38, cz, 2.0, 0.76, 2.0);
-      shape(G.cyl, M.linen, cx, DECK_Y + 0.77, cz, 2.2, 0.05, 2.2);
-      shape(G.cyl, M.velvetGold, cx, DECK_Y + 0.80, cz, 1.3, 0.02, 1.3);
-      shape(G.cyl, M.cream, cx, DECK_Y + 0.9, cz, 0.09, 0.22, 0.09);
-      shape(G.sphere, M.lamp, cx, DECK_Y + 1.03, cz, 0.09, 0.14, 0.09);
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        const x = cx + Math.sin(a) * 1.6, z = cz + Math.cos(a) * 1.6;
-        shape(G.cyl, M.velvetGold, x, DECK_Y + 0.44, z, 0.5, 0.08, 0.5);
+      const top = CEIL_Y - 0.06;
+      shape(G.cyl, M.gilt, cx, top - 0.28 * s, cz, 0.14 * s, 0.56 * s, 0.14 * s);
+      shape(G.cone, M.gilt, cx, top - 0.60 * s, cz, 1.05 * s, 0.34 * s, 1.05 * s,
+        { rx: Math.PI });
+      const tiers = [[1.85, 0.95, 12], [1.30, 1.42, 9], [0.76, 1.86, 6]];
+      for (const [rad, drop, n] of tiers) {
+        const r = rad * s, y = top - drop * s;
+        shape(G.ring, M.gilt, cx, y, cz, r * 2, 2.6 * s, r * 2);
+        shape(G.ring, M.giltPale, cx, y - 0.09 * s, cz, r * 1.86, 1.8 * s, r * 1.86);
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2 + (n % 2) * 0.2;
+          const px = cx + Math.sin(a) * r, pz = cz + Math.cos(a) * r;
+          // Scrolled arm, socket, candle, flame.
+          shape(G.cyl, M.gilt, (cx + px) / 2, y + 0.16 * s, (cz + pz) / 2,
+            0.05 * s, r, 0.05 * s, { ry: a, rx: Math.PI / 2 });
+          shape(G.cyl, M.gilt, px, y + 0.14 * s, pz, 0.14 * s, 0.14 * s, 0.14 * s);
+          shape(G.cyl, M.candleWax, px, y + 0.36 * s, pz, 0.075 * s, 0.34 * s, 0.075 * s);
+          shape(G.cone, M.candleFlame, px, y + 0.56 * s, pz, 0.08 * s, 0.18 * s, 0.08 * s);
+          // A crystal drop hung under every candle.
+          shape(G.crystalDrop, M.crystalGlass, px, y - 0.17 * s, pz,
+            0.085 * s, 0.20 * s, 0.085 * s);
+        }
+        // The swag: drops falling in a curve between one arm and the next.
+        for (let i = 0; i < n * 5; i++) {
+          const a = (i / (n * 5)) * Math.PI * 2;
+          const k = (i % 5) - 2;
+          shape(G.crystalDrop, M.crystalGlass,
+            cx + Math.sin(a) * r * 1.04, y - (0.13 + Math.abs(k) * 0.075) * s,
+            cz + Math.cos(a) * r * 1.04, 0.062 * s, 0.15 * s, 0.062 * s, { ry: a });
+        }
+      }
+      // The stem the tiers are threaded on, and the finial under them.
+      shape(G.cyl, M.gilt, cx, top - 1.36 * s, cz, 0.10 * s, 1.56 * s, 0.10 * s);
+      shape(G.sphere, M.crystalGlass, cx, top - 2.12 * s, cz, 0.34 * s, 0.34 * s, 0.34 * s);
+      shape(G.crystalDrop, M.crystalGlass, cx, top - 2.40 * s, cz,
+        0.20 * s, 0.40 * s, 0.20 * s);
+      shape(G.sphere, M.candleFlame, cx, top - 2.10 * s, cz, 0.30 * s, 0.30 * s, 0.30 * s);
+    });
+  }
+  // A PAIR at the aft end rather than one on the centreline: a single
+  // chandelier there hangs exactly between the door and the clock panel, and
+  // the one thing anybody walks in to look at was behind two tiers of candles.
+  for (const sx of [-1, 1]) chandelier(sx * 4.6, z0 + 5.6, 0.88);
+  chandelier(0, z0 + 33.0, 1.15);
+  for (const sx of [-1, 1]) {
+    chandelier(sx * TBL_X, z0 + 11.5, 0.52);
+    chandelier(sx * TBL_X, z0 + 25.5, 0.52);
+  }
+  addBallLight(0, DECK_Y + 3.7, z0 + 7.4, 0xffb964, 17, 20);
+  addBallLight(0, DECK_Y + 3.6, z0 + 33.0, 0xffb964, 20, 18);
+
+  // -------------------------------------------------------------------------
+  // The stage, forward, raised two steps under a carved proscenium.
+  // -------------------------------------------------------------------------
+  {
+    box(M.oakDark, 0, DECK_Y + 0.3, SZ, 15.0, 0.6, 8.0);
+    box(M.oakPale, 0, DECK_Y + 0.62, SZ, 14.6, 0.04, 7.6);
+    for (let i = 0; i < 2; i++)
+      box(M.oakDark, 0, DECK_Y + 0.1 + i * 0.2, SZ - 4.2 - (2 - i) * 0.4, 6.0, 0.2, 0.4);
+    prop(() => {
+      // The stage front, panelled and gilt-beaded like the dado.
+      box(M.oakMid, 0, DECK_Y + 0.32, SZ - 4.02, 15.0, 0.5, 0.1);
+      box(M.gilt, 0, DECK_Y + 0.58, SZ - 4.04, 15.0, 0.05, 0.16);
+      for (let i = -6; i <= 6; i++)
+        box(M.gilt, i * 1.1, DECK_Y + 0.32, SZ - 4.08, 0.05, 0.34, 0.06);
+      // Footlights along the front edge, shielded by a gilt hood.
+      for (let i = -6; i <= 6; i++)
+        shape(G.sphere, M.candleFlame, i * 1.1, DECK_Y + 0.66, SZ - 3.9, 0.16, 0.14, 0.16);
+      box(M.gilt, 0, DECK_Y + 0.78, SZ - 3.98, 14.4, 0.10, 0.22);
+
+      // The backcloth and the swagged curtain: crimson velvet, gathered into
+      // folds and tied back at both sides with a gold rope.
+      box(M.velvetCrimsonDeep, 0, DECK_Y + 3.2, SZ + 3.7, 14.6, 5.2, 0.3);
+      for (let i = 0; i < 20; i++)
+        box(M.velvetCrimson, -6.9 + i * 0.73, DECK_Y + 3.2, SZ + 3.44,
+          0.40, 5.2, 0.24);
+      for (const sx of [-1, 1]) {
+        box(M.velvetCrimson, sx * 5.4, DECK_Y + 3.0, SZ + 3.1, 2.3, 5.6, 0.5);
+        box(M.velvetCrimsonDeep, sx * 6.4, DECK_Y + 3.0, SZ + 2.95, 0.7, 5.6, 0.4);
+        shape(G.ring, M.giltPale, sx * 5.4, DECK_Y + 2.3, SZ + 2.9, 2.6, 3.0, 0.9);
+        shape(G.cone, M.giltPale, sx * 4.4, DECK_Y + 2.05, SZ + 2.85, 0.2, 0.38, 0.2);
+      }
+      // The pelmet across the top, with a bullion fringe.
+      box(M.velvetCrimsonDeep, 0, DECK_Y + 5.05, SZ + 3.0, 15.0, 0.9, 0.42);
+      for (let i = 0; i < 22; i++)
+        shape(G.cone, M.giltPale, -7.0 + i * 0.667, DECK_Y + 4.52, SZ + 2.86,
+          0.13, 0.26, 0.13);
+
+      // The proscenium: carved oak jambs with gilt capitals, and a cartouche
+      // on the arch over the middle of the opening.
+      for (const sx of [-1, 1]) {
+        box(M.oakDark, sx * 7.35, DECK_Y + 2.7, SZ - 0.2, 0.62, 5.4, 0.62);
+        box(M.gilt, sx * 7.35, DECK_Y + 0.16, SZ - 0.2, 0.76, 0.14, 0.76);
+        box(M.gilt, sx * 7.35, DECK_Y + 5.42, SZ - 0.2, 0.80, 0.16, 0.80);
+        shape(G.cone, M.gilt, sx * 7.35, DECK_Y + 5.40, SZ - 0.2, 0.72, 0.32, 0.72,
+          { rx: Math.PI });
         for (let k = 0; k < 4; k++) {
-          const b = (k / 4) * Math.PI * 2 + 0.7;
-          shape(G.cylBase, M.darkWood, x + Math.sin(b) * 0.19, DECK_Y, z + Math.cos(b) * 0.19,
+          box(M.oakPale, sx * 7.35, DECK_Y + 1.2 + k * 1.05, SZ - 0.52, 0.44, 0.82, 0.05);
+          box(M.gilt, sx * 7.35, DECK_Y + 1.2 + k * 1.05, SZ - 0.54, 0.52, 0.90, 0.02);
+        }
+      }
+      box(M.oakDark, 0, DECK_Y + 5.6, SZ - 0.2, 15.6, 0.5, 0.62);
+      box(M.gilt, 0, DECK_Y + 5.86, SZ - 0.2, 15.8, 0.08, 0.7);
+      shape(G.cyl32, M.gilt, 0, DECK_Y + 5.6, SZ - 0.54, 1.5, 0.12, 1.5, { rx: Math.PI / 2 });
+      shape(G.sphere, M.giltPale, 0, DECK_Y + 5.6, SZ - 0.60, 0.9, 0.9, 0.4);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        shape(G.cone, M.gilt, Math.cos(a) * 0.95, DECK_Y + 5.6 + Math.sin(a) * 0.95,
+          SZ - 0.56, 0.2, 0.42, 0.2, { rz: -a + Math.PI / 2, rx: Math.PI / 2 });
+      }
+
+      // The band. A grand piano with its lid up, a double bass, a drum kit and
+      // brass on stands — the Wallace Hartley line-up.
+      box(M.mahoganyGloss, -3.6, DECK_Y + 0.95, SZ + 0.4, 2.6, 0.3, 1.9);
+      shape(G.cyl, M.mahoganyGloss, -4.5, DECK_Y + 0.95, SZ - 0.3, 1.5, 0.3, 1.5);
+      shape(G.box, M.mahoganyGloss, -3.6, DECK_Y + 1.52, SZ + 0.66, 2.5, 1.2, 0.10,
+        { rx: -0.52 });
+      for (const dx of [-4.5, -2.6, -3.6])
+        shape(G.cylBase, M.mahoganyGloss, dx, DECK_Y + 0.62, SZ + 0.4, 0.09, 0.2, 0.09);
+      box(M.linen, -3.6, DECK_Y + 0.98, SZ - 0.62, 1.3, 0.04, 0.16);
+      box(M.oakDark, -3.6, DECK_Y + 0.45, SZ - 1.15, 0.9, 0.1, 0.4);
+      for (const dx of [-3.95, -3.25])
+        shape(G.cylBase, M.oakDark, dx, DECK_Y + 0.62, SZ - 1.15, 0.06, 0.45, 0.06);
+
+      shape(G.hull, M.oakMid, 2.4, DECK_Y + 1.5, SZ + 0.6, 0.8, 1.5, 0.5, { rx: -0.18 });
+      shape(G.cylBase, M.oakDark, 2.4, DECK_Y + 1.9, SZ + 0.75, 0.07, 1.0, 0.07);
+      shape(G.cyl, M.linen, 4.8, DECK_Y + 1.0, SZ + 1.0, 1.0, 0.7, 1.0);
+      for (const [dx, dz, r] of [[4.0, 0.2, 0.32], [5.4, 0.2, 0.28], [6.2, 0.9, 0.4]]) {
+        shape(G.cyl, M.gilt, dx, DECK_Y + 1.5, SZ + dz, r, 0.04, r);
+        shape(G.cylBase, M.steel, dx, DECK_Y + 0.62, SZ + dz, 0.05, 0.88, 0.05);
+      }
+      // Two music stands and a cello case leaning at the back.
+      for (const dx of [0.2, 1.4]) {
+        shape(G.cylBase, M.black, dx, DECK_Y + 0.62, SZ - 1.4, 0.05, 1.05, 0.05);
+        shape(G.box, M.black, dx, DECK_Y + 1.74, SZ - 1.4, 0.5, 0.36, 0.04, { rx: -0.5 });
+      }
+      shape(G.hull, M.oakDark, -6.2, DECK_Y + 1.4, SZ + 2.2, 0.7, 1.6, 0.35, { rz: 0.24 });
+    });
+    addBallLight(0, DECK_Y + 3.4, SZ - 1.0, 0xffb055, 18, 16);
+  }
+
+  // -------------------------------------------------------------------------
+  // The tables: cloth to the ground, a silver candelabra, roses, and carved
+  // oak chairs with green leather seats.
+  // -------------------------------------------------------------------------
+  function ballTable(cx, cz, seats = 6) {
+    prop(() => {
+      shape(G.cyl, M.velvetCrimsonDeep, cx, DECK_Y + 0.13, cz, 1.56, 0.26, 1.56);
+      shape(G.cyl, M.clothIvory, cx, DECK_Y + 0.50, cz, 1.5, 0.52, 1.5);
+      shape(G.cyl, M.clothIvory, cx, DECK_Y + 0.77, cz, 1.62, 0.05, 1.62);
+      shape(G.ring, M.gilt, cx, DECK_Y + 0.72, cz, 1.60, 2.6, 1.60);
+      shape(G.cyl, M.velvetCrimson, cx, DECK_Y + 0.80, cz, 1.02, 0.02, 1.02);
+      // A three-branch silver candelabra, and a low bowl of roses at its foot.
+      shape(G.cyl, M.silverPlate, cx, DECK_Y + 0.84, cz, 0.30, 0.06, 0.30);
+      shape(G.cyl, M.silverPlate, cx, DECK_Y + 1.02, cz, 0.06, 0.36, 0.06);
+      shape(G.cyl, M.silverPlate, cx, DECK_Y + 1.20, cz, 0.62, 0.04, 0.62);
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2;
+        const px = cx + Math.sin(a) * 0.28, pz = cz + Math.cos(a) * 0.28;
+        shape(G.cyl, M.silverPlate, px, DECK_Y + 1.24, pz, 0.13, 0.06, 0.13);
+        shape(G.cyl, M.candleWax, px, DECK_Y + 1.42, pz, 0.055, 0.32, 0.055);
+        shape(G.cone, M.candleFlame, px, DECK_Y + 1.60, pz, 0.06, 0.15, 0.06);
+      }
+      shape(G.cyl, M.candleWax, cx, DECK_Y + 1.42, cz, 0.055, 0.32, 0.055);
+      shape(G.cone, M.candleFlame, cx, DECK_Y + 1.60, cz, 0.06, 0.15, 0.06);
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + 0.4;
+        shape(G.sphere, M.velvetCrimson, cx + Math.sin(a) * 0.22, DECK_Y + 0.90,
+          cz + Math.cos(a) * 0.22, 0.13, 0.13, 0.13);
+      }
+
+      for (let i = 0; i < seats; i++) {
+        const a = (i / seats) * Math.PI * 2;
+        const x = cx + Math.sin(a) * 1.36, z = cz + Math.cos(a) * 1.36;
+        // Carved oak chair: seat, four turned legs, a shaped back with a
+        // pierced splat, and a green leather squab.
+        box(M.oakDark, x, DECK_Y + 0.44, z, 0.52, 0.07, 0.52, -a);
+        box(M.leatherGreen, x, DECK_Y + 0.49, z, 0.46, 0.05, 0.46, -a);
+        for (let k = 0; k < 4; k++) {
+          const b = (k / 4) * Math.PI * 2 + 0.7 - a;
+          shape(G.cylBase, M.oakDark, x + Math.sin(b) * 0.20, DECK_Y, z + Math.cos(b) * 0.20,
             0.05, 0.44, 0.05);
         }
-        box(M.velvetRed, x - Math.sin(a) * 0.22, DECK_Y + 0.75, z - Math.cos(a) * 0.22,
-          0.5, 0.62, 0.1, -a);
-        // Two settings per chair-ish: a plate and a glass on the cloth.
-        shape(G.cyl, M.linen, cx + Math.sin(a) * 0.95, DECK_Y + 0.82, cz + Math.cos(a) * 0.95,
-          0.28, 0.02, 0.28);
-        shape(G.cyl, M.glass, cx + Math.sin(a) * 0.72, DECK_Y + 0.9, cz + Math.cos(a) * 0.72,
-          0.1, 0.2, 0.1);
+        const bx = x - Math.sin(a) * 0.24, bz = z - Math.cos(a) * 0.24;
+        for (const w of [-0.21, 0.21])
+          box(M.oakDark, bx + Math.cos(a) * w, DECK_Y + 0.78, bz - Math.sin(a) * w,
+            0.07, 0.66, 0.07, -a);
+        box(M.oakMid, bx, DECK_Y + 0.82, bz, 0.24, 0.52, 0.05, -a);
+        box(M.oakDark, bx, DECK_Y + 1.10, bz, 0.52, 0.10, 0.08, -a);
+        box(M.gilt, bx, DECK_Y + 1.16, bz, 0.52, 0.03, 0.09, -a);
+        // The cover laid at each place: plate, side plate, glass, silver.
+        const rx = cx + Math.sin(a) * 0.86, rz = cz + Math.cos(a) * 0.86;
+        shape(G.cyl, M.linen, rx, DECK_Y + 0.82, rz, 0.26, 0.02, 0.26);
+        shape(G.cyl, M.gilt, rx, DECK_Y + 0.83, rz, 0.27, 0.008, 0.27);
+        shape(G.cyl, M.crystalGlass, rx - Math.sin(a) * 0.02 + Math.cos(a) * 0.20,
+          DECK_Y + 0.90, rz - Math.cos(a) * 0.02 - Math.sin(a) * 0.20, 0.09, 0.20, 0.09);
+        for (const w of [-0.19, 0.19])
+          box(M.silverPlate, rx + Math.cos(a) * w, DECK_Y + 0.815, rz - Math.sin(a) * w,
+            0.03, 0.01, 0.20, -a);
+        shape(G.cyl, M.linen, rx + Math.cos(a) * 0.30, DECK_Y + 0.82,
+          rz - Math.sin(a) * 0.30, 0.15, 0.02, 0.15);
       }
     });
   }
-  for (const [tx, tz] of [
-    [-10.2, z0 + 8], [-10.2, z0 + 16], [-10.2, z0 + 24],
-    [10.2, z0 + 8], [10.2, z0 + 16], [10.2, z0 + 24],
-    [-10.2, z0 + 30], [10.2, z0 + 30],
-  ]) ballTable(tx, tz);
+  for (const sx of [-1, 1])
+    for (const tz of [z0 + 4.5, z0 + 11.5, z0 + 18.5, z0 + 25.5])
+      ballTable(sx * TBL_X, tz);
 
-  // Chandeliers down the centreline — three of them, because one over a 44 m
-  // room is a bare bulb and the ceiling is the first thing you look at.
+  // -------------------------------------------------------------------------
+  // Palms in brass jardinières, in the corners and either side of the stage —
+  // the Edwardian answer to an empty corner, and what breaks the hard line
+  // where two panelled walls meet.
+  // -------------------------------------------------------------------------
   prop(() => {
-    for (const cz of [z0 + 11, z0 + 20, z0 + 29]) {
-      shape(G.cyl, M.brass, 0, CEIL_Y - 0.2, cz, 0.09, 0.4, 0.09);
-      for (let r = 0; r < 3; r++) {
-        const rad = 2.3 - r * 0.62, y = CEIL_Y - 0.55 - r * 0.42;
-        shape(G.cyl32, M.brass, 0, y, cz, rad * 2, 0.07, rad * 2);
-        const n = 16 - r * 4;
-        for (let i = 0; i < n; i++) {
-          const a = (i / n) * Math.PI * 2 + r * 0.2;
-          shape(G.sphere, M.lamp, Math.sin(a) * rad, y - 0.16, cz + Math.cos(a) * rad,
-            0.17, 0.26, 0.17);
-        }
+    for (const [px, pz] of [
+      [-11.6, z0 + 8.4], [11.6, z0 + 8.4],
+      [-11.6, z0 + 30.5], [11.6, z0 + 30.5],
+      [-6.6, SZ - 4.6], [6.6, SZ - 4.6],
+    ]) {
+      // The jardinière: a gilt-banded brass pot on a turned oak stand.
+      shape(G.cylBase, M.oakDark, px, DECK_Y, pz, 0.62, 0.34, 0.62);
+      shape(G.plantPot, M.brass, px, DECK_Y + 0.72, pz, 1.15, 0.78, 1.15);
+      shape(G.ring, M.gilt, px, DECK_Y + 1.02, pz, 1.06, 2.0, 1.06);
+      shape(G.ring, M.gilt, px, DECK_Y + 0.44, pz, 0.84, 2.0, 0.84);
+      shape(G.cyl, M.potSoil, px, DECK_Y + 1.08, pz, 0.98, 0.06, 0.98);
+
+      const trunkBase = DECK_Y + 1.06;
+      for (let i = 0; i < 5; i++) {
+        const tx = px + Math.sin(i * 0.8) * 0.03, tz = pz + Math.cos(i * 0.7) * 0.02;
+        const radius = 0.19 - i * 0.012;
+        shape(G.palmTrunk, M.palmTrunk, tx, trunkBase + i * 0.22, tz, radius, 0.24, radius);
       }
-      shape(G.sphere, M.lamp, 0, CEIL_Y - 2.1, cz, 0.4, 0.5, 0.4);
+      const crownY = trunkBase + 5 * 0.22;
+      shape(G.sphere, M.palmTrunk, px, crownY - 0.03, pz, 0.24, 0.18, 0.24);
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2 + (i % 2) * 0.13;
+        shape(G.palmFrond, i % 3 ? M.palmLeaf : M.palmLeafLight,
+          px, crownY + (i % 2) * 0.05, pz, 0.95, 0.95, 1.15 + (i % 4) * 0.09,
+          { ry: a, rz: (i % 3 - 1) * 0.07 });
+      }
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + 0.3;
+        shape(G.palmFrond, M.palmLeafLight, px, crownY + 0.05, pz,
+          0.66, 1.25, 0.76, { ry: a, rx: -0.4 });
+      }
     }
-    // Wall sconces between the windows.
-    for (const sx of [-1, 1])
-      for (let z = z0 + 5; z < z1 - 3; z += 6.4) {
-        shape(G.canopy, M.lamp, sx * (SUP_X2 - 0.45), DECK_Y + 3.3, z, 0.5, 0.6, 0.5);
-        box(M.brass, sx * (SUP_X2 - 0.3), DECK_Y + 3.2, z, 0.2, 0.14, 0.5);
-      }
   });
 }
 
@@ -2067,16 +3108,18 @@ console.log('[cruise] casino room done');
 // ---------------------------------------------------------------------------
 const STAIR_W = 4.4;
 {
-  const rise = (POOL_Y - DECK_Y) / 20;      // 20 treads over 6.2 m
+  const rise = (POOL_Y - DECK_Y) / 20;      // 20 treads over 7.5 m
   const tread = 0.62;
   const zBottom = -78;
-  for (let i = 0; i < 20; i++) {
-    const z0 = zBottom + i * tread;
-    const top = DECK_Y + (i + 1) * rise;
-    // Each tread reaches back under the one before it so the flight is solid
-    // to the ground probe rather than 20 floating slabs.
-    slab(M.teak, -STAIR_W / 2, STAIR_W / 2, z0, z0 + tread + 0.06, DECK_Y - 0.4, top);
-  }
+  groundOnly(() => {
+    for (let i = 0; i < 20; i++) {
+      const z0 = zBottom + i * tread;
+      const top = DECK_Y + (i + 1) * rise;
+      // Each tread reaches back under the one before it so the flight is solid
+      // to the ground probe rather than 20 floating slabs.
+      slab(M.teak, -STAIR_W / 2, STAIR_W / 2, z0, z0 + tread + 0.06, DECK_Y - 0.4, top);
+    }
+  });
   // The top tread finishes at z ≈ -65.6, which is already under the pool
   // deck's aft cantilever (POOL_Z0 = -66) — so the flight lands straight on
   // it and needs no landing slab of its own.
@@ -2336,52 +3379,137 @@ const POOL_WATER = POOL_Y - 0.28;
 }
 
 // Lifeboats, in davits along both sides. They are the single most recognisable
-// thing on a liner's profile — and the easiest to get wrong: slung at 3.4 m in
-// a 3 × 7.6 m hull they were dark bowls hanging at head height over the
-// promenade, and they roofed the whole walk in shadow. They belong ABOVE the
-// deck's head height, high on the house side, and they are orange.
-const M_boat = new THREE.MeshStandardMaterial({ color: 0xe4742a, roughness: 0.62 });
+// thing on a liner's profile, so each one gets enough construction detail to
+// read as safety equipment rather than an orange hanging prop: a tapered
+// capsule hull, a raised enclosed cabin, a dark window band, white markings,
+// a life ring, a navigation lamp and a proper cradle suspended from angled
+// davits. They sit outboard of the promenade rail and above head height, so
+// they frame the walk instead of blocking it with a low orange ceiling.
 prop(() => {
   for (const sx of [-1, 1]) {
     for (let i = 0; i < 6; i++) {
       const z = -44 + i * 18;
-      const x = sx * (SUP_X2 + 1.9);
-      const y = DECK_Y + 4.9;
-      shape(G.hull, M_boat, x, y + 0.55, z, 2.2, 1.05, 6.4);   // hull, opening up
-      box(M.white, x, y + 0.62, z, 2.0, 0.16, 6.0);            // the canopy
-      box(M.white, x, y + 0.86, z, 1.7, 0.36, 5.5);            // and its camber
-      box(M_boat, x, y + 0.2, z, 2.3, 0.14, 6.5);              // rubbing strake
-      // Davit arms, out from the house side and over the boat.
-      for (const dz of [-2.3, 2.3]) {
-        shape(G.cylBase, M.steel, sx * (SUP_X2 + 0.45), DECK_Y + 2.6, z + dz,
-          0.15, 3.1, 0.15);
-        box(M.steel, sx * (SUP_X2 + 1.2), DECK_Y + 5.7, z + dz, 1.9, 0.13, 0.13);
-        box(M.steel, x, DECK_Y + 5.3, z + dz, 0.08, 0.8, 0.08);     // the fall
+      const x = sx * (SUP_X2 + 3.35);
+      const y = DECK_Y + 4.72;
+
+      // Hull and low rounded cabin. The cabin is offset upward so the lower
+      // orange shoulder remains visible from the promenade and from the sea.
+      shape(G.lifeboat, M.boatOrange, x, y, z, 1.82, 0.86, 2.48);
+      shape(G.lifeboatCabin, M.boatOrangeLight, x, y + 0.34, z, 1.48, 0.36, 1.58);
+
+      // Three side windows with narrow orange mullions between them. A small
+      // forward pane makes the bow readable when looking down the deck.
+      for (const wx of [-0.78, 0, 0.78]) {
+        for (const side of [-1, 1])
+          box(M.boatWindow, x + side * 0.79, y + 0.36, z + wx,
+            0.045, 0.19, 0.48);
+      }
+      box(M.boatWindow, x, y + 0.38, z + 1.28, 0.82, 0.19, 0.05);
+
+      // SOLAS-style banding and roof marker. The side bands are kept clear of
+      // the rounded ends so the hull still tapers naturally at bow and stern.
+      for (const side of [-1, 1])
+        box(M.white, x + side * 0.86, y - 0.02, z, 0.055, 0.11, 2.05);
+      box(M.white, x, y + 0.72, z, 0.20, 0.055, 2.55);
+      box(M.boatRubber, x, y - 0.36, z - 1.18, 0.55, 0.15, 0.28);
+
+      // A highly visible life ring and the small roof beacon give the craft
+      // scale and make the safety function obvious from the player camera.
+      for (const side of [-1, 1]) {
+        shape(G.torus, M.white, x + side * 0.94, y + 0.03, z - 0.28,
+          0.25, 0.25, 0.25, { rz: side * Math.PI / 2 });
+        shape(G.cyl, M.boatOrange, x + side * 0.94, y + 0.03, z - 0.28,
+          0.12, 0.07, 0.12, { rz: side * Math.PI / 2 });
+      }
+      shape(G.sphere, M.warmLampBright, x, y + 0.83, z + 0.15, 0.10, 0.10, 0.10);
+
+      // Steel cradle under the hull, plus an L-shaped davit bracket from the
+      // house side: a short post at the roofline, then a level arm out to
+      // the boat. Square, not a diagonal boom, so it reads as a fitting
+      // bolted to the ship rather than a stray pole. The rope hangs from
+      // the outboard end and stays visually separate from the boat body.
+      for (const dz of [-1.65, 1.65]) {
+        box(M.steel, x, y - 0.47, z + dz, 1.35, 0.12, 0.12);
+        box(M.steel, x, y - 0.26, z + dz, 0.12, 0.38, 0.12);
+        const baseX = sx * (SUP_X2 + 0.35);
+        const topX = x;
+        const armY = y + 0.92;
+        shape(G.cylBase, M.steel, baseX, CEIL_Y - 0.3, z + dz,
+          0.10, armY - (CEIL_Y - 0.3), 0.10);
+        box(M.steel, (baseX + topX) / 2, armY, z + dz, Math.abs(topX - baseX), 0.12, 0.12);
+        shape(G.cyl, M.boatRope, topX, y + 0.31, z + dz,
+          0.025, 1.18, 0.025);
+      }
+      // Small mounting shoes visually anchor the pod to the ship instead of
+      // leaving it floating in front of the superstructure.
+      for (const side of [-1, 1]) {
+        box(M.steel, x + side * 0.66, y - 0.54, z - 1.15, 0.16, 0.14, 0.42);
+        box(M.steel, x + side * 0.66, y - 0.54, z + 1.15, 0.16, 0.14, 0.42);
       }
     }
   }
 });
 
-// Deck furniture on the promenade: benches against the house, and the
-// gangway sign at the starboard door where the player arrives.
+// Deck furniture on the promenade: benches against the house, with the
+// backrests inboard so passengers sit facing the hull and the sea.
 prop(() => {
   for (const sx of [-1, 1])
     for (let z = -50; z < 55; z += 13) {
       if (Math.abs(z + 8) < 6) continue;               // keep the doorways clear
-      box(M.teak, sx * (SUP_X2 + 1.1), DECK_Y + 0.44, z, 0.6, 0.09, 2.2);
-      for (const dz of [-0.8, 0.8])
-        box(M.steel, sx * (SUP_X2 + 1.1), DECK_Y + 0.22, z + dz, 0.5, 0.44, 0.1);
-      box(M.teak, sx * (SUP_X2 + 1.5), DECK_Y + 0.75, z, 0.09, 0.55, 2.2);
+      const cx = sx * (SUP_X2 + 1.1);
+      for (let i = 0; i < 5; i++)
+        shape(benchSeatSlat, M.benchWood, cx + sx * (i - 2) * 0.108,
+          DECK_Y + 0.46, z, 1, 1, 1);
+      for (let i = 0; i < 4; i++)
+        shape(benchBackSlat, M.benchWood, cx - sx * (0.27 + i * 0.022),
+          DECK_Y + 0.59 + i * 0.115, z, 1, 1, 1, { rz: sx * 0.18 });
+      for (const dz of [-0.87, 0.87]) {
+        box(M.benchMetal, cx, DECK_Y + 0.40, z + dz, 0.53, 0.055, 0.065);
+        for (const dx of [-0.21, 0.21]) {
+          box(M.benchMetal, cx + sx * dx, DECK_Y + 0.20, z + dz, 0.055, 0.40, 0.065);
+          box(M.benchMetal, cx + sx * dx, DECK_Y + 0.018, z + dz, 0.12, 0.035, 0.13);
+        }
+        shape(G.box, M.benchMetal, cx - sx * 0.32, DECK_Y + 0.70, z + dz,
+          0.045, 0.58, 0.055, { rz: sx * 0.18 });
+        box(M.benchMetal, cx + sx * 0.16, DECK_Y + 0.57, z + dz, 0.04, 0.24, 0.04);
+        shape(benchArm, M.benchWood, cx - sx * 0.025, DECK_Y + 0.71, z + dz, 1, 1, 1);
+      }
     }
 });
 {
-  const m = canvasMat(512, 128, (g, W, H) => {
+  // Gangway signs at the starboard atrium door.
+  //
+  // A 4.2 m banner across the 2.4 m opening was cut by the lintel ("CO"/"UM").
+  // Splitting the two words onto the side windows then reversed the phrase
+  // from the lobby (turning 180° swaps left and right). Negative scale on a
+  // FrontSide plane reversed the winding, so the face was culled and ATRIUM
+  // vanished. Each plaque now carries the FULL phrase, positive scale, one
+  // FrontSide card per face.
+  const signY = DECK_Y + 3.1;
+  const doorZ = -8 + DOOR_W / 2;
+  const mk = (W, H, lines, px) => canvasMat(W, H, (g, w, h) => {
     g.fillStyle = '#12314f';
-    g.fillRect(0, 0, W, H);
-    paintText(g, 'COUPÉE · ATRIUM', W / 2, H / 2, 48, '#e8c063');
-  }, { emissive: 0xffffff, emissiveIntensity: 0.3 });
-  prop(() => shape(G.card, m, SUP_X2 + 0.22, DECK_Y + 3.1, -6.8, 4.2, 1.05, 1,
-    { ry: Math.PI / 2 }));
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#e8c063';
+    g.lineWidth = Math.max(6, h * 0.04);
+    g.strokeRect(10, 10, w - 20, h - 20);
+    for (let i = 0; i < lines.length; i++)
+      paintText(g, lines[i], w / 2, h * (i + 1) / (lines.length + 1), px, '#e8c063');
+  }, { emissive: 0xffffff, emissiveIntensity: 0.3, side: THREE.FrontSide });
+  const lineMat = mk(768, 128, ['COUPÉE · ATRIUM'], 48);
+  const stackMat = mk(512, 256, ['COUPÉE', 'ATRIUM'], 64);
+  const put = (mat, x, z, w, h, ry) =>
+    shape(G.card, mat, x, signY, z, w, h, 1, { ry });
+  prop(() => {
+    // Lintel — stacked, so the order is the same from promenade and lobby.
+    put(stackMat, SUP_X2 + 0.20, doorZ, DOOR_W - 0.25, 0.88, Math.PI / 2);
+    put(stackMat, SUP_X2 - 0.20, doorZ, DOOR_W - 0.25, 0.88, -Math.PI / 2);
+    // Each window pane beside the door: the whole phrase, not one word.
+    for (const z of [-10.0, -4.0]) {
+      put(lineMat, SUP_X2 + 0.20, z, 2.15, 0.72, Math.PI / 2);
+      put(lineMat, SUP_X2 - 0.20, z, 2.15, 0.72, -Math.PI / 2);
+    }
+  });
 }
 
 flushKits();
@@ -2721,6 +3849,20 @@ function setCruiseTime(name) {
   M.glass.emissiveIntensity = s.glow;
   M.glass.opacity = cruiseTime === 'night' ? 0.55 : 0.30;
   for (const m of casinoNeon) m.emissiveIntensity = s.neon * 0.85;
+  // The ballroom is feutrée at every hour, so its lamps are TRIMMED, never
+  // switched: the candles and the dome are fixed emissives that ignore the
+  // day/night dimmer entirely, and only these five point lights move — and
+  // only from 0.6 to 1.0. Put on M.lamp with everything else, the whole room
+  // went out at dawn and the dance floor was lit by the sea through a gap in
+  // the drapes.
+  for (const l of ballLights) l.intensity = l.userData.base * (cruiseTime === 'night' ? 1 : 0.6);
+  // The leaded screens are a BACKLIT panel, not a window: after dark the sea
+  // behind them is black and the glass has to carry its own light, and by day
+  // it has to sit over M.glass, which the same dimmer drives to a bright warm
+  // sheet for the benefit of anyone out on the promenade. At a flat 0.3 the
+  // ship's own glass burned straight through the amber and the fore end of
+  // the ballroom had two white slots in it at both hours.
+  M.leadedWindow.emissiveIntensity = cruiseTime === 'night' ? 0.62 : 0.22;
 
   updateSunShadow(ctrl.pos);
   window.__nightMode = cruiseTime === 'night';
@@ -2900,12 +4042,56 @@ try {
     patrol(npcIdx++, -2.2, DECK_Y, CASINO_Z[0] + 10, CASINO_Z[0] + 38, 0, casinoStaff);
     patrol(npcIdx++, 2.2, DECK_Y, CASINO_Z[0] + 38, CASINO_Z[0] + 12, Math.PI, casinoGuest);
 
-    // Ballroom: a couple on the floor, and the band on the stage.
-    stand(npcIdx++, -1.2, DECK_Y, BALL_Z[0] + 18, 0.4);
-    stand(npcIdx++, 0.6, DECK_Y, BALL_Z[0] + 18.6, Math.PI + 0.4);
-    stand(npcIdx++, -3.6, DECK_Y + 0.62, BALL_Z[0] + 35.2, Math.PI); // at the piano
-    stand(npcIdx++, 2.4, DECK_Y + 0.62, BALL_Z[0] + 36.4, Math.PI);  // double bass
-    stand(npcIdx++, -10.2, DECK_Y, BALL_Z[0] + 12.4, -Math.PI / 2);
+    // =========================================================================
+    // The ballroom, dressed for dinner. The room is Edwardian, so the crowd in
+    // it is too: white tie on the men, evening gowns on the women, and the
+    // band in the same black as the stewards. `uniform` with the same colour
+    // for shirt and trousers is how a floor-length gown is made out of a rig
+    // that only knows about a top and a bottom.
+    // =========================================================================
+    const tails = { look: null, uniform: { shirt: 0xf2ece0, pants: 0x14141a, shoes: 0x0a0a0c, hat: false } };
+    const steward = { look: null, uniform: { shirt: 0x16161c, pants: 0x121216, shoes: 0x08080a, hat: false } };
+    const gown = c => ({ look: null, uniform: { shirt: c, pants: c, shoes: 0x2a1a1e, hat: false } });
+    const gownCrimson = gown(0x6d1626);
+    const gownIvory = gown(0xe6dcc2);
+    const gownEmerald = gown(0x1d4433);
+    const gownMidnight = gown(0x1e2a52);
+
+    const B0 = BALL_Z[0];
+    // Two couples out on the parquet, under the dome.
+    stand(npcIdx++, -1.6, DECK_Y + 0.02, B0 + 18.4, 0.5, tails);
+    stand(npcIdx++, -0.5, DECK_Y + 0.02, B0 + 19.1, Math.PI + 0.5, gownCrimson);
+    stand(npcIdx++, 2.6, DECK_Y + 0.02, B0 + 21.4, -0.9, tails);
+    stand(npcIdx++, 3.5, DECK_Y + 0.02, B0 + 22.3, Math.PI - 0.9, gownIvory);
+    // A third couple further aft, and someone watching from the floor edge.
+    stand(npcIdx++, -3.4, DECK_Y + 0.02, B0 + 13.6, 2.4, tails);
+    stand(npcIdx++, -4.2, DECK_Y + 0.02, B0 + 14.4, 2.4 + Math.PI, gownEmerald);
+    stand(npcIdx++, 6.9, DECK_Y, B0 + 16.0, -Math.PI / 2, gownMidnight);
+
+    // At the tables, port and starboard.
+    stand(npcIdx++, -9.6, DECK_Y, B0 + 4.5, Math.PI / 2, tails);
+    stand(npcIdx++, -10.9, DECK_Y, B0 + 3.2, 0, gownIvory);
+    stand(npcIdx++, -9.6, DECK_Y, B0 + 11.5, Math.PI / 2, gownCrimson);
+    stand(npcIdx++, -12.1, DECK_Y, B0 + 18.5, -Math.PI / 2, tails);
+    stand(npcIdx++, 9.6, DECK_Y, B0 + 11.5, -Math.PI / 2, tails);
+    stand(npcIdx++, 10.9, DECK_Y, B0 + 10.2, Math.PI, gownEmerald);
+    stand(npcIdx++, 9.6, DECK_Y, B0 + 25.5, -Math.PI / 2, gownMidnight);
+    stand(npcIdx++, 12.1, DECK_Y, B0 + 4.5, Math.PI / 2, tails);
+
+    // Two people at the balustrade by the door, looking down the room.
+    stand(npcIdx++, -5.1, DECK_Y, B0 + 2.1, 0, gownIvory);
+    stand(npcIdx++, 5.1, DECK_Y, B0 + 2.1, 0.3, tails);
+
+    // The band, on the stage. The stage deck is DECK_Y + 0.64.
+    stand(npcIdx++, -3.6, DECK_Y + 0.64, B0 + 34.8, Math.PI, steward);   // at the piano
+    stand(npcIdx++, 2.4, DECK_Y + 0.64, B0 + 36.4, Math.PI, steward);    // double bass
+    stand(npcIdx++, 0.6, DECK_Y + 0.64, B0 + 35.2, Math.PI, steward);    // violin, front
+    stand(npcIdx++, 5.2, DECK_Y + 0.64, B0 + 37.4, Math.PI, steward);    // drums
+
+    // Stewards working the room, fore and aft down the port and starboard
+    // aisles — the aisles are clear of the arcade at |x| = 12.
+    patrol(npcIdx++, -12.0, DECK_Y, B0 + 4, B0 + 30, 0, steward);
+    patrol(npcIdx++, 12.0, DECK_Y, B0 + 30, B0 + 4, Math.PI, steward);
 
     // Atrium: the purser behind the desk, and someone waiting.
     stand(npcIdx++, -6.5, DECK_Y, 1.5, Math.PI);

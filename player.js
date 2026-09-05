@@ -1181,8 +1181,10 @@ export class Player {
       // does not. It shares the suit's seam exactly — same field, same level,
       // opposite side — so the two meet with nothing between them.
       if (onArm) {
+        // `sleeve` already subtracts ARMHOLE_WEIGHT: its zero contour is
+        // the suit's armhole, and the cap must keep the opposite side.
         const capShell = croppedGeometry(
-          croppedGeometry(tshirt.geometry, ARMHOLE_WEIGHT,
+          croppedGeometry(tshirt.geometry, 0,
             { axis: sleeve, keep: 1, standoff: false }),
           ARM_CAP_REACH, { axis: alongArm, keep: -1, standoff: false });
         const capBound = weightsOf(capShell);

@@ -45,6 +45,9 @@ export function buildCityBoxes(world, cellSize = CELL) {
         // box is something the ground snap will lift you onto, which is exactly
         // what a scene's props must not do.
         prop: im.userData.prop?.[i] === true,
+        // Still raycastable as a walking surface, but omitted from horizontal
+        // capsule pushes (notably the stacked boxes that form stairs).
+        groundOnly: im.userData.groundOnly?.[i] === true,
       });
     }
   }

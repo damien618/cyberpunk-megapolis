@@ -445,11 +445,11 @@ export class Controller {
     }
 
     // Walking mode pins vel.y at 0, so nothing pulls us back down after stepping
-    // DOWN off a kerb, a coping or a threshold: the old height was held until
-    // the gap outgrew hasSupport's 0.3 m, and the avatar walked on visibly
-    // nothing. Follow the surface instead — anything deeper is a real drop and
-    // still hands over to the air state.
-    if (gh !== null && this.mode === 'ground' && this.pos.y > gh && this.pos.y - gh < 0.3)
+    // DOWN off a kerb, a coping, a threshold or a stair: the old height was
+    // held until the gap outgrew hasSupport's 0.3 m, and the avatar walked on
+    // visibly nothing. Follow every surface that is also short enough to step
+    // up; anything deeper is a real drop and still hands over to the air state.
+    if (gh !== null && this.mode === 'ground' && this.pos.y > gh && this.pos.y - gh < STEP_H)
       this.pos.y = gh;
 
     // unbury (ground mode only): feet stuck inside street-level geometry —
@@ -535,7 +535,7 @@ export class Controller {
     const ids = this.bw.queryNearby(this.pos.x, this.pos.z, 3);
     for (const idx of ids) {
       const b = this.bw.aabbs[idx];
-      if (!b.collide) continue;
+      if (!b.collide || b.groundOnly) continue;
       // Skip if the player is entirely above or entirely below the box
       if (this.pos.y >= b.y1) continue;
       if (this.pos.y + BODY_H <= b.y0) continue;
