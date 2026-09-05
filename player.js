@@ -408,6 +408,120 @@ function bodyRadialFloor(meshes, axisZ) {
   };
 }
 
+// Where a bone sits in the geometry's own space, from the skeleton's bind
+// matrices rather than the live pose: the wardrobe is cut from bind-pose
+// geometry and has to measure against bind-pose bones.
+function boneRestPoint(mesh, name) {
+  const index = mesh?.skeleton?.bones?.findIndex(bone => bone.name === name) ?? -1;
+  if (index < 0) return null;
+  return new THREE.Vector3().setFromMatrixPosition(
+    new THREE.Matrix4().copy(mesh.skeleton.boneInverses[index]).invert());
+}
+
+// The pack's own arm as a coarse cylindrical map about the upperarm's axis:
+// max radius per (step along the arm, bearing about it). bodyRadialFloor asks
+// how far out the skin is at a height on the torso; this asks the same about a
+// limb, which is what the shoulder needs — over the deltoid the torso's own
+// vertical axis runs nearly along the surface, so nothing measured against it
+// says anything useful up there.
+const ARM_FIELD_STEP = 0.02;    // metres along the arm per row
+const ARM_FIELD_COLS = 16;      // bearings about its axis
+const ARM_FIELD_REACH = 0.15;   // radius past which a vertex is the OTHER arm
+function armSurfaceField(mesh, origin, dir) {
+  const position = mesh?.geometry?.attributes?.position;
+  if (!position) return null;
+  const seed = Math.abs(dir.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  const u = new THREE.Vector3().crossVectors(seed, dir).normalize();
+  const v = new THREE.Vector3().crossVectors(dir, u).normalize();
+  const bearingOf = (a, b) => (Math.round(
+    (Math.atan2(b, a) + Math.PI) / (2 * Math.PI) * ARM_FIELD_COLS) % ARM_FIELD_COLS
+    + ARM_FIELD_COLS) % ARM_FIELD_COLS;
+
+  const rows = new Map();
+  let first = Infinity, last = -Infinity;
+  const point = new THREE.Vector3();
+  for (let i = 0; i < position.count; i++) {
+    point.fromBufferAttribute(position, i).sub(origin);
+    const t = point.dot(dir);
+    const a = point.dot(u), b = point.dot(v);
+    const radius = Math.hypot(a, b);
+    if (radius > ARM_FIELD_REACH) continue;   // the other arm, on the same mesh
+    const row = Math.round(t / ARM_FIELD_STEP);
+    if (!rows.has(row)) rows.set(row, new Array(ARM_FIELD_COLS).fill(-Infinity));
+    const cells = rows.get(row);
+    const bearing = bearingOf(a, b);
+    if (radius > cells[bearing]) cells[bearing] = radius;
+    first = Math.min(first, row);
+    last = Math.max(last, row);
+  }
+  if (!rows.size) return null;
+
+  // Fill in from the nearest bearing that has a sample: a 700-vertex arm
+  // leaves holes in a 16-way bin, and a lookup that fell into one would
+  // collapse that patch of the cap onto the bone.
+  const table = [];
+  for (let row = first; row <= last; row++) {
+    const cells = rows.get(row) ?? table[table.length - 1]?.slice() ?? null;
+    if (!cells) continue;
+    for (let c = 0; c < ARM_FIELD_COLS; c++) {
+      if (cells[c] > -Infinity) continue;
+      for (let d = 1; d <= ARM_FIELD_COLS / 2; d++) {
+        const near = Math.max(
+          cells[(c + d) % ARM_FIELD_COLS],
+          cells[(c - d + ARM_FIELD_COLS) % ARM_FIELD_COLS]);
+        if (near > -Infinity) { cells[c] = near; break; }
+      }
+    }
+    table.push(cells);
+  }
+
+  // Past either end the end row's profile stands: above the top ring that IS
+  // the shoulder, carrying the arm's own girth up over the joint.
+  return (t, radial) => {
+    const row = THREE.MathUtils.clamp(Math.round(t / ARM_FIELD_STEP) - first, 0, table.length - 1);
+    const cells = table[row];
+    const bearing = bearingOf(radial.dot(u), radial.dot(v));
+    return Math.max(
+      cells[bearing],
+      cells[(bearing + 1) % ARM_FIELD_COLS],
+      cells[(bearing - 1 + ARM_FIELD_COLS) % ARM_FIELD_COLS]);
+  };
+}
+
+// Shrinks a shell onto the arm it is skinned to: each vertex moves straight in
+// toward the nearer upperarm's axis until it sits `inset` under that arm's own
+// surface. Inward only — a vertex already under the skin is left alone. This is
+// huggedGeometry's move about a limb instead of the torso, and the direction is
+// the whole point: the sleeve stands off the arm all round, so pulling it to
+// the torso's vertical axis (which is what the first fix for the shoulder did)
+// slides it sideways across the deltoid rather than down onto it, and it comes
+// out as a pale flap beside the arm instead of skin on it.
+function huggedToArm(geometry, sides, inset) {
+  const position = geometry.attributes.position;
+  const point = new THREE.Vector3();
+  const radial = new THREE.Vector3();
+  for (let i = 0; i < position.count; i++) {
+    point.fromBufferAttribute(position, i);
+    const side = sides.find(s => s.sign * point.x >= 0) ?? sides[0];
+    radial.copy(point).sub(side.origin);
+    const t = radial.dot(side.dir);
+    radial.addScaledVector(side.dir, -t);
+    const radius = radial.length();
+    if (radius < 1e-4) continue;
+    const skin = side.field(t, radial);
+    if (!(skin > -Infinity)) continue;
+    const target = skin - inset;
+    if (radius <= target || target <= 0) continue;
+    radial.multiplyScalar(target / radius);
+    point.copy(side.origin).addScaledVector(side.dir, t).add(radial);
+    position.setXYZ(i, point.x, point.y, point.z);
+  }
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 // Takes a loose garment onto the body: every vertex moves straight in toward
 // the torso's own vertical axis. A t-shirt hangs a centimetre or so off the
 // ribs and that is exactly what makes the swimsuit built from one read as a
@@ -822,6 +936,7 @@ export class Player {
 
     let swimsuitTop = null;
     let swimsuitBack = null;
+    let swimsuitArms = null;
     // The shell is still cut out of the t-shirt — it is the only garment in the
     // pack skinned to this torso — but nothing else about it is the tee any
     // more. Three things had to change together, because fixing any one of them
@@ -862,6 +977,17 @@ export class Player {
     // out, and the four millimetres it sits inside show as a rim of flesh
     // inside the armhole, which is what an armhole looks like.
     const ARMHOLE_SKIN_OVERHANG = 0;
+    // How far under the arm's own surface the shoulder cap sits: enough that
+    // the two never trade places on a curve, little enough that the step where
+    // the cap takes over from the arm mesh is not a visible ledge.
+    const ARM_CAP_INSET = 0.003;
+    // How far down the arm the cap runs, along the upperarm's axis. It only has
+    // to reach past the arm mesh's top ring — about 8 cm down — with enough
+    // overlap to hide the join. Kept to the sleeve's full length instead, the
+    // far end of it fights the arm: the profile it is shrunk onto is 16 bearings
+    // wide and reads the local maximum, so on the taper below the deltoid the
+    // cap lands a millimetre proud of the skin and shows as a flap of it.
+    const ARM_CAP_REACH = 0.14;
     const SWIMSUIT_STRIPE = [0.09, 0.20];
     // The pink runs the ring at strap height: over both shoulders and straight
     // across the upper chest between them. Both stripes are measured against
@@ -934,12 +1060,31 @@ export class Player {
       // hands cost nothing to include and keep the seam honest at the armhole.
       const skinFloor = bodyRadialFloor([this.headMesh, ...this.bodySkinMeshes], axisZ);
 
+      // The hug lets go at the armhole. Pulling toward the torso's vertical
+      // axis is the right move over the ribs and the wrong one at the seam:
+      // there the pull runs sideways INTO the arm, and a centimetre of it
+      // buries the suit's edge inside the deltoid, where it comes back out as
+      // a black band painted round the upper arm. Faded on the very weight the
+      // seam is cut on, the edge stays on the shirt's own surface — outside the
+      // arm, which is where the edge of an armhole is. The liner takes the same
+      // fade, so it stays inside the suit by construction.
+      const HUG_ARMHOLE_FADE = [0.18, ARMHOLE_WEIGHT];
+      const armholeFade = (geometry) => {
+        const bound = armWeight(bones, geometry);
+        return bound && (i => 1 - THREE.MathUtils.smoothstep(
+          bound(i), HUG_ARMHOLE_FADE[0], HUG_ARMHOLE_FADE[1]));
+      };
+
+      const suitShell = croppedGeometry(armholed(), 0, { axis: scoop, keep: -1, standoff: false });
+      const linerShell = armholed(ARMHOLE_SKIN_OVERHANG);
+
       swimsuitTop = this.createSkinnedClone(
         tshirt,
         bandedGeometry(
           huggedGeometry(
-            croppedGeometry(armholed(), 0, { axis: scoop, keep: -1, standoff: false }),
-            SWIMSUIT_HUG, axisZ, HUG_FADE, skinFloor, SWIMSUIT_CLEARANCE),
+            suitShell,
+            SWIMSUIT_HUG, axisZ, HUG_FADE, skinFloor, SWIMSUIT_CLEARANCE,
+            armholeFade(suitShell)),
           0x0f0f12,
           [
             { color: 0x6e0f16, t0: SWIMSUIT_STRIPE[0], t1: SWIMSUIT_STRIPE[1], feather: 0.02 },
@@ -971,10 +1116,47 @@ export class Player {
         tshirt,
         huggedGeometry(
           huggedGeometry(
-            armholed(ARMHOLE_SKIN_OVERHANG),
-            SWIMSUIT_HUG, axisZ, HUG_FADE, skinFloor, SWIMSUIT_CLEARANCE),
+            linerShell,
+            SWIMSUIT_HUG, axisZ, HUG_FADE, skinFloor, SWIMSUIT_CLEARANCE,
+            armholeFade(linerShell)),
           SWIMSUIT_SKIN_GAP, axisZ, HUG_ALWAYS),
         swimBackSkinMaterial, 'Wardrobe_SwimsuitBack');
+
+      // The deltoid cap: skin for the shoulder the armhole opens onto. The
+      // pack's arm mesh stops about 8 cm down the upperarm — under the shirt it
+      // ships with, the sleeve covers everything above that — so cutting the
+      // sleeve off at the armhole leaves the top of the arm as a hole with the
+      // sky behind it. The cap is that discarded sleeve, kept as flesh and
+      // shrunk onto the arm: buried under the skin wherever the arm mesh
+      // reaches, and carrying the arm's own girth up over the joint where it
+      // does not. It shares the suit's seam exactly — same field, same level,
+      // opposite side — so the two meet with nothing between them.
+      const armSides = ['l', 'r'].map(side => {
+        const from = boneRestPoint(tshirt, `upperarm_${side}`);
+        const to = boneRestPoint(tshirt, `lowerarm_${side}`);
+        if (!from || !to) return null;
+        const dir = to.clone().sub(from).normalize();
+        const field = armSurfaceField(this.armsMesh, from, dir);
+        return field && { origin: from, dir, field, sign: Math.sign(from.x) || 1 };
+      }).filter(Boolean);
+
+      // Distance down the nearer arm's own axis, for the cap's lower hem.
+      const alongArm = (x, y, z) => {
+        const side = armSides.find(s => s.sign * x >= 0) ?? armSides[0];
+        return new THREE.Vector3(x, y, z).sub(side.origin).dot(side.dir);
+      };
+
+      if (sleeve && armSides.length) {
+        swimsuitArms = this.createSkinnedClone(
+          tshirt,
+          huggedToArm(
+            croppedGeometry(
+              croppedGeometry(tshirt.geometry, ARMHOLE_WEIGHT,
+                { axis: sleeve, keep: 1, standoff: false }),
+              ARM_CAP_REACH, { axis: alongArm, keep: -1, standoff: false }),
+            armSides, ARM_CAP_INSET),
+          swimBackSkinMaterial, 'Wardrobe_SwimsuitArms');
+      }
     }
 
     const SWIMSUIT_HEM = 0.81;
@@ -1165,7 +1347,7 @@ export class Player {
     this.wardrobe = {
       sleeves, swimLegs, swimShorts, nightTop, nightShorts,
       denimShorts, flipFlops, vest, zooTrousers, hairCrown: null,
-      swimsuitTop, swimsuitBottom, swimsuitBack,
+      swimsuitTop, swimsuitBottom, swimsuitBack, swimsuitArms,
       kimonoParts,
       casinoTop, casinoPants, casinoShoes, casinoSleeves, casinoJewelry: casinoJewelryGroup,
       casinoLooseHair: casinoLooseHairGroup,
@@ -1234,6 +1416,7 @@ export class Player {
     if (this.wardrobe.swimsuitTop) this.wardrobe.swimsuitTop.visible = outfit.swimsuit;
     if (this.wardrobe.swimsuitBottom) this.wardrobe.swimsuitBottom.visible = outfit.swimsuit;
     if (this.wardrobe.swimsuitBack) this.wardrobe.swimsuitBack.visible = outfit.swimsuit;
+    if (this.wardrobe.swimsuitArms) this.wardrobe.swimsuitArms.visible = outfit.swimsuit;
     if (this.wardrobe.nightTop) this.wardrobe.nightTop.visible = outfit.night;
     if (this.wardrobe.nightShorts) this.wardrobe.nightShorts.visible = outfit.night;
     if (this.wardrobe.denimShorts) this.wardrobe.denimShorts.visible = false;
