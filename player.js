@@ -187,10 +187,20 @@ function clothingPart(materialName = '') {
 // trousers at y >= at, and the vest cuts the t-shirt twice on x to take its
 // sleeves off. `standoff` is the hem's own lift off the skin and means nothing
 // on a vertical cut, so it is opt-out.
+// `axis` also takes a function (x, y, z, index) → scalar, and then the cut is
+// that field's `at` level set rather than a plane. The swimsuit needs both
+// kinds it allows: the scooped back is a seam that runs down and aft at once
+// while stepping over the straps, which no plane describes, and the armhole is
+// cut on the vertex's own arm weight, which is not a function of position at
+// all. The seam vertices are placed by interpolating the field linearly along
+// each straddling edge — exact for a plane, exact for a skin weight, and close
+// enough for a gently curved field at this mesh's density.
 function croppedGeometry(geometry, at, { axis = 'y', keep = 1, standoff = true } = {}) {
   const minY = at;
-  const COMP = { x: 0, y: 1, z: 2 }[axis];
-  const compOf = i => geometry.attributes.position.getComponent(i, COMP);
+  const position0 = geometry.attributes.position;
+  const compOf = typeof axis === 'function'
+    ? i => axis(position0.getX(i), position0.getY(i), position0.getZ(i), i)
+    : (COMP => i => position0.getComponent(i, COMP))({ x: 0, y: 1, z: 2 }[axis]);
   const attributes = Object.entries(geometry.attributes);
   const position = geometry.attributes.position;
   const skinIndex = geometry.attributes.skinIndex;
@@ -295,29 +305,147 @@ function inflatedGeometry(geometry, amount) {
   return geometry;
 }
 
-// Paints a horizontal band across a garment as vertex colours, positioned by
-// fraction of the geometry's own (post-crop) height rather than an absolute
-// Y — so the band stays put on the hem it was measured against regardless of
+// Paints horizontal bands across a garment as vertex colours, each positioned
+// by fraction of the geometry's own (post-crop) height rather than an absolute
+// Y — so a band stays put on the hem it was measured against regardless of
 // where that hem sits on the body. Needs a material with vertexColors: true;
 // the base colour is baked in here rather than left to material.color so the
 // same geometry cannot silently pick up the wrong garment's tint later.
-function bandedGeometry(geometry, baseColor, bandColor, t0, t1, feather = 0.05) {
+// Bands are laid down in order, each over the last, so a later one wins where
+// they overlap. Pass `bounds` to measure the fractions against something other
+// than this geometry — the swimsuit hands in the whole t-shirt's extent, so
+// that cutting an armhole or a deeper back out of the shell does not slide the
+// stripes up it.
+function bandedGeometry(geometry, baseColor, bands, bounds = null) {
   geometry.computeBoundingBox();
-  const { min, max } = geometry.boundingBox;
+  const { min, max } = bounds ?? geometry.boundingBox;
   const span = (max.y - min.y) || 1;
   const position = geometry.attributes.position;
   const base = new THREE.Color(baseColor);
-  const band = new THREE.Color(bandColor);
+  const palette = bands.map(band => new THREE.Color(band.color));
   const colors = new Float32Array(position.count * 3);
   const tmp = new THREE.Color();
   for (let i = 0; i < position.count; i++) {
     const f = (position.getY(i) - min.y) / span;
-    const rise = THREE.MathUtils.smoothstep(f, t0 - feather, t0);
-    const fall = 1 - THREE.MathUtils.smoothstep(f, t1, t1 + feather);
-    tmp.copy(base).lerp(band, Math.min(rise, fall));
+    tmp.copy(base);
+    bands.forEach(({ t0, t1, feather = 0.05 }, b) => {
+      const rise = THREE.MathUtils.smoothstep(f, t0 - feather, t0);
+      const fall = 1 - THREE.MathUtils.smoothstep(f, t1, t1 + feather);
+      tmp.lerp(palette[b], Math.min(rise, fall));
+    });
     colors[i * 3] = tmp.r; colors[i * 3 + 1] = tmp.g; colors[i * 3 + 2] = tmp.b;
   }
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geometry;
+}
+
+// How much of a vertex is bound to the arm rather than the body: the sum of
+// its skin weights on the arm chain. This is what tells a sleeve from a torso.
+// Every geometric attempt at that boundary failed on the same fact — the parts
+// overlap in every coordinate. A short sleeve's underside droops below the
+// armpit, so it is lower than the shoulder and further from the arm's axis
+// than the ribs are, and both a plane square to the arm and a cylinder about
+// it end up either leaving a band of fabric hanging under the arm or slicing
+// the flank of the suit off down to the hem. The rig already knows: the
+// fabric over the arm rides the arm bones. Cutting on that puts the seam
+// exactly where the deltoid meets the shoulder, which is where an armhole is,
+// and it is the same boundary the bare-arm mesh under it is weighted to.
+// Takes the geometry separately from the bones because the cropped copies keep
+// their skin attributes, so the same question can be asked of a piece already
+// cut out of the shirt.
+function armWeight(bones, geometry) {
+  const arm = new Set(bones
+    .map((bone, index) => (/(upperarm|lowerarm|forearm|hand)/i.test(bone.name) ? index : -1))
+    .filter(index => index >= 0));
+  const skinIndex = geometry.attributes.skinIndex;
+  const skinWeight = geometry.attributes.skinWeight;
+  if (!arm.size || !skinIndex || !skinWeight) return null;
+  return vertex => {
+    let bound = 0;
+    for (let c = 0; c < 4; c++) {
+      if (arm.has(skinIndex.getComponent(vertex, c))) bound += skinWeight.getComponent(vertex, c);
+    }
+    return bound;
+  };
+}
+
+// How far out the bare skin reaches, as a coarse cylindrical height map about
+// the torso's axis: max radius per (height, bearing) cell over whatever body
+// meshes are handed in. huggedGeometry uses it as a floor so a garment pulled
+// onto the body stops at the body instead of sinking through it. Cells the
+// skin does not reach are -Infinity and impose nothing, which is most of this
+// torso — the pack has skin for the head, the neck and décolleté, the arms and
+// the hands, and nothing at all between the collarbones and the hips.
+const BODY_FLOOR_ROWS = 0.01;      // metres of height per cell
+const BODY_FLOOR_COLS = 32;        // bearings around the axis
+function bodyRadialFloor(meshes, axisZ) {
+  const cells = new Map();
+  const cell = (y, bearing) => `${Math.round(y / BODY_FLOOR_ROWS)}:${bearing}`;
+  const bearingOf = (x, z) => Math.round(
+    (Math.atan2(z, x) + Math.PI) / (2 * Math.PI) * BODY_FLOOR_COLS) % BODY_FLOOR_COLS;
+  for (const mesh of meshes) {
+    const position = mesh?.geometry?.attributes?.position;
+    if (!position) continue;
+    for (let i = 0; i < position.count; i++) {
+      const x = position.getX(i), y = position.getY(i), z = position.getZ(i) - axisZ;
+      const key = cell(y, bearingOf(x, z));
+      const radius = Math.hypot(x, z);
+      if (radius > (cells.get(key) ?? -Infinity)) cells.set(key, radius);
+    }
+  }
+  // Read a cell and its neighbours, so a garment vertex between two cells is
+  // held out by the taller of them rather than dropping into the gap.
+  return (y, x, z) => {
+    const bearing = bearingOf(x, z);
+    let floor = -Infinity;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let db = -1; db <= 1; db++) {
+        const key = cell(y + dy * BODY_FLOOR_ROWS, (bearing + db + BODY_FLOOR_COLS) % BODY_FLOOR_COLS);
+        floor = Math.max(floor, cells.get(key) ?? -Infinity);
+      }
+    }
+    return floor;
+  };
+}
+
+// Takes a loose garment onto the body: every vertex moves straight in toward
+// the torso's own vertical axis. A t-shirt hangs a centimetre or so off the
+// ribs and that is exactly what makes the swimsuit built from one read as a
+// t-shirt — the give at the waist, the sleeve standing off the arm. Radial is
+// the right direction for it (a normal-wise shrink folds in on itself wherever
+// the surface is concave, which is how the old flesh liner ended up surfacing
+// through the black at the armpit), and it also means a second copy pulled in
+// further is strictly inside the first, everywhere, which is what lets the
+// skin of the scooped back sit behind the suit and stay there.
+// `fade` is [outLow, inLow, inHigh, outHigh] in Y: full shrink between the two
+// inner heights, none past the outer two, so the hem keeps its overlap with
+// the briefs. `floor`, from bodyRadialFloor, is what stops the pull where the
+// pack does have skin — the décolleté piece runs from the collarbones to the
+// jaw, and an unclamped pull put the whole front of the suit behind it and
+// left a flesh bib across the chest.
+// `weightBy`, when given, scales the pull per vertex on top of the height
+// taper — the skin's overhang into the armhole uses it to bury itself under
+// the arm without dragging the rest of the piece in with it.
+function huggedGeometry(geometry, amount, axisZ, fade, floor = null, clearance = 0, weightBy = null) {
+  const position = geometry.attributes.position;
+  const [outLow, inLow, inHigh, outHigh] = fade;
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i), y = position.getY(i), z = position.getZ(i) - axisZ;
+    const radius = Math.hypot(x, z);
+    if (radius < 1e-4) continue;
+    const taper = Math.min(
+      THREE.MathUtils.smoothstep(y, outLow, inLow),
+      1 - THREE.MathUtils.smoothstep(y, inHigh, outHigh))
+      * (weightBy ? weightBy(i) : 1);
+    let pull = Math.min(amount * taper, radius * 0.5);
+    if (floor) {
+      const skin = floor(y, x, z);
+      if (skin > -Infinity) pull = Math.min(pull, Math.max(0, radius - skin - clearance));
+    }
+    position.setXYZ(i, x - (x / radius) * pull, y, z + axisZ - (z / radius) * pull);
+  }
+  position.needsUpdate = true;
+  geometry.computeBoundingSphere();
   return geometry;
 }
 
@@ -362,6 +490,7 @@ export class Player {
       Object.values(CLOTHING_PARTS).map(part => [part, { materials: [], mesh: null }])
     );
     this.headMesh = null;
+    this.bodySkinMeshes = [];
     this.hairMesh = null;
     this.hairMaterial = null;
     this.wardrobe = null;
@@ -412,6 +541,11 @@ export class Player {
           if (o.isSkinnedMesh && name.includes('head') && !this.headMesh) this.headMesh = o;
           if (name.includes('body')) {
             if (!this.bodyMaterial) this.bodyMaterial = materials[index];
+            // Every bare-skin piece, for the swimsuit's fit: it is pulled onto
+            // the body and has to stop where the body is, and the pack's skin
+            // comes in several meshes — the décolleté one between the
+            // collarbones and the jaw is the one the suit runs into.
+            if (o.isSkinnedMesh && !this.bodySkinMeshes.includes(o)) this.bodySkinMeshes.push(o);
             // The bare-arm skin, kept apart so long sleeves can retire it: it
             // is weighted to the twist bones the sleeve ignores, so left on it
             // punches through the cloth as the elbow rotates. Everything of it
@@ -676,45 +810,171 @@ export class Player {
       side: THREE.DoubleSide,
     });
 
+    // Flesh for the scooped back to open onto. The body's roughness, not the
+    // lofted legs' 0.66: the pack's own arm is right beside it at the shoulder
+    // and a glossier back reads as a different material from two feet away.
+    const swimBackSkinMaterial = new THREE.MeshStandardMaterial({
+      color: 0xd3a189,
+      roughness: this.bodyMaterial?.roughness ?? 0.92,
+      metalness: 0,
+      side: THREE.DoubleSide,
+    });
+
     let swimsuitTop = null;
-    // 0.72 is the vest's shoulder seam: the black shell is the tee cut on two
-    // vertical planes there, so it keeps the shoulder and a short cap of the
-    // sleeve and lets the arm out below.
+    let swimsuitBack = null;
+    // The shell is still cut out of the t-shirt — it is the only garment in the
+    // pack skinned to this torso — but nothing else about it is the tee any
+    // more. Three things had to change together, because fixing any one of them
+    // alone showed up the other two:
     //
-    // It used to be worn over a "fill" — the whole tee again, skinned in flesh
-    // — on the theory that the shell is hollow and the fill both closed the
-    // armhole and stood in for the upper arms. Neither held up. The pack's own
-    // arm mesh is on under the swimsuit, so the fill's sleeve was a second,
-    // baggier arm: 7 cm of it hung past the black at the shoulder, hem and
-    // all, reading as a t-shirt the colour of skin. Worse, the fill sat on the
-    // tee surface while the black is the tee pushed out along its normals, and
-    // an eighth of those normals point INWARD — the armpit and the underside
-    // of the sleeve are concave — so right across the deltoid the shell
-    // inflates into the body and the flesh copy surfaces through it. That
-    // patch, not the sleeve alone, is what showed on the pool deck. Cropping
-    // the fill to the armhole fixed the sleeve and left the patch; deflating
-    // it 14 mm did not move the patch either, because the fold is centimetres
-    // deep. Nothing needs it: with the fill gone the shell reads solid from
-    // every angle the ship can put the camera in — the arm fills the armhole
-    // in all of them, and there is no swinging on a cruise deck to raise it.
-    const SWIMSUIT_ARMHOLE = 0.72;
-    const SWIMSUIT_STANDOFF = 0.008;
+    // 1. THE ARMHOLE. It used to be a vertical plane at 0.72 of the half-width,
+    //    which is not where an armhole is. It left the sleeve's cap on as a
+    //    loose tube of fabric standing off the arm, and once the back opened
+    //    you looked straight down the inside of it: the black hole over the
+    //    upper arm. It is cut on the vertex's own arm weight now, at the
+    //    deltoid's crease — see armWeight, which also records why none of the
+    //    geometric versions of this seam survived contact with the mesh.
+    // 2. THE FIT. A t-shirt hangs off the body and a swimsuit does not. Every
+    //    piece is pulled in toward the torso's axis by SWIMSUIT_HUG, which is
+    //    what turns the silhouette from "black tee" into "maillot".
+    // 3. THE BACK SKIN. The pack has no torso, only arms, so the scoop needs a
+    //    back painted in. It is the same shell pulled in a few millimetres
+    //    further — and because both are pulled along the same radial, it is
+    //    inside the suit everywhere by construction. The previous liner was
+    //    offset along the surface normals instead, and an eighth of the tee's
+    //    normals point inward (the armpit and the underside of the sleeve are
+    //    concave), which is how it used to surface through the black.
+    const SWIMSUIT_HUG = 0.012;
+    const SWIMSUIT_SKIN_GAP = 0.004;   // suit thickness: how far the skin sits inside it
+    const SWIMSUIT_CLEARANCE = 0.006;  // how far the suit stays off the pack's own skin
+    // Where the armhole seam falls on the weight ramp from body to arm. Half is
+    // the deltoid's own crease; lower cuts a wider opening, higher leaves a cap.
+    const ARMHOLE_WEIGHT = 0.5;
+    // The skin under the suit takes the SAME armhole, exactly. Letting it run
+    // even a little further onto the arm — the first attempt at closing the
+    // gap at the shoulder, before it turned out the gap was between the suit's
+    // hugged flank and the arm and the skin's job was to be a whole ring —
+    // stood it off the deltoid as a pale flap. The weight ramp across the
+    // shoulder is gradual, so a fifth of a step in it is centimetres of
+    // geometry, and pulling that back in does not help: the pull runs to the
+    // torso's vertical axis, so over the top of the arm it slides the skin
+    // sideways rather than into it. Cut on the same line the skin cannot get
+    // out, and the four millimetres it sits inside show as a rim of flesh
+    // inside the armhole, which is what an armhole looks like.
+    const ARMHOLE_SKIN_OVERHANG = 0;
     const SWIMSUIT_STRIPE = [0.09, 0.20];
+    // The pink runs the ring at strap height: over both shoulders and straight
+    // across the upper chest between them. Both stripes are measured against
+    // the whole tee, not the cut shell, so re-cutting either opening does not
+    // slide them.
+    const SWIMSUIT_SHOULDER = [0.79, 0.90];
+    // Scooped back: normalised height plus a lean toward the back, above
+    // SCOOP_AT, and only between the straps. The bound on x is the whole point.
+    // The first cut of this leaned on an x² term to lift the seam off the
+    // shoulders instead, which works while the strap is the width of a t-shirt
+    // sleeve and shreds it the moment the armhole narrows it — a seam wandering
+    // across a strap six centimetres wide, on a mesh this coarse, comes out as
+    // a row of holes. Held off the strap by a hard bound, the opening is a
+    // clean U and the strap is bounded only by seams that are meant to touch
+    // it: the armhole outside, the neckline in front.
+    const SCOOP_LEAN = 0.55;    // how much of the cut is "aft" rather than "up"
+    const SCOOP_AT = 0.898;
+    const SCOOP_STRAP = 0.115;  // half-width of the opening: the straps' inner edge
+    // …and it has to be told it is a BACK. The lean keeps it off the chest but
+    // not off the neckline, where the front of the collar comes back to the
+    // body's own axis and so scores the same as the nape: without this the
+    // opening ate the front of the neck too and the skin behind it came
+    // through as a bib.
+    const SCOOP_BEHIND = 0.02;  // opening starts this far aft of the shoulder line
+    // Where the hug is allowed to bite, in Y: the bare torso only. It is out
+    // by the hem, which would otherwise let the briefs out from under the
+    // suit, and out again by the collarbones — above that is the pack's
+    // décolleté mesh, and the tee is only a few millimetres clear of it, so
+    // any pull at all there puts the suit behind skin. That was the flesh bib
+    // across the chest, and clamping the pull against a map of the skin only
+    // turned it into a rash of speckles wherever the map read a millimetre
+    // low. Below the collarbones there is no skin at all — the pack has none
+    // between there and the hips — so the pull is free, and that is the half
+    // of the torso the silhouette is read from anyway.
+    const HUG_FADE = [0.99, 1.08, 1.32, 1.42];
+    const HUG_ALWAYS = [-1e3, -1e3, 1e3, 1e3];   // no fade: the skin's own offset
     if (tshirt) {
       tshirt.geometry.computeBoundingBox();
       const bb = tshirt.geometry.boundingBox;
-      const armhole = Math.max(Math.abs(bb.min.x), Math.abs(bb.max.x)) * SWIMSUIT_ARMHOLE;
-      const shell = croppedGeometry(
-        croppedGeometry(tshirt.geometry, armhole, { axis: 'x', keep: -1, standoff: false }),
-        -armhole, { axis: 'x', keep: 1, standoff: false });
+      const spanY = (bb.max.y - bb.min.y) || 1;
+      const halfDepth = Math.max(Math.abs(bb.min.z), Math.abs(bb.max.z)) || 1;
+      const axisZ = 0.5 * (bb.min.z + bb.max.z);
+
+      const scoop = (x, y, z) => Math.min(
+        (y - bb.min.y) / spanY
+        - SCOOP_LEAN * ((z - axisZ) / halfDepth)
+        - SCOOP_AT,
+        SCOOP_STRAP - Math.abs(x),
+        axisZ - SCOOP_BEHIND - z);
+
+      // Positive inside the sleeve, so `keep: -1` takes the sleeve off.
+      const bones = tshirt.skeleton?.bones ?? [];
+      const bound = armWeight(bones, tshirt.geometry);
+      const sleeve = bound && ((x, y, z, vertex) => bound(vertex) - ARMHOLE_WEIGHT);
+
+      // The sleeve comes off both pieces; only the suit gets the back scooped
+      // out of it, because the skin's whole job is to be there where the suit
+      // is not. The skin keeps its armhole a little further out than the suit
+      // does — a seam cut in exactly the same place leaves the shell's hollow
+      // interior showing in the gap between the suit's edge and the arm, which
+      // from behind the shoulder is a dark slot where the deltoid should be.
+      // The overhang is under the arm mesh, and pulled in behind it, so it
+      // plugs the slot without ever being the surface you see.
+      const armholed = (at = 0) => (sleeve
+        ? croppedGeometry(tshirt.geometry, at, { axis: sleeve, keep: -1, standoff: false })
+        : croppedGeometry(tshirt.geometry, bb.max.y + 1, { axis: 'y', keep: -1, standoff: false }));
+
+      // Everything of the pack's own skin that the suit can reach: the
+      // décolleté piece and the neck are the ones that matter, the arms and
+      // hands cost nothing to include and keep the seam honest at the armhole.
+      const skinFloor = bodyRadialFloor([this.headMesh, ...this.bodySkinMeshes], axisZ);
+
       swimsuitTop = this.createSkinnedClone(
         tshirt,
         bandedGeometry(
-          inflatedGeometry(shell, SWIMSUIT_STANDOFF),
-          0x0f0f12, 0x6e0f16, SWIMSUIT_STRIPE[0], SWIMSUIT_STRIPE[1], 0.02
+          huggedGeometry(
+            croppedGeometry(armholed(), 0, { axis: scoop, keep: -1, standoff: false }),
+            SWIMSUIT_HUG, axisZ, HUG_FADE, skinFloor, SWIMSUIT_CLEARANCE),
+          0x0f0f12,
+          [
+            { color: 0x6e0f16, t0: SWIMSUIT_STRIPE[0], t1: SWIMSUIT_STRIPE[1], feather: 0.02 },
+            { color: 0xe0559a, t0: SWIMSUIT_SHOULDER[0], t1: SWIMSUIT_SHOULDER[1], feather: 0.018 },
+          ],
+          bb
         ),
         swimStripeMaterial,
         'Wardrobe_SwimsuitTop');
+
+      // The skin under the suit: the same shell with the scoop NOT taken out
+      // of it, which is what shows through the scooped back.
+      //
+      // It is the whole ring, not just the back. Cut off at the front it left
+      // a slot open all the way round each armhole — the suit's seam sits on
+      // the t-shirt's surface and the arm's skin is a centimetre inside that,
+      // so between the two you saw daylight from anywhere in front. Carried
+      // round the front the skin bridges that centimetre; everywhere it is not
+      // needed it is a flesh liner a few millimetres inside an opaque suit,
+      // which costs a few hundred triangles and is never seen.
+      //
+      // It takes the suit's own hug first and then a second pull of its
+      // thickness, and that second one is deliberately NOT faded. Fading it
+      // like the first made the two coincide everywhere the hug had tapered
+      // out — the shoulders and the upper back, which is precisely where the
+      // skin is meant to show through — and two identical surfaces in the same
+      // place come out as a staircase of z-fighting.
+      swimsuitBack = this.createSkinnedClone(
+        tshirt,
+        huggedGeometry(
+          huggedGeometry(
+            armholed(ARMHOLE_SKIN_OVERHANG),
+            SWIMSUIT_HUG, axisZ, HUG_FADE, skinFloor, SWIMSUIT_CLEARANCE),
+          SWIMSUIT_SKIN_GAP, axisZ, HUG_ALWAYS),
+        swimBackSkinMaterial, 'Wardrobe_SwimsuitBack');
     }
 
     const SWIMSUIT_HEM = 0.81;
@@ -905,7 +1165,7 @@ export class Player {
     this.wardrobe = {
       sleeves, swimLegs, swimShorts, nightTop, nightShorts,
       denimShorts, flipFlops, vest, zooTrousers, hairCrown: null,
-      swimsuitTop, swimsuitBottom,
+      swimsuitTop, swimsuitBottom, swimsuitBack,
       kimonoParts,
       casinoTop, casinoPants, casinoShoes, casinoSleeves, casinoJewelry: casinoJewelryGroup,
       casinoLooseHair: casinoLooseHairGroup,
@@ -973,6 +1233,7 @@ export class Player {
     if (this.wardrobe.swimShorts) this.wardrobe.swimShorts.visible = outfit.swim && !outfit.swimsuit && dressed;
     if (this.wardrobe.swimsuitTop) this.wardrobe.swimsuitTop.visible = outfit.swimsuit;
     if (this.wardrobe.swimsuitBottom) this.wardrobe.swimsuitBottom.visible = outfit.swimsuit;
+    if (this.wardrobe.swimsuitBack) this.wardrobe.swimsuitBack.visible = outfit.swimsuit;
     if (this.wardrobe.nightTop) this.wardrobe.nightTop.visible = outfit.night;
     if (this.wardrobe.nightShorts) this.wardrobe.nightShorts.visible = outfit.night;
     if (this.wardrobe.denimShorts) this.wardrobe.denimShorts.visible = false;
