@@ -54,6 +54,16 @@ const cabinPromptGroup = document.getElementById('cabinPromptGroup');
 const cabinBeachPrompt = document.getElementById('cabinBeachPrompt');
 const cabinDayPrompt = document.getElementById('cabinDayPrompt');
 const cabinNightPrompt = document.getElementById('cabinNightPrompt');
+const slotPromptGroup = document.getElementById('slotPromptGroup');
+const slotYesPrompt = document.getElementById('slotYesPrompt');
+const slotNoPrompt = document.getElementById('slotNoPrompt');
+const slotGameOverlay = document.getElementById('slotGameOverlay');
+const slotCabinet = document.getElementById('slotCabinet');
+const slotStatus = document.getElementById('slotStatus');
+const slotReplayGroup = document.getElementById('slotReplayGroup');
+const slotReplayYes = document.getElementById('slotReplayYes');
+const slotReplayNo = document.getElementById('slotReplayNo');
+const slotReels = [0, 1, 2].map(i => document.getElementById(`slotReel${i}`));
 
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
@@ -5285,6 +5295,11 @@ const BED_SPOT = {
 
 let started = false, usedLock = false, paused = false;
 let cabinAskOpen = false;
+let slotAskOpen = false;
+let slotGameOpen = false;
+let slotSpinning = false;
+let slotCooldown = 0;
+let slotSpinTimer = null;
 let lieState = null;               // { choice, phase, t, returnPos }
 let bedCooldown = 0;
 let leavingShip = false;
@@ -5317,6 +5332,119 @@ function nearBed() {
   if (Math.abs(ctrl.pos.y - CABIN_Y) > 1.1) return false;
   return distanceToSpot(BED_SPOT, ctrl.pos) <= BED_SPOT.triggerDistance;
 }
+
+// The stools are one metre in front of each bank. Proximity to any of their
+// eighteen positions makes the corresponding machine playable.
+function nearSlotMachine() {
+  if (slotCooldown > 0 || lieState || ctrl.mode !== 'ground') return false;
+  if (Math.abs(ctrl.pos.y - DECK_Y) > 1.1) return false;
+  for (const side of [-1, 1]) {
+    const stoolX = side * 9.6;
+    for (let bank = 0; bank < 3; bank++) {
+      const centerZ = CASINO_Z[0] + 8 + bank * 11;
+      for (let i = 0; i < 6; i++) {
+        const off = (i - 2.5) * 0.84;
+        const machineZ = centerZ - (side < 0 ? off : -off);
+        if (Math.hypot(ctrl.pos.x - stoolX, ctrl.pos.z - machineZ) <= 1.05) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function setSlotAsk(show) {
+  if (show === slotAskOpen) return;
+  slotAskOpen = show;
+  slotPromptGroup?.classList.toggle('show', show);
+  slotPromptGroup?.setAttribute('aria-hidden', show ? 'false' : 'true');
+  if (show) {
+    setCabinAsk(false);
+    ctrl.vel.set(0, 0, 0);
+    if (document.pointerLockElement === renderer.domElement) document.exitPointerLock?.();
+  } else if (started && !paused && !slotGameOpen && !leavingShip) {
+    requestGamePointerLock();
+  }
+}
+
+function randomSlotIcon() {
+  return slotIcons[Math.floor(Math.random() * slotIcons.length)];
+}
+
+function resetSlotGame() {
+  slotSpinning = false;
+  slotReels.forEach((reel, i) => {
+    reel.textContent = slotIcons[i];
+    reel.classList.remove('spinning');
+  });
+  slotCabinet?.classList.remove('pulling');
+  slotStatus.className = '';
+  slotStatus.textContent = 'Appuyez sur Entrée pour actionner la manette';
+  slotReplayGroup?.classList.remove('show');
+}
+
+function openSlotGame() {
+  slotGameOpen = true;
+  setSlotAsk(false);
+  paused = false;
+  ctrl.vel.set(0, 0, 0);
+  resetSlotGame();
+  slotGameOverlay?.classList.add('show');
+  slotGameOverlay?.setAttribute('aria-hidden', 'false');
+}
+
+function closeSlotGame() {
+  clearInterval(slotSpinTimer);
+  slotSpinTimer = null;
+  slotGameOpen = false;
+  slotSpinning = false;
+  slotCooldown = 1.25;
+  slotGameOverlay?.classList.remove('show');
+  slotGameOverlay?.setAttribute('aria-hidden', 'true');
+  if (started && !paused && !leavingShip) requestGamePointerLock();
+}
+
+function spinSlots() {
+  if (!slotGameOpen || slotSpinning || slotReplayGroup?.classList.contains('show')) return;
+  slotSpinning = true;
+  slotStatus.className = '';
+  slotStatus.textContent = 'Les rouleaux tournent…';
+  slotCabinet?.classList.add('pulling');
+  slotReels.forEach(reel => reel.classList.add('spinning'));
+  setTimeout(() => slotCabinet?.classList.remove('pulling'), 360);
+
+  const result = [randomSlotIcon(), randomSlotIcon(), randomSlotIcon()];
+  slotSpinTimer = setInterval(() => {
+    slotReels.forEach(reel => {
+      if (reel.classList.contains('spinning')) reel.textContent = randomSlotIcon();
+    });
+  }, 70);
+
+  [900, 1350, 1800].forEach((delay, i) => setTimeout(() => {
+    if (!slotGameOpen) return;
+    slotReels[i].textContent = result[i];
+    slotReels[i].classList.remove('spinning');
+    if (i !== 2) return;
+    clearInterval(slotSpinTimer);
+    slotSpinTimer = null;
+    slotSpinning = false;
+    const won = result[0] === result[1] && result[1] === result[2];
+    slotStatus.className = won ? 'win' : 'lose';
+    slotStatus.textContent = won ? 'JACKPOT ! Vous avez gagné !' : 'Perdu… Retentez votre chance !';
+    slotReplayGroup?.classList.add('show');
+  }, delay));
+}
+
+slotYesPrompt?.addEventListener('click', e => { e.stopPropagation(); openSlotGame(); });
+slotNoPrompt?.addEventListener('click', e => { e.stopPropagation(); setSlotAsk(false); slotCooldown = 1.25; });
+slotReplayYes?.addEventListener('click', e => { e.stopPropagation(); resetSlotGame(); });
+slotReplayNo?.addEventListener('click', e => { e.stopPropagation(); closeSlotGame(); });
+window.addEventListener('keydown', e => {
+  if (slotGameOpen && e.code === 'Enter') {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    spinSlots();
+  }
+}, true);
 
 function setCabinAsk(show) {
   if (show === cabinAskOpen) return;
@@ -5397,8 +5525,11 @@ function updateLie(dt) {
 
 function updatePrompts(dt) {
   bedCooldown = Math.max(0, bedCooldown - dt);
-  if (lieState || leavingShip) return;
-  setCabinAsk(nearBed());
+  slotCooldown = Math.max(0, slotCooldown - dt);
+  if (lieState || leavingShip || slotGameOpen) return;
+  const atSlot = nearSlotMachine();
+  setSlotAsk(atSlot);
+  setCabinAsk(!atSlot && nearBed());
 }
 
 renderer.domElement.addEventListener('click', () => {
@@ -5463,7 +5594,7 @@ function animate() {
   const dt = Math.min(0.033, clock.getDelta());
   const t = clock.elapsedTime;
 
-  if (started && !paused) {
+  if (started && !paused && !slotGameOpen && !slotAskOpen) {
     input.updateLook(dt);
     const cp = Math.cos(input.pitch);
     forward.set(-Math.sin(input.yaw) * cp, Math.sin(input.pitch), -Math.cos(input.yaw) * cp)
@@ -5564,14 +5695,14 @@ document.addEventListener('pointerlockchange', () => {
   // Dropping the lock so a prompt button can be clicked is intentional, and so
   // is dropping it while lying down: a failed lock must not freeze the player
   // in the bed with the overlay up and no way to answer.
-  if ((cabinAskOpen || ctrl.mode === 'lie') && document.pointerLockElement === null) {
+  if ((cabinAskOpen || slotAskOpen || slotGameOpen || ctrl.mode === 'lie') && document.pointerLockElement === null) {
     paused = false;
     overlay.style.display = 'none';
     return;
   }
   if (!usedLock) return;
   paused = !input.locked;
-  if (paused) setCabinAsk(false);
+  if (paused) { setCabinAsk(false); setSlotAsk(false); }
   overlay.style.display = paused ? 'flex' : 'none';
 });
 

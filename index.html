@@ -618,6 +618,43 @@
     font-family: var(--mono); font-size: 14px; font-weight: 600; letter-spacing: .02em;
     box-shadow: 0 3px 0 rgba(0, 0, 0, 0.28);
   }
+  #slotPromptGroup {
+    position: fixed; left: 50%; top: calc(50% + 42px); z-index: 12;
+    transform: translate(-50%, 8px); display: flex; flex-direction: column; gap: 9px;
+    width: min(470px, calc(100vw - 32px)); opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .14s ease, transform .14s ease, visibility .14s;
+  }
+  #slotPromptGroup.show {
+    transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto;
+  }
+  #slotGameOverlay {
+    position: fixed; inset: 0; z-index: 30; display: none; place-items: center;
+    padding: 20px; background: radial-gradient(circle, rgba(80, 8, 24, .72), rgba(2, 2, 7, .96));
+    font-family: var(--mono); color: #fff6d4;
+  }
+  #slotGameOverlay.show { display: grid; }
+  .slot-cabinet {
+    position: relative; width: min(760px, calc(100vw - 48px)); padding: 30px 72px 34px 38px;
+    border: 10px solid #bd861f; border-radius: 38px 38px 22px 22px;
+    background: linear-gradient(145deg, #300208, #09070b 48%, #3c050b);
+    box-shadow: 0 0 0 5px #4b2804, 0 0 55px #ffb00066, inset 0 0 40px #000;
+    text-align: center;
+  }
+  .slot-title { margin: 0 0 22px; color: #ffd65a; font: 900 clamp(25px, 5vw, 48px) Impact, sans-serif; letter-spacing: .12em; text-shadow: 0 3px #8b1515, 0 0 16px #ffb300; }
+  .slot-reels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 18px; border: 6px solid #e1b640; border-radius: 15px; background: #09090d; }
+  .slot-reel { display: grid; place-items: center; aspect-ratio: 1; overflow: hidden; border: 4px solid #7d5815; border-radius: 10px; background: linear-gradient(#ddd, #fff 48%, #d8d8d8); color: #111; font-size: clamp(55px, 12vw, 112px); line-height: 1; }
+  .slot-reel.spinning { animation: slot-rattle .09s infinite alternate; filter: blur(2px); }
+  @keyframes slot-rattle { to { transform: translateY(4px); } }
+  .slot-lever { position: absolute; right: -34px; top: 38%; width: 22px; height: 150px; border-radius: 12px; background: linear-gradient(90deg, #6c480d, #ffe083, #80530b); transform-origin: 50% 90%; transition: transform .2s; box-shadow: 3px 3px 8px #000; }
+  .slot-lever::before { content: ""; position: absolute; left: 50%; top: -28px; width: 58px; height: 58px; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ff6570, #ac0012 58%, #420007); box-shadow: 0 0 18px #ff263d; }
+  .slot-cabinet.pulling .slot-lever { transform: rotate(24deg); }
+  #slotStatus { min-height: 52px; margin: 22px 0 8px; font-size: clamp(16px, 2.6vw, 23px); font-weight: 800; }
+  #slotStatus.win { color: #ffe55f; text-shadow: 0 0 14px #ffb000; }
+  #slotStatus.lose { color: #ff9ca5; }
+  .slot-enter { color: #fff; opacity: .8; font-size: 14px; }
+  #slotReplayGroup { display: none; gap: 10px; margin-top: 16px; }
+  #slotReplayGroup.show { display: grid; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 620px) { .slot-cabinet { padding: 22px 35px 28px 20px; } .slot-lever { right: -25px; height: 105px; } }
 
   /* ---------- mode gate: only one engine's DOM is active at a time ---------- */
   /* #furniturePrompt is excluded here: the cyberpunk city (main.js) reuses it
@@ -633,6 +670,8 @@
   html:not([data-engine="world"]) #kneelPromptGroup,
   html:not([data-engine="world"]) #cruisePromptGroup,
   html:not([data-engine="world"]) #cabinPromptGroup,
+  html:not([data-engine="world"]) #slotPromptGroup,
+  html:not([data-engine="world"]) #slotGameOverlay,
   html:not([data-engine="world"]) #hud { display: none !important; }
 
   html[data-engine="world"] #loader,
@@ -971,6 +1010,29 @@
   <button id="cabinBeachPrompt" class="lie-prompt" type="button">S'allonger et se lever à la plage de L.A.</button>
   <button id="cabinDayPrompt" class="lie-prompt" type="button">S'allonger et se lever dans le bateau de croisière de jour</button>
   <button id="cabinNightPrompt" class="lie-prompt" type="button">S'allonger et se lever dans le bateau de croisière de nuit</button>
+</div>
+<div id="slotPromptGroup" role="dialog" aria-label="Jouer à la machine à sous" aria-hidden="true">
+  <div class="prompt-ask">Voulez-vous jouer à la machine à sous&nbsp;?</div>
+  <button id="slotYesPrompt" class="lie-prompt" type="button">Oui</button>
+  <button id="slotNoPrompt" class="lie-prompt" type="button">Non</button>
+</div>
+<div id="slotGameOverlay" role="dialog" aria-modal="true" aria-label="Machine à sous" aria-hidden="true">
+  <div id="slotCabinet" class="slot-cabinet">
+    <div class="slot-title">★ JACKPOT 777 ★</div>
+    <div class="slot-reels" aria-label="Rouleaux de la machine à sous">
+      <div class="slot-reel" id="slotReel0">🍒</div>
+      <div class="slot-reel" id="slotReel1">💎</div>
+      <div class="slot-reel" id="slotReel2">7️⃣</div>
+    </div>
+    <div class="slot-lever" aria-hidden="true"></div>
+    <div id="slotStatus" aria-live="polite">Appuyez sur Entrée pour actionner la manette</div>
+    <div class="slot-enter">TOUCHE ENTRÉE</div>
+    <div id="slotReplayGroup" role="group" aria-label="Rejouer">
+      <div class="prompt-ask" style="grid-column: 1 / -1">Rejouer&nbsp;?</div>
+      <button id="slotReplayYes" class="lie-prompt" type="button">Oui — Rejouer</button>
+      <button id="slotReplayNo" class="lie-prompt" type="button">Non — Quitter</button>
+    </div>
+  </div>
 </div>
 <div id="crosshair"></div>
 <div id="hud">Mode: <b id="mode">air</b> · Vitesse: <b id="speed">0</b> km/h · Hauteur: <b id="height">0</b> m</div>
