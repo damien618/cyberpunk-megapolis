@@ -1085,6 +1085,39 @@ const corridorCarpetTex = canvasTex(128, 256, (g, W, H) => {
 }, 1, 6);
 console.log('[cruise] textures initialized');
 
+// A wrapped paper label. The design is drawn twice across the canvas so that
+// however the bottle happens to be turned on the shelf, a whole label — not a
+// seam — faces the room.
+function bottleLabel(top, name, sub, paper, ink, accent) {
+  return canvasMat(512, 256, (g, W, H) => {
+    for (let p = 0; p < 2; p++) {
+      const x = p * W / 2 + W / 4, w = W / 2;
+      g.fillStyle = paper;
+      g.fillRect(p * W / 2, 0, w, H);
+      g.strokeStyle = accent;
+      g.lineWidth = 7;
+      g.strokeRect(p * W / 2 + 16, 14, w - 32, H - 28);
+      g.lineWidth = 2;
+      g.strokeRect(p * W / 2 + 27, 25, w - 54, H - 50);
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = accent;
+      g.font = 'bold 21px Georgia, "Times New Roman", serif';
+      g.fillText(top, x, 54);
+      g.fillStyle = ink;
+      g.font = 'bold 46px Georgia, "Times New Roman", serif';
+      g.fillText(name, x, 116);
+      g.fillStyle = accent;
+      g.fillRect(x - 62, 146, 124, 3);
+      g.fillStyle = ink;
+      g.font = 'italic 21px Georgia, "Times New Roman", serif';
+      g.fillText(sub, x, 180);
+      g.font = '15px Georgia, "Times New Roman", serif';
+      g.fillText('70 CL · 40% VOL', x, 214);
+    }
+  }, { roughness: 0.76, side: THREE.FrontSide });
+}
+
 const M = {
   // --- Hull and structure --------------------------------------------------
   // Topsides. A liner's navy is nearly black in a photograph and ACTUALLY
@@ -1176,6 +1209,54 @@ const M = {
   crystalGlass: new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.06, metalness: 0.2, transparent: true, opacity: 0.55 }),
   champagneGold: new THREE.MeshStandardMaterial({ color: 0xfde047, roughness: 0.25, metalness: 0.75 }),
   goldTrim: new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.26, metalness: 0.78 }),
+
+  // --- Back-bar bottles ----------------------------------------------------
+  // Bottle glass is one lathed wall drawn DoubleSide with depth writing off:
+  // the far wall shows through the near one, so the tint doubles up around
+  // the silhouette the way real glass does, and the instances of a shelf full
+  // of bottles never punch holes in each other. The liquid inside is a
+  // separate opaque mesh, which three always draws before the transparent
+  // pass — that ordering is what lets you see spirit through glass.
+  glassFlint: new THREE.MeshPhysicalMaterial({ color: 0xe6f0ee, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.24, side: THREE.DoubleSide, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.04, ior: 1.5, envMapIntensity: 1.7 }),
+  // Stemware: a single lathed wall, so it needs both faces and must not
+  // write depth over the drink standing inside it.
+  crystalCut: new THREE.MeshPhysicalMaterial({ color: 0xf2f8ff, roughness: 0.03, metalness: 0, transparent: true, opacity: 0.30, side: THREE.DoubleSide, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.03, ior: 1.52, envMapIntensity: 1.9 }),
+  glassAmberDark: new THREE.MeshPhysicalMaterial({ color: 0x5a3212, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.44, side: THREE.DoubleSide, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.05, ior: 1.5, envMapIntensity: 1.5 }),
+  glassBottleGreen: new THREE.MeshPhysicalMaterial({ color: 0x15442a, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.05, ior: 1.5, envMapIntensity: 1.5 }),
+  glassDeadLeaf: new THREE.MeshPhysicalMaterial({ color: 0x2b2a12, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.06, ior: 1.5, envMapIntensity: 1.4 }),
+  glassCobalt: new THREE.MeshPhysicalMaterial({ color: 0x123a72, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.05, ior: 1.5, envMapIntensity: 1.6 }),
+  glassSmoke: new THREE.MeshPhysicalMaterial({ color: 0x14171b, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.62, side: THREE.DoubleSide, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.06, ior: 1.5, envMapIntensity: 1.4 }),
+
+  // The spirit itself: opaque, glossy, faintly lit so the shelf strips behind
+  // the bottles read as light coming through the liquid.
+  liqWhisky: new THREE.MeshStandardMaterial({ color: 0x9a5511, roughness: 0.08, metalness: 0.05, emissive: 0x5a2c05, emissiveIntensity: 0.35 }),
+  liqCognac: new THREE.MeshStandardMaterial({ color: 0x7e3608, roughness: 0.08, metalness: 0.05, emissive: 0x4a1d04, emissiveIntensity: 0.35 }),
+  liqRum: new THREE.MeshStandardMaterial({ color: 0x53240d, roughness: 0.1, metalness: 0.05, emissive: 0x2e1206, emissiveIntensity: 0.3 }),
+  liqRedWine: new THREE.MeshStandardMaterial({ color: 0x460a18, roughness: 0.12, metalness: 0.05, emissive: 0x2a0510, emissiveIntensity: 0.25 }),
+  liqClear: new THREE.MeshStandardMaterial({ color: 0xdfeaf0, roughness: 0.04, metalness: 0.08, emissive: 0x6f8894, emissiveIntensity: 0.28 }),
+  liqGin: new THREE.MeshStandardMaterial({ color: 0xd7e8d2, roughness: 0.05, metalness: 0.08, emissive: 0x63805e, emissiveIntensity: 0.28 }),
+  liqCuracao: new THREE.MeshStandardMaterial({ color: 0x0f6fc4, roughness: 0.06, metalness: 0.06, emissive: 0x073a68, emissiveIntensity: 0.4 }),
+  liqCampari: new THREE.MeshStandardMaterial({ color: 0xa8102c, roughness: 0.07, metalness: 0.06, emissive: 0x5e0817, emissiveIntensity: 0.42 }),
+  liqAbsinthe: new THREE.MeshStandardMaterial({ color: 0x3f8f2c, roughness: 0.07, metalness: 0.06, emissive: 0x1f4a14, emissiveIntensity: 0.4 }),
+  liqChampagne: new THREE.MeshStandardMaterial({ color: 0xd9bd6a, roughness: 0.06, metalness: 0.06, emissive: 0x7a5c1a, emissiveIntensity: 0.4 }),
+
+  // Capsules, foils and corks over the neck.
+  foilBlack: new THREE.MeshStandardMaterial({ color: 0x0e0e12, roughness: 0.4, metalness: 0.25 }),
+  foilBurgundy: new THREE.MeshStandardMaterial({ color: 0x6b0f1e, roughness: 0.38, metalness: 0.3 }),
+  foilGold: new THREE.MeshStandardMaterial({ color: 0xe0bd63, roughness: 0.24, metalness: 0.85 }),
+  foilSilver: new THREE.MeshStandardMaterial({ color: 0xcfd6dc, roughness: 0.22, metalness: 0.85 }),
+  cork: new THREE.MeshStandardMaterial({ color: 0xb8894f, roughness: 0.88 }),
+  pourSpout: new THREE.MeshStandardMaterial({ color: 0xd7dde2, roughness: 0.3, metalness: 0.7 }),
+
+  // Printed labels.
+  labelScotch: bottleLabel('SINGLE MALT', 'ROYALE', 'Aged 18 Years', '#f2e4c4', '#2b1a08', '#8d6a22'),
+  labelBourbon: bottleLabel('KENTUCKY', 'ABYSS', 'Straight Bourbon', '#1b1208', '#f0d9a4', '#c79a3c'),
+  labelCognac: bottleLabel('FINE CHAMPAGNE', 'MARÉE', 'X.O. Cognac', '#12100c', '#e9cf95', '#b08b34'),
+  labelVodka: bottleLabel('DISTILLED', 'NEVA', 'Triple Filtered', '#eef5fb', '#12283d', '#2f6ea8'),
+  labelGin: bottleLabel('LONDON DRY', 'ATOLL', 'Botanical Gin', '#e7f1e4', '#12331d', '#2f7a45'),
+  labelWine: bottleLabel('GRAND CRU', 'CLARET', 'Mise en Bouteille', '#f4ecd8', '#3a0d16', '#8a1c2c'),
+  labelChampagne: bottleLabel('BRUT', 'CUVÉE', 'Millésime 2019', '#12100a', '#f2dda0', '#c9a24a'),
+  labelLiqueur: bottleLabel('APERITIVO', 'ROSSO', 'Bitter Liqueur', '#f6efe2', '#8a0c1e', '#c2352c'),
 
   // --- Lit things ----------------------------------------------------------
   lamp: new THREE.MeshStandardMaterial({
@@ -1369,6 +1450,65 @@ const M = {
 // Anything the player must collide with goes through emit()/flushKits(), which
 // is what puts it under `world` where cityBoxes.js can find it.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// BACK-BAR BOTTLES
+//
+// A cylinder on a shelf reads as a cardboard tube. What makes a bottle a
+// bottle is its profile: the straight body, the shoulder that turns in, the
+// long neck, the lip. LatheGeometry spins one array of points into exactly
+// that, so a whole family of bottles costs a single geometry and still
+// instances like every other prop on this ship — no downloaded GLB, no
+// licence to carry, nothing to load before the casino can open.
+//
+// Points run bottom to top, normalised to unit height and a 0.5 max radius,
+// so shape() scales a family to any bottle size. The wall is a single surface
+// drawn DoubleSide rather than a shell with thickness: cheaper, and the far
+// wall showing through the near one is what darkens the silhouette the way
+// real glass does.
+// ---------------------------------------------------------------------------
+function latheGeo(points, segments = 20) {
+  return withUV2(new THREE.LatheGeometry(
+    points.map(([r, y]) => new THREE.Vector2(r, y)), segments));
+}
+const BOTTLE_PROFILES = {
+  // Bourbon and scotch: broad body, a shoulder that turns in fast, short neck.
+  whisky: [[0, 0], [0.44, 0], [0.5, 0.04], [0.5, 0.47], [0.49, 0.55], [0.40, 0.63],
+    [0.26, 0.70], [0.175, 0.75], [0.16, 0.90], [0.175, 0.94], [0.20, 0.97],
+    [0.195, 1.0], [0.15, 0.99]],
+  // Bordeaux: punted base, high square shoulder, long neck.
+  wine: [[0, 0.035], [0.30, 0.012], [0.46, 0], [0.5, 0.03], [0.5, 0.50], [0.49, 0.55],
+    [0.41, 0.61], [0.27, 0.67], [0.185, 0.71], [0.17, 0.90], [0.18, 0.945],
+    [0.205, 0.975], [0.20, 1.0], [0.16, 0.99]],
+  // Champagne: heavier glass, a shoulder that slopes all the way, fat neck.
+  champagne: [[0, 0.05], [0.30, 0.015], [0.47, 0], [0.5, 0.04], [0.5, 0.43], [0.49, 0.50],
+    [0.44, 0.58], [0.34, 0.66], [0.25, 0.73], [0.215, 0.80], [0.21, 0.92],
+    [0.235, 0.96], [0.23, 1.0], [0.19, 0.99]],
+  // Cognac decanter: belly low down, everything above it tapering to the neck.
+  decanter: [[0, 0], [0.32, 0], [0.42, 0.05], [0.5, 0.19], [0.5, 0.33], [0.45, 0.46],
+    [0.32, 0.57], [0.21, 0.65], [0.175, 0.71], [0.17, 0.87], [0.20, 0.93],
+    [0.195, 1.0], [0.155, 0.99]],
+  // Vodka and gin: tall, slim, shoulders carried high, stubby neck.
+  vodka: [[0, 0], [0.42, 0], [0.47, 0.03], [0.47, 0.62], [0.46, 0.68], [0.39, 0.76],
+    [0.26, 0.83], [0.20, 0.87], [0.195, 0.955], [0.22, 0.985], [0.215, 1.0],
+    [0.175, 0.99]],
+  // Vermouth and liqueurs: squat body, generous shoulder, long thin neck.
+  liqueur: [[0, 0], [0.45, 0], [0.5, 0.04], [0.5, 0.38], [0.47, 0.48], [0.35, 0.59],
+    [0.23, 0.67], [0.175, 0.73], [0.165, 0.91], [0.19, 0.95], [0.185, 1.0],
+    [0.15, 0.99]],
+};
+// Counter glassware. Single-wall profiles again — a stem this thin never needs
+// two surfaces, and the bowl reads from the rim curve alone.
+const GLASS_PROFILES = {
+  coupe: [[0, 0], [0.30, 0], [0.28, 0.03], [0.07, 0.07], [0.06, 0.42], [0.13, 0.50],
+    [0.28, 0.60], [0.41, 0.74], [0.48, 0.90], [0.5, 1.0]],
+  martini: [[0, 0], [0.30, 0], [0.28, 0.03], [0.06, 0.07], [0.055, 0.46], [0.10, 0.52],
+    [0.5, 1.0]],
+  flute: [[0, 0], [0.26, 0], [0.24, 0.03], [0.05, 0.07], [0.05, 0.34], [0.13, 0.44],
+    [0.22, 0.58], [0.26, 0.74], [0.27, 1.0]],
+  tumbler: [[0, 0], [0.44, 0], [0.46, 0.05], [0.45, 0.14], [0.42, 0.55], [0.44, 0.90],
+    [0.45, 1.0]],
+};
+
 const G = {
   box: withUV2(new THREE.BoxGeometry(1, 1, 1)),
   cyl: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 16)),
@@ -1392,6 +1532,23 @@ const G = {
   lifeboatCabin: withUV2(new THREE.CapsuleGeometry(0.5, 1.1, 4, 12).rotateX(Math.PI / 2)),
   // A funnel is not a cylinder — it rakes aft and is oval in plan.
   funnel: withUV2(new THREE.CylinderGeometry(0.42, 0.5, 1, 20)),
+
+  // Back-bar glassware, lathed from the profiles above.
+  bottleWhisky: latheGeo(BOTTLE_PROFILES.whisky),
+  bottleWine: latheGeo(BOTTLE_PROFILES.wine),
+  bottleChampagne: latheGeo(BOTTLE_PROFILES.champagne),
+  bottleDecanter: latheGeo(BOTTLE_PROFILES.decanter),
+  bottleVodka: latheGeo(BOTTLE_PROFILES.vodka),
+  bottleLiqueur: latheGeo(BOTTLE_PROFILES.liqueur),
+  coupeGlass: latheGeo(GLASS_PROFILES.coupe, 18),
+  martiniGlass: latheGeo(GLASS_PROFILES.martini, 18),
+  fluteGlass: latheGeo(GLASS_PROFILES.flute, 18),
+  tumblerGlass: latheGeo(GLASS_PROFILES.tumbler, 18),
+  // Open-ended band: the wrapped paper label, sitting a hair off the body.
+  labelBand: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 24, 1, true)
+    .translate(0, 0.5, 0)),
+  // Neck capsule / foil, and the pour spouts on the working bottles.
+  capBand: withUV2(new THREE.CylinderGeometry(0.5, 0.52, 1, 16).translate(0, 0.5, 0)),
 };
 
 // A tapered, gently arched palm frond. The segmented silhouette catches light
@@ -2258,12 +2415,13 @@ console.log('[cruise] casino room start');
       shape(G.cyl, M.crystalGlass, px - 1.4, DECK_Y + 1.06, pz - 0.6, 0.14, 0.20, 0.14);
       shape(G.cyl, M.crystalGlass, px + 1.4, DECK_Y + 1.06, pz + 0.6, 0.14, 0.20, 0.14);
 
-      // VIP Leather Armchairs
-      for (const ox of [-1.8, -0.9, 0, 0.9, 1.8]) {
+      // VIP Leather Armchairs — north row only; the south row is left clear
+      // because the standing guest NPCs occupy that space (no sit pose exists,
+      // so a chair there just gets walked through). The ox = 0 seat is also
+      // skipped: the VIP Dealer NPC stands right there.
+      for (const ox of [-1.8, -0.9, 0.9, 1.8]) {
         box(M.leatherBurgundy, px + ox, DECK_Y + 0.42, pz + 1.8, 0.68, 0.52, 0.68);
         box(M.darkWood, px + ox, DECK_Y + 0.82, pz + 2.1, 0.68, 0.68, 0.14);
-        box(M.leatherBurgundy, px + ox, DECK_Y + 0.42, pz - 1.8, 0.68, 0.52, 0.68);
-        box(M.darkWood, px + ox, DECK_Y + 0.82, pz - 2.1, 0.68, 0.68, 0.14);
       }
 
       // VIP Brass Stanchions and Crimson Velvet Ropes delimiting Salon Privé
@@ -2300,12 +2458,8 @@ console.log('[cruise] casino room start');
         shape(G.cyl, M.goldPlaque, bx, DECK_Y + 0.99, cz - 0.3, 0.14, 0.06, 0.14);
       }
 
-      // Bar stools for players
-      for (let b = 0; b < 5; b++) {
-        const bx = cx - 1.2 + b * 0.60;
-        shape(G.cylBase, M.brass, bx, DECK_Y, cz - 1.6, 0.10, 0.68, 0.10);
-        shape(G.cyl, M.velvetRed, bx, DECK_Y + 0.72, cz - 1.6, 0.42, 0.14, 0.42);
-      }
+      // No stools here: the standing guest NPCs stand right where a stool
+      // row would go, and with no sit pose they'd just clip through it.
     });
 
     chandelier(cx, cz);
@@ -2355,23 +2509,77 @@ console.log('[cruise] casino room start');
     const barZ = z0 + 3.6;   // -56.4 counter position
     const stoolZ = z0 + 5.0; // -55.0 stools in front
 
+    // What the back bar actually pours. Each family names a lathed profile,
+    // the tint of its glass, the spirit standing inside it, its printed label
+    // and the capsule over its neck; the numbers are metres of real bottle -
+    // roughly 8 cm across the body and 30 cm to the lip.
+    const BAR_BOTTLES = [
+      // Scotch: dark amber glass, cream label, black capsule.
+      { geo: G.bottleWhisky, glass: M.glassAmberDark, liq: M.liqWhisky, label: M.labelScotch, foil: M.foilBlack,
+        d: 0.088, h: 0.300, liqD: 0.90, fill: 0.62, labY: 0.13, labH: 0.30, neckD: 0.37, foilY: 0.80, foilH: 0.21 },
+      // Bourbon: clear flint glass, so the spirit itself carries the colour.
+      { geo: G.bottleWhisky, glass: M.glassFlint, liq: M.liqRum, label: M.labelBourbon, foil: M.foilGold,
+        d: 0.090, h: 0.290, liqD: 0.90, fill: 0.58, labY: 0.13, labH: 0.30, neckD: 0.37, foilY: 0.80, foilH: 0.21 },
+      // Cognac in its bellied decanter, stoppered with cork.
+      { geo: G.bottleDecanter, glass: M.glassFlint, liq: M.liqCognac, label: M.labelCognac, foil: M.cork,
+        d: 0.104, h: 0.265, liqD: 0.80, fill: 0.52, labY: 0.15, labH: 0.26, neckD: 0.40, foilY: 0.90, foilH: 0.14 },
+      // Vodka: tall, slim, silver screwcap.
+      { geo: G.bottleVodka, glass: M.glassFlint, liq: M.liqClear, label: M.labelVodka, foil: M.foilSilver,
+        d: 0.084, h: 0.318, liqD: 0.88, fill: 0.66, labY: 0.16, labH: 0.32, neckD: 0.44, foilY: 0.88, foilH: 0.16 },
+      // Gin in green glass.
+      { geo: G.bottleVodka, glass: M.glassBottleGreen, liq: M.liqGin, label: M.labelGin, foil: M.foilGold,
+        d: 0.086, h: 0.310, liqD: 0.88, fill: 0.64, labY: 0.16, labH: 0.32, neckD: 0.44, foilY: 0.88, foilH: 0.16 },
+      // Claret: punted Bordeaux, burgundy capsule over the cork.
+      { geo: G.bottleWine, glass: M.glassBottleGreen, liq: M.liqRedWine, label: M.labelWine, foil: M.foilBurgundy,
+        d: 0.078, h: 0.328, liqD: 0.86, fill: 0.60, labY: 0.17, labH: 0.30, neckD: 0.39, foilY: 0.86, foilH: 0.17 },
+      // Champagne: heavy dead-leaf glass, gold foil down the neck.
+      { geo: G.bottleChampagne, glass: M.glassDeadLeaf, liq: M.liqChampagne, label: M.labelChampagne, foil: M.foilGold,
+        d: 0.094, h: 0.332, liqD: 0.86, fill: 0.56, labY: 0.14, labH: 0.26, neckD: 0.48, foilY: 0.84, foilH: 0.19 },
+      // Bitter aperitivo, near-black glass over a red that still glows.
+      { geo: G.bottleLiqueur, glass: M.glassSmoke, liq: M.liqCampari, label: M.labelLiqueur, foil: M.foilBurgundy,
+        d: 0.090, h: 0.262, liqD: 0.90, fill: 0.66, labY: 0.15, labH: 0.28, neckD: 0.38, foilY: 0.86, foilH: 0.17 },
+      // Curacao: cobalt bottle, the shelf strip behind it doing the rest.
+      { geo: G.bottleLiqueur, glass: M.glassCobalt, liq: M.liqCuracao, label: M.labelLiqueur, foil: M.foilSilver,
+        d: 0.088, h: 0.268, liqD: 0.90, fill: 0.62, labY: 0.15, labH: 0.28, neckD: 0.38, foilY: 0.86, foilH: 0.17 },
+      // Absinthe.
+      { geo: G.bottleLiqueur, glass: M.glassFlint, liq: M.liqAbsinthe, label: M.labelGin, foil: M.foilGold,
+        d: 0.086, h: 0.272, liqD: 0.90, fill: 0.60, labY: 0.15, labH: 0.28, neckD: 0.38, foilY: 0.86, foilH: 0.17 },
+    ];
+    // One bottle, four instanced parts. The spirit goes down first: three
+    // draws every opaque mesh before the transparent pass, so the liquid is
+    // already in the depth buffer when the glass wall is blended over it.
+    // Label and capsule are opaque for the same reason.
+    function bottle(b, x, y, z, ry = 0) {
+      const d = b.d, h = b.h;
+      shape(G.cylBase, b.liq, x, y + h * 0.02, z, d * b.liqD, h * b.fill, d * b.liqD);
+      shape(b.geo, b.glass, x, y, z, d, h, d, { ry });
+      shape(G.labelBand, b.label, x, y + h * b.labY, z, d * 1.03, h * b.labH, d * 1.03, { ry });
+      shape(G.capBand, b.foil, x, y + h * b.foilY, z, d * b.neckD, h * b.foilH, d * b.neckD, { ry });
+    }
+
     prop(() => {
       // Back-bar dark mahogany backboard with gold trim
       box(M.darkWood, 0, DECK_Y + 1.8, backZ, 14.0, 3.6, 0.35);
       box(M.goldTrim, 0, DECK_Y + 3.6, backZ + 0.18, 14.2, 0.08, 0.08);
       box(M.goldTrim, 0, DECK_Y + 0.04, backZ + 0.18, 14.2, 0.08, 0.08);
 
-      // 3 Illuminated glass bottle shelves
-      const bottleMats = [M.amberBottle, M.emeraldBottle, M.rubyBottle, M.sapphireBottle, M.champagneGold];
+      // 3 illuminated glass shelves, stocked the way a real back bar is:
+      // bottles shoulder to shoulder in short runs of the same label, each
+      // one turned a little off square, not one lonely tube every 70 cm.
       for (let s = 0; s < 3; s++) {
         const sy = DECK_Y + 1.1 + s * 0.62;
         box(M.crystalGlass, 0, sy, backZ + 0.28, 13.4, 0.03, 0.30);
         box(M.warmLampBright, 0, sy - 0.02, backZ + 0.28, 13.2, 0.02, 0.24);
+        box(M.brass, 0, sy + 0.035, backZ + 0.42, 13.4, 0.025, 0.025);
 
-        for (let i = 0; i < 18; i++) {
-          const bx = -5.8 + i * 0.68 + (s % 2) * 0.34;
-          const mat = bottleMats[(i + s * 3) % bottleMats.length];
-          shape(G.cyl, mat, bx, sy + 0.20, backZ + 0.28, 0.11, 0.38, 0.11);
+        for (let i = 0; i < 62; i++) {
+          const bx = -6.1 + i * 0.198;
+          // A deterministic wobble: how far the bottle is turned, and the
+          // centimetre or two it stands off the front edge of the shelf.
+          const j = Math.sin((i + 1) * 12.9898 + s * 78.233) * 0.5;
+          const run = Math.floor(i / 3) + s * 4;
+          bottle(BAR_BOTTLES[run % BAR_BOTTLES.length],
+            bx, sy + 0.016, backZ + 0.29 + j * 0.055, j * Math.PI * 2);
         }
       }
 
@@ -2381,15 +2589,39 @@ console.log('[cruise] casino room start');
       box(M.brass, 0, DECK_Y + 1.18, barZ + 0.62, 14.3, 0.06, 0.14);
       box(M.brass, 0, DECK_Y + 0.18, barZ + 0.66, 14.2, 0.06, 0.06);
 
-      // On-counter: silver cocktail shakers & Dom Pérignon champagne bucket
+      // On-counter: silver shakers, and champagne standing in its ice bucket.
       shape(G.cyl, M.steel, -2.5, DECK_Y + 1.32, barZ, 0.13, 0.32, 0.13);
       shape(G.cyl, M.steel, 2.5, DECK_Y + 1.32, barZ, 0.13, 0.32, 0.13);
       shape(G.cyl, M.steel, 0, DECK_Y + 1.32, barZ, 0.28, 0.26, 0.28);
-      shape(G.cyl, M.champagneGold, 0, DECK_Y + 1.48, barZ, 0.12, 0.35, 0.12, { rz: 0.2 });
+      bottle(BAR_BOTTLES[6], 0, DECK_Y + 1.36, barZ, 0.6);
 
-      // Crystal cocktail glasses on counter
-      for (let i = 0; i < 7; i++) {
-        shape(G.cyl, M.crystalGlass, -4.5 + i * 1.5, DECK_Y + 1.25, barZ + 0.2, 0.09, 0.14, 0.09);
+      // The bartender's working line: five bottles with steel pour spouts,
+      // stood on a brass tray along the back edge of the counter.
+      box(M.brass, -1.0, DECK_Y + 1.20, barZ - 0.34, 2.6, 0.02, 0.22);
+      for (let i = 0; i < 5; i++) {
+        const wx = -2.1 + i * 0.55;
+        const b = BAR_BOTTLES[[0, 3, 4, 7, 1][i]];
+        bottle(b, wx, DECK_Y + 1.21, barZ - 0.34, 0.4 + i);
+        // Chrome speed pourer: a short spout that leans out over the lip,
+        // not a straw standing off the neck.
+        shape(G.cyl, M.pourSpout, wx + 0.012, DECK_Y + 1.21 + b.h * 1.035, barZ - 0.34,
+          0.019, 0.055, 0.019, { rz: 0.30 });
+      }
+
+      // Crystal on the counter: coupes, martinis and cut tumblers - the
+      // stemware is where a bar is read from, and a cylinder has no stem.
+      for (let i = 0; i < 11; i++) {
+        const gx = -5.4 + i * 1.08;
+        const t = i % 3;
+        if (t === 0) {
+          shape(G.coupeGlass, M.crystalCut, gx, DECK_Y + 1.19, barZ + 0.24, 0.104, 0.135, 0.104);
+        } else if (t === 1) {
+          shape(G.martiniGlass, M.crystalCut, gx, DECK_Y + 1.19, barZ + 0.24, 0.112, 0.165, 0.112);
+          shape(G.cylBase, M.liqCampari, gx, DECK_Y + 1.27, barZ + 0.24, 0.05, 0.018, 0.05);
+        } else {
+          shape(G.tumblerGlass, M.crystalCut, gx, DECK_Y + 1.19, barZ + 0.24, 0.078, 0.100, 0.078);
+          shape(G.cylBase, M.liqWhisky, gx, DECK_Y + 1.20, barZ + 0.24, 0.064, 0.038, 0.064);
+        }
       }
 
       // 9 Red velvet and brass bar stools in front of counter
@@ -2405,7 +2637,10 @@ console.log('[cruise] casino room start');
         box(M.mahoganyGloss, lx, DECK_Y + 0.38, barZ + 2.0, 1.6, 0.08, 1.0);
         shape(G.cylBase, M.brass, lx - 0.6, DECK_Y, barZ + 2.0, 0.08, 0.36, 0.08);
         shape(G.cylBase, M.brass, lx + 0.6, DECK_Y, barZ + 2.0, 0.08, 0.36, 0.08);
-        shape(G.cyl, M.amberBottle, lx, DECK_Y + 0.52, barZ + 2.0, 0.15, 0.25, 0.15);
+        // Claret open on the cocktail table, two flutes beside it.
+        bottle(BAR_BOTTLES[5], lx, DECK_Y + 0.42, barZ + 2.0, 0.9);
+        shape(G.fluteGlass, M.crystalCut, lx - 0.34, DECK_Y + 0.42, barZ + 2.05, 0.085, 0.22, 0.085);
+        shape(G.fluteGlass, M.crystalCut, lx + 0.34, DECK_Y + 0.42, barZ + 1.95, 0.085, 0.22, 0.085);
       }
     });
 
