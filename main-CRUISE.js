@@ -18,7 +18,8 @@ console.log('[cruise] starting module evaluation');
 // map is read by going UP:
 //
 //   hull / waterline  →  promenade deck (open, wraps the house)
-//                     →  the house: casino · atrium · cabins · ballroom
+//                     →  lower accommodation deck, stairs from the atrium
+//                     →  the house: casino · atrium · gallery · ballroom
 //                     →  pool deck (open, on the roof of the house)
 //
 // Three things are load-bearing:
@@ -1217,13 +1218,33 @@ const CASINO_Z = [SUP_Z0, -12];
 const ATRIUM_Z = [-12, 2];
 const CABIN_Z = [2, 18];
 const BALL_Z = [18, SUP_Z1];
+// Dedicated accommodation deck, inspired by Cunard's separated cabin decks.
+// https://www.cunard.com/content/dam/cunard/inventory-assets/ships/QM/9/deck-plans-qm2-feb24.pdf
+const CABIN_Y = 3.8;
+const CABIN_EXTENSION_Z = 34;
+const CABIN_CEIL_Y = DECK_Y - 0.22;
+const CABIN_STAIR = { x0: -9, x1: -5, z0: -4, z1: 6.5, steps: 24 };
+// The opening stops at the atrium wall. The lower treads continue beneath
+// the restored gallery floor, with clearance under its underside.
+const CABIN_OPENING = { ...CABIN_STAIR, z1: ATRIUM_Z[1] - WALL_T / 2 };
+
+// Cut the same stairwell out of the structural deck and its floor finishes.
+function stairwellSlab(mat, x0, x1, z0, z1, y0, y1) {
+  const s = CABIN_OPENING;
+  const a = Math.max(z0, s.z0), b = Math.min(z1, s.z1);
+  if (a >= b) return longSlab(mat, x0, x1, z0, z1, y0, y1);
+  if (z0 < a) longSlab(mat, x0, x1, z0, a, y0, y1);
+  if (b < z1) longSlab(mat, x0, x1, b, z1, y0, y1);
+  longSlab(mat, x0, s.x0, a, b, y0, y1);
+  longSlab(mat, s.x1, x1, a, b, y0, y1);
+}
 
 // Cabin 214 — the starboard suite, and the way off this ship.
 const CAB_X0 = 3.0, CAB_X1 = SUP_X2 - WALL_T;
 const CAB_Z0 = 4.0, CAB_Z1 = 16.0;
 const BED_X = 8.4, BED_Z = 11.6;         // centre of the mattress
 const BED_W = 2.0, BED_L = 2.2;          // across the ship, along the ship
-const BED_TOP = DECK_Y + 0.66;           // the surface you lie on
+const BED_TOP = CABIN_Y + 0.66;          // the surface you lie on
 
 // The hull's half beam at a given station. A liner is parallel-sided over most
 // of her length and only fines off at the ends: taper the whole hull and she
@@ -1325,7 +1346,15 @@ for (let i = 0; i < EDGE.length - 1; i++) {
   // the teak, the two coplanar faces z-fight and the promenade flickers navy
   // through the planks. Stop the hull at the teak's bottom; the sheer is
   // carried by the bulwark above instead, which is where the eye reads it.
-  slab(M.hullNavy, -hb, hb, z, z1, 1.1, DECK_Y - 0.22);
+  // Hollow the accommodation volume; retain the hull sides and lower floor.
+  const ca = Math.max(z, -5), cb = Math.min(z1, CABIN_EXTENSION_Z);
+  if (ca < cb) {
+    if (z < ca) slab(M.hullNavy, -hb, hb, z, ca, 1.1, DECK_Y - 0.22);
+    if (cb < z1) slab(M.hullNavy, -hb, hb, cb, z1, 1.1, DECK_Y - 0.22);
+    slab(M.hullNavy, -hb, hb, ca, cb, 1.1, CABIN_Y - 0.22);
+    slab(M.hullNavy, -hb, -SUP_X2, ca, cb, CABIN_Y - 0.22, DECK_Y - 0.22);
+    slab(M.hullNavy, SUP_X2, hb, ca, cb, CABIN_Y - 0.22, DECK_Y - 0.22);
+  } else slab(M.hullNavy, -hb, hb, z, z1, 1.1, DECK_Y - 0.22);
   // Boot-topping, the band at the waterline.
   slab(M.hullBoot, -hb - 0.02, hb + 0.02, z, z1, 0.2, 1.1);
   // Below the water: never seen from the deck, but seen from the pool deck
@@ -1335,7 +1364,7 @@ for (let i = 0; i < EDGE.length - 1; i++) {
   // The deck you walk on. Teak, laid flat over the whole plan; the house is
   // built on top of it, so this runs right through under the rooms and their
   // own floor finishes sit 2 cm proud of it.
-  slab(M.teak, -hb + 0.55, hb - 0.55, z, z1, DECK_Y - 0.22, DECK_Y);
+  stairwellSlab(M.teak, -hb + 0.55, hb - 0.55, z, z1, DECK_Y - 0.22, DECK_Y);
 
   bulwarkPanel(a, b);
 }
@@ -2045,7 +2074,7 @@ console.log('[cruise] casino room done');
 {
   const [z0, z1] = ATRIUM_Z;
   const F = DECK_Y + 0.02;
-  longSlab(M.parquet, -SUP_X2 + WALL_T, SUP_X2 - WALL_T, z0 + WALL_T, z1 - WALL_T,
+  stairwellSlab(M.parquet, -SUP_X2 + WALL_T, SUP_X2 - WALL_T, z0 + WALL_T, z1 - WALL_T,
     DECK_Y, F);
   // A compass rose inlaid in the floor — the one thing that tells you where
   // amidships is once you are inside and have lost the horizon.
@@ -2071,13 +2100,13 @@ console.log('[cruise] casino room done');
 
   prop(() => {
     // Reception desk, against the forward bulkhead.
-    box(M.darkWood, -6.5, DECK_Y + 0.55, 0.6, 5.4, 1.1, 0.9);
-    box(M.brass, -6.5, DECK_Y + 1.13, 0.6, 5.6, 0.06, 1.1);
-    box(M.lamp, -6.5, DECK_Y + 1.2, 0.55, 0.24, 0.1, 0.24);
+    box(M.darkWood, 6.5, DECK_Y + 0.55, 0.6, 5.4, 1.1, 0.9);
+    box(M.brass, 6.5, DECK_Y + 1.13, 0.6, 5.6, 0.06, 1.1);
+    box(M.lamp, 6.5, DECK_Y + 1.2, 0.55, 0.24, 0.1, 0.24);
     // Key rack behind it.
-    box(M.midWood, -6.5, DECK_Y + 2.2, 1.35, 5.0, 1.8, 0.14);
+    box(M.midWood, 6.5, DECK_Y + 2.2, 1.35, 5.0, 1.8, 0.14);
     for (let i = 0; i < 24; i++)
-      shape(G.cyl, M.brass, -8.6 + (i % 12) * 0.38, DECK_Y + 2.55 - Math.floor(i / 12) * 0.55,
+      shape(G.cyl, M.brass, 4.4 + (i % 12) * 0.38, DECK_Y + 2.55 - Math.floor(i / 12) * 0.55,
         1.25, 0.05, 0.18, 0.05);
 
     // Sofas and a low table, in the middle of the lobby.
@@ -2163,7 +2192,7 @@ console.log('[cruise] casino room done');
     prop(() => shape(G.card, m, 0, DECK_Y + 3.35, z, 3.8, 0.68, 1, { ry }));
   };
   wayfind('◄ CASINO ROYALE', z0 + 0.4, 0);
-  wayfind('CABINES · SALLE DE BAL ►', z1 - 0.4, Math.PI);
+  wayfind('SALLE DE BAL ►', z1 - 0.4, Math.PI);
 }
 
 // ---------------------------------------------------------------------------
@@ -2172,6 +2201,8 @@ console.log('[cruise] casino room done');
 // and a corridor of doors that all open is a corridor of empty boxes.
 // ---------------------------------------------------------------------------
 {
+  const DECK_Y = CABIN_Y;
+  const CEIL_Y = CABIN_CEIL_Y;
   const [z0, z1] = CABIN_Z;
   const F = DECK_Y + 0.02;
   const COR = 3.0;                    // corridor half width
@@ -2182,7 +2213,8 @@ console.log('[cruise] casino room done');
   // opening — 214 — and it is a real hole; the others are leaves in a frame.
   wallWithHoles(M.cream, 'z', COR, WALL_T, z0 + WALL_T, z1 - WALL_T, DECK_Y, CEIL_Y,
     [[5.0, 6.2, DOOR_H]]);
-  wallWithHoles(M.cream, 'z', -COR, WALL_T, z0 + WALL_T, z1 - WALL_T, DECK_Y, CEIL_Y, []);
+  wallWithHoles(M.cream, 'z', -COR, WALL_T, z0 + WALL_T, z1 - WALL_T, DECK_Y, CEIL_Y,
+    [[7.0, 9.0, 3.0]]);
 
   // The port suites and the rest of starboard: sealed, with doors painted in
   // as joinery. Frame, leaf, handle, number plate.
@@ -2190,6 +2222,10 @@ console.log('[cruise] casino room done');
     atY(0, x, z, ry, () => prop(() => {
       box(M.midWood, 0, DECK_Y + DOOR_H / 2, 0, 1.26, DOOR_H + 0.12, 0.09);
       box(M.darkWood, 0, DECK_Y + DOOR_H / 2, -0.05, 1.1, DOOR_H - 0.06, 0.06);
+      for (const y of [0.62, 1.65]) {
+        box(M.brass, 0, DECK_Y + y, -0.087, 0.88, 0.74, 0.012);
+        box(M.midWood, 0, DECK_Y + y, -0.097, 0.82, 0.68, 0.018);
+      }
       shape(G.cyl, M.brass, 0.42, DECK_Y + 1.02, -0.11, 0.06, 0.16, 0.06,
         { rz: Math.PI / 2 });
       const plate = canvasMat(128, 64, (g, W, H) => {
@@ -2197,11 +2233,29 @@ console.log('[cruise] casino room done');
         g.fillRect(0, 0, W, H);
         paintText(g, number, W / 2, H / 2, 40, '#2a1c08');
       }, { roughness: 0.35, metalness: 0.5 });
-      shape(G.card, plate, 0, DECK_Y + 1.95, -0.10, 0.44, 0.22, 1);
+      shape(G.card, plate, 0, DECK_Y + 2.22, -0.11, 0.44, 0.22, 1, { ry: Math.PI });
     }));
   }
-  for (let i = 0; i < 4; i++) cabinDoor(-COR + 0.06, z0 + 2.4 + i * 3.4, Math.PI, `21${i + 5}`);
-  cabinDoor(COR - 0.06, z0 + 12.2, 0, '216');
+  // Keep only the doors that sit on a usable corridor wall. The former 219 and
+  // 221 leaves were against the return wall, so they read as decorative bars
+  // with no room behind them and have been removed.
+  cabinDoor(-COR + WALL_T / 2 + 0.06, 4.4, -Math.PI / 2, '215');
+  cabinDoor(COR - WALL_T / 2 - 0.06, z0 + 12.2, Math.PI / 2, '216');
+  cabinDoor(COR - WALL_T / 2 - 0.06, z0 + 7.5, Math.PI / 2, '218');
+
+  // Second accommodation room beyond the landing, with four cabins per side.
+  longSlab(M.corridorCarpet, -9, -5, 18, CABIN_EXTENSION_Z, DECK_Y, F);
+  for (const x of [-9, -5])
+    wallWithHoles(M.cream, 'z', x, WALL_T, 18, CABIN_EXTENSION_Z, DECK_Y, CEIL_Y, []);
+  for (let i = 0; i < 4; i++) {
+    const z = 20 + i * 3.6;
+    cabinDoor(-9 + WALL_T / 2 + 0.06, z, -Math.PI / 2, `${223 + i * 2}`);
+    cabinDoor(-5 - WALL_T / 2 - 0.06, z, Math.PI / 2, `${222 + i * 2}`);
+    // Separate cabin volumes behind the closed doors.
+    for (const [a, b] of [[-SUP_X2, -9], [-5, SUP_X2]])
+      wallWithHoles(M.cream, 'x', z + 1.7, WALL_T, a, b, DECK_Y, CEIL_Y, []);
+    prop(() => box(M.lamp, -7, CEIL_Y - 0.1, z, 1.4, 0.07, 0.5));
+  }
 
   // 214's own doorway: architrave and an open leaf swung back into the suite,
   // so the opening reads as a door standing open, not as a missing wall.
@@ -2218,18 +2272,10 @@ console.log('[cruise] casino room done');
     shape(G.card, plate, COR - 0.19, DECK_Y + 1.95, 4.7, 0.44, 0.22, 1, { ry: -Math.PI / 2 });
   });
 
-  // Corridor lighting and a handrail down each side. The rail BREAKS at 214's
-  // doorway: props collide at every height, so a 2.6 m length of brass at
-  // waist height ran straight across the opening and the suite could not be
-  // entered — the one door on this ship that has to work.
-  const DOOR_GAP = [4.85, 6.35];
+  // Ceiling lights; keep the door leaves and the stair landing unobstructed.
   prop(() => {
     for (let z = z0 + 2; z < z1 - 1; z += 3.2) {
       box(M.lamp, 0, CEIL_Y - 0.09, z, 1.4, 0.07, 0.5);
-      for (const sx of [-1, 1]) {
-        if (sx > 0 && z + 1.3 > DOOR_GAP[0] && z - 1.3 < DOOR_GAP[1]) continue;
-        box(M.brass, sx * (COR - 0.14), DECK_Y + 0.92, z, 0.07, 0.07, 2.6);
-      }
     }
   });
 
@@ -2287,9 +2333,76 @@ console.log('[cruise] casino room done');
   // would be a wall between the door and the bed.
   box(M.cushionTeal, BED_X + 0.4, F + 0.004, BED_Z - 2.2, 3.2, 0.01, 2.2);
 
-  // The suite gets its sea view from the house's own window band, which runs
-  // unbroken from bulkhead to bulkhead down this side — see the shell above.
-  // An extra sheet punched here only boarded that band over.
+  // This lower-deck suite is enclosed by its own outer bulkhead.
+}
+
+// Public gallery above the former cabin corridor; accommodation stays below.
+{
+  stairwellSlab(M.parquet, -SUP_X2 + WALL_T, SUP_X2 - WALL_T,
+    CABIN_Z[0], CABIN_Z[1], DECK_Y, DECK_Y + 0.02);
+  for (const x of [-10.5, 10.5]) for (const z of [10, 15]) {
+    prop(() => {
+      box(M.velvetRed, x, DECK_Y + 0.35, z, 1.4, 0.5, 1.5);
+      box(M.darkWood, x, DECK_Y + 0.8, z + 0.65, 1.4, 0.7, 0.16);
+    });
+  }
+  for (const z of [5, 11, 16])
+    prop(() => box(M.lamp, 0, CEIL_Y - 0.1, z, 1.8, 0.08, 0.7));
+
+  // Enclosed lower deck, including a side landing off the cabin corridor.
+  longSlab(M.cabinCarpet, -SUP_X2, SUP_X2, -5, CABIN_EXTENSION_Z, CABIN_Y - 0.22, CABIN_Y);
+  for (const x of [-SUP_X2, SUP_X2])
+    wallWithHoles(M.cream, 'z', x, WALL_T, -5, CABIN_EXTENSION_Z, CABIN_Y, CABIN_CEIL_Y, []);
+  for (const z of [-5, CABIN_EXTENSION_Z])
+    wallWithHoles(M.cream, 'x', z, WALL_T, -SUP_X2, SUP_X2, CABIN_Y, CABIN_CEIL_Y, []);
+  wallWithHoles(M.cream, 'x', 18, WALL_T, -SUP_X2, SUP_X2, CABIN_Y, CABIN_CEIL_Y,
+    [[-9, -5, 3.0]]);
+  // Close the corridor's aft end: access is through the stair landing at z=8.
+  wallWithHoles(M.cream, 'x', 2.2, WALL_T, -3, 3, CABIN_Y, CABIN_CEIL_Y, []);
+  prop(() => {
+    for (const z of [8, 12]) box(M.lamp, -7, CABIN_CEIL_Y - 0.1, z, 1.2, 0.07, 0.6);
+  });
+
+  const s = CABIN_STAIR;
+  const rise = (DECK_Y - CABIN_Y) / s.steps;
+  const tread = (s.z1 - s.z0) / s.steps;
+  groundOnly(() => {
+    for (let i = 0; i < s.steps; i++) {
+      const z = s.z0 + i * tread;
+      const top = DECK_Y - i * rise;
+      slab(M.midWood, s.x0, s.x1, z, z + tread + 0.015, CABIN_Y - 0.1, top);
+      slab(M.brass, s.x0, s.x1, z + tread - 0.035, z + tread, top, top + 0.012);
+    }
+  });
+  // Guard the opening at the upper level and provide stepped handrails below.
+  prop(() => {
+    for (const x of [s.x0 - 0.06, s.x1 + 0.06]) {
+      box(M.brass, x, DECK_Y + 1.05, (s.z0 + CABIN_OPENING.z1) / 2,
+        0.08, 0.08, CABIN_OPENING.z1 - s.z0);
+      for (let i = 0; i <= s.steps; i += 2) {
+        const z = s.z0 + i * tread;
+        const y = DECK_Y - i * rise;
+        if (z < CABIN_OPENING.z1)
+          box(M.brass, x, DECK_Y + 0.52, z, 0.06, 1.04, 0.06);
+        box(M.brass, x, y + 0.5, z, 0.06, 1.0, 0.06);
+        if (i < s.steps) box(M.brass, x, y + 1, z + tread, 0.08, 0.08, tread * 2.15);
+      }
+    }
+    // The existing atrium wall closes this end of the upper opening.
+  });
+  const sign = (label, x, y, z, ry = Math.PI) => {
+    const mat = canvasMat(768, 128, (g, W, H) => {
+      g.fillStyle = '#12314f'; g.fillRect(0, 0, W, H);
+      paintText(g, label, W / 2, H / 2, 40, '#e8c063');
+    }, { emissive: 0xffffff, emissiveIntensity: 0.35, side: THREE.FrontSide });
+    prop(() => shape(G.card, mat, x, y, z, 3.8, 0.64, 1, { ry }));
+  };
+  sign('↓ CABINES · PONT INFÉRIEUR', -7, DECK_Y + 2.8, -3.9);
+  sign('← CABINES 214–218', -7, CABIN_Y + 2.6, 9.6);
+  sign('CABINES 222–229 ↑', -7, CABIN_Y + 3.35, 17.75);
+  sign('↑ CABINES 214–218', -3.2, CABIN_Y + 3.35, 8, -Math.PI / 2);
+  sign('ATRIUM · ESCALIER ↑', -7, CABIN_Y + 3.35, 18.25, 0);
+  sign('↑ ATRIUM · SALLE DE BAL', -7, CABIN_Y + 2.7, 6.8, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -3883,7 +3996,7 @@ const hook = {
   THREE, scene, camera, renderer, world, ctrl, rig, input, spawnPoint, bw,
   setCruiseTime, TIME_STATES, seaUniforms,
   DECK_Y, POOL_Y, CEIL_Y, SHIP_L2, BEAM2, SUP_X2, SUP_Z0, SUP_Z1,
-  CASINO_Z, ATRIUM_Z, CABIN_Z, BALL_Z,
+  CASINO_Z, ATRIUM_Z, CABIN_Z, BALL_Z, CABIN_Y, CABIN_STAIR,
   get BED_SPOT() { return typeof BED_SPOT !== 'undefined' ? BED_SPOT : null; },
   get BED_X() { return typeof BED_X !== 'undefined' ? BED_X : null; },
   get BED_Z() { return typeof BED_Z !== 'undefined' ? BED_Z : null; },
@@ -4094,7 +4207,7 @@ try {
     patrol(npcIdx++, 12.0, DECK_Y, B0 + 30, B0 + 4, Math.PI, steward);
 
     // Atrium: the purser behind the desk, and someone waiting.
-    stand(npcIdx++, -6.5, DECK_Y, 1.5, Math.PI);
+    stand(npcIdx++, 6.5, DECK_Y, 1.5, Math.PI);
     stand(npcIdx++, 4.5, DECK_Y, -4.0, Math.PI / 2);
 
     // Pool deck.
@@ -4147,7 +4260,7 @@ const BED_SPOT = {
   z: BED_Z - 0.55,
   centerX: BED_X,
   centerZ: BED_Z,
-  approachY: DECK_Y,
+  approachY: CABIN_Y,
   yaw: Math.PI,                    // head at +Z, against the headboard
   halfWidth: BED_W / 2,
   halfDepth: BED_L / 2,
@@ -4189,7 +4302,7 @@ function distanceToSpot(spot, position) {
 
 function nearBed() {
   if (lieState || bedCooldown > 0 || ctrl.mode !== 'ground') return false;
-  if (Math.abs(ctrl.pos.y - DECK_Y) > 1.1) return false;
+  if (Math.abs(ctrl.pos.y - CABIN_Y) > 1.1) return false;
   return distanceToSpot(BED_SPOT, ctrl.pos) <= BED_SPOT.triggerDistance;
 }
 
@@ -4259,7 +4372,7 @@ function updateLie(dt) {
   }
   // waking: stand up beside the bed, on the side the door is on.
   if (lieState.t > 0.8) {
-    ctrl.pos.set(BED_X - BED_W / 2 - 0.75, DECK_Y + 0.2, BED_Z - 0.4);
+    ctrl.pos.set(BED_X - BED_W / 2 - 0.75, CABIN_Y + 0.2, BED_Z - 0.4);
     ctrl.prevY = ctrl.pos.y;
     ctrl.vel.set(0, 0, 0);
     ctrl.mode = 'ground';
