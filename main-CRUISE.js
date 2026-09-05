@@ -1158,6 +1158,7 @@ const M = {
   blueChip: new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.58 }),
   greenChip: new THREE.MeshStandardMaterial({ color: 0x059669, roughness: 0.58 }),
   redChip: new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.58 }),
+  feltGreen: new THREE.MeshStandardMaterial({ color: 0x0f7a43, roughness: 0.4, metalness: 0.08, emissive: 0x064e3b, emissiveIntensity: 0.3 }),
   amberBottle: new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.82, emissive: 0x78350f, emissiveIntensity: 0.4 }),
   emeraldBottle: new THREE.MeshStandardMaterial({ color: 0x059669, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.82, emissive: 0x064e3b, emissiveIntensity: 0.4 }),
   rubyBottle: new THREE.MeshStandardMaterial({ color: 0xbe123c, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.82, emissive: 0x881337, emissiveIntensity: 0.4 }),
