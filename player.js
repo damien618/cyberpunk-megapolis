@@ -477,14 +477,15 @@ function armSurfaceField(mesh, origin, dir) {
 
   // Past either end the end row's profile stands: above the top ring that IS
   // the shoulder, carrying the arm's own girth up over the joint.
+  //
+  // The cell's own value, not the largest of it and its neighbours: reading a
+  // neighbour overstates the radius wherever the arm tapers, and a shell told
+  // the arm is fatter than it is comes back out through the skin as a flap.
+  // Understating it only buries the shell deeper under a surface that is
+  // already covering it.
   return (t, radial) => {
     const row = THREE.MathUtils.clamp(Math.round(t / ARM_FIELD_STEP) - first, 0, table.length - 1);
-    const cells = table[row];
-    const bearing = bearingOf(radial.dot(u), radial.dot(v));
-    return Math.max(
-      cells[bearing],
-      cells[(bearing + 1) % ARM_FIELD_COLS],
-      cells[(bearing - 1 + ARM_FIELD_COLS) % ARM_FIELD_COLS]);
+    return table[row][bearingOf(radial.dot(u), radial.dot(v))];
   };
 }
 
@@ -496,8 +497,16 @@ function armSurfaceField(mesh, origin, dir) {
 // the torso's vertical axis (which is what the first fix for the shoulder did)
 // slides it sideways across the deltoid rather than down onto it, and it comes
 // out as a pale flap beside the arm instead of skin on it.
-function huggedToArm(geometry, sides, inset) {
+// `offsetBy` is where the vertex is wanted relative to that surface, in metres
+// — positive outside it, negative under it — and `strengthBy` how much of the
+// way there to go. Both take the vertex index, because the armhole needs them
+// to vary along the seam: the garment's edge lands just outside the arm, the
+// flesh cap leaves that same edge and dives under the skin a centimetre later,
+// and the two are then the two ends of one funnel rather than two rims a
+// centimetre apart with daylight between them.
+function huggedToArm(geometry, sides, offsetBy = 0, strengthBy = null, renormalize = false) {
   const position = geometry.attributes.position;
+  const offsetOf = typeof offsetBy === 'function' ? offsetBy : () => offsetBy;
   const point = new THREE.Vector3();
   const radial = new THREE.Vector3();
   for (let i = 0; i < position.count; i++) {
@@ -510,14 +519,16 @@ function huggedToArm(geometry, sides, inset) {
     if (radius < 1e-4) continue;
     const skin = side.field(t, radial);
     if (!(skin > -Infinity)) continue;
-    const target = skin - inset;
+    const strength = strengthBy ? strengthBy(i) : 1;
+    if (strength <= 0) continue;
+    const target = radius - (radius - (skin + offsetOf(i))) * strength;
     if (radius <= target || target <= 0) continue;
     radial.multiplyScalar(target / radius);
     point.copy(side.origin).addScaledVector(side.dir, t).add(radial);
     position.setXYZ(i, point.x, point.y, point.z);
   }
   position.needsUpdate = true;
-  geometry.computeVertexNormals();
+  if (renormalize) geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
 }
@@ -987,7 +998,14 @@ export class Player {
     // far end of it fights the arm: the profile it is shrunk onto is 16 bearings
     // wide and reads the local maximum, so on the taper below the deltoid the
     // cap lands a millimetre proud of the skin and shows as a flap of it.
-    const ARM_CAP_REACH = 0.14;
+    const ARM_CAP_REACH = 0.18;
+    // How far past the seam the cap takes to land on the arm, in the same arm
+    // weight the seam is cut on. Not zero: at the seam itself the cap has to BE
+    // the garment's edge, out on the shirt's surface, or the two are concentric
+    // rims a centimetre apart and the slot between them is a hole you see the
+    // sea through — which is what was left of this bug once the top of the arm
+    // had skin on it at all.
+    const ARM_CAP_LAND = 0.18;
     const SWIMSUIT_STRIPE = [0.09, 0.20];
     // The pink runs the ring at strap height: over both shoulders and straight
     // across the upper chest between them. Both stripes are measured against
@@ -1060,31 +1078,62 @@ export class Player {
       // hands cost nothing to include and keep the seam honest at the armhole.
       const skinFloor = bodyRadialFloor([this.headMesh, ...this.bodySkinMeshes], axisZ);
 
-      // The hug lets go at the armhole. Pulling toward the torso's vertical
-      // axis is the right move over the ribs and the wrong one at the seam:
-      // there the pull runs sideways INTO the arm, and a centimetre of it
-      // buries the suit's edge inside the deltoid, where it comes back out as
-      // a black band painted round the upper arm. Faded on the very weight the
-      // seam is cut on, the edge stays on the shirt's own surface — outside the
-      // arm, which is where the edge of an armhole is. The liner takes the same
-      // fade, so it stays inside the suit by construction.
-      const HUG_ARMHOLE_FADE = [0.18, ARMHOLE_WEIGHT];
-      const armholeFade = (geometry) => {
-        const bound = armWeight(bones, geometry);
-        return bound && (i => 1 - THREE.MathUtils.smoothstep(
-          bound(i), HUG_ARMHOLE_FADE[0], HUG_ARMHOLE_FADE[1]));
+      // The arm, measured: origin and axis of each upperarm plus that arm's own
+      // radius per step and bearing about it. Everything the armhole does is
+      // said against this rather than the torso's vertical axis, which over the
+      // deltoid runs nearly along the surface and so says nothing useful there.
+      const armSides = ['l', 'r'].map(side => {
+        const from = boneRestPoint(tshirt, `upperarm_${side}`);
+        const to = boneRestPoint(tshirt, `lowerarm_${side}`);
+        if (!from || !to) return null;
+        const dir = to.clone().sub(from).normalize();
+        const field = armSurfaceField(this.armsMesh, from, dir);
+        return field && { origin: from, dir, field, sign: Math.sign(from.x) || 1 };
+      }).filter(Boolean);
+      const onArm = sleeve && armSides.length;
+
+      // Distance down the nearer arm's own axis, for the cap's lower hem.
+      const alongArm = (x, y, z) => {
+        const side = armSides.find(s => s.sign * x >= 0) ?? armSides[0];
+        return new THREE.Vector3(x, y, z).sub(side.origin).dot(side.dir);
       };
+
+      // The torso hug lets go at the armhole and the arm takes over. Pulling
+      // toward the torso's vertical axis is the right move over the ribs and
+      // the wrong one at the seam: there it runs sideways INTO the arm, and a
+      // centimetre of it buries the suit's edge inside the deltoid, where it
+      // comes back out as a black band painted round the upper arm. Simply
+      // stopping the pull is not enough either — the seam is cut on the shirt's
+      // own sleeve, which stands a centimetre off the arm all round, so the
+      // edge then rings the arm without touching it and the armhole is a pale
+      // porthole onto the liner. So the last of the pull is handed over: from
+      // ARM_HUG_START on, each piece closes on the ARM instead, and lands
+      // where it belongs relative to that arm's surface.
+      const ARM_HUG_START = 0.30;
+      const SUIT_ARM_CLEARANCE = 0.002;   // the suit's edge, just off the skin
+      const LINER_ARM_INSET = -0.002;     // the liner, just under it
+      const weightsOf = geometry => armWeight(bones, geometry);
+      const towardTorso = bound => bound && (i => 1 - THREE.MathUtils.smoothstep(
+        bound(i), ARM_HUG_START, ARMHOLE_WEIGHT));
+      const towardArm = bound => bound && (i => THREE.MathUtils.smoothstep(
+        bound(i), ARM_HUG_START, ARMHOLE_WEIGHT));
 
       const suitShell = croppedGeometry(armholed(), 0, { axis: scoop, keep: -1, standoff: false });
       const linerShell = armholed(ARMHOLE_SKIN_OVERHANG);
+      const suitBound = weightsOf(suitShell);
+      const linerBound = weightsOf(linerShell);
+
+      const onto = (shell, bound, offset) => (onArm
+        ? huggedToArm(shell, armSides, offset, towardArm(bound))
+        : shell);
 
       swimsuitTop = this.createSkinnedClone(
         tshirt,
         bandedGeometry(
-          huggedGeometry(
+          onto(huggedGeometry(
             suitShell,
             SWIMSUIT_HUG, axisZ, HUG_FADE, skinFloor, SWIMSUIT_CLEARANCE,
-            armholeFade(suitShell)),
+            towardTorso(suitBound)), suitBound, SUIT_ARM_CLEARANCE),
           0x0f0f12,
           [
             { color: 0x6e0f16, t0: SWIMSUIT_STRIPE[0], t1: SWIMSUIT_STRIPE[1], feather: 0.02 },
@@ -1114,12 +1163,12 @@ export class Player {
       // place come out as a staircase of z-fighting.
       swimsuitBack = this.createSkinnedClone(
         tshirt,
-        huggedGeometry(
+        onto(huggedGeometry(
           huggedGeometry(
             linerShell,
             SWIMSUIT_HUG, axisZ, HUG_FADE, skinFloor, SWIMSUIT_CLEARANCE,
-            armholeFade(linerShell)),
-          SWIMSUIT_SKIN_GAP, axisZ, HUG_ALWAYS),
+            towardTorso(linerBound)),
+          SWIMSUIT_SKIN_GAP, axisZ, HUG_ALWAYS), linerBound, LINER_ARM_INSET),
         swimBackSkinMaterial, 'Wardrobe_SwimsuitBack');
 
       // The deltoid cap: skin for the shoulder the armhole opens onto. The
@@ -1131,30 +1180,20 @@ export class Player {
       // reaches, and carrying the arm's own girth up over the joint where it
       // does not. It shares the suit's seam exactly — same field, same level,
       // opposite side — so the two meet with nothing between them.
-      const armSides = ['l', 'r'].map(side => {
-        const from = boneRestPoint(tshirt, `upperarm_${side}`);
-        const to = boneRestPoint(tshirt, `lowerarm_${side}`);
-        if (!from || !to) return null;
-        const dir = to.clone().sub(from).normalize();
-        const field = armSurfaceField(this.armsMesh, from, dir);
-        return field && { origin: from, dir, field, sign: Math.sign(from.x) || 1 };
-      }).filter(Boolean);
-
-      // Distance down the nearer arm's own axis, for the cap's lower hem.
-      const alongArm = (x, y, z) => {
-        const side = armSides.find(s => s.sign * x >= 0) ?? armSides[0];
-        return new THREE.Vector3(x, y, z).sub(side.origin).dot(side.dir);
-      };
-
-      if (sleeve && armSides.length) {
+      if (onArm) {
+        const capShell = croppedGeometry(
+          croppedGeometry(tshirt.geometry, ARMHOLE_WEIGHT,
+            { axis: sleeve, keep: 1, standoff: false }),
+          ARM_CAP_REACH, { axis: alongArm, keep: -1, standoff: false });
+        const capBound = weightsOf(capShell);
+        // It starts where the suit's edge ends — same clearance off the arm at
+        // the seam — and is under the skin ARM_CAP_LAND of weight later.
+        const capOffset = capBound && (i => THREE.MathUtils.lerp(
+          SUIT_ARM_CLEARANCE, -ARM_CAP_INSET,
+          THREE.MathUtils.smoothstep(capBound(i), ARMHOLE_WEIGHT, ARMHOLE_WEIGHT + ARM_CAP_LAND)));
         swimsuitArms = this.createSkinnedClone(
           tshirt,
-          huggedToArm(
-            croppedGeometry(
-              croppedGeometry(tshirt.geometry, ARMHOLE_WEIGHT,
-                { axis: sleeve, keep: 1, standoff: false }),
-              ARM_CAP_REACH, { axis: alongArm, keep: -1, standoff: false }),
-            armSides, ARM_CAP_INSET),
+          huggedToArm(capShell, armSides, capOffset ?? -ARM_CAP_INSET, null, true),
           swimBackSkinMaterial, 'Wardrobe_SwimsuitArms');
       }
     }
