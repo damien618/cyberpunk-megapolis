@@ -392,6 +392,81 @@ function makeHouseplantAlbedo() {
   t.needsUpdate = true;
   return t;
 }
+// Olive spray: one alpha-cut card carries a whole sprig of leaves, which is the
+// only affordable way to reach real foliage density — the solid blades below
+// cost 8 triangles each and could never cover a crown on their own.
+function makeOliveSprayTex() {
+  const size = 512;
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = c.getContext('2d');
+  const tones = ['#3f5330', '#4a6036', '#556c3d', '#617a46', '#6d8752', '#7b9461', '#8ba076'];
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const leaf = (x, y, ang, len, wid, fill) => {
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    const px = -dy * wid, py = dx * wid;
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + dx * len * 0.42 + px, y + dy * len * 0.42 + py,
+      x + dx * len, y + dy * len);
+    ctx.quadraticCurveTo(x + dx * len * 0.42 - px, y + dy * len * 0.42 - py, x, y);
+    ctx.fill();
+    // Pale mid-rib: olive shows a silvery underside, and it is what keeps the
+    // card from reading as one solid green smear at a distance.
+    ctx.strokeStyle = 'rgba(198, 207, 172, 0.42)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + dx * len * 0.85, y + dy * len * 0.85);
+    ctx.stroke();
+  };
+  // One shoot: a woody line with short blades set in loose pairs. Olive leaves
+  // are stubby and scattered — draw them long and evenly pinnate and the card
+  // turns into a fern frond, which is what a plume of thin leaves reads as.
+  const shoot = (x0, y0, ang, len, count, scale) => {
+    ctx.strokeStyle = '#4c452f';
+    ctx.lineWidth = 2.6 * scale;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.quadraticCurveTo(x0 + Math.cos(ang) * len * 0.5, y0 + Math.sin(ang) * len * 0.5,
+      x0 + Math.cos(ang) * len, y0 + Math.sin(ang) * len);
+    ctx.stroke();
+    for (let i = 0; i < count; i++) {
+      const t = 0.1 + (i / count) * 0.92;
+      const jitter = (rnd() - 0.5) * 0.05;
+      const bx = x0 + Math.cos(ang) * len * (t + jitter);
+      const by = y0 + Math.sin(ang) * len * (t + jitter);
+      for (const side of [-1, 1]) {
+        if (rnd() < 0.12) continue;              // gaps keep the pairs irregular
+        const la = ang + side * (0.75 + rnd() * 0.5);
+        const lit = Math.min(tones.length - 1,
+          Math.round((1 - by / size) * 3.4 + rnd() * 2.6));
+        leaf(bx, by, la, (36 + rnd() * 22) * scale, (7 + rnd() * 3.5) * scale, tones[lit]);
+      }
+    }
+    leaf(x0 + Math.cos(ang) * len, y0 + Math.sin(ang) * len, ang,
+      (32 + rnd() * 14) * scale, 7 * scale, tones[tones.length - 2]);
+  };
+  for (let s = 0; s < 6; s++) {
+    const ang = -Math.PI / 2 + (s / 5 - 0.5) * 1.9 + (rnd() - 0.5) * 0.22;
+    const x0 = 256 + (rnd() - 0.5) * 80, y0 = 486 + (rnd() - 0.5) * 34;
+    const len = 210 + rnd() * 110;
+    shoot(x0, y0, ang, len, 11 + Math.floor(rnd() * 3), 1);
+    // A side branchlet on some shoots fills the card between the main ones, so
+    // the spray is a clump rather than a radial fan.
+    if (s % 2 === 0) {
+      const t = 0.45 + rnd() * 0.25;
+      shoot(x0 + Math.cos(ang) * len * t, y0 + Math.sin(ang) * len * t,
+        ang + (rnd() < 0.5 ? -1 : 1) * (0.5 + rnd() * 0.3), len * 0.5, 6, 0.85);
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  t.needsUpdate = true;
+  return t;
+}
 function withUV2(geometry) {
   if (!geometry.getAttribute('uv2') && geometry.getAttribute('uv')) {
     const uv = geometry.getAttribute('uv');
@@ -550,8 +625,8 @@ const stuccoA = tex('./textures/nature/stucco_diff.jpg', 5, 2);
 const stuccoPN = ntex('./textures/nature/stucco_n.jpg', 5, 2);
 const barkA = tex('./textures/nature/bark_diff.jpg', 1, 2);
 const barkN = ntex('./textures/nature/bark_n.jpg', 1, 2);
-const canopyA = tex('./textures/nature/canopy_diff.jpg', 2.2, 2.2);
-const canopyN = ntex('./textures/nature/foliage_n.jpg', 2.2, 2.2);
+const canopyA = tex('./textures/nature/canopy_leaf.jpg', 3.0, 3.0);
+const canopyN = ntex('./textures/nature/foliage_n.jpg', 2.5, 2.5);
 const leafCardTex = loader.load('./textures/nature/foliage_card.png');
 leafCardTex.colorSpace = THREE.SRGBColorSpace;
 leafCardTex.anisotropy = maxAniso;
@@ -559,6 +634,7 @@ const calRug = makeCalRugMaps();
 const hollywoodRug = makeHollywoodRugMaps();
 const boucle = makeBoucleMaps();
 const houseplantA = makeHouseplantAlbedo();
+const oliveSprayTex = makeOliveSprayTex();
 
 // The cyberpunk texture pack is dark and full of coloured trim strips, so the
 // villa keeps the normal maps for relief and drives colour itself — that is
@@ -676,19 +752,19 @@ const M = {
   }),
   lawn: new THREE.MeshStandardMaterial({ map: lawnA, color: 0x9fb076, roughness: 0.98, metalness: 0.0 }),
   hedge: new THREE.MeshStandardMaterial({
-    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.6, 0.6),
-    color: 0x6a8a52, roughness: 0.97, metalness: 0.0
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.7, 0.7),
+    color: 0x6a8a52, roughness: 0.96, metalness: 0.0
   }),
   foliage: new THREE.MeshStandardMaterial({
-    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.5, 0.5),
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.7, 0.7),
     color: 0x7a9a5c, roughness: 0.95, metalness: 0.0
   }),
   foliageOlive: new THREE.MeshStandardMaterial({
-    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.5, 0.5),
-    color: 0x9aaa72, roughness: 0.95, metalness: 0.0
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.48, 0.48),
+    color: 0x82985f, roughness: 0.95, metalness: 0.0
   }),
   foliageDark: new THREE.MeshStandardMaterial({
-    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.55, 0.55),
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.7, 0.7),
     color: 0x5a7a44, roughness: 0.96, metalness: 0.0
   }),
   bark: new THREE.MeshStandardMaterial({
@@ -703,7 +779,22 @@ const M = {
     map: leafCardTex, color: 0xc8d8a8, roughness: 0.96, metalness: 0.0,
     alphaTest: 0.28, alphaToCoverage: true, side: THREE.DoubleSide
   }),
-  frond: new THREE.MeshStandardMaterial({ color: 0x5b8a4a, roughness: 0.95, metalness: 0.0 }),
+  // Alpha-cut sprig cards: the bulk of the foliage. Tinted per instance so the
+  // shaded underside of a crown and its sunlit cap are not the same green.
+  oliveSpray: new THREE.MeshStandardMaterial({
+    map: oliveSprayTex, color: 0xffffff, roughness: 0.9, metalness: 0.0,
+    alphaTest: 0.42, alphaToCoverage: true, side: THREE.DoubleSide
+  }),
+  // White base colour: every leaf gets its own tint through instanceColor, so
+  // one crown carries the whole range from shaded interior to sunlit silver.
+  oliveLeaf: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0.0, side: THREE.DoubleSide }),
+  // The crown solids are only the shadowed mass the leaves sit on — lighter
+  // than this and they read as a painted plastic ball through the gaps.
+  oliveCanopy: new THREE.MeshStandardMaterial({
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.6, 0.6),
+    color: 0x55683b, roughness: 0.97, metalness: 0.0
+  }),
+  frond: new THREE.MeshStandardMaterial({ color: 0x5b8a4a, roughness: 0.95, metalness: 0.0, side: THREE.DoubleSide }),
   terracotta: new THREE.MeshStandardMaterial({ color: 0xb4643f, roughness: 0.85, metalness: 0.02 }),
   gravel: new THREE.MeshStandardMaterial({
     normalMap: concN, color: 0xd8caae, roughness: 0.99, metalness: 0.0
@@ -764,11 +855,21 @@ function addInstancedPrimitive(geometry, material, items, propFlags) {
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     p.set(it.x, it.y, it.z);
-    e.set(it.rx || 0, it.ry || 0, it.rz || 0, 'YXZ');
-    q.setFromEuler(e);
+    // Euler covers the architecture; a leaf needs a full basis (its blade must
+    // be able to face any way), so items may carry a baked quaternion instead.
+    if (it.q) q.fromArray(it.q);
+    else {
+      e.set(it.rx || 0, it.ry || 0, it.rz || 0, 'YXZ');
+      q.setFromEuler(e);
+    }
     s.set(it.sx ?? 1, it.sy ?? 1, it.sz ?? 1);
     m.compose(p, q, s);
     im.setMatrixAt(i, m);
+  }
+  if (items.some(it => it.c !== undefined)) {
+    const col = new THREE.Color();
+    for (let i = 0; i < items.length; i++) im.setColorAt(i, col.setHex(items[i].c ?? 0xffffff));
+    im.instanceColor.needsUpdate = true;
   }
   im.castShadow = true;
   im.receiveShadow = true;
@@ -781,13 +882,41 @@ function addInstancedPrimitive(geometry, material, items, propFlags) {
   return im;
 }
 
+// Smooth, full canopy with broad low-frequency undulations. The former
+// icosahedron displaced every vertex independently and produced deep bites and
+// polygonal rims when seen close up. A denser UV sphere keeps the silhouette
+// rounded while the layered crowns below provide the irregular overall shape.
+function lumpyCrown(seed, flatten = 0.08, lump = 0.075) {
+  const g = new THREE.SphereGeometry(0.5, 32, 20);
+  const pos = g.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const n = 1 + lump * (
+      Math.sin(v.x * 5.2 + seed * 2.1) * 0.46
+      + Math.sin(v.z * 4.7 + seed * 1.4) * 0.34
+      + Math.sin((v.x + v.y + v.z) * 4.1 + seed) * 0.20
+    );
+    v.multiplyScalar(n);
+    if (v.y < 0) v.y *= 1 - flatten;
+    else v.y *= 0.94;
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return withUV2(g);
+}
+
 const G = {
   box: withUV2(new THREE.BoxGeometry(1, 1, 1)),
   cyl: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 16)),
   cylBase: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 16).translate(0, 0.5, 0)),
   trunk: withUV2(new THREE.CylinderGeometry(0.34, 0.5, 1, 9).translate(0, 0.5, 0)),
+  branch: withUV2(new THREE.CylinderGeometry(0.28, 0.5, 1, 8).translate(0, 0.5, 0)),
   sphere: withUV2(new THREE.SphereGeometry(0.5, 14, 10)),
   blob: withUV2(new THREE.IcosahedronGeometry(0.5, 2)),
+  canopyA: lumpyCrown(1.15),
+  canopyB: lumpyCrown(2.84),
+  canopyC: lumpyCrown(4.61),
   cushion: (() => {
     const g = new THREE.SphereGeometry(0.5, 16, 12);
     const pos = g.attributes.position;
@@ -802,8 +931,55 @@ const G = {
     return withUV2(g);
   })(),
   card: withUV2(new THREE.PlaneGeometry(1, 1)),
+  // Pivot at the bottom edge: a spray card is aimed like a shoot, growing away
+  // from the point where it is pinned to the crown.
+  cardUp: withUV2(new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0)),
   cone: withUV2(new THREE.ConeGeometry(0.5, 1, 12).translate(0, 0.5, 0)),
-  frond: withUV2(new THREE.ConeGeometry(0.22, 1, 4).translate(0, 0.5, 0)),
+  // Olive blade: narrow, lanceolate, folded along a raised mid-rib and growing
+  // from the origin up +Y so a sprig can be laid out along a shoot direction.
+  // The fold matters — a flat quad disappears edge-on and the crown then looks
+  // like a handful of shards; two facets always catch some light.
+  oliveLeaf: (() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([
+      0, 0, 0,
+      -0.10, 0.32, 0, 0, 0.32, 0.030, 0.10, 0.32, 0,
+      -0.075, 0.72, 0, 0, 0.72, 0.022, 0.075, 0.72, 0,
+      0, 1, 0
+    ], 3));
+    g.setIndex([
+      0, 1, 2, 0, 2, 3,
+      1, 4, 5, 1, 5, 2, 2, 5, 6, 2, 6, 3,
+      4, 7, 5, 5, 7, 6
+    ]);
+    g.computeVertexNormals();
+    return g;
+  })(),
+  frond: (() => {
+    // A curved rachis with separated, drooping leaflets on both sides.
+    const g = new THREE.BufferGeometry(), vertices = [], indices = [];
+    const point = t => [0, t * 0.78, t * t * 0.48];
+    const ribbon = (a, b, c, width) => {
+      const k = vertices.length / 3;
+      vertices.push(...a, b[0] - width, b[1], b[2],
+        b[0], b[1] + 0.012, b[2], b[0] + width, b[1], b[2], ...c);
+      indices.push(k, k + 1, k + 2, k, k + 2, k + 3,
+        k + 1, k + 4, k + 2, k + 2, k + 4, k + 3);
+    };
+    for (let i = 0; i < 24; i++) {
+      const t = 0.08 + i * 0.036, a = point(t);
+      ribbon(point(t - 0.04), a, point(t + 0.04), 0.009);
+      for (const side of [-1, 1]) {
+        const reach = 0.25 * Math.sin(Math.PI * Math.pow(t, 0.7));
+        ribbon(a, [side * reach * 0.55, a[1] + 0.035, a[2] + 0.035],
+          [side * reach, a[1] - 0.06, a[2] + 0.13], 0.014);
+      }
+    }
+    g.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    g.setIndex(indices);
+    g.computeVertexNormals();
+    return g;
+  })(),
   // Open-top tapered square tube: with a 45° yaw the section is axis-aligned,
   // 1×1 at the rim and 0.7×0.7 at the base — the kitchen sink bowls.
   bowl: withUV2(new THREE.CylinderGeometry(0.70711, 0.49497, 1, 4, 1, true).translate(0, 0.5, 0)),
@@ -879,31 +1055,145 @@ function box(mat, x, y, z, sx, sy, sz, ry = 0) {
     sx, sy, sz, ry: FR + ry
   });
 }
+const _frameQ = new THREE.Quaternion(), _localQ = new THREE.Quaternion();
+const _yAxis = new THREE.Vector3(0, 1, 0);
 function shape(geo, mat, x, y, z, sx, sy, sz, rot = {}) {
   const c = Math.cos(FR), s = Math.sin(FR);
-  emit(geo, mat, {
+  const it = {
     x: FX + x * c + z * s, y: y + LIFT, z: FZ - x * s + z * c,
     sx, sy, sz, ry: FR + (rot.ry || 0), rx: rot.rx || 0, rz: rot.rz || 0
-  });
+  };
+  // rot.q is authored in the frame's own space, so the frame yaw pre-multiplies.
+  if (rot.q) it.q = _frameQ.setFromAxisAngle(_yAxis, FR).multiply(_localQ.fromArray(rot.q)).toArray();
+  if (rot.c !== undefined) it.c = rot.c;
+  emit(geo, mat, it);
 }
 const leafCardItems = [];
-function sprinkleLeaves(x, y, z, rx, ry, rz, n = 7) {
-  const c = Math.cos(FR), s = Math.sin(FR);
-  const wx = FX + x * c + z * s;
-  const wz = FZ - x * s + z * c;
-  const wy = y + LIFT;
-  const j = Math.sin(wx * 12.9 + wz * 7.1);
-  for (let i = 0; i < n; i++) {
-    const a = FR + (i / n) * Math.PI + j * 0.2;
-    leafCardItems.push({
-      x: wx + Math.cos(a) * rx * 0.22,
-      y: wy + ry * (0.25 + (i % 3) * 0.22),
-      z: wz + Math.sin(a) * rz * 0.22,
-      sx: rx * (0.85 + (i % 2) * 0.2),
-      sy: ry * (0.9 + (i % 3) * 0.12),
-      ry: a + Math.PI / 2,
-      rx: -0.12 + (i % 4) * 0.07,
-    });
+function hash1(n) {
+  const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+// Orient a leaf: +Y along `dir`, then spun by `roll` about its own stem so the
+// blades of one sprig are not coplanar. Euler angles cannot express this — with
+// a YXZ pair every blade ends up standing in a vertical plane, which is exactly
+// what turned the old crowns into a fan of edge-on shards.
+const _lx = new THREE.Vector3(), _ly = new THREE.Vector3(), _lz = new THREE.Vector3();
+const _lref = new THREE.Vector3(0, 1, 0), _lalt = new THREE.Vector3(1, 0, 0);
+const _lmat = new THREE.Matrix4(), _lq = new THREE.Quaternion();
+function aimQuat(dir, roll) {
+  _ly.copy(dir).normalize();
+  _lx.crossVectors(_ly, Math.abs(_ly.y) > 0.95 ? _lalt : _lref).normalize();
+  _lz.crossVectors(_lx, _ly);
+  const c = Math.cos(roll), s = Math.sin(roll);
+  _lx.set(_lx.x * c + _lz.x * s, _lx.y * c + _lz.y * s, _lx.z * c + _lz.z * s).normalize();
+  _lz.crossVectors(_lx, _ly);
+  _lmat.makeBasis(_lx, _ly, _lz);
+  return _lq.setFromRotationMatrix(_lmat).toArray();
+}
+// Same idea for a flat card, except the roll is pinned: the card's face is made
+// to look along `face` (the crown normal), so it is lit like the surface it
+// clothes rather than flashing edge-on as the camera moves.
+function cardQuat(dir, face) {
+  _ly.copy(dir).normalize();
+  _lx.crossVectors(face, _ly).normalize();
+  _lz.crossVectors(_lx, _ly);
+  _lmat.makeBasis(_lx, _ly, _lz);
+  return _lq.setFromRotationMatrix(_lmat).toArray();
+}
+// Shaded interior → sunlit silver-green top. Olive leaves show a pale underside,
+// so the range runs wider than a single green would.
+const LEAF_TONES = [0x40532f, 0x4a5d34, 0x55693b, 0x627644, 0x6f834e, 0x7e915d, 0x8f9f72, 0xa1ad88];
+// Sprays are tinted rather than recoloured: the card already carries its own
+// leaf-to-leaf variation, so this only shifts a whole sprig towards shade or sun.
+const _sprayCol = new THREE.Color();
+function sprayTint(lit) {
+  const t = Math.max(0, Math.min(1, lit));
+  return _sprayCol.setRGB(0.42 + 0.5 * t, 0.5 + 0.45 * t, 0.36 + 0.44 * t).getHex();
+}
+const _lsN = new THREE.Vector3(), _lsT1 = new THREE.Vector3(), _lsT2 = new THREE.Vector3();
+const _lsShoot = new THREE.Vector3(), _lsLat = new THREE.Vector3(), _lsDir = new THREE.Vector3();
+function sprinkleLeaves(x, y, z, sx, sy, sz, seed) {
+  // Two passes over one crown. Sprays cover it — each card is a whole sprig, so
+  // a hundred of them make a leafy skin for two hundred triangles. Solid blades
+  // then break the rim, where a card silhouette would give itself away.
+  const rx = sx * 0.5, ry = sy * 0.5, rz = sz * 0.5;
+  const R = (rx + rz) * 0.5;
+  const _face = new THREE.Vector3();
+
+  const SPRAYS = 152;
+  for (let i = 0; i < SPRAYS; i++) {
+    const up = 1 - 2 * (i + 0.5) / SPRAYS;
+    const angle = i * 2.399963 + seed * 1.7;
+    const ring = Math.sqrt(Math.max(0, 1 - up * up));
+    _lsN.set(Math.cos(angle) * ring, up, Math.sin(angle) * ring);
+    const h = hash1(i * 5.3 + seed);
+    // Sit the card just proud of the solid so it never z-fights, and let a third
+    // of them sink inwards — the depth is what stops the crown looking printed.
+    const depth = h < 0.32 ? 0.84 : 1.0;
+    const ax = x + _lsN.x * rx * depth;
+    const ay = y + _lsN.y * ry * depth;
+    const az = z + _lsN.z * rz * depth;
+    _lsT1.set(-Math.sin(angle), 0, Math.cos(angle));
+    _lsT2.crossVectors(_lsN, _lsT1).normalize();
+    const th = hash1(i * 2.9 + seed) * 6.283185;
+    _lsDir.copy(_lsN).multiplyScalar(0.6)
+      .addScaledVector(_lsT1, Math.cos(th) * 0.85)
+      .addScaledVector(_lsT2, Math.sin(th) * 0.85);
+    _lsDir.y -= 0.22;                  // shoots lift out, then the tips hang
+    _lsDir.normalize();
+    // The card face follows the crown normal only loosely. Following it exactly
+    // leaves the cap of the crown paved with horizontal cards, invisible edge-on
+    // from the ground — which is why the top read as a bare dark dome. Near the
+    // poles the normal is weighted down and the tangential jitter up, so those
+    // sprays stand up and still show their blades from the side.
+    const pole = Math.abs(up);
+    const jit = 0.5 + 0.9 * pole;
+    _face.copy(_lsN).multiplyScalar(1 - 0.62 * pole)
+      .addScaledVector(_lsT1, (h - 0.5) * 2 * jit)
+      .addScaledVector(_lsT2, (hash1(i * 7.7 + seed) - 0.5) * 2 * jit).normalize();
+    const w = R * (0.62 + 0.26 * h);
+    const lit = 0.46 + 0.34 * up + 0.26 * (h - 0.5);
+    shape(G.cardUp, M.oliveSpray, ax, ay, az, w, w * 1.05, w,
+      { q: cardQuat(_lsDir, _face), c: sprayTint(lit) });
+  }
+
+  const ANCHORS = 96, PER_SHOOT = 4;
+  const leafLen = 0.1 * R, twigLen = 0.26 * R;
+  for (let i = 0; i < ANCHORS; i++) {
+    const up = 1 - 2 * (i + 0.5) / ANCHORS;
+    const angle = i * 2.399963 + seed;
+    const ring = Math.sqrt(Math.max(0, 1 - up * up));
+    _lsN.set(Math.cos(angle) * ring, up, Math.sin(angle) * ring);
+    const ax = x + _lsN.x * rx * 0.97;
+    const ay = y + _lsN.y * ry * 0.97;
+    const az = z + _lsN.z * rz * 0.97;
+    _lsT1.set(-Math.sin(angle), 0, Math.cos(angle));
+    _lsT2.crossVectors(_lsN, _lsT1).normalize();
+    const th = hash1(i * 1.73 + seed) * 6.283185;
+    _lsShoot.copy(_lsN).multiplyScalar(0.55)
+      .addScaledVector(_lsT1, Math.cos(th) * 0.85)
+      .addScaledVector(_lsT2, Math.sin(th) * 0.85);
+    _lsShoot.y -= 0.3;
+    _lsShoot.normalize();
+    _lsLat.crossVectors(_lsShoot, _lsN).normalize();
+    for (let k = 0; k < PER_SHOOT; k++) {
+      const t = (k + 0.6) / PER_SHOOT;
+      const h = hash1(i * 3.11 + k * 11.7 + seed);
+      _lsDir.copy(_lsShoot).multiplyScalar(0.55)
+        .addScaledVector(_lsLat, (k % 2 ? 1 : -1) * (0.5 + 0.3 * h))
+        .addScaledVector(_lsN, 0.3);
+      _lsDir.y -= 0.5 * t;             // the far end of the sprig droops most
+      _lsDir.normalize();
+      const len = leafLen * (0.8 + 0.5 * h);
+      const lit = 0.42 + 0.42 * _lsDir.y + 0.3 * (h - 0.5) + 0.16 * up;
+      const tone = LEAF_TONES[Math.max(0, Math.min(LEAF_TONES.length - 1,
+        Math.round(lit * (LEAF_TONES.length - 1))))];
+      shape(G.oliveLeaf, M.oliveLeaf,
+        ax + _lsShoot.x * twigLen * t,
+        ay + _lsShoot.y * twigLen * t,
+        az + _lsShoot.z * twigLen * t,
+        len, len, len, { q: aimQuat(_lsDir, h * 6.283185), c: tone });
+    }
   }
 }
 function flushLeafCards() {
@@ -1871,11 +2161,47 @@ function palm(h = 9) {
     shape(G.sphere, M.foliageOlive, Math.cos(a) * 0.35, h - 0.35, Math.sin(a) * 0.35, 0.3, 0.3, 0.3);
   }
 }
+// Cylinder is base-at-origin. Yaw then Z-lean grows the limb along +X, so the
+// attach point is offset on the trunk in that same direction — the join is solid.
+function limb(mat, tx, ty, tz, trunkR, az, lean, len, rad) {
+  shape(G.branch, mat,
+    tx + Math.cos(az) * trunkR, ty, tz - Math.sin(az) * trunkR,
+    rad, len, rad, { ry: az, rz: lean });
+}
 function oliveTree(h = 4.2) {
-  shape(G.trunk, M.barkDark, 0, 0, 0, 0.5, h * 0.55, 0.5);
-  for (const [dx, dy, dz, s] of [[0, h * 0.72, 0, 3.2], [-1.1, h * 0.6, 0.5, 2.2], [1.0, h * 0.62, -0.6, 2.4], [0.3, h * 0.85, 0.6, 1.9]])
-    shape(G.blob, M.foliageOlive, dx, dy, dz, s, s * 0.8, s);
-  sprinkleLeaves(0, h * 0.45, 0, 3.6, 2.8, 3.6, 8);
+  const s = h / 4.2;
+  const trunkH = h * 0.52;
+  const trunkW = 0.62 * s;
+
+  // Root flare anchoring trunk into the soil
+  shape(G.cylBase, M.barkDark, 0, 0, 0, 0.95 * s, 0.4 * s, 0.95 * s);
+  // Main sculptural trunk with slight natural lean
+  shape(G.trunk, M.barkDark, 0, 0, 0, trunkW, trunkH, trunkW * 0.92, { ry: 0.6, rz: 0.05 });
+
+  // Spreading boughs reaching into the foliage clouds
+  const bY = trunkH * 0.72;
+  const tR = 0.22 * s;
+  limb(M.barkDark, 0, bY, 0, tR, 0.4, 0.82, 1.6 * s, 0.34 * s);
+  limb(M.barkDark, 0, bY + 0.15 * s, 0, tR * 0.9, 2.2, 0.86, 1.5 * s, 0.30 * s);
+  limb(M.barkDark, 0, bY - 0.1 * s, 0, tR * 0.9, 3.9, 0.80, 1.55 * s, 0.32 * s);
+  limb(M.barkDark, 0, bY + 0.25 * s, 0, tR * 0.85, 5.3, 0.74, 1.45 * s, 0.28 * s);
+  // Central upper trunk heading into apex
+  shape(G.trunk, M.barkDark, 0, bY, 0, 0.38 * s, trunkH * 0.5, 0.30 * s, { ry: 1.1, rx: 0.08 });
+
+  // Billowing cloud foliage (coussins de feuillage): a lumpy solid per crown for
+  // the shaded mass, then sprigs of leaves over its skin. The solids are 8%
+  // smaller than the silhouette we want — the leaves put that back and give the
+  // crown a broken, leafy edge instead of a moulded rim.
+  const crowns = [
+    [G.canopyA, 0.1, 0.82, 0.05, 2.9, 2.2, 0.7], [G.canopyB, 1.4, 0.68, 0.55, 2.5, 1.9, 1.9],
+    [G.canopyC, -1.05, 0.66, 1.25, 2.4, 1.8, 3.4], [G.canopyB, -1.25, 0.69, -1.1, 2.4, 1.9, 4.8],
+    [G.canopyA, 0.85, 0.71, -1.2, 2.3, 1.8, 5.6], [G.canopyC, 0.1, 0.56, 0.15, 2.5, 1.8, 2.3]
+  ];
+  for (const [geo, x, y, z, w, tall, seed] of crowns) {
+    shape(geo, M.oliveCanopy, x * s, y * h, z * s,
+      w * s * 0.92, tall * s * 0.92, w * s * 0.92, { ry: seed });
+    sprinkleLeaves(x * s, y * h, z * s, w * s * 0.92, tall * s * 0.92, w * s * 0.92, seed);
+  }
 }
 function cypress(h = 7) {
   shape(G.cone, M.foliageDark, 0, 0, 0, 1.5, h, 1.5);
@@ -1895,8 +2221,7 @@ function hedge(x0, x1, z0, z1, h = 1.5) {
     const t = (i + 0.5) / n;
     const x = along ? x0 + len * t : (x0 + x1) / 2;
     const z = along ? (z0 + z1) / 2 : z0 + len * t;
-    shape(G.blob, M.hedge, x, h - 0.05, z, 1.35, 0.55, Math.abs(along ? z1 - z0 : x1 - x0) * 0.95);
-    sprinkleLeaves(x, h * 0.25, z, 1.4, h * 0.7, 1.2, 4);
+    shape(G.canopyB, M.hedge, x, h - 0.05, z, 1.35, 0.55, Math.abs(along ? z1 - z0 : x1 - x0) * 0.95);
   }
 }
 // A parked car is a real lofted mesh in `world` (so the player can raycast onto
