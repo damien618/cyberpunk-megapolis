@@ -505,8 +505,16 @@ function makeSailboatHullGeo() {
       w = 0.5 * Math.cos(u * Math.PI * 0.5);
     }
     const yDeck = 0.15 + 0.10 * Math.pow(t - 0.3, 2);
-    let yBot = t < 0.9 ? -0.22 * Math.sin(t * Math.PI * 0.85) : -0.05 * (1.0 - t) / 0.1;
-    if (t === 0) yBot = -0.08;
+    // Œuvre vive. The hull used to stop 0.22 below the sheer, which at the
+    // placement scale left the boat drawing a couple of hand-widths: it sat ON
+    // the sea rather than in it, and from the pier you could see under its
+    // keel. The canoe body is now deep enough that the waterline crosses the
+    // topsides where a boat's waterline actually is.
+    const DRAFT = 0.44;
+    let yBot = t < 0.9
+      ? -DRAFT * Math.sin(t * Math.PI * 0.85)
+      : -DRAFT * 0.23 * (1.0 - t) / 0.1;
+    if (t === 0) yBot = -DRAFT * 0.36;
     const depth = yDeck - yBot;
 
     const profile = [
@@ -525,7 +533,9 @@ function makeSailboatHullGeo() {
     ];
 
     for (let k = 0; k < ringSize; k++) {
-      pos.push(profile[k][0], profile[k][1], z);
+      // w is already a half-beam. Restore the full intended beam and a
+      // usable topside height; keep the underwater profile/draft unchanged.
+      pos.push(profile[k][0] * 2, profile[k][1] > 0 ? profile[k][1] * 2 : profile[k][1], z);
       uvs.push(k / (ringSize - 1), t);
     }
   }
@@ -542,7 +552,7 @@ function makeSailboatHullGeo() {
 
   // Stern transom cap (t=0, ring 0)
   const sternCenter = pos.length / 3;
-  pos.push(0.0, 0.05, -0.5);
+  pos.push(0.0, 0.10, -0.5);
   uvs.push(0.5, 0.0);
   for (let k = 0; k < ringSize; k++) {
     const kNext = (k + 1) % ringSize;
@@ -575,8 +585,12 @@ function makeYachtHullGeo() {
     }
     const yDeck = 0.16 + 0.08 * Math.pow(t, 1.5);
     const yChine = yDeck - 0.12;
-    let yBot = t < 0.95 ? -0.16 * Math.sin(t * Math.PI * 0.9) : 0.0;
-    if (t < 0.1) yBot = -0.06;
+    // Same story as the sailboat: a deep-V that only reached 0.16 below the
+    // sheer drew nothing, so the yacht hovered on the swell. See the note in
+    // makeSailboatHullGeo.
+    const DRAFT = 0.34;
+    let yBot = t < 0.95 ? -DRAFT * Math.sin(t * Math.PI * 0.9) : 0.0;
+    if (t < 0.1) yBot = -DRAFT * 0.375;
     const depth = yDeck - yBot;
 
     const profile = [
@@ -595,7 +609,7 @@ function makeYachtHullGeo() {
     ];
 
     for (let k = 0; k < ringSize; k++) {
-      pos.push(profile[k][0], profile[k][1], z);
+      pos.push(profile[k][0] * 2, profile[k][1] > 0 ? profile[k][1] * 2 : profile[k][1], z);
       uvs.push(k / (ringSize - 1), t);
     }
   }
@@ -612,7 +626,7 @@ function makeYachtHullGeo() {
 
   // Stern transom cap
   const sternCenter = pos.length / 3;
-  pos.push(0.0, 0.05, -0.5);
+  pos.push(0.0, 0.10, -0.5);
   uvs.push(0.5, 0.0);
   for (let k = 0; k < ringSize; k++) {
     const kNext = (k + 1) % ringSize;
@@ -730,20 +744,24 @@ function makeYachtCabinGeo() {
 
 function makeRadarArchGeo() {
   const s = new THREE.Shape();
-  s.moveTo(-0.06, 0);
-  s.lineTo(0.04, 0);
-  s.lineTo(0.02, 0.14);
-  s.lineTo(-0.06, 0.14);
+  // Open arch across the beam, with two legs supporting the radar shelf.
+  s.moveTo(-0.13, 0);
+  s.lineTo(-0.13, 0.14);
+  s.lineTo(0.13, 0.14);
+  s.lineTo(0.13, 0);
+  s.lineTo(0.11, 0);
+  s.lineTo(0.11, 0.12);
+  s.lineTo(-0.11, 0.12);
+  s.lineTo(-0.11, 0);
   s.closePath();
   const g = new THREE.ExtrudeGeometry(s, {
-    depth: 0.26,
+    depth: 0.08,
     bevelEnabled: true,
     bevelThickness: 0.008,
     bevelSize: 0.008,
     bevelSegments: 1,
   });
   g.center();
-  g.rotateY(Math.PI / 2);
   g.computeVertexNormals();
   return withUV2(g);
 }
@@ -3420,8 +3438,12 @@ function sailboat(len, opts = {}) {
   const hullMat = opts.navy ? M.hullNavy : M.hullWhite;
   // Sleek hydrodynamic monohull
   shape(G.sailHull, hullMat, 0, 0, 0, len * 0.32, len * 0.22, len);
-  // Underwater antifouling waterline stripe
-  shape(G.sailHull, M.hullDark, 0, -len * 0.035, 0, len * 0.325, len * 0.08, len * 1.005);
+  // Antifouling. A flattened copy of the hull sleeved over the real one: it
+  // has to reach past the keel and stop a hand's breadth ABOVE the sea, which
+  // is what leaves a boot top showing along the waterline.
+  shape(G.sailHull, M.hullDark, 0, -len * 0.060, 0, len * 0.325, len * 0.10, len * 1.005);
+  const deckLift = LIFT;
+  LIFT += len * 0.035;
   // Teak deck cockpit well
   box(M.hullTeak, 0, len * 0.038, -len * 0.16, len * 0.20, len * 0.015, len * 0.36);
   // Low-profile coachroof / deckhouse
@@ -3450,14 +3472,17 @@ function sailboat(len, opts = {}) {
   box(M.navRed, -len * 0.12, len * 0.05, len * 0.16, 0.08, 0.05, 0.08);
   box(M.navGreen, len * 0.12, len * 0.05, len * 0.16, 0.08, 0.05, 0.08);
   box(M.navWhite, 0, len * 1.25, len * 0.06, 0.06, 0.06, 0.06);
+  LIFT = deckLift;
 }
 
 function motorYacht(len, opts = {}) {
   const hullMat = opts.navy ? M.hullNavy : M.hullWhite;
   // Sleek deep-V hull
   shape(G.yachtHull, hullMat, 0, 0, 0, len * 0.34, len * 0.22, len);
-  // Bootstripe / dark hull bottom
-  shape(G.yachtHull, M.hullDark, 0, -len * 0.032, 0, len * 0.344, len * 0.08, len * 1.005);
+  // Bootstripe / dark hull bottom — see the sailboat's note.
+  shape(G.yachtHull, M.hullDark, 0, -len * 0.053, 0, len * 0.344, len * 0.08, len * 1.005);
+  const deckLift = LIFT;
+  LIFT += len * 0.035;
   // Teak swim platform at transom
   box(M.hullTeak, 0, len * 0.022, -len * 0.46, len * 0.28, len * 0.015, len * 0.10);
   // Teak aft cockpit deck
@@ -3492,18 +3517,23 @@ function motorYacht(len, opts = {}) {
   box(M.navRed, -len * 0.14, len * 0.11, len * 0.15, 0.08, 0.05, 0.08);
   box(M.navGreen, len * 0.14, len * 0.11, len * 0.15, 0.08, 0.05, 0.08);
   box(M.navWhite, 0, len * 0.31, -len * 0.14, 0.06, 0.06, 0.06);
+  LIFT = deckLift;
 }
 
 function sportCruiser(len) {
   // Sleek open sport yacht / day boat
   shape(G.yachtHull, M.hullNavy, 0, 0, 0, len * 0.33, len * 0.20, len);
-  shape(G.yachtHull, M.hullWhite, 0, len * 0.01, 0, len * 0.32, len * 0.12, len * 0.98);
+  // White topsides over a navy bottom: the seam between the two is the
+  // waterline, so it sits just clear of the sea.
+  shape(G.yachtHull, M.hullWhite, 0, len * 0.016, 0, len * 0.32, len * 0.12, len * 0.98);
+  const deckLift = LIFT;
+  LIFT += len * 0.04;
   // Teak cockpit & swim platform
   box(M.hullTeak, 0, len * 0.025, -len * 0.15, len * 0.24, len * 0.015, len * 0.55);
   // Low raked sports windshield
   box(M.yachtGlass, 0, len * 0.085, len * 0.08, len * 0.24, len * 0.06, len * 0.12, 0.25);
   // Swept-back radar arch
-  shape(G.radarArch, M.hullWhite, 0, len * 0.07, -len * 0.12, len * 0.8, len * 0.8, len * 0.8);
+  shape(G.radarArch, M.hullWhite, 0, len * 0.14, -len * 0.12, len * 0.8, len * 0.8, len * 0.8);
   // Radome
   shape(G.radome, M.hullWhite, 0, len * 0.21, -len * 0.12, len * 0.05, len * 0.035, len * 0.05);
   // Aft sun lounger pad
@@ -3514,8 +3544,13 @@ function sportCruiser(len) {
   box(M.navRed, -len * 0.13, len * 0.08, len * 0.10, 0.08, 0.05, 0.08);
   box(M.navGreen, len * 0.13, len * 0.08, len * 0.10, 0.08, 0.05, 0.08);
   box(M.navWhite, 0, len * 0.22, -len * 0.12, 0.06, 0.06, 0.06);
+  LIFT = deckLift;
 }
 
+// Keep offshore instances separate from static scenery so each whole boat
+// can follow the sea without moving unrelated objects sharing its materials.
+flushKits();
+const floatingBoats = [];
 const BOATS = [
   [-160, -205, 0.65, 'sail', 11],
   [45, -232, -0.45, 'superSail', 14],
@@ -3530,7 +3565,12 @@ const BOATS = [
 ];
 for (const [bx, bz, ry, kind, len] of BOATS) {
   const prev = LIFT;
-  LIFT = SEA_Y - len * 0.042;    // sit them naturally at the waterline
+  const firstChild = world.children.length;
+  // Where the boat floats. The hulls straddle local Y=0 — canoe body below,
+  // topsides above — so this lift is the freeboard, and everything the hull
+  // geometry puts under Y=0 is the draft. Both are proportions of the length,
+  // which is why one number works for a 10 m day boat and an 18 m yacht.
+  LIFT = SEA_Y + len * 0.025;
   frame(bx, bz, ry, () => {
     if (kind === 'sail') sailboat(len);
     else if (kind === 'superSail') sailboat(len, { stripe: true, navy: true });
@@ -3538,6 +3578,11 @@ for (const [bx, bz, ry, kind, len] of BOATS) {
     else if (kind === 'motorNavy') motorYacht(len, { navy: true });
     else if (kind === 'sport') sportCruiser(len);
   });
+  flushKits();
+  const boat = new THREE.Group();
+  boat.add(...world.children.slice(firstChild));
+  scene.add(boat);
+  floatingBoats.push({ boat, x: bx, z: bz });
   LIFT = prev;
 }
 
@@ -3633,6 +3678,17 @@ const seaUniforms = {
   uSwell: { value: 1 },
   uShallow: { value: new THREE.Color(0x74d2d4) },
 };
+// Same wave phases, amplitudes and shore attenuation as seaH in the shader.
+// Offset the entire boat, including fittings, rather than just its hull.
+function updateFloatingBoats(t) {
+  for (const { boat, x, z } of floatingBoats) {
+    const h = Math.sin(z * 0.085 + t * 1.05) * 0.46
+      + Math.sin((z * 0.96 + x * 0.28) * 0.052 - t * 0.72) * 0.32
+      + Math.sin((z + x * 0.5) * 0.24 + t * 2.1) * 0.09;
+    boat.position.y = h * (1 - THREE.MathUtils.smoothstep(z, -104, -58))
+      * seaUniforms.uSwell.value;
+  }
+}
 const seaMat = new THREE.MeshPhysicalMaterial({
   color: 0x2d7fa8,
   roughness: 0.16,
@@ -5415,6 +5471,7 @@ function animate() {
   waterN.offset.y = -t * 0.022;
   seaMat.opacity = TIME_STATES[beachTime].sea.opacity + Math.sin(t * 0.9) * 0.02;
   seaUniforms.uTime.value = t;
+  updateFloatingBoats(t);
   updateSwash(t, dt);
   foamUniforms.uTime.value = t;
   foamUniforms.uEdge.value = SWASH.edge;
