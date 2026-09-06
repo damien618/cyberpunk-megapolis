@@ -1796,7 +1796,9 @@ const CABIN_Y = 3.8;
 // PAST cabin 214's bulkhead (z = 16), not on the suite's own corridor wall.
 const CABIN_EXTENSION_Z = 30;
 const CABIN_CEIL_Y = DECK_Y - 0.22;
-const CABIN_STAIR = { x0: -9, x1: -5, z0: -4, z1: 6.5, steps: 24 };
+// 4 m stair, starboard face on the 214–218 port wall so the 219–223 alley
+// can be the same 6 m wide as that coursive (hull at x = -13 to x = -7).
+const CABIN_STAIR = { x0: -7, x1: -3, z0: -4, z1: 6.5, steps: 24 };
 // The opening stops at the atrium wall. The lower treads continue beneath
 // the restored gallery floor, with clearance under its underside.
 const CABIN_OPENING = { ...CABIN_STAIR, z1: ATRIUM_Z[1] - WALL_T / 2 };
@@ -2102,6 +2104,31 @@ for (let i = 0; i < EDGE.length - 1; i++) {
 }
 railRun(-halfBeam(-SHIP_L2) + 0.3, halfBeam(-SHIP_L2) - 0.3, -SHIP_L2 - 0.6, -SHIP_L2 - 0.6,
   DECK_Y + 1.15, 0.62);
+
+// Pipe along a slope in YZ. Stair handrails used to be axis-aligned boxes
+// stepped down the flight — a broken fence, not a rail you can hold. A
+// liner stair is a continuous tube: 2 ft 9 in above the nosing, returned
+// onto newels at both ends (Practical Staircase Joinery, ship stairs).
+function rakedPipe(mat, x, y0, z0, y1, z1, d) {
+  const dz = z1 - z0, dy = y1 - y0;
+  const L = Math.hypot(dz, dy);
+  if (L < 0.02) return;
+  shape(G.cyl, mat, x, (y0 + y1) / 2, (z0 + z1) / 2, d, L, d, { rx: Math.atan2(dz, dy) });
+}
+function levelPipeZ(mat, x, y, z0, z1, d) {
+  const L = Math.abs(z1 - z0);
+  if (L < 0.02) return;
+  shape(G.cyl, mat, x, y, (z0 + z1) / 2, d, L, d, { rx: Math.PI / 2 });
+}
+function levelPipeX(mat, x0, x1, y, z, d) {
+  const L = Math.abs(x1 - x0);
+  if (L < 0.02) return;
+  shape(G.cyl, mat, (x0 + x1) / 2, y, z, d, L, d, { rz: Math.PI / 2 });
+}
+function newelPost(mat, x, yFloor, z, h) {
+  shape(G.cylBase, mat, x, yFloor, z, 0.11, h, 0.11);
+  shape(G.sphere, mat, x, yFloor + h, z, 0.10, 0.10, 0.10);
+}
 
 // ---------------------------------------------------------------------------
 // Wall builder. Every interior wall on this ship has holes in it, and a wall
@@ -2864,26 +2891,29 @@ const cabinLights = [];
 // Room 3 — the CABIN DECK. A T-landing at the foot of the stair: one arm is
 // the centreline coursive (214–218, even starboard, odd port, increasing
 // toward the bow), the other is a port alley (219–223) outboard of the
-// stair. Cabin 214, to starboard, is the only door that opens: it is the
-// way home, and a corridor of doors that all open is a corridor of empty
-// boxes. The 214–218 coursive runs past 214's own bulkhead so 216/218 are
-// not painted on the suite.
+// stair. Both coursives are the same 6 m wide: the starboard run is x = ±3,
+// the port run is hull to x = -7. 219–223 open off the hull side of that
+// alley so they do not sit on the back of 215/217. Cabin 214, to starboard,
+// is the only door that opens: it is the way home, and a corridor of doors
+// that all open is a corridor of empty boxes. The 214–218 coursive runs
+// past 214's own bulkhead so 216/218 are not painted on the suite.
 // ---------------------------------------------------------------------------
 {
   const DECK_Y = CABIN_Y;
   const CEIL_Y = CABIN_CEIL_Y;
   const [z0] = CABIN_Z;
   const F = DECK_Y + 0.02;
-  const COR = 3.0;                    // corridor half width
+  const COR = 3.0;                    // corridor half width (214–218 = 6 m)
   const hallZ0 = z0 + WALL_T;
   const hallZ1 = CABIN_EXTENSION_Z - WALL_T / 2;
-  // T-landing: the stair is 4 m (x = -9 to -5). Each arm of the T is the
-  // same 2 m of open landing then a single wall — x = -3 toward 214–218,
-  // x = -11 toward 219–223. No second wall against the stair, or the
-  // handrail is buried and the 214–218 sign sits in a slot.
-  const PORT_WALL = -11;              // 2 m outboard of the stair, mirrors x = -3
-  const PORT_BACK = CABIN_STAIR.x0;   // -9, back of 219–223, only forward of the landing
-  const LANDING = [7.0, 8.7, 3.0];
+  // T-landing: the stair is 4 m (x = -7 to -3), its starboard face ON the
+  // 214–218 port wall so you walk off the last tread into that coursive.
+  // The 219–223 alley is the same 6 m as 214–218: hull (x = -13) to
+  // x = -7. 215/217 occupy the 4 m strip between that wall and the main
+  // corridor; 219–223 sit on the HULL side of the alley so the two sets
+  // of doors do not share a wall.
+  const PORT_WALL = -7;               // 6 m inboard of the hull, matches 214–218
+  const LANDING = [6.4, 8.7, 3.0];
 
   longSlab(M.corridorCarpet, -COR, COR, hallZ0, hallZ1, DECK_Y, F);
 
@@ -2893,12 +2923,13 @@ const cabinLights = [];
   // of their own, instead of being painted on the suite.
   wallWithHoles(M.cream, 'z', COR, WALL_T, hallZ0, hallZ1, DECK_Y, CEIL_Y,
     [[5.0, 6.2, DOOR_H]]);
+  // Port wall of 214–218: open along the whole stair + landing. A hole only
+  // at the landing left the flight's starboard rail buried in 34 cm of cream.
   wallWithHoles(M.cream, 'z', -COR, WALL_T, hallZ0, hallZ1, DECK_Y, CEIL_Y,
-    [LANDING]);
+    [[hallZ0, LANDING[1], CEIL_Y - DECK_Y]]);
 
-  // Matching 2 m passages off each side of the stair, then one wall.
-  longSlab(M.corridorCarpet, CABIN_STAIR.x1, -COR, LANDING[0], LANDING[1], DECK_Y, F);
-  longSlab(M.corridorCarpet, PORT_WALL, CABIN_STAIR.x0, LANDING[0], LANDING[1], DECK_Y, F);
+  // Flat in front of the stair, connecting the two 6 m coursives.
+  longSlab(M.corridorCarpet, CABIN_STAIR.x0, CABIN_STAIR.x1, LANDING[0], LANDING[1], DECK_Y, F);
 
   // The port suites and the rest of starboard: sealed, with doors painted in
   // as joinery. Frame, leaf, handle, number plate.
@@ -2930,31 +2961,26 @@ const cabinLights = [];
   cabinDoor(doorX(-1), 19.5, doorRy(-1), '217');
   cabinDoor(doorX(+1), 26.5, doorRy(+1), '218');
 
-  // Port alley — mirror of 214–218, 2 m of landing then a single wall at
-  // x = -11. Doors face the hull-side coursive; rooms sit in the 2 m
-  // between that wall and the stair, only forward of the landing so the
-  // handrail stays in the clear.
+  // Port alley — the same 6 m as 214–218, hull to x = -7. The inboard wall
+  // is the back of 215/217 and starts AFTER the landing (a wall against
+  // the stair buries the handrail). 219–223 are on the HULL, facing the
+  // alley: putting them on PORT_WALL stacked them on top of 215/217.
   longSlab(M.corridorCarpet, -SUP_X2 + WALL_T / 2, PORT_WALL, hallZ0, hallZ1, DECK_Y, F);
-  wallWithHoles(M.cream, 'z', PORT_WALL, WALL_T, hallZ0, hallZ1, DECK_Y, CEIL_Y,
-    [LANDING]);
-  wallWithHoles(M.cream, 'z', PORT_BACK, WALL_T, 9.4, hallZ1, DECK_Y, CEIL_Y, []);
+  wallWithHoles(M.cream, 'z', PORT_WALL, WALL_T, LANDING[1], hallZ1, DECK_Y, CEIL_Y, []);
   wallWithHoles(M.cream, 'x', 2.2, WALL_T, -SUP_X2, PORT_WALL, DECK_Y, CEIL_Y, []);
-  const portDoorX = PORT_WALL - WALL_T / 2 - 0.06;
+  const hullDoorX = -SUP_X2 + WALL_T / 2 + 0.06;
   for (const [z, n] of [[11.0, '219'], [15.0, '220'], [19.0, '221'], [23.0, '222'], [27.0, '223']])
-    cabinDoor(portDoorX, z, Math.PI / 2, n);
-  for (const z of [13.0, 17.0, 21.0, 25.0])
-    wallWithHoles(M.cream, 'x', z, WALL_T, PORT_WALL, PORT_BACK, DECK_Y, CEIL_Y, []);
+    cabinDoor(hullDoorX, z, -Math.PI / 2, n);
   prop(() => {
     for (let z = hallZ0 + 1.6; z < hallZ1 - 0.8; z += 3.2)
-      box(M.lamp, ( -SUP_X2 + PORT_WALL) / 2, CEIL_Y - 0.09, z, 1.0, 0.07, 0.5);
+      box(M.lamp, (-SUP_X2 + PORT_WALL) / 2, CEIL_Y - 0.09, z, 1.4, 0.07, 0.5);
   });
 
-  // Cross-bulkheads so each leaf has a room behind it. 214 already owns
-  // starboard at z = 4 and z = 16; 216's aft face IS 214's forward bulkhead.
-  // z = 23 is a full station with both coursives cut through. 215/217 stop
-  // at the stair so they do not wall off the port alley.
+  // Cross-bulkheads for 215/217 (the 4 m strip between the two coursives)
+  // and a full station at z = 23 with both coursives cut through. 214
+  // already owns starboard at z = 4 and z = 16.
   wallWithHoles(M.cream, 'x', 9.4, WALL_T, PORT_WALL, -COR, DECK_Y, CEIL_Y, []);
-  wallWithHoles(M.cream, 'x', 16.0, WALL_T, PORT_BACK, -COR, DECK_Y, CEIL_Y, []);
+  wallWithHoles(M.cream, 'x', 16.0, WALL_T, PORT_WALL, -COR, DECK_Y, CEIL_Y, []);
   wallWithHoles(M.cream, 'x', 23.0, WALL_T, -SUP_X2, SUP_X2, DECK_Y, CEIL_Y,
     [[-COR, COR, 3.0], [-SUP_X2, PORT_WALL, 3.0]]);
 
@@ -3650,7 +3676,7 @@ const cabinLights = [];
   // Close the corridor's aft end: access is through the stair landing at z=8.
   wallWithHoles(M.cream, 'x', 2.2, WALL_T, -3, 3, CABIN_Y, CABIN_CEIL_Y, []);
   prop(() => {
-    box(M.lamp, -7, CABIN_CEIL_Y - 0.1, 8, 1.2, 0.07, 0.6);
+    box(M.lamp, -5, CABIN_CEIL_Y - 0.1, 8, 1.2, 0.07, 0.6);
   });
 
   const s = CABIN_STAIR;
@@ -3664,21 +3690,40 @@ const cabinLights = [];
       slab(M.brass, s.x0, s.x1, z + tread - 0.035, z + tread, top, top + 0.012);
     }
   });
-  // Guard the opening at the upper level and provide stepped handrails below.
+  // Balustrade: a continuous brass pipe raked with the flight, newels at
+  // both landings, stanchions on the treads, and a level well-guard around
+  // the atrium opening. The previous build was axis-aligned boxes stepped
+  // down the pitch — a broken fence, which is what a stair rail is not.
   prop(() => {
-    for (const x of [s.x0 + 0.10, s.x1 - 0.10]) {
-      box(M.brass, x, DECK_Y + 1.05, (s.z0 + CABIN_OPENING.z1) / 2,
-        0.08, 0.08, CABIN_OPENING.z1 - s.z0);
-      for (let i = 0; i <= s.steps; i += 2) {
+    const H = 0.92, Hmid = 0.50, RH = 0.07, RM = 0.05;
+    const xL = s.x0 + 0.12;
+    // Starboard face is the 214–218 port wall: sit the rail on the STAIR
+    // side of that bulkhead, not inside its thickness.
+    const xR = s.x1 - WALL_T / 2 - 0.14;
+    const wellZ1 = CABIN_OPENING.z1;
+    for (const x of [xL, xR]) {
+      rakedPipe(M.brassPolished, x, DECK_Y + H, s.z0, CABIN_Y + H, s.z1, RH);
+      rakedPipe(M.brass, x, DECK_Y + Hmid, s.z0, CABIN_Y + Hmid, s.z1, RM);
+      newelPost(M.brass, x, DECK_Y, s.z0, H);
+      newelPost(M.brass, x, CABIN_Y, s.z1, H);
+      for (let i = 2; i < s.steps; i += 2) {
         const z = s.z0 + i * tread;
         const y = DECK_Y - i * rise;
-        if (z < CABIN_OPENING.z1)
-          box(M.brass, x, DECK_Y + 0.52, z, 0.06, 1.04, 0.06);
-        box(M.brass, x, y + 0.5, z, 0.06, 1.0, 0.06);
-        if (i < s.steps) box(M.brass, x, y + 1, z + tread, 0.08, 0.08, tread * 2.15);
+        shape(G.cylBase, M.brass, x, y, z, 0.07, H, 0.07);
+      }
+      // Well guard on the atrium floor, along each side of the opening.
+      // The flight rail is already below; this one stops a fall FROM the
+      // parquet. No rail across z = s.z0 — that is the walk-on.
+      if (wellZ1 > s.z0 + 0.3) {
+        levelPipeZ(M.brassPolished, x, DECK_Y + H, s.z0, wellZ1, RH);
+        levelPipeZ(M.brass, x, DECK_Y + Hmid, s.z0, wellZ1, RM);
+        newelPost(M.brass, x, DECK_Y, wellZ1, H);
       }
     }
-    // The existing atrium wall closes this end of the upper opening.
+    if (wellZ1 > s.z0 + 0.3) {
+      levelPipeX(M.brassPolished, xL, xR, DECK_Y + H, wellZ1, RH);
+      levelPipeX(M.brass, xL, xR, DECK_Y + Hmid, wellZ1, RM);
+    }
   });
   const sign = (label, x, y, z, ry = Math.PI) => {
     const mat = canvasMat(768, 128, (g, W, H) => {
@@ -3687,13 +3732,13 @@ const cabinLights = [];
     }, { emissive: 0xffffff, emissiveIntensity: 0.35, side: THREE.FrontSide });
     prop(() => shape(G.card, mat, x, y, z, 3.8, 0.64, 1, { ry }));
   };
-  sign('↓ CABINES · PONT INFÉRIEUR', -7, DECK_Y + 2.8, -3.9);
+  sign('↓ CABINES · PONT INFÉRIEUR', -5, DECK_Y + 2.8, -3.9);
   // One sign per opening: cabins on the coursive doorway, atrium on the
   // stair flight. A second "CABINES" card in the landing sat 1.4 m from
   // the atrium card, so both hung in frame from the corridor.
   sign('↑ CABINES 214–218', -3.45, CABIN_Y + 3.35, 8, -Math.PI / 2);
-  sign('↑ CABINES 219–223', -10.55, CABIN_Y + 3.35, 8, Math.PI / 2);
-  sign('↑ ATRIUM · SALLE DE BAL', -7, CABIN_Y + 2.7, 6.8, 0);
+  sign('↑ CABINES 219–223', -7.45, CABIN_Y + 3.35, 8, Math.PI / 2);
+  sign('↑ ATRIUM · SALLE DE BAL', -5, CABIN_Y + 2.7, 6.8, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -4527,18 +4572,20 @@ const STAIR_W = 4.4;
   // The top tread finishes at z ≈ -65.6, which is already under the pool
   // deck's aft cantilever (POOL_Z0 = -66) — so the flight lands straight on
   // it and needs no landing slab of its own.
-  // Handrails up both sides of the flight, raked with it.
+  // Handrails up both sides of the flight, raked with it — a continuous
+  // tube, not a flight of horizontal boxes.
   prop(() => {
+    const H = 0.92, Hmid = 0.50, n = 20;
+    const zTop = zBottom + n * tread;
     for (const sx of [-1, 1]) {
-      for (let i = 0; i <= 20; i += 2) {
+      const x = sx * (STAIR_W / 2 + 0.10);
+      rakedPipe(M.steel, x, DECK_Y + H, zBottom, POOL_Y + H, zTop, 0.07);
+      rakedPipe(M.steel, x, DECK_Y + Hmid, zBottom, POOL_Y + Hmid, zTop, 0.05);
+      newelPost(M.steel, x, DECK_Y, zBottom, H);
+      newelPost(M.steel, x, POOL_Y, zTop, H);
+      for (let i = 2; i < n; i += 2) {
         const z = zBottom + i * tread;
-        shape(G.cylBase, M.steel, sx * (STAIR_W / 2 + 0.1), DECK_Y + i * rise, z,
-          0.08, 1.0, 0.08);
-      }
-      for (let i = 0; i < 20; i++) {
-        const z = zBottom + i * tread;
-        box(M.steel, sx * (STAIR_W / 2 + 0.1), DECK_Y + i * rise + 1.0, z + tread / 2,
-          0.09, 0.09, tread * 1.3, 0);
+        shape(G.cylBase, M.steel, x, DECK_Y + i * rise, z, 0.07, H, 0.07);
       }
     }
   });
