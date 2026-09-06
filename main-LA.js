@@ -1765,34 +1765,50 @@ function posedBox(root) {
   });
   return box;
 }
+// Every bone on this rig points down its own local +Y, so a joint bends around
+// X or Z and twists around Y — and the sagittal axis is not the same one on
+// every limb. Measured on the rig: the front hip and all four knees hinge on
+// X, the hind hip hinges on Y, the spine arches on X (negative curls it
+// belly-inwards) and bends sideways on Z, and the tail lifts on Z. The first
+// pass drove the hind hips and the spine on the wrong axes, so the legs
+// splayed instead of folding and the cat came out as a stiff plank.
 function poseCatSideSleep(root) {
   const add = (part, x, y, z) => {
     const b = catBone(root, part);
     if (b) b.rotation.set(b.rotation.x + x, b.rotation.y + y, b.rotation.z + z);
   };
-  add('Neck_01', 0.42, 0.18, 0.22);
-  add('Neck_02', 0.18, 0.06, 0.1);
-  add('Neck_Top', 0.12, 0.08, 0);
-  add('Spine_01', 0.12, 0, 0.18);
-  add('Spine_02', 0.08, 0, 0.1);
-  add('l_FrontLeg_Hip', 0.35, 0.15, 0.2);
-  add('r_FrontLeg_Hip', 0.35, -0.15, -0.2);
-  add('l_FrontLeg_Knee', 0.55, 0, 0);
-  add('r_FrontLeg_Knee', 0.55, 0, 0);
-  add('l_FrontLeg_Ankle', 0.25, 0, 0);
-  add('r_FrontLeg_Ankle', 0.25, 0, 0);
-  add('l_HindLeg_Hip', 0.45, 0.2, 0.25);
-  add('r_HindLeg_Hip', 0.45, -0.2, -0.25);
-  add('l_HindLeg_Knee1', -0.55, 0, 0);
-  add('r_HindLeg_Knee1', -0.55, 0, 0);
-  add('l_HindLeg_Knee2', 0.7, 0, 0);
-  add('r_HindLeg_Knee2', 0.7, 0, 0);
-  add('l_HindLeg_Ankle', -0.2, 0, 0);
-  add('r_HindLeg_Ankle', -0.2, 0, 0);
-  add('Tail_01_02', 0.12, 0.08, 0.85);
-  add('Tail_01_03', 0.08, 0, 0.55);
-  add('Tail_01_04', 0.05, 0, 0.4);
-  add('Tail_01_05', 0.04, 0, 0.28);
+  // Legs folded tight against the body so they end up tucked in front of the
+  // chest once the whole cat is rolled onto its flank. Left and right differ
+  // slightly — a perfectly symmetric sleeper reads as a prop.
+  add('l_FrontLeg_Hip', 0.85, 0, 0);
+  add('r_FrontLeg_Hip', 0.70, 0, 0);
+  add('l_FrontLeg_Knee', 2.00, 0, 0);
+  add('r_FrontLeg_Knee', 1.85, 0, 0);
+  add('l_FrontLeg_Ankle', 0.60, 0, 0);
+  add('r_FrontLeg_Ankle', 0.55, 0, 0);
+  add('l_HindLeg_Hip', 0, -0.60, 0);
+  add('r_HindLeg_Hip', 0, -0.45, 0);
+  add('l_HindLeg_Knee1', 1.90, 0, 0);
+  add('r_HindLeg_Knee1', 1.75, 0, 0);
+  add('l_HindLeg_Knee2', 1.40, 0, 0);
+  add('r_HindLeg_Knee2', 1.30, 0, 0);
+  add('l_HindLeg_Ankle', -0.90, 0, 0);
+  add('r_HindLeg_Ankle', -0.85, 0, 0);
+  // Ventral curl down the spine plus a tucked head: the comma shape of a cat
+  // asleep. Rolled onto the flank this curl lies flat in the cushion's plane.
+  add('Spine_01', -0.38, 0, 0);
+  add('Spine_02', -0.40, 0, 0);
+  add('Spine_03', -0.36, 0, 0);
+  add('Spine_04', -0.28, 0, 0);
+  add('Neck_01', 0.65, 0.35, 0);
+  add('Neck_02', 0.55, 0, 0);
+  add('Neck_Top', 0.35, 0, 0);
+  // Tail wrapped round the belly, with a little sideways sweep so it does not
+  // vanish into the silhouette of the body.
+  add('Tail_01_02', 0, 0.15, -0.75);
+  add('Tail_01_03', 0, 0.15, -0.75);
+  add('Tail_01_04', 0, 0.12, -0.75);
+  add('Tail_01_05', 0, 0.10, -0.75);
 }
 async function loadSleepingCat() {
   const gltf = await new GLTFLoader().loadAsync('./glb/animals/cat.glb');
@@ -1815,16 +1831,18 @@ async function loadSleepingCat() {
   const len = Math.max(box.max.x - box.min.x, box.max.z - box.min.z, 1e-4);
   cat.scale.setScalar(0.48 / len);
   const posed = new THREE.Group();
-  posed.rotation.z = Math.PI / 2;
+  // Rolled a little short of a right angle: at a full 90° the cat is a pure
+  // profile and reads flat, while 1.35 rad still shows some of the back.
+  posed.rotation.z = 1.35;
   posed.add(cat);
   const seated = posedBox(posed);
   const wrap = new THREE.Group();
   wrap.add(posed);
-  // The cat lies off the centre of its seat pad, where the domed cushion has
-  // already fallen ~2 cm below SOFA_SEAT; sinking it a further centimetre into
-  // the pile reads as weight, whereas the old flat F+0.52 left it in mid-air.
-  wrap.position.set(-4.52, F + 0.43 - seated.min.y, -9.02);
-  wrap.rotation.y = 0.18;
+  // Sitting on the crown of the first seat pad, which the dome puts at F+0.43;
+  // seated.min.y is now the flank resting on the cushion rather than a paw tip
+  // dangling below a cat that was still standing on its legs.
+  wrap.position.set(-4.65, F + 0.43 - seated.min.y, -9.21);
+  wrap.rotation.y = 0.10;
   wrap.userData.spine = catBone(cat, 'Spine_02');
   wrap.userData.spineBase = wrap.userData.spine?.rotation.x ?? 0;
   wrap.userData.tail = catBone(cat, 'Tail_01_02');
