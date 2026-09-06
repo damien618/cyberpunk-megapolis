@@ -1312,31 +1312,47 @@ function livingRug(w, d) {
     }
   }
 }
+// G.cushion is a sphere pre-flattened to 0.27 of its height, so a y-scale of s
+// yields a pad only 0.27·s thick: the old 0.2 gave 5 cm pads floating 10 cm
+// above the plinth, and the back pads were horizontal crepes hanging in air.
+// SOFA_PAD converts a wanted thickness into that scale, and every layer is
+// stacked off the one under it so nothing hovers.
+const SOFA_DECK = F + 0.36;                     // top face of the seat deck
+const SOFA_PAD = 0.14 / 0.27;                   // y-scale for a 14 cm seat pad
+const SOFA_SEAT = SOFA_DECK + 0.18 * SOFA_PAD;  // ≈ F + 0.45, top of the pads
 function sofa(len, { depth = 0.95, mat = M.sofaCream, cushion = M.fabricWarm, arms = true } = {}) {
   const inset = 0.12;
   for (const [lx, lz] of [
     [-len / 2 + inset, -depth / 2 + inset], [len / 2 - inset, -depth / 2 + inset],
     [-len / 2 + inset, depth / 2 - inset], [len / 2 - inset, depth / 2 - inset],
   ]) shape(G.cylBase, M.walnut, lx, F, lz, 0.055, 0.14, 0.055);
-  box(mat, 0, F + 0.22, 0, len - 0.04, 0.16, depth - 0.1);
+  box(mat, 0, F + 0.22, 0, len - 0.04, 0.16, depth - 0.1);      // plinth, F+0.14..F+0.30
+  box(mat, 0, F + 0.33, 0.02, len - 0.06, 0.06, depth - 0.16);  // deck the pads rest on
+  box(mat, 0, F + 0.60, -depth / 2 + 0.11, len - 0.06, 0.56, 0.16);  // back frame
   const n = Math.max(2, Math.round(len / 0.9));
   const side = arms ? 0.32 : 0.08;
   const cw = (len - side * 2) / n - 0.05;
   const x0 = -len / 2 + side + cw / 2;
   for (let i = 0; i < n; i++) {
     const x = x0 + i * (cw + 0.05);
-    shape(G.cushion, mat, x, F + 0.42, 0.05, cw, 0.2, depth - 0.32);
-    shape(G.cushion, mat, x, F + 0.66, -depth / 2 + 0.22, cw * 0.92, 0.34, 0.18, { rx: -0.22 });
+    shape(G.cushion, mat, x, SOFA_DECK, 0.05, cw, SOFA_PAD, depth - 0.32);
+    // rx ≈ −90° turns the pad's flat axis into the backrest: its height now
+    // runs up the local Z and its 11 cm thickness presses on the frame.
+    shape(G.cushion, mat, x, SOFA_SEAT + 0.19, -depth / 2 + 0.26,
+      cw * 0.94, 0.42, 0.42, { rx: -Math.PI / 2 + 0.16 });
   }
-  box(mat, 0, F + 0.58, -depth / 2 + 0.11, len - 0.06, 0.52, 0.16);
   if (arms) {
     for (const sx of [-1, 1]) {
       box(mat, sx * (len / 2 - 0.13), F + 0.46, 0.02, 0.24, 0.44, depth - 0.14);
-      shape(G.sphere, mat, sx * (len / 2 - 0.13), F + 0.72, 0.02, 0.24, 0.12, depth - 0.22);
+      shape(G.sphere, mat, sx * (len / 2 - 0.13), F + 0.70, 0.02, 0.24, 0.12, depth - 0.22);
     }
   }
-  shape(G.blob, cushion, -len * 0.16, F + 0.62, -depth / 2 + 0.34, 0.3, 0.26, 0.14, { ry: 0.45, rz: 0.12 });
-  shape(G.blob, M.linen, len * 0.1, F + 0.6, -depth / 2 + 0.32, 0.26, 0.22, 0.12, { ry: -0.3 });
+  // Throw pillows: flat enough to read as pillows rather than eggs, dropped a
+  // couple of centimetres into the pads so they sit rather than balance.
+  shape(G.blob, cushion, -len * 0.18, SOFA_SEAT + 0.09, -depth / 2 + 0.44,
+    0.36, 0.24, 0.14, { rx: 0.45, ry: 0.45, rz: 0.12 });
+  shape(G.blob, M.linen, len * 0.12, SOFA_SEAT + 0.085, -depth / 2 + 0.42,
+    0.32, 0.22, 0.13, { rx: 0.40, ry: -0.3, rz: -0.1 });
 }
 function armchair(mat = M.sofaSage) {
   // restY is the cushion top. The seated pose hangs the calves from the knee,
@@ -1804,7 +1820,10 @@ async function loadSleepingCat() {
   const seated = posedBox(posed);
   const wrap = new THREE.Group();
   wrap.add(posed);
-  wrap.position.set(-4.52, F + 0.52 - seated.min.y + 0.008, -9.02);
+  // The cat lies off the centre of its seat pad, where the domed cushion has
+  // already fallen ~2 cm below SOFA_SEAT; sinking it a further centimetre into
+  // the pile reads as weight, whereas the old flat F+0.52 left it in mid-air.
+  wrap.position.set(-4.52, F + 0.43 - seated.min.y, -9.02);
   wrap.rotation.y = 0.18;
   wrap.userData.spine = catBone(cat, 'Spine_02');
   wrap.userData.spineBase = wrap.userData.spine?.rotation.x ?? 0;
