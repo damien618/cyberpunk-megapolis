@@ -27,6 +27,7 @@ export function buildCityBoxes(world, cellSize = CELL) {
     for (const x of [min.x, max.x]) for (const y of [min.y, max.y]) for (const z of [min.z, max.z])
       corners[ci++].set(x, y, z);
     for (let i = 0; i < im.count; i++) {
+      if (im.userData.skipCollide?.[i]) continue;
       im.getMatrixAt(i, _m);
       let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
       for (const c of corners) {

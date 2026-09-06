@@ -4,7 +4,7 @@ import { harmoniseHair } from './hair.js?v=11';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=10';
 import { CameraRig } from './cameraRig.js?v=7';
-import { buildCityBoxes } from './cityBoxes.js?v=6';
+import { buildCityBoxes, segmentAABB } from './cityBoxes.js?v=7';
 import { loadGuestRig, makeVisitor, rootBoneOf } from './crowd.js?v=57';
 import { buildDesertedIsland, createMarineFauna, updateMarineLife } from './marineLife.js?v=1';
 
@@ -69,7 +69,6 @@ const renderer = new THREE.WebGLRenderer({
   antialias: true,
   powerPreference: 'high-performance',
   logarithmicDepthBuffer: true,
-  preserveDrawingBuffer: true,
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1659,26 +1658,77 @@ function addInstancedPrimitive(geometry, material, items, propFlags, groundOnlyF
   const e = new THREE.Euler();
   const s = new THREE.Vector3();
   const p = new THREE.Vector3();
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
+  const bb = geometry.boundingBox;
+  const gx = Math.max(1e-6, bb.max.x - bb.min.x);
+  const gy = Math.max(1e-6, bb.max.y - bb.min.y);
+  const gz = Math.max(1e-6, bb.max.z - bb.min.z);
+  let maxExtent = 0;
+  const skipCollide = new Array(items.length);
+  let anySkip = false;
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     p.set(it.x, it.y, it.z);
     e.set(it.rx || 0, it.ry || 0, it.rz || 0, 'YXZ');
     q.setFromEuler(e);
     s.set(it.sx ?? 1, it.sy ?? 1, it.sz ?? 1);
+    const ax = gx * Math.abs(s.x), ay = gy * Math.abs(s.y), az = gz * Math.abs(s.z);
+    maxExtent = Math.max(maxExtent, ax, ay, az);
+    const vol = ax * ay * az;
+    const minXZ = Math.min(ax, az);
+    const maxDim = Math.max(ax, ay, az);
+    // Bottles / crystals / chips, rail posts / chair legs, and bench slats
+    // stay drawn but leave the capsule world. Handrails (ay ≈ 12 cm, minXZ
+    // ≈ 14 cm) must NOT match — they are what stops you at the deck edge
+    // where a station is too short for the slat rule.
+    skipCollide[i] = !!(propFlags?.[i] && (
+      (maxDim < 0.55 && vol < 0.08) ||
+      (ay >= 0.25 && ay <= 1.35 && minXZ < 0.16 && vol < 0.05) ||
+      (ay < 0.09 && minXZ < 0.12 && vol < 0.04)
+    ));
+    if (skipCollide[i]) anySkip = true;
     m.compose(p, q, s);
     im.setMatrixAt(i, m);
   }
-  im.castShadow = !material.transparent;
-  im.receiveShadow = true;
+  // Tiny joinery does not cast a useful shadow and filling the map with it
+  // made the sun's 2048 cascade hitch every frame. Walls, decks, hull,
+  // furniture still cast. Same idea for receiving: a bead does not need a
+  // shadow map sample.
+  im.castShadow = !material.transparent && maxExtent >= 0.55;
+  im.receiveShadow = maxExtent >= 0.22;
+  im.matrixAutoUpdate = false;
+  im.frustumCulled = true;
   im.instanceMatrix.needsUpdate = true;
+  im.computeBoundingSphere();
   if (propFlags?.some(Boolean)) im.userData.prop = propFlags;
   if (groundOnlyFlags?.some(Boolean)) im.userData.groundOnly = groundOnlyFlags;
+  if (anySkip) im.userData.skipCollide = skipCollide;
   world.add(im);
   return im;
 }
 function flushKits() {
-  for (const k of kits.values())
-    addInstancedPrimitive(k.geo, k.mat, k.items, k.propFlags, k.groundOnlyFlags);
+  // One InstancedMesh per (geo, mat) spanned the whole 190 m ship, so its
+  // bounding sphere was always in the frustum and every cabin panel was
+  // drawn from the pool. Bucket by deck / beam / station so rooms you are
+  // not in cull, without dropping the meshes you can see.
+  for (const k of kits.values()) {
+    if (k.items.length < 16) {
+      addInstancedPrimitive(k.geo, k.mat, k.items, k.propFlags, k.groundOnlyFlags);
+      continue;
+    }
+    const buckets = new Map();
+    for (let i = 0; i < k.items.length; i++) {
+      const it = k.items[i];
+      const key = (Math.round(it.y / 5) * 65536) + (Math.round(it.x / 12) * 256) + Math.round(it.z / 18);
+      let b = buckets.get(key);
+      if (!b) buckets.set(key, (b = { items: [], propFlags: [], groundOnlyFlags: [] }));
+      b.items.push(it);
+      b.propFlags.push(k.propFlags[i]);
+      b.groundOnlyFlags.push(k.groundOnlyFlags[i]);
+    }
+    for (const b of buckets.values())
+      addInstancedPrimitive(k.geo, k.mat, b.items, b.propFlags, b.groundOnlyFlags);
+  }
   kits.clear();
 }
 
@@ -2789,11 +2839,11 @@ console.log('[cruise] casino room done');
     box(M.darkWood, 6.5, DECK_Y + 0.55, 0.6, 5.4, 1.1, 0.9);
     box(M.brass, 6.5, DECK_Y + 1.13, 0.6, 5.6, 0.06, 1.1);
     box(M.lamp, 6.5, DECK_Y + 1.2, 0.55, 0.24, 0.1, 0.24);
-    // Key rack behind it.
-    box(M.midWood, 6.5, DECK_Y + 2.2, 1.35, 5.0, 1.8, 0.14);
+    // Key rack on the bulkhead wall behind the desk.
+    box(M.midWood, 6.5, DECK_Y + 2.2, 1.79, 5.0, 1.8, 0.08);
     for (let i = 0; i < 24; i++)
       shape(G.cyl, M.brass, 4.4 + (i % 12) * 0.38, DECK_Y + 2.55 - Math.floor(i / 12) * 0.55,
-        1.25, 0.05, 0.18, 0.05);
+        1.72, 0.05, 0.18, 0.05);
 
     // Sofas and a low table, in the middle of the lobby.
     for (const [sx, sz, ry] of [[4.5, -2.4, 0], [4.5, -7.6, Math.PI]]) {
@@ -4964,6 +5014,8 @@ prop(() => {
 }
 
 flushKits();
+world.matrixAutoUpdate = false;
+world.updateMatrixWorld(true);
 console.log('[cruise] flushKits completed');
 
 // ---------------------------------------------------------------------------
@@ -4992,7 +5044,10 @@ seaMat.onBeforeCompile = shader => {
                + sin( ( position.x + position.y ) * 0.037 + uTime * 1.1 ) * 0.35;
       transformed.z += sw;`);
 };
-const sea = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000, 240, 240), seaMat);
+// The plane follows the camera, and day fog eats the horizon at 1.7 km, so
+// 3.6 km covers the fade. Segment density matches the old 6000 / 240 = 25 m
+// quads (the swell wavelengths are 170–450 m), at about a third of the vertices.
+const sea = new THREE.Mesh(new THREE.PlaneGeometry(3600, 3600, 144, 144), seaMat);
 sea.rotation.x = -Math.PI / 2;
 sea.position.y = SEA_Y;
 sea.receiveShadow = false;
@@ -5129,62 +5184,83 @@ const marineFauna = createMarineFauna(scene);
 // groundFn has NO analytic fallback — see the note at the top of the file. A
 // miss means open water, and open water is not a floor.
 // ---------------------------------------------------------------------------
-const rays = {
-  ray: new THREE.Raycaster(),
-  tmpNormal: new THREE.Vector3(),
-  tempMatrix: new THREE.Matrix4(),
-  normalMatrix: new THREE.Matrix3(),
-};
-const down = new THREE.Vector3(0, -1, 0);
-const _origin = new THREE.Vector3();
+// 10 m cells: the ship is a dense 190 × 34 m interior. 100 m buckets returned
+// almost every AABB aboard; even 16 m still packed a furnished room into one
+// cell. Same idea as the airport terminal, one step tighter.
+const bw = buildCityBoxes(world, 10);
 
-let rayTargets = null, rayTargetCount = -1;
-function targets() {
-  if (rayTargetCount !== world.children.length) {
-    rayTargets = world.children.slice();
-    rayTargetCount = world.children.length;
+// One hull per promenade bench. The slats themselves are skipCollide so they
+// cannot jitter the capsule; without a hull you would walk through them.
+for (const sx of [-1, 1]) {
+  for (let z = -50; z < 55; z += 13) {
+    if (Math.abs(z + 8) < 6) continue;
+    const cx = sx * (SUP_X2 + 1.1);
+    bw.add({
+      x0: cx - 0.32, x1: cx + 0.32,
+      y0: DECK_Y, y1: DECK_Y + 0.82,
+      z0: z - 1.08, z1: z + 1.08,
+      collide: true, prop: true, groundOnly: false, tall: false,
+    });
   }
-  return rayTargets;
+}
+
+const _castP1 = new THREE.Vector3();
+const _castN = new THREE.Vector3();
+const _castHits = Array.from({ length: 4 }, () => ({
+  point: new THREE.Vector3(),
+  normal: new THREE.Vector3(),
+  distance: 0,
+}));
+let _castHitI = 0;
+
+function aabbFaceNormal(b, p) {
+  const dx0 = Math.abs(p.x - b.x0), dx1 = Math.abs(p.x - b.x1);
+  const dy0 = Math.abs(p.y - b.y0), dy1 = Math.abs(p.y - b.y1);
+  const dz0 = Math.abs(p.z - b.z0), dz1 = Math.abs(p.z - b.z1);
+  const m = Math.min(dx0, dx1, dy0, dy1, dz0, dz1);
+  if (m === dx0) return _castN.set(-1, 0, 0);
+  if (m === dx1) return _castN.set(1, 0, 0);
+  if (m === dy0) return _castN.set(0, -1, 0);
+  if (m === dy1) return _castN.set(0, 1, 0);
+  if (m === dz0) return _castN.set(0, 0, -1);
+  return _castN.set(0, 0, 1);
 }
 
 function castFn(origin, dir, far) {
-  rays.ray.set(origin, dir);
-  rays.ray.far = far;
-  const hit = rays.ray.intersectObjects(targets(), true)[0];
-  if (!hit) return null;
-  let normal = null;
-  if (hit.face?.normal) {
-    rays.tmpNormal.copy(hit.face.normal);
-    if (hit.object.isInstancedMesh && hit.instanceId !== undefined) {
-      hit.object.getMatrixAt(hit.instanceId, rays.tempMatrix);
-      rays.tempMatrix.premultiply(hit.object.matrixWorld);
-      rays.normalMatrix.getNormalMatrix(rays.tempMatrix);
-      rays.tmpNormal.applyMatrix3(rays.normalMatrix).normalize();
-    } else {
-      rays.tmpNormal.transformDirection(hit.object.matrixWorld).normalize();
-    }
-    normal = rays.tmpNormal.clone();
+  const reach = Math.min(Math.max(far, 0.2), 48);
+  const ids = bw.queryNearby(origin.x + dir.x * reach * 0.5, origin.z + dir.z * reach * 0.5, reach + 3);
+  _castP1.copy(origin).addScaledVector(dir, far);
+  let bestT = 1, bestB = null;
+  for (let n = 0; n < ids.length; n++) {
+    const b = bw.aabbs[ids[n]];
+    if (!b.collide) continue;
+    const t = segmentAABB(origin, _castP1, b, 0);
+    if (t < bestT) { bestT = t; bestB = b; }
   }
-  return { point: hit.point.clone(), normal, distance: hit.distance };
+  if (!bestB) return null;
+  const dist = bestT * far;
+  const hit = _castHits[_castHitI++ & 3];
+  hit.point.copy(origin).addScaledVector(dir, dist);
+  hit.normal.copy(aabbFaceNormal(bestB, hit.point));
+  hit.distance = dist;
+  return hit;
 }
 
-const GROUND_REACH = 60;
 function groundFn(x, z, yFrom, feetY, prevY = feetY) {
   const cap = Math.max(feetY + 0.75, prevY + 0.3);
+  const ids = bw.queryNearby(x, z, 1.8);
   let best = null;
-  rays.ray.set(_origin.set(x, yFrom, z), down);
-  rays.ray.far = GROUND_REACH;
-  for (const h of rays.ray.intersectObjects(targets(), true)) {
-    if (h.object.userData.prop?.[h.instanceId]) continue;
-    if (h.point.y <= cap) {
-      if (best === null || h.point.y > best) best = h.point.y;
-      break;
-    }
+  for (let n = 0; n < ids.length; n++) {
+    const b = bw.aabbs[ids[n]];
+    if (b.prop) continue;
+    if (!b.groundOnly && (b.y1 - b.y0) > 1.15) continue;
+    if (x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1) continue;
+    const top = b.y1;
+    if (top > cap || top > yFrom + 0.02) continue;
+    if (best === null || top > best) best = top;
   }
   return best === null ? null : best + 0.02;
 }
-
-const bw = buildCityBoxes(world);
 
 let player = null;
 const ctrl = new Controller(bw, groundFn, castFn, {
@@ -5200,7 +5276,21 @@ const travelParams = new URLSearchParams(location.search);
 const spawnPoint = new THREE.Vector3(SUP_X2 + 2.6, DECK_Y + 0.3, -6.6);
 ctrl.rescueTo(spawnPoint);
 
-const rig = new CameraRig(camera, bw);
+// Furniture and stair treads must not yank the boom in: that read as a
+// stuttering walk even when the capsule itself was moving cleanly.
+const camBw = {
+  aabbs: bw.aabbs,
+  queryNearby(x, z, r) {
+    const ids = bw.queryNearby(x, z, r);
+    const out = [];
+    for (let i = 0; i < ids.length; i++) {
+      const b = bw.aabbs[ids[i]];
+      if (b.collide && !b.prop && !b.groundOnly) out.push(ids[i]);
+    }
+    return out;
+  },
+};
+const rig = new CameraRig(camera, camBw);
 const input = new Input(renderer.domElement);
 input.yaw = Math.PI / 2;             // looking inboard, at the atrium door
 function requestGamePointerLock() {
@@ -5558,7 +5648,7 @@ try {
     patrol(npcIdx++, 12.0, DECK_Y, B0 + 30, B0 + 4, Math.PI, steward);
 
     // Atrium: the purser behind the desk, and someone waiting.
-    stand(npcIdx++, 6.5, DECK_Y, 1.5, Math.PI);
+    stand(npcIdx++, 6.5, DECK_Y, 1.38, Math.PI);
     stand(npcIdx++, 4.5, DECK_Y, -4.0, Math.PI / 2);
 
     // Pool deck.
@@ -5575,7 +5665,14 @@ console.log('[cruise] people placed, total:', people.length);
 function tickPeople(dt) {
   const pPos = ctrl?.pos;
   for (const p of people) {
-    if (pPos && p.group.position.distanceTo(pPos) > 55) continue;
+    if (pPos) {
+      const dx = p.group.position.x - pPos.x;
+      const dy = p.group.position.y - pPos.y;
+      const dz = p.group.position.z - pPos.z;
+      const far = dx * dx + dy * dy + dz * dz > 52 * 52;
+      if (p.group.visible === far) p.group.visible = !far;
+      if (far) continue;
+    }
     switch (p.kind) {
       case 'patrol': {
         const g = p.group;
@@ -5591,6 +5688,21 @@ function tickPeople(dt) {
         break;
     }
   }
+}
+
+function updateLocalLights(px, py, pz) {
+  const near = (lights, r) => {
+    const r2 = r * r;
+    for (let i = 0; i < lights.length; i++) {
+      const l = lights[i];
+      const dx = l.position.x - px, dy = l.position.y - py, dz = l.position.z - pz;
+      const on = dx * dx + dy * dy + dz * dz < r2;
+      if (l.visible !== on) l.visible = on;
+    }
+  };
+  near(cabinLights, 32);
+  near(casinoLights, 48);
+  near(ballLights, 48);
 }
 
 // ---------------------------------------------------------------------------
@@ -5918,9 +6030,14 @@ poolWater.rotation.x = -Math.PI / 2;
 poolWater.position.set((POOL_X0 + POOL_X1) / 2, POOL_WATER, (POOL_Z_A + POOL_Z_B) / 2);
 scene.add(poolWater);
 
+let moveDt = 1 / 60;
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(0.033, clock.getDelta());
+  const rawDt = Math.min(0.05, clock.getDelta());
+  // Absorb one-frame hitches so the capsule does not lurch, without letting
+  // a stall freeze the walk (the 50 ms cap is ~20 fps).
+  moveDt += (rawDt - moveDt) * 0.4;
+  const dt = moveDt;
   const t = clock.elapsedTime;
 
   if (started && !paused && !slotGameOpen && !slotAskOpen) {
@@ -5938,16 +6055,22 @@ function animate() {
     }
   }
 
+  const onDeck = Math.abs(ctrl.pos.x) > SUP_X2 - 0.5 || ctrl.pos.y >= POOL_Y - 1.2;
+  const inCasino = ctrl.pos.z >= CASINO_Z[0] - 4 && ctrl.pos.z <= CASINO_Z[1] + 4
+    && Math.abs(ctrl.pos.x) <= SUP_X2 && ctrl.pos.y < POOL_Y - 1.5;
+
   // Live casino animations: spinning roulette wheels and scrolling slot reels
-  for (let i = 0; i < rouletteRotors.length; i++) {
-    const r = rouletteRotors[i];
-    r.rotor.rotation.y += dt * r.speed;
-    r.ballAngle -= dt * r.ballSpeed;
-    r.ball.position.x = Math.cos(r.ballAngle) * r.ballRadius;
-    r.ball.position.z = Math.sin(r.ballAngle) * r.ballRadius;
-    r.ball.position.y = 0.08 + Math.sin(t * 12 + i) * 0.003;
+  if (inCasino) {
+    for (let i = 0; i < rouletteRotors.length; i++) {
+      const r = rouletteRotors[i];
+      r.rotor.rotation.y += dt * r.speed;
+      r.ballAngle -= dt * r.ballSpeed;
+      r.ball.position.x = Math.cos(r.ballAngle) * r.ballRadius;
+      r.ball.position.z = Math.sin(r.ballAngle) * r.ballRadius;
+      r.ball.position.y = 0.08 + Math.sin(t * 12 + i) * 0.003;
+    }
+    updateSlotScreens(t);
   }
-  updateSlotScreens(t);
 
   // Making way. The sea scrolls astern under a ship that never moves.
   seaUniforms.uTime.value = t;
@@ -5960,18 +6083,21 @@ function animate() {
     m.material.opacity = TIME_STATES[cruiseTime].wake
       * (0.82 + 0.18 * Math.sin(t * 1.7 + i));
   }
-  for (const gu of gulls) {
-    const g = gu.g;
-    g.position.z += gu.speed * 6 * dt;
-    if (g.position.z > 120) g.position.z = -160;
-    g.position.y += Math.sin(t * 0.6 + gu.phase) * 0.03;
-    const flap = Math.sin(t * 5.5 + gu.phase) * 0.5;
-    if (g.userData.wL) g.userData.wL.rotation.z = -flap;
-    if (g.userData.wR) g.userData.wR.rotation.z = flap;
+  if (onDeck) {
+    for (const gu of gulls) {
+      const g = gu.g;
+      g.position.z += gu.speed * 6 * dt;
+      if (g.position.z > 120) g.position.z = -160;
+      g.position.y += Math.sin(t * 0.6 + gu.phase) * 0.03;
+      const flap = Math.sin(t * 5.5 + gu.phase) * 0.5;
+      if (g.userData.wL) g.userData.wL.rotation.z = -flap;
+      if (g.userData.wR) g.userData.wR.rotation.z = flap;
+    }
+    updateMarineLife(dt, t, marineFauna, islandData);
   }
-  updateMarineLife(dt, t, marineFauna, islandData);
 
   tickPeople(dt);
+  updateLocalLights(ctrl.pos.x, ctrl.pos.y, ctrl.pos.z);
   updateSunShadow(ctrl.pos);
   updateAvatar(dt);
   rig.update(dt, input, ctrl);
