@@ -8,6 +8,7 @@ import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar } from './cars.js?v=6-glb';
 import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=22';
 import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=31';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ---------------------------------------------------------------------------
 // A Trip to the Zoo — a small regional park, laid out the way zoo master plans
@@ -179,6 +180,121 @@ function makeHayTuft() {
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  t.needsUpdate = true;
+  return t;
+}
+// A sprig of broadleaf foliage on one alpha-cut card: a few shoots fanning up
+// out of the bottom edge, each carrying alternate ovate leaves. This is what
+// gives a crown a leafy edge — a solid blob, however lumpy, always reads as a
+// faceted rock at the silhouette, because that is exactly what it is.
+function makeSprigTex() {
+  const size = 512;
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = c.getContext('2d');
+  const tones = ['#4e6a30', '#587537', '#62823e', '#6d8f46', '#7a9d51', '#88ab5e', '#97ba6e'];
+  let seed = 11;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // Ovate blade: two quadratics off the stalk, with a paler mid-rib so the leaf
+  // still has an interior at the distance most of these are seen from.
+  const leaf = (x, y, ang, len, wid, fill) => {
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    const px = -dy * wid, py = dx * wid;
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + dx * len * 0.34 + px, y + dy * len * 0.34 + py,
+      x + dx * len, y + dy * len);
+    ctx.quadraticCurveTo(x + dx * len * 0.34 - px, y + dy * len * 0.34 - py, x, y);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(206, 224, 168, 0.34)';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + dx * len * 0.8, y + dy * len * 0.8);
+    ctx.stroke();
+  };
+  const shoot = (x0, y0, ang, len, count, scale) => {
+    ctx.strokeStyle = '#4a3d29';
+    ctx.lineWidth = 2.2 * scale;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.quadraticCurveTo(x0 + Math.cos(ang) * len * 0.5, y0 + Math.sin(ang) * len * 0.5,
+      x0 + Math.cos(ang) * len, y0 + Math.sin(ang) * len);
+    ctx.stroke();
+    for (let i = 0; i < count; i++) {
+      const t = 0.12 + (i / count) * 0.9;
+      const bx = x0 + Math.cos(ang) * len * t;
+      const by = y0 + Math.sin(ang) * len * t;
+      // Alternate, not opposite: paired blades make a fern, and a fern is the
+      // one silhouette a deciduous crown must not have.
+      const side = i % 2 ? 1 : -1;
+      const la = ang + side * (0.62 + rnd() * 0.42);
+      const lit = Math.min(tones.length - 1,
+        Math.round((1 - by / size) * 3.2 + rnd() * 2.8));
+      leaf(bx, by, la, (52 + rnd() * 26) * scale, (17 + rnd() * 7) * scale, tones[lit]);
+    }
+    leaf(x0 + Math.cos(ang) * len, y0 + Math.sin(ang) * len, ang,
+      (46 + rnd() * 16) * scale, 16 * scale, tones[tones.length - 2]);
+  };
+  for (let s = 0; s < 7; s++) {
+    const ang = -Math.PI / 2 + (s / 6 - 0.5) * 2.0 + (rnd() - 0.5) * 0.24;
+    const x0 = 256 + (rnd() - 0.5) * 96, y0 = 492 + (rnd() - 0.5) * 30;
+    const len = 190 + rnd() * 120;
+    shoot(x0, y0, ang, len, 6 + Math.floor(rnd() * 3), 1);
+    if (s % 2 === 0) {
+      const bl = len * (0.42 + rnd() * 0.2);
+      shoot(x0 + Math.cos(ang) * len * 0.45, y0 + Math.sin(ang) * len * 0.45,
+        ang + (rnd() < 0.5 ? -1 : 1) * (0.5 + rnd() * 0.3), bl, 4, 0.78);
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  t.needsUpdate = true;
+  return t;
+}
+// Conifer spray: a shoot with fine needles set close along it. Same job on the
+// pines, whose lathe cone is otherwise a smooth ice-cream shape with a hard rim.
+function makeNeedleTex() {
+  const size = 512;
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = c.getContext('2d');
+  const tones = ['#22371f', '#2a4225', '#324d2b', '#3b5a33', '#46683c', '#527747'];
+  let seed = 29;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  ctx.lineCap = 'round';
+  const spray = (x0, y0, ang, len, scale) => {
+    ctx.strokeStyle = '#3a3122';
+    ctx.lineWidth = 2.4 * scale;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x0 + Math.cos(ang) * len, y0 + Math.sin(ang) * len);
+    ctx.stroke();
+    const n = Math.round(22 * scale) + 6;
+    for (let i = 0; i < n; i++) {
+      const t = 0.06 + (i / n) * 0.94;
+      const bx = x0 + Math.cos(ang) * len * t;
+      const by = y0 + Math.sin(ang) * len * t;
+      for (const side of [-1, 1]) {
+        const na = ang + side * (0.85 + rnd() * 0.4);
+        const nl = (26 + rnd() * 20) * scale * (1 - 0.35 * t);
+        ctx.strokeStyle = tones[Math.min(tones.length - 1,
+          Math.round((1 - by / size) * 3.0 + rnd() * 2.6))];
+        ctx.lineWidth = (2.0 + rnd() * 1.4) * scale;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + Math.cos(na) * nl, by + Math.sin(na) * nl);
+        ctx.stroke();
+      }
+    }
+  };
+  for (let s = 0; s < 8; s++) {
+    const ang = -Math.PI / 2 + (s / 7 - 0.5) * 2.1 + (rnd() - 0.5) * 0.2;
+    spray(256 + (rnd() - 0.5) * 110, 496 + (rnd() - 0.5) * 26, ang, 200 + rnd() * 130, 1);
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = maxAniso;
@@ -378,6 +494,8 @@ const hedgeA = tex('./textures/nature/canopy_leaf.jpg', 4.4, 4.4);
 const hedgeN = ntex('./textures/nature/foliage_n.jpg', 4.4, 4.4);
 const hayA = makeHayAlbedo();
 const hayTuftA = makeHayTuft();
+const sprigA = makeSprigTex();
+const needleA = makeNeedleTex();
 
 const M = {
   // Compacted earth: the visitor path. Warm, matte, and slightly redder than
@@ -440,6 +558,45 @@ const M = {
   hedge: new THREE.MeshStandardMaterial({
     map: hedgeA, normalMap: hedgeN, normalScale: new THREE.Vector2(1.15, 1.15),
     color: 0xd8e6b0, roughness: 0.93,
+  }),
+  // The solid mass under the leaf cards. Darker than the loose foliage
+  // materials on purpose: what shows through the gaps between sprigs is the
+  // shaded heart of the crown, and a bright ball behind a lace of leaves reads
+  // as exactly that — a ball behind some leaves.
+  crownMid: new THREE.MeshStandardMaterial({
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(1.05, 1.05),
+    color: 0x9db078, roughness: 0.94,
+  }),
+  crownDark: new THREE.MeshStandardMaterial({
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(1.1, 1.1),
+    color: 0x76895c, roughness: 0.95,
+  }),
+  crownLight: new THREE.MeshStandardMaterial({
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.9, 0.9),
+    color: 0xb8c890, roughness: 0.92,
+  }),
+  // Alpha-cut foliage cards. Three tints rather than a per-instance colour:
+  // one draw call each, and the crown wants shade at the bottom and sun on top,
+  // which three bands give you without touching the instance colour attribute.
+  sprigSun: new THREE.MeshStandardMaterial({
+    map: sprigA, color: 0xe6f0c4, roughness: 0.96, metalness: 0.0,
+    alphaTest: 0.42, alphaToCoverage: true, side: THREE.DoubleSide,
+  }),
+  sprigMid: new THREE.MeshStandardMaterial({
+    map: sprigA, color: 0xc2d29a, roughness: 0.96, metalness: 0.0,
+    alphaTest: 0.42, alphaToCoverage: true, side: THREE.DoubleSide,
+  }),
+  sprigShade: new THREE.MeshStandardMaterial({
+    map: sprigA, color: 0x94a874, roughness: 0.97, metalness: 0.0,
+    alphaTest: 0.42, alphaToCoverage: true, side: THREE.DoubleSide,
+  }),
+  needleSun: new THREE.MeshStandardMaterial({
+    map: needleA, color: 0xbccfa2, roughness: 0.96, metalness: 0.0,
+    alphaTest: 0.4, alphaToCoverage: true, side: THREE.DoubleSide,
+  }),
+  needleShade: new THREE.MeshStandardMaterial({
+    map: needleA, color: 0x84996e, roughness: 0.97, metalness: 0.0,
+    alphaTest: 0.4, alphaToCoverage: true, side: THREE.DoubleSide,
   }),
   bamboo: new THREE.MeshStandardMaterial({ color: 0x8fa350, roughness: 0.9 }),
   timber: new THREE.MeshStandardMaterial({
@@ -559,7 +716,11 @@ scene.add(world);
 // nothing here should ever be a candidate for the ground probe.
 const fauna = new THREE.Group();
 const crowd = new THREE.Group();
-scene.add(fauna, crowd);
+// Leaf cards. Outside `world` for the same reason the animals are: cityBoxes
+// turns every InstancedMesh under `world` into collision AABBs, and ten
+// thousand foliage quads would be ten thousand invisible boxes to walk into.
+const foliageFX = new THREE.Group();
+scene.add(fauna, crowd, foliageFX);
 
 // ---------------------------------------------------------------------------
 // Instancing kit (same contract as the villa: everything static goes through
@@ -590,8 +751,13 @@ function addInstancedPrimitive(geometry, material, items, propFlags) {
 // One organic canopy, not a cluster of spheres. Vertices are displaced so the
 // silhouette is lumpy, and the underside is flattened so the trunk reads as
 // growing *into* the crown instead of a lollipop stick under a ball.
+// IcosahedronGeometry comes back unindexed, so computeVertexNormals gives every
+// triangle its own flat normal — which is why the crowns read as cut gemstones
+// however lumpy the displacement was. Welding the seams first is what turns the
+// shading smooth; the extra octaves then break the profile at a scale smaller
+// than a facet, so the lumps stop lining up with the underlying icosahedron.
 function lumpyCrown(seed, flatten = 0.12, lump = 0.14) {
-  const g = new THREE.IcosahedronGeometry(0.5, 3);
+  const g = mergeVertices(new THREE.IcosahedronGeometry(0.5, 3), 1e-5);
   const pos = g.attributes.position;
   const v = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
@@ -599,7 +765,9 @@ function lumpyCrown(seed, flatten = 0.12, lump = 0.14) {
     const n = 1
       + lump * Math.sin(v.x * 6.8 + seed * 2.1)
       + lump * 0.75 * Math.sin(v.z * 5.9 + seed * 1.4)
-      + lump * 0.45 * Math.sin(v.y * 7.2 + v.x * 3.3 + seed);
+      + lump * 0.45 * Math.sin(v.y * 7.2 + v.x * 3.3 + seed)
+      + lump * 0.34 * Math.sin(v.x * 13.1 + v.z * 9.7 + seed * 3.3)
+      + lump * 0.22 * Math.sin(v.y * 17.4 + v.z * 12.6 + seed * 1.9);
     v.multiplyScalar(n);
     if (v.y < 0) v.y *= 1 - flatten;
     else v.y *= 0.88;
@@ -636,18 +804,31 @@ function hayHeapGeom(seed) {
   g.computeBoundingSphere();
   return withUV2(g);
 }
+// The pine's mass: a tiered profile rather than a straight cone, sampled finely
+// enough that no vertex ring shows as a crease, and given a slight radial wobble
+// so the rim is not a perfect circle of 16 straight chords.
 function pineCrownGeom() {
-  const pts = [
-    new THREE.Vector2(0.04, 0.00),
-    new THREE.Vector2(0.48, 0.05),
-    new THREE.Vector2(0.44, 0.18),
-    new THREE.Vector2(0.36, 0.38),
-    new THREE.Vector2(0.26, 0.58),
-    new THREE.Vector2(0.16, 0.76),
-    new THREE.Vector2(0.07, 0.92),
-    new THREE.Vector2(0.00, 1.00),
-  ];
-  const g = new THREE.LatheGeometry(pts, 16);
+  const pts = [];
+  const STEPS = 26;
+  for (let i = 0; i <= STEPS; i++) {
+    const t = i / STEPS;
+    // Base taper, plus a whorl ripple: real conifers step out at every branch
+    // tier, and the steps are what keep the silhouette off a smooth cone.
+    const taper = Math.pow(1 - t, 0.82);
+    const whorl = 1 + 0.1 * Math.sin(t * Math.PI * 5.2 - 0.6);
+    pts.push(new THREE.Vector2(Math.max(0, 0.5 * taper * whorl), t));
+  }
+  pts[0].x = 0.06;
+  pts[pts.length - 1].x = 0;
+  const g = new THREE.LatheGeometry(pts, 30);
+  const pos = g.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const a = Math.atan2(v.z, v.x);
+    const k = 1 + 0.09 * Math.sin(a * 7 + v.y * 9.3) + 0.05 * Math.sin(a * 13 - v.y * 5.1);
+    pos.setXYZ(i, v.x * k, v.y, v.z * k);
+  }
   g.computeVertexNormals();
   return withUV2(g);
 }
@@ -670,6 +851,8 @@ const G = {
   hayHeapA: hayHeapGeom(1.15),
   hayHeapB: hayHeapGeom(2.84),
   card: withUV2(new THREE.PlaneGeometry(1, 1)),
+  // Card whose pivot is its bottom edge, so a sprig grows out along +Y.
+  cardUp: withUV2(new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0)),
   rock: withUV2(new THREE.DodecahedronGeometry(0.5, 0)),
   cone: withUV2(new THREE.ConeGeometry(0.5, 1, 12).translate(0, 0.5, 0)),
   frond: withUV2(new THREE.ConeGeometry(0.5, 1, 4).translate(0, 0.5, 0)),
@@ -722,6 +905,133 @@ function shape(geo, mat, x, y, z, sx, sy, sz, rot = {}) {
     sx, sy, sz, ry: FR + (rot.ry || 0), rx: rot.rx || 0, rz: rot.rz || 0,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Foliage cards. A separate kit from `emit`, because these go to foliageFX
+// rather than to `world`, and because they need a full orientation: a card laid
+// out with YXZ Euler angles ends up standing in a vertical plane whatever the
+// yaw, so a crown clothed that way is a fan of edge-on shards. Each card gets a
+// basis instead — +Y along the shoot, face turned towards the crown normal.
+// ---------------------------------------------------------------------------
+const leafKits = new Map();
+const _frameQ = new THREE.Quaternion(), _localQ = new THREE.Quaternion();
+const _yAxis = new THREE.Vector3(0, 1, 0);
+const _cx = new THREE.Vector3(), _cy = new THREE.Vector3(), _cz = new THREE.Vector3();
+const _cmat = new THREE.Matrix4(), _cq = new THREE.Quaternion();
+function cardQuat(dir, face) {
+  _cy.copy(dir).normalize();
+  _cx.crossVectors(face, _cy);
+  if (_cx.lengthSq() < 1e-8) _cx.crossVectors(_cy, _cz.set(0, 0, 1));
+  _cx.normalize();
+  _cz.crossVectors(_cx, _cy);
+  _cmat.makeBasis(_cx, _cy, _cz);
+  return _cq.setFromRotationMatrix(_cmat).toArray();
+}
+function leafCard(mat, x, y, z, w, h, q) {
+  const c = Math.cos(FR), s = Math.sin(FR);
+  let k = leafKits.get(mat);
+  if (!k) leafKits.set(mat, (k = []));
+  const qq = FR ? _frameQ.setFromAxisAngle(_yAxis, FR).multiply(_localQ.fromArray(q)).toArray() : q;
+  k.push({ x: FX + x * c + z * s, y, z: FZ - x * s + z * c, w, h, q: qq });
+}
+function hash1(n) {
+  const v = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return v - Math.floor(v);
+}
+const _fN = new THREE.Vector3(), _fT1 = new THREE.Vector3(), _fT2 = new THREE.Vector3();
+const _fDir = new THREE.Vector3(), _fFace = new THREE.Vector3();
+// Clothe an ellipsoidal crown in sprigs. The solid mass stays underneath — it
+// is what casts the shadow and fills the interior — and the cards only have to
+// make the edge of it leafy, which is the whole of the "too angular" problem.
+function cloakCrown(x, y, z, sx, sy, sz, seed, count, tints, spread = 1) {
+  const rx = sx * 0.5, ry = sy * 0.5, rz = sz * 0.5;
+  const R = (rx + rz) * 0.5;
+  for (let i = 0; i < count; i++) {
+    const up = 1 - 2 * (i + 0.5) / count;
+    const angle = i * 2.399963 + seed * 1.7;      // golden angle: no seams, no clumps
+    const ring = Math.sqrt(Math.max(0, 1 - up * up));
+    _fN.set(Math.cos(angle) * ring, up, Math.sin(angle) * ring);
+    const h = hash1(i * 5.3 + seed);
+    // A third of them sink into the mass: depth across the skin is what stops
+    // the crown looking like a printed decal wrapped round a ball.
+    const depth = h < 0.33 ? 0.78 : 0.96;
+    const ax = x + _fN.x * rx * depth;
+    const ay = y + _fN.y * ry * depth;
+    const az = z + _fN.z * rz * depth;
+    _fT1.set(-Math.sin(angle), 0, Math.cos(angle));
+    _fT2.crossVectors(_fN, _fT1).normalize();
+    const th = hash1(i * 2.9 + seed) * 6.283185;
+    _fDir.copy(_fN).multiplyScalar(0.62)
+      .addScaledVector(_fT1, Math.cos(th) * 0.85)
+      .addScaledVector(_fT2, Math.sin(th) * 0.85);
+    _fDir.y -= 0.24;                              // shoots lift out, tips hang
+    _fDir.normalize();
+    // The face follows the crown normal only loosely. Following it exactly
+    // paves the top of the crown with horizontal cards, invisible edge-on from
+    // the ground, and the cap goes back to being a bare dome.
+    const pole = Math.abs(up);
+    const jit = 0.5 + 0.9 * pole;
+    _fFace.copy(_fN).multiplyScalar(1 - 0.62 * pole)
+      .addScaledVector(_fT1, (h - 0.5) * 2 * jit)
+      .addScaledVector(_fT2, (hash1(i * 7.7 + seed) - 0.5) * 2 * jit).normalize();
+    const w = R * spread * (0.78 + 0.34 * h);
+    // Shade at the bottom of the crown, sun on top, with enough overlap that
+    // the bands do not show as three stripes.
+    const lit = 0.5 + 0.5 * up + 0.5 * (h - 0.5);
+    const mat = tints[Math.max(0, Math.min(tints.length - 1,
+      Math.round(lit * (tints.length - 1))))];
+    leafCard(mat, ax, ay, az, w, w * 1.05, cardQuat(_fDir, _fFace));
+  }
+}
+// Same, on a cone: the pine's sprays sit on the slanted flank and hang off the
+// tiers, so the profile breaks into needles rather than ending on a lathe edge.
+function cloakCone(x, yBase, z, rBase, height, seed, count, tints) {
+  for (let i = 0; i < count; i++) {
+    const t = (i + 0.5) / count;                  // 0 at the base, 1 at the tip
+    const u = Math.pow(t, 0.72);
+    const angle = i * 2.399963 + seed * 1.3;
+    const r = rBase * (1 - u) * (1 + 0.1 * Math.sin(u * Math.PI * 5.2 - 0.6));
+    const ax = x + Math.cos(angle) * r;
+    const az = z + Math.sin(angle) * r;
+    const ay = yBase + height * u;
+    const h = hash1(i * 4.7 + seed);
+    _fN.set(Math.cos(angle), 0.42, Math.sin(angle)).normalize();
+    _fT1.set(-Math.sin(angle), 0, Math.cos(angle));
+    _fDir.copy(_fN).multiplyScalar(0.9)
+      .addScaledVector(_fT1, (h - 0.5) * 0.9);
+    _fDir.y -= 0.62;                              // conifer sprays droop hard
+    _fDir.normalize();
+    _fFace.copy(_fN).addScaledVector(_fT1, (hash1(i * 9.1 + seed) - 0.5) * 1.2).normalize();
+    const w = rBase * (0.46 + 0.24 * h) * (1 - 0.4 * u);
+    const mat = tints[h < 0.45 ? 0 : tints.length - 1];
+    leafCard(mat, ax, ay, az, w, w * 1.15, cardQuat(_fDir, _fFace));
+  }
+}
+function flushLeafCards() {
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+  const sc = new THREE.Vector3(), p = new THREE.Vector3();
+  for (const [mat, items] of leafKits) {
+    if (!items.length) continue;
+    const im = new THREE.InstancedMesh(G.cardUp, mat, items.length);
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      p.set(it.x, it.y, it.z);
+      q.fromArray(it.q);
+      sc.set(it.w, it.h, 1);
+      m.compose(p, q, sc);
+      im.setMatrixAt(i, m);
+    }
+    im.instanceMatrix.needsUpdate = true;
+    // Not a shadow caster: the solid crown underneath already casts the tree's
+    // shadow, and alpha-testing ten thousand quads into the shadow map buys a
+    // fringe nobody sees at the cost of a second full foliage pass.
+    im.castShadow = false;
+    im.receiveShadow = true;
+    foliageFX.add(im);
+  }
+  leafKits.clear();
+}
+
 // A real light, placed in the frame's coordinates like everything else. Only
 // the three shop interiors get one: they are closed boxes the sun cannot reach,
 // and the hemisphere alone leaves them the brown gloom they were.
@@ -939,8 +1249,16 @@ function shadeTree(x, z, s = 1, mat = M.foliage) {
     limb(M.bark, x, g + h * 0.58, z, tR, az0, 0.85, 1.55 * s, 0.46 * s);
     limb(M.bark, x, g + h * 0.63, z, tR * 0.9, az0 + 2.2, 0.92, 1.35 * s, 0.38 * s);
     limb(M.bark, x, g + h * 0.55, z, tR, az0 + 4.1, 0.78, 1.45 * s, 0.40 * s);
-    shape(pickCanopy(x, z), mat, x, g + h * 0.72, z,
-      4.6 * s, 3.8 * s, 4.4 * s, { ry: j * 3, rz: lean * 0.25 });
+    const cw = 4.6 * s, ch = 3.8 * s, cd = 4.4 * s;
+    const cy = g + h * 0.72;
+    shape(pickCanopy(x, z), mat === M.foliageDark ? M.crownDark : M.crownMid,
+      x, cy, z, cw, ch, cd, { ry: j * 3, rz: lean * 0.25 });
+    // The solid is only the mass. Sprigs over its skin are what give the tree a
+    // leafy edge instead of the cut-gemstone profile a displaced icosphere has.
+    const tints = mat === M.foliageDark
+      ? [M.sprigShade, M.sprigShade, M.sprigMid]
+      : [M.sprigShade, M.sprigMid, M.sprigSun];
+    cloakCrown(x, cy, z, cw, ch, cd, x * 0.37 + z * 0.61, 118, tints);
   });
 }
 function pine(x, z, s = 1) {
@@ -948,8 +1266,10 @@ function pine(x, z, s = 1) {
     const g = groundAt(x, z) - 0.15;
     const j = Math.sin(x * 45.164 + z * 21.9) * 0.5;
     shape(G.trunk, M.barkDark, x, g, z, 0.55 * s, 3.4 * s, 0.55 * s, { rz: j * 0.03 });
-    shape(G.pineCrown, M.foliageDark, x, g + 1.35 * s, z,
-      3.3 * s, 5.6 * s, 3.3 * s, { ry: j * 4 });
+    const cy = g + 1.35 * s, cr = 3.3 * s, chh = 5.6 * s;
+    shape(G.pineCrown, M.crownDark, x, cy, z, cr, chh, cr, { ry: j * 4 });
+    cloakCone(x, cy, z, cr * 0.5, chh, x * 0.53 + z * 0.29, 76,
+      [M.needleShade, M.needleSun]);
   });
 }
 function birch(x, z, s = 1) {
@@ -963,8 +1283,11 @@ function birch(x, z, s = 1) {
     const az = j * 2.4;
     limb(M.birch, x, g + h * 0.58, z, tR, az, 0.72, 1.25 * s, 0.22 * s);
     limb(M.birch, x, g + h * 0.62, z, tR, az + Math.PI * 0.82, 0.68, 1.15 * s, 0.20 * s);
-    shape(pickCanopy(x, z), M.foliageLight, x, g + h * 0.74, z,
-      3.6 * s, 4.2 * s, 3.4 * s, { ry: j * 3, rz: j * 0.02 });
+    const cw = 3.6 * s, ch = 4.2 * s, cd = 3.4 * s;
+    const cy = g + h * 0.74;
+    shape(pickCanopy(x, z), M.crownLight, x, cy, z, cw, ch, cd, { ry: j * 3, rz: j * 0.02 });
+    cloakCrown(x, cy, z, cw, ch, cd, x * 0.71 + z * 0.19, 96,
+      [M.sprigMid, M.sprigSun, M.sprigSun], 0.9);
   });
 }
 function hayHeap(x, y, z, sx, sy, sz, seed) {
@@ -998,8 +1321,11 @@ function shrub(x, z, s = 1, mat = M.hedge) {
   prop(() => {
     const g = groundAt(x, z);
     const j = Math.sin(x * 91.3 + z * 17.7) * 0.5;
-    shape(G.bush, mat, x, g + 0.04, z,
-      (2.5 + j * 0.35) * s, (1.7 + j * 0.2) * s, (2.3 + j * 0.35) * s, { ry: j * 6 });
+    const bw = (2.5 + j * 0.35) * s, bh = (1.7 + j * 0.2) * s, bd = (2.3 + j * 0.35) * s;
+    shape(G.bush, mat, x, g + 0.04, z, bw, bh, bd, { ry: j * 6 });
+    cloakCrown(x, g + 0.04 + bh * 0.10, z, bw, bh * 1.15, bd,
+      x * 0.23 + z * 0.83, 34,
+      mat === M.foliageDark ? [M.sprigShade, M.sprigMid] : [M.sprigMid, M.sprigSun], 0.8);
   });
 }
 function hedgeRun(x0, x1, z0, z1, h = 1.2, skip = null) {
@@ -2456,6 +2782,7 @@ const zooTravelInteraction = {
 };
 
 flushKits();
+flushLeafCards();
 
 // ---------------------------------------------------------------------------
 // Terrain and water. The mesh takes its vertices from terrainHeight so the
