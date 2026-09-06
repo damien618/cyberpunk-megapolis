@@ -234,20 +234,24 @@ function makeSprigTex() {
       const la = ang + side * (0.62 + rnd() * 0.42);
       const lit = Math.min(tones.length - 1,
         Math.round((1 - by / size) * 3.2 + rnd() * 2.8));
-      leaf(bx, by, la, (52 + rnd() * 26) * scale, (17 + rnd() * 7) * scale, tones[lit]);
+      leaf(bx, by, la, (44 + rnd() * 20) * scale, (15 + rnd() * 6) * scale, tones[lit]);
     }
     leaf(x0 + Math.cos(ang) * len, y0 + Math.sin(ang) * len, ang,
-      (46 + rnd() * 16) * scale, 16 * scale, tones[tones.length - 2]);
+      (38 + rnd() * 14) * scale, 14 * scale, tones[tones.length - 2]);
   };
-  for (let s = 0; s < 7; s++) {
-    const ang = -Math.PI / 2 + (s / 6 - 0.5) * 2.0 + (rnd() - 0.5) * 0.24;
-    const x0 = 256 + (rnd() - 0.5) * 96, y0 = 492 + (rnd() - 0.5) * 30;
-    const len = 190 + rnd() * 120;
+  // Every blade has to die out before the edge of the canvas. Drawn wider than
+  // that, the alpha runs straight off the bitmap and the card's own rectangle
+  // becomes the silhouette — which is what put flat leafy sheets, with hard
+  // vertical cuts down their sides, out on the flanks of the crowns.
+  for (let s = 0; s < 9; s++) {
+    const ang = -Math.PI / 2 + (s / 8 - 0.5) * 1.5 + (rnd() - 0.5) * 0.2;
+    const x0 = 256 + (rnd() - 0.5) * 56, y0 = 494 + (rnd() - 0.5) * 26;
+    const len = 150 + rnd() * 62;
     shoot(x0, y0, ang, len, 6 + Math.floor(rnd() * 3), 1);
     if (s % 2 === 0) {
-      const bl = len * (0.42 + rnd() * 0.2);
-      shoot(x0 + Math.cos(ang) * len * 0.45, y0 + Math.sin(ang) * len * 0.45,
-        ang + (rnd() < 0.5 ? -1 : 1) * (0.5 + rnd() * 0.3), bl, 4, 0.78);
+      const bl = len * (0.4 + rnd() * 0.18);
+      shoot(x0 + Math.cos(ang) * len * 0.42, y0 + Math.sin(ang) * len * 0.42,
+        ang + (rnd() < 0.5 ? -1 : 1) * (0.45 + rnd() * 0.25), bl, 4, 0.74);
     }
   }
   const t = new THREE.CanvasTexture(c);
@@ -280,7 +284,7 @@ function makeNeedleTex() {
       const by = y0 + Math.sin(ang) * len * t;
       for (const side of [-1, 1]) {
         const na = ang + side * (0.85 + rnd() * 0.4);
-        const nl = (26 + rnd() * 20) * scale * (1 - 0.35 * t);
+        const nl = (22 + rnd() * 16) * scale * (1 - 0.35 * t);
         ctx.strokeStyle = tones[Math.min(tones.length - 1,
           Math.round((1 - by / size) * 3.0 + rnd() * 2.6))];
         ctx.lineWidth = (2.0 + rnd() * 1.4) * scale;
@@ -291,9 +295,9 @@ function makeNeedleTex() {
       }
     }
   };
-  for (let s = 0; s < 8; s++) {
-    const ang = -Math.PI / 2 + (s / 7 - 0.5) * 2.1 + (rnd() - 0.5) * 0.2;
-    spray(256 + (rnd() - 0.5) * 110, 496 + (rnd() - 0.5) * 26, ang, 200 + rnd() * 130, 1);
+  for (let s = 0; s < 9; s++) {
+    const ang = -Math.PI / 2 + (s / 8 - 0.5) * 1.55 + (rnd() - 0.5) * 0.18;
+    spray(256 + (rnd() - 0.5) * 62, 498 + (rnd() - 0.5) * 22, ang, 170 + rnd() * 90, 1);
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -774,7 +778,30 @@ function lumpyCrown(seed, flatten = 0.12, lump = 0.14) {
     pos.setXYZ(i, v.x, v.y, v.z);
   }
   g.computeVertexNormals();
+  boxProjectUv(g, 1.4);
   return withUV2(g);
+}
+// A sphere's own UVs converge on its poles, so the leaf texture arrives at the
+// top and bottom of a crown as vertical smears — the streaks that made a crown
+// look brushed rather than leafy. Projecting each vertex down its dominant axis
+// instead gives six flat patches: seams where the axes change, invisible inside
+// foliage, and no compression anywhere.
+function boxProjectUv(g, scale = 1) {
+  const pos = g.attributes.position;
+  const nrm = g.attributes.normal;
+  const uv = g.attributes.uv;
+  if (!uv) return g;
+  for (let i = 0; i < pos.count; i++) {
+    const px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+    const ax = Math.abs(nrm.getX(i)), ay = Math.abs(nrm.getY(i)), az = Math.abs(nrm.getZ(i));
+    let u, v;
+    if (ax >= ay && ax >= az) { u = pz; v = py; }
+    else if (ay >= az) { u = px; v = pz; }
+    else { u = px; v = py; }
+    uv.setXY(i, u * scale + 0.5, v * scale + 0.5);
+  }
+  uv.needsUpdate = true;
+  return g;
 }
 // A hay pile, not a bush: lumpy, sitting on the dirt, unit-sized so sx/sy/sz
 // are the world extents. Two seeds so the aviary's pair are not twins.
@@ -954,7 +981,7 @@ function cloakCrown(x, y, z, sx, sy, sz, seed, count, tints, spread = 1) {
     const h = hash1(i * 5.3 + seed);
     // A third of them sink into the mass: depth across the skin is what stops
     // the crown looking like a printed decal wrapped round a ball.
-    const depth = h < 0.33 ? 0.78 : 0.96;
+    const depth = h < 0.4 ? 0.76 : 0.94;
     const ax = x + _fN.x * rx * depth;
     const ay = y + _fN.y * ry * depth;
     const az = z + _fN.z * rz * depth;
@@ -974,7 +1001,7 @@ function cloakCrown(x, y, z, sx, sy, sz, seed, count, tints, spread = 1) {
     _fFace.copy(_fN).multiplyScalar(1 - 0.62 * pole)
       .addScaledVector(_fT1, (h - 0.5) * 2 * jit)
       .addScaledVector(_fT2, (hash1(i * 7.7 + seed) - 0.5) * 2 * jit).normalize();
-    const w = R * spread * (0.78 + 0.34 * h);
+    const w = R * spread * (0.62 + 0.3 * h);
     // Shade at the bottom of the crown, sun on top, with enough overlap that
     // the bands do not show as three stripes.
     const lit = 0.5 + 0.5 * up + 0.5 * (h - 0.5);
@@ -1002,7 +1029,7 @@ function cloakCone(x, yBase, z, rBase, height, seed, count, tints) {
     _fDir.y -= 0.62;                              // conifer sprays droop hard
     _fDir.normalize();
     _fFace.copy(_fN).addScaledVector(_fT1, (hash1(i * 9.1 + seed) - 0.5) * 1.2).normalize();
-    const w = rBase * (0.46 + 0.24 * h) * (1 - 0.4 * u);
+    const w = rBase * (0.34 + 0.18 * h) * (1 - 0.34 * u);
     const mat = tints[h < 0.45 ? 0 : tints.length - 1];
     leafCard(mat, ax, ay, az, w, w * 1.15, cardQuat(_fDir, _fFace));
   }
@@ -1258,7 +1285,7 @@ function shadeTree(x, z, s = 1, mat = M.foliage) {
     const tints = mat === M.foliageDark
       ? [M.sprigShade, M.sprigShade, M.sprigMid]
       : [M.sprigShade, M.sprigMid, M.sprigSun];
-    cloakCrown(x, cy, z, cw, ch, cd, x * 0.37 + z * 0.61, 118, tints);
+    cloakCrown(x, cy, z, cw, ch, cd, x * 0.37 + z * 0.61, 210, tints);
   });
 }
 function pine(x, z, s = 1) {
@@ -1268,7 +1295,7 @@ function pine(x, z, s = 1) {
     shape(G.trunk, M.barkDark, x, g, z, 0.55 * s, 3.4 * s, 0.55 * s, { rz: j * 0.03 });
     const cy = g + 1.35 * s, cr = 3.3 * s, chh = 5.6 * s;
     shape(G.pineCrown, M.crownDark, x, cy, z, cr, chh, cr, { ry: j * 4 });
-    cloakCone(x, cy, z, cr * 0.5, chh, x * 0.53 + z * 0.29, 76,
+    cloakCone(x, cy, z, cr * 0.5, chh, x * 0.53 + z * 0.29, 132,
       [M.needleShade, M.needleSun]);
   });
 }
@@ -1286,7 +1313,7 @@ function birch(x, z, s = 1) {
     const cw = 3.6 * s, ch = 4.2 * s, cd = 3.4 * s;
     const cy = g + h * 0.74;
     shape(pickCanopy(x, z), M.crownLight, x, cy, z, cw, ch, cd, { ry: j * 3, rz: j * 0.02 });
-    cloakCrown(x, cy, z, cw, ch, cd, x * 0.71 + z * 0.19, 96,
+    cloakCrown(x, cy, z, cw, ch, cd, x * 0.71 + z * 0.19, 170,
       [M.sprigMid, M.sprigSun, M.sprigSun], 0.9);
   });
 }
@@ -1322,10 +1349,11 @@ function shrub(x, z, s = 1, mat = M.hedge) {
     const g = groundAt(x, z);
     const j = Math.sin(x * 91.3 + z * 17.7) * 0.5;
     const bw = (2.5 + j * 0.35) * s, bh = (1.7 + j * 0.2) * s, bd = (2.3 + j * 0.35) * s;
-    shape(G.bush, mat, x, g + 0.04, z, bw, bh, bd, { ry: j * 6 });
+    shape(G.bush, mat === M.foliageDark ? M.crownDark : M.crownMid,
+      x, g + 0.04, z, bw, bh, bd, { ry: j * 6 });
     cloakCrown(x, g + 0.04 + bh * 0.10, z, bw, bh * 1.15, bd,
-      x * 0.23 + z * 0.83, 34,
-      mat === M.foliageDark ? [M.sprigShade, M.sprigMid] : [M.sprigMid, M.sprigSun], 0.8);
+      x * 0.23 + z * 0.83, 150,
+      mat === M.foliageDark ? [M.sprigShade, M.sprigMid] : [M.sprigMid, M.sprigSun], 0.48);
   });
 }
 function hedgeRun(x0, x1, z0, z1, h = 1.2, skip = null) {
@@ -1348,7 +1376,11 @@ function hedgeRun(x0, x1, z0, z1, h = 1.2, skip = null) {
 function planter(x, z, r = 1.4) {
   prop(() => {
     shape(G.cylBase, M.stone, x, 0, z, r * 2, 0.55, r * 2);
-    shape(G.bush, M.foliageLight, x, 0.62, z, r * 1.8, 1.05, r * 1.8);
+    shape(G.bush, M.crownLight, x, 0.62, z, r * 1.8, 1.05, r * 1.8);
+    // Planters stand at eye level on the plaza, so a bare mound reads as
+    // plastic next to the trees behind it.
+    cloakCrown(x, 0.68, z, r * 1.8, 1.25, r * 1.8, x * 0.41 + z * 0.67, 80,
+      [M.sprigMid, M.sprigSun], 0.5);
   });
 }
 function lampPost(x, z, h = 4.6) {
