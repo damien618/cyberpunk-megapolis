@@ -1792,7 +1792,9 @@ const BALL_Z = [18, SUP_Z1];
 // Dedicated accommodation deck, inspired by Cunard's separated cabin decks.
 // https://www.cunard.com/content/dam/cunard/inventory-assets/ships/QM/9/deck-plans-qm2-feb24.pdf
 const CABIN_Y = 3.8;
-const CABIN_EXTENSION_Z = 34;
+// Forward end of the lower-deck coursive. Long enough that 216 and 218 sit
+// PAST cabin 214's bulkhead (z = 16), not on the suite's own corridor wall.
+const CABIN_EXTENSION_Z = 30;
 const CABIN_CEIL_Y = DECK_Y - 0.22;
 const CABIN_STAIR = { x0: -9, x1: -5, z0: -4, z1: 6.5, steps: 24 };
 // The opening stops at the atrium wall. The lower treads continue beneath
@@ -1815,7 +1817,15 @@ const CAB_X0 = 3.0, CAB_X1 = SUP_X2 - WALL_T;
 const CAB_Z0 = 4.0, CAB_Z1 = 16.0;
 const BED_X = 8.4, BED_Z = 11.6;         // centre of the mattress
 const BED_W = 2.0, BED_L = 2.2;          // across the ship, along the ship
-const BED_TOP = CABIN_Y + 0.66;          // the surface you lie on
+// The surface you lie ON, which is the top of the BEDDING and not the top of
+// the mattress. The suite's bed is dressed — a quilted counterpane at +0.7225,
+// a turned-down sheet over it at +0.7275, a velvet runner across the foot at
+// +0.7525 — and resting the sleeper on the bare linen at +0.66 buried her a
+// good 9 cm: the counterpane cut across her hips and the runner swallowed her
+// calves. She rests on the turn-down, the topmost layer that runs the whole
+// length of her; the velvet runner is a throw and reads as compressing under
+// her legs, which is what a throw does.
+const BED_TOP = CABIN_Y + 0.7275;
 
 // The hull's half beam at a given station. A liner is parallel-sided over most
 // of her length and only fines off at the ends: taper the whole hull and she
@@ -2851,25 +2861,44 @@ console.log('[cruise] casino room done');
 // wash plus lamps around the clock.
 const cabinLights = [];
 
-// Room 3 — the CABIN DECK. A corridor down the centreline with the suites off
-// it. Cabin 214, to starboard, is the only one that opens: it is the way home,
-// and a corridor of doors that all open is a corridor of empty boxes.
+// Room 3 — the CABIN DECK. A T-landing at the foot of the stair: one arm is
+// the centreline coursive (214–218, even starboard, odd port, increasing
+// toward the bow), the other is a port alley (219–223) outboard of the
+// stair. Cabin 214, to starboard, is the only door that opens: it is the
+// way home, and a corridor of doors that all open is a corridor of empty
+// boxes. The 214–218 coursive runs past 214's own bulkhead so 216/218 are
+// not painted on the suite.
 // ---------------------------------------------------------------------------
 {
   const DECK_Y = CABIN_Y;
   const CEIL_Y = CABIN_CEIL_Y;
-  const [z0, z1] = CABIN_Z;
+  const [z0] = CABIN_Z;
   const F = DECK_Y + 0.02;
   const COR = 3.0;                    // corridor half width
+  const hallZ0 = z0 + WALL_T;
+  const hallZ1 = CABIN_EXTENSION_Z - WALL_T / 2;
+  // T-landing: the stair is 4 m (x = -9 to -5). Each arm of the T is the
+  // same 2 m of open landing then a single wall — x = -3 toward 214–218,
+  // x = -11 toward 219–223. No second wall against the stair, or the
+  // handrail is buried and the 214–218 sign sits in a slot.
+  const PORT_WALL = -11;              // 2 m outboard of the stair, mirrors x = -3
+  const PORT_BACK = CABIN_STAIR.x0;   // -9, back of 219–223, only forward of the landing
+  const LANDING = [7.0, 8.7, 3.0];
 
-  longSlab(M.corridorCarpet, -COR, COR, z0 + WALL_T, z1 - WALL_T, DECK_Y, F);
+  longSlab(M.corridorCarpet, -COR, COR, hallZ0, hallZ1, DECK_Y, F);
 
-  // Corridor walls, with the suite doors cut into them. Starboard carries one
-  // opening — 214 — and it is a real hole; the others are leaves in a frame.
-  wallWithHoles(M.cream, 'z', COR, WALL_T, z0 + WALL_T, z1 - WALL_T, DECK_Y, CEIL_Y,
+  // Corridor walls. Starboard carries one opening — 214 — and it is a real
+  // hole; the others are leaves in a frame. Port is broken at the stair
+  // landing. Both runs go PAST 214's forward bulkhead so 216/218 have wall
+  // of their own, instead of being painted on the suite.
+  wallWithHoles(M.cream, 'z', COR, WALL_T, hallZ0, hallZ1, DECK_Y, CEIL_Y,
     [[5.0, 6.2, DOOR_H]]);
-  wallWithHoles(M.cream, 'z', -COR, WALL_T, z0 + WALL_T, z1 - WALL_T, DECK_Y, CEIL_Y,
-    [[7.0, 9.0, 3.0]]);
+  wallWithHoles(M.cream, 'z', -COR, WALL_T, hallZ0, hallZ1, DECK_Y, CEIL_Y,
+    [LANDING]);
+
+  // Matching 2 m passages off each side of the stair, then one wall.
+  longSlab(M.corridorCarpet, CABIN_STAIR.x1, -COR, LANDING[0], LANDING[1], DECK_Y, F);
+  longSlab(M.corridorCarpet, PORT_WALL, CABIN_STAIR.x0, LANDING[0], LANDING[1], DECK_Y, F);
 
   // The port suites and the rest of starboard: sealed, with doors painted in
   // as joinery. Frame, leaf, handle, number plate.
@@ -2891,26 +2920,43 @@ const cabinLights = [];
       shape(G.card, plate, 0, DECK_Y + 2.22, -0.11, 0.44, 0.22, 1, { ry: Math.PI });
     }));
   }
-  // Keep only the doors that sit on a usable corridor wall. The former 219 and
-  // 221 leaves were against the return wall, so they read as decorative bars
-  // with no room behind them and have been removed.
-  cabinDoor(-COR + WALL_T / 2 + 0.06, 4.4, -Math.PI / 2, '215');
-  cabinDoor(COR - WALL_T / 2 - 0.06, z0 + 12.2, Math.PI / 2, '216');
-  cabinDoor(COR - WALL_T / 2 - 0.06, z0 + 7.5, Math.PI / 2, '218');
+  // Even numbers starboard, odd port, increasing toward the bow. 214 is the
+  // open suite (z = 4–16) and is not in this list; 216 and 218 sit forward
+  // of that bulkhead. 215 is after the landing, never over the stairwell.
+  const doorX = (side) => side > 0 ? COR - WALL_T / 2 - 0.06 : -COR + WALL_T / 2 + 0.06;
+  const doorRy = (side) => side > 0 ? Math.PI / 2 : -Math.PI / 2;
+  cabinDoor(doorX(-1), 12.6, doorRy(-1), '215');
+  cabinDoor(doorX(+1), 19.5, doorRy(+1), '216');
+  cabinDoor(doorX(-1), 19.5, doorRy(-1), '217');
+  cabinDoor(doorX(+1), 26.5, doorRy(+1), '218');
 
-  // Second accommodation room beyond the landing, with four cabins per side.
-  longSlab(M.corridorCarpet, -9, -5, 18, CABIN_EXTENSION_Z, DECK_Y, F);
-  for (const x of [-9, -5])
-    wallWithHoles(M.cream, 'z', x, WALL_T, 18, CABIN_EXTENSION_Z, DECK_Y, CEIL_Y, []);
-  for (let i = 0; i < 4; i++) {
-    const z = 20 + i * 3.6;
-    cabinDoor(-9 + WALL_T / 2 + 0.06, z, -Math.PI / 2, `${223 + i * 2}`);
-    cabinDoor(-5 - WALL_T / 2 - 0.06, z, Math.PI / 2, `${222 + i * 2}`);
-    // Separate cabin volumes behind the closed doors.
-    for (const [a, b] of [[-SUP_X2, -9], [-5, SUP_X2]])
-      wallWithHoles(M.cream, 'x', z + 1.7, WALL_T, a, b, DECK_Y, CEIL_Y, []);
-    prop(() => box(M.lamp, -7, CEIL_Y - 0.1, z, 1.4, 0.07, 0.5));
-  }
+  // Port alley — mirror of 214–218, 2 m of landing then a single wall at
+  // x = -11. Doors face the hull-side coursive; rooms sit in the 2 m
+  // between that wall and the stair, only forward of the landing so the
+  // handrail stays in the clear.
+  longSlab(M.corridorCarpet, -SUP_X2 + WALL_T / 2, PORT_WALL, hallZ0, hallZ1, DECK_Y, F);
+  wallWithHoles(M.cream, 'z', PORT_WALL, WALL_T, hallZ0, hallZ1, DECK_Y, CEIL_Y,
+    [LANDING]);
+  wallWithHoles(M.cream, 'z', PORT_BACK, WALL_T, 9.4, hallZ1, DECK_Y, CEIL_Y, []);
+  wallWithHoles(M.cream, 'x', 2.2, WALL_T, -SUP_X2, PORT_WALL, DECK_Y, CEIL_Y, []);
+  const portDoorX = PORT_WALL - WALL_T / 2 - 0.06;
+  for (const [z, n] of [[11.0, '219'], [15.0, '220'], [19.0, '221'], [23.0, '222'], [27.0, '223']])
+    cabinDoor(portDoorX, z, Math.PI / 2, n);
+  for (const z of [13.0, 17.0, 21.0, 25.0])
+    wallWithHoles(M.cream, 'x', z, WALL_T, PORT_WALL, PORT_BACK, DECK_Y, CEIL_Y, []);
+  prop(() => {
+    for (let z = hallZ0 + 1.6; z < hallZ1 - 0.8; z += 3.2)
+      box(M.lamp, ( -SUP_X2 + PORT_WALL) / 2, CEIL_Y - 0.09, z, 1.0, 0.07, 0.5);
+  });
+
+  // Cross-bulkheads so each leaf has a room behind it. 214 already owns
+  // starboard at z = 4 and z = 16; 216's aft face IS 214's forward bulkhead.
+  // z = 23 is a full station with both coursives cut through. 215/217 stop
+  // at the stair so they do not wall off the port alley.
+  wallWithHoles(M.cream, 'x', 9.4, WALL_T, PORT_WALL, -COR, DECK_Y, CEIL_Y, []);
+  wallWithHoles(M.cream, 'x', 16.0, WALL_T, PORT_BACK, -COR, DECK_Y, CEIL_Y, []);
+  wallWithHoles(M.cream, 'x', 23.0, WALL_T, -SUP_X2, SUP_X2, DECK_Y, CEIL_Y,
+    [[-COR, COR, 3.0], [-SUP_X2, PORT_WALL, 3.0]]);
 
   // 214's own doorway: architrave and an open leaf swung back into the suite,
   // so the opening reads as a door standing open, not as a missing wall.
@@ -2929,7 +2975,7 @@ const cabinLights = [];
 
   // Ceiling lights; keep the door leaves and the stair landing unobstructed.
   prop(() => {
-    for (let z = z0 + 2; z < z1 - 1; z += 3.2) {
+    for (let z = hallZ0 + 1.6; z < hallZ1 - 0.8; z += 3.2) {
       box(M.lamp, 0, CEIL_Y - 0.09, z, 1.4, 0.07, 0.5);
     }
   });
@@ -2951,8 +2997,10 @@ const cabinLights = [];
   // pattern.
   //
   // Every dimension the rest of the file depends on is UNCHANGED: BED_X,
-  // BED_Z, BED_TOP, BED_W and BED_L still describe the mattress BED_SPOT parks
-  // the player on, so the lie-down and its three-answer prompt are untouched.
+  // BED_Z, BED_W and BED_L still describe the bed BED_SPOT parks the player on,
+  // so the lie-down and its three-answer prompt are untouched. BED_TOP is the
+  // one that moved with the dressing, because the sleeper rests on the bedding
+  // laid out below and not on the bare mattress.
   // The inside FACES of the four bulkheads. RX1 is 12.83 and not the hull's
   // 13.0: the lower deck carries its own cream bulkhead just inboard of the
   // hull block, so anything hung on x = 13 — the ship's-side panelling, the
@@ -3599,12 +3647,10 @@ const cabinLights = [];
     wallWithHoles(M.cream, 'z', x, WALL_T, -5, CABIN_EXTENSION_Z, CABIN_Y, CABIN_CEIL_Y, []);
   for (const z of [-5, CABIN_EXTENSION_Z])
     wallWithHoles(M.cream, 'x', z, WALL_T, -SUP_X2, SUP_X2, CABIN_Y, CABIN_CEIL_Y, []);
-  wallWithHoles(M.cream, 'x', 18, WALL_T, -SUP_X2, SUP_X2, CABIN_Y, CABIN_CEIL_Y,
-    [[-9, -5, 3.0]]);
   // Close the corridor's aft end: access is through the stair landing at z=8.
   wallWithHoles(M.cream, 'x', 2.2, WALL_T, -3, 3, CABIN_Y, CABIN_CEIL_Y, []);
   prop(() => {
-    for (const z of [8, 12]) box(M.lamp, -7, CABIN_CEIL_Y - 0.1, z, 1.2, 0.07, 0.6);
+    box(M.lamp, -7, CABIN_CEIL_Y - 0.1, 8, 1.2, 0.07, 0.6);
   });
 
   const s = CABIN_STAIR;
@@ -3620,7 +3666,7 @@ const cabinLights = [];
   });
   // Guard the opening at the upper level and provide stepped handrails below.
   prop(() => {
-    for (const x of [s.x0 - 0.06, s.x1 + 0.06]) {
+    for (const x of [s.x0 + 0.10, s.x1 - 0.10]) {
       box(M.brass, x, DECK_Y + 1.05, (s.z0 + CABIN_OPENING.z1) / 2,
         0.08, 0.08, CABIN_OPENING.z1 - s.z0);
       for (let i = 0; i <= s.steps; i += 2) {
@@ -3642,10 +3688,11 @@ const cabinLights = [];
     prop(() => shape(G.card, mat, x, y, z, 3.8, 0.64, 1, { ry }));
   };
   sign('↓ CABINES · PONT INFÉRIEUR', -7, DECK_Y + 2.8, -3.9);
-  sign('← CABINES 214–218', -7, CABIN_Y + 2.6, 9.6);
-  sign('CABINES 222–229 ↑', -7, CABIN_Y + 3.35, 17.75);
-  sign('↑ CABINES 214–218', -3.2, CABIN_Y + 3.35, 8, -Math.PI / 2);
-  sign('ATRIUM · ESCALIER ↑', -7, CABIN_Y + 3.35, 18.25, 0);
+  // One sign per opening: cabins on the coursive doorway, atrium on the
+  // stair flight. A second "CABINES" card in the landing sat 1.4 m from
+  // the atrium card, so both hung in frame from the corridor.
+  sign('↑ CABINES 214–218', -3.45, CABIN_Y + 3.35, 8, -Math.PI / 2);
+  sign('↑ CABINES 219–223', -10.55, CABIN_Y + 3.35, 8, Math.PI / 2);
   sign('↑ ATRIUM · SALLE DE BAL', -7, CABIN_Y + 2.7, 6.8, 0);
 }
 
