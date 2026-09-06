@@ -629,6 +629,10 @@ const M = {
   bronze: new THREE.MeshStandardMaterial({ color: 0x2e2c29, roughness: 0.36, metalness: 0.75 }),
   black: new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.42, metalness: 0.25 }),
   linen: new THREE.MeshStandardMaterial({ color: 0xf7f4ec, roughness: 0.93, metalness: 0.01 }),
+  outdoorLinen: new THREE.MeshStandardMaterial({
+    map: boucle.albedo, normalMap: boucle.normal, normalScale: new THREE.Vector2(0.32, 0.32),
+    color: 0xf4efe4, roughness: 0.96, metalness: 0.0,
+  }),
   fabric: new THREE.MeshStandardMaterial({ color: 0xe3dbcc, roughness: 0.92, metalness: 0.01 }),
   fabricWarm: new THREE.MeshStandardMaterial({ color: 0xc07d55, roughness: 0.93, metalness: 0.01 }),
   fabricOlive: new THREE.MeshStandardMaterial({ color: 0x87907a, roughness: 0.93, metalness: 0.01 }),
@@ -1640,15 +1644,37 @@ function towelLadder(h = 1.7) {
   }
 }
 function lounger() {
-  box(M.teak, 0, F + 0.32, 0, 0.78, 0.1, 2.0);
-  box(M.linen, 0, F + 0.42, 0.12, 0.72, 0.12, 1.7);
-  box(M.linen, 0, F + 0.62, -0.82, 0.72, 0.12, 0.7, 0);
-  box(M.teak, 0, F + 0.58, -0.86, 0.78, 0.1, 0.72);
-  for (const dz of [-0.8, 0.8]) {
-    box(M.teak, -0.34, F + 0.14, dz, 0.08, 0.36, 0.08);
-    box(M.teak, 0.34, F + 0.14, dz, 0.08, 0.36, 0.08);
+  const tilt = 0.34; // a gentle 19.5-degree recline, continuous with the body pad
+
+  // Slim teak perimeter and inset slats: the frame now reads as outdoor
+  // furniture rather than one heavy brown block.
+  for (const sx of [-1, 1])
+    box(M.teak, sx * 0.37, F + 0.31, 0, 0.065, 0.11, 2.12);
+  for (let z = -0.9; z <= 0.92; z += 0.20)
+    box(M.teak, 0, F + 0.315, z, 0.70, 0.055, 0.075);
+  for (const dz of [-0.86, 0.86]) {
+    for (const sx of [-1, 1])
+      box(M.teak, sx * 0.32, F + 0.15, dz, 0.075, 0.30, 0.075);
+    box(M.teak, 0, F + 0.035, dz, 0.76, 0.055, 0.12);
   }
-  box(M.fabricWarm, 0, F + 0.52, -0.5, 0.44, 0.1, 0.34);
+
+  // The long body cushion meets the reclining cushion at one hinge line.
+  // Using the same local Z axis for both removes the old 90-degree head step.
+  shape(G.cushion, M.outdoorLinen, 0, F + 0.405, 0.31,
+    0.70, 0.17, 1.28);
+  shape(G.box, M.teak, 0, F + 0.50, -0.70,
+    0.74, 0.065, 0.82, { rx: tilt });
+  shape(G.cushion, M.outdoorLinen, 0, F + 0.57, -0.68,
+    0.70, 0.17, 0.84, { rx: tilt });
+
+  // A soft head pillow follows the recline instead of sitting crosswise on a
+  // separate horizontal shelf. The warm stripe gives the set a restrained LA
+  // poolside accent while retaining the neutral upholstery from the terrace.
+  shape(G.cushion, M.fabricWarm, 0, F + 0.71, -0.79,
+    0.48, 0.12, 0.28, { rx: tilt });
+  for (const sx of [-1, 1])
+    shape(G.cyl, M.bronze, sx * 0.38, F + 0.52, -0.52,
+      0.035, 0.34, 0.035, { rx: Math.PI / 2 - tilt });
 }
 function parasol() {
   shape(G.cylBase, M.teak, 0, F, 0, 0.07, 2.5, 0.07);
