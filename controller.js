@@ -511,12 +511,19 @@ export class Controller {
             const into = hit.distance + 0.12;
             const sx = _o.x + _rdir.x * into;
             const sz = _o.z + _rdir.z * into;
-            const stepY = this.groundFn(sx, sz, this.pos.y + STEP_H + 0.2, this.pos.y, this.pos.y);
-            if (stepY !== null && stepY - this.pos.y > 0.025 && stepY - this.pos.y < STEP_H) {
-              this.pos.x = sx;
-              this.pos.z = sz;
-              this.land(stepY);
-              stepped = true;
+            // Only low obstacles (stair risers / curbs) may be stepped over;
+            // if geometry blocks at chest height, it is a wall, not a step.
+            _o.y = this.pos.y + 0.95;
+            const chestBlocked = this.castFn(_o, _rdir, into + R);
+            _o.y = 0;
+            if (!chestBlocked) {
+              const stepY = this.groundFn(sx, sz, this.pos.y + STEP_H + 0.2, this.pos.y, this.pos.y);
+              if (stepY !== null && stepY - this.pos.y > 0.025 && stepY - this.pos.y < STEP_H) {
+                this.pos.x = sx;
+                this.pos.z = sz;
+                this.land(stepY);
+                stepped = true;
+              }
             }
           }
           if (!stepped) {

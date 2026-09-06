@@ -612,6 +612,14 @@ const M = {
   }),
   marble: new THREE.MeshStandardMaterial({ color: 0xf4f2ee, roughness: 0.16, metalness: 0.02 }),
   marbleDark: new THREE.MeshStandardMaterial({ color: 0x3b3f45, roughness: 0.2, metalness: 0.05 }),
+  bathStone: new THREE.MeshStandardMaterial({
+    normalMap: tileN, normalScale: new THREE.Vector2(0.52, 0.52),
+    color: 0xd8d0c2, roughness: 0.46, metalness: 0.01,
+  }),
+  porcelain: new THREE.MeshPhysicalMaterial({
+    color: 0xf6f3ec, roughness: 0.12, metalness: 0,
+    clearcoat: 0.75, clearcoatRoughness: 0.1, side: THREE.DoubleSide,
+  }),
   cabinet: new THREE.MeshStandardMaterial({ color: 0xeceae4, roughness: 0.42, metalness: 0.03 }),
   steel: new THREE.MeshStandardMaterial({ color: 0xd3d8dd, roughness: 0.28, metalness: 0.78 }),
   // Double-sided so the inside of the sink bowls reads as brushed steel.
@@ -709,19 +717,16 @@ const M = {
   towerTrim: new THREE.MeshStandardMaterial({ color: 0x6f7b88, roughness: 0.44, metalness: 0.46 }),
   lobbyGlass: new THREE.MeshStandardMaterial({ color: 0x2f3c48, roughness: 0.14, metalness: 0.42 }),
   towerGlass: new THREE.MeshPhysicalMaterial({
-    color: 0x9fc5df, roughness: 0.1, metalness: 0.0,
-    transparent: true, opacity: 0.24, depthWrite: false,
+    color: 0x426f88, roughness: 0.23, metalness: 0.45,
     clearcoat: 1, clearcoatRoughness: 0.08, side: THREE.DoubleSide
   }),
   towerGlassShadow: new THREE.MeshPhysicalMaterial({
-    color: 0x4f6478, roughness: 0.2, metalness: 0.0,
-    transparent: true, opacity: 0.34, depthWrite: false,
+    color: 0x304b60, roughness: 0.32, metalness: 0.35,
     clearcoat: 0.7, clearcoatRoughness: 0.14, side: THREE.DoubleSide
   }),
   towerGlassLit: new THREE.MeshPhysicalMaterial({
-    color: 0xd8e6f4, roughness: 0.14, metalness: 0.0,
-    emissive: 0xb7d2ff, emissiveIntensity: 0.26,
-    transparent: true, opacity: 0.28, depthWrite: false,
+    color: 0x688897, roughness: 0.27, metalness: 0.25,
+    emissive: 0xb7d2ff, emissiveIntensity: 0.06,
     clearcoat: 1, clearcoatRoughness: 0.08, side: THREE.DoubleSide
   }),
   ember: new THREE.MeshStandardMaterial({
@@ -800,6 +805,27 @@ const G = {
   bowl: withUV2(new THREE.CylinderGeometry(0.70711, 0.49497, 1, 4, 1, true).translate(0, 0.5, 0)),
   // Half torus in the XY plane — the gooseneck bend of the kitchen faucets.
   arc: withUV2(new THREE.TorusGeometry(0.14, 0.017, 10, 20, Math.PI)),
+  tubShell: (() => {
+    const g = new THREE.BufferGeometry();
+    const pos = [], uv = [], ind = [], n = 40;
+    for (let i = 0; i <= n; i++) {
+      const a = i / n * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
+      pos.push(ca * 0.43, -0.5, sa * 0.40, ca * 0.5, 0.5, sa * 0.5,
+        ca * 0.39, 0.45, sa * 0.37, ca * 0.29, -0.28, sa * 0.25);
+      for (let k = 0; k < 4; k++) uv.push(i / n, k / 3);
+    }
+    const quad = (a, b, c, d) => ind.push(a, b, d, b, c, d);
+    for (let i = 0; i < n; i++) {
+      const a = i * 4, b = (i + 1) * 4;
+      quad(a, b, b + 1, a + 1);
+      quad(a + 1, b + 1, b + 2, a + 2);
+      quad(a + 2, b + 2, b + 3, a + 3);
+    }
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(ind); g.computeVertexNormals();
+    return withUV2(g);
+  })(),
 };
 
 const kits = new Map();
@@ -1094,7 +1120,7 @@ const FIN = FLOOR - 0.06;
 slab(M.floorInt, PX_W, VX1, VZ0, VZ1, FIN, FLOOR);            // great room, kitchen, foyer band
 slab(M.oak, VX0, PX_W, VZ0, PZ_MB, FIN, FLOOR);               // master bedroom
 slab(M.oak, VX0, PX_W, PZ_B2, VZ1, FIN, FLOOR);               // guest bedroom
-slab(M.marble, VX0, PX_BATH, PZ_MB, PZ_B2, FIN, FLOOR);       // master bath
+slab(M.bathStone, VX0, PX_BATH, PZ_MB, PZ_B2, FIN, FLOOR);    // master bath
 slab(M.oak, PX_BATH, PX_W, PZ_MB, PZ_B2, FIN, FLOOR);         // dressing
 
 // Terrace deck: strips around the pool so the basin stays hollow
@@ -1575,24 +1601,25 @@ function wc() {
   shape(G.cyl, M.linen, 0.44, F + 0.72, -0.16, 0.12, 0.11, 0.12, { rx: Math.PI / 2 });
 }
 function bathtub(len = 1.78, wid = 0.86) {
-  // Freestanding oval soaker on a low plinth, floor filler at the tap end
-  shape(G.cyl, M.cabinet, 0, F + 0.07, 0, len - 0.55, 0.14, wid - 0.3);  // plinth
-  shape(G.cyl, M.cabinet, 0, F + 0.35, 0, len, 0.44, wid);              // shell, rim at 0.57
-  shape(G.cyl, M.tubWater, 0, F + 0.585, 0, len - 0.26, 0.03, wid - 0.26); // water inside the rim
-  shape(G.cyl, M.bronze, 0, F + 0.6, 0, 0.09, 0.02, 0.09);              // overflow plate
+  // A genuine hollow shell replaces the solid cylinder whose broad side
+  // appeared as a white panel in front of the window.
+  shape(G.cyl, M.marbleDark, 0, F + 0.035, 0, len - 0.62, 0.07, wid - 0.34);
+  shape(G.tubShell, M.porcelain, 0, F + 0.36, 0, len, 0.62, wid);
+  shape(G.cyl, M.tubWater, 0, F + 0.59, 0, len * 0.73, 0.025, wid * 0.58);
+  shape(G.cyl, M.bronze, len * 0.30, F + 0.58, 0, 0.075, 0.018, 0.075);
   const fx = -len / 2 - 0.26;
-  shape(G.cyl, M.bronze, fx, F + 0.03, 0, 0.18, 0.06, 0.18);            // filler base
-  shape(G.cylBase, M.bronze, fx, F, 0, 0.05, 1.02, 0.05);               // filler column
-  box(M.bronze, fx + 0.16, F + 1.0, 0, 0.36, 0.05, 0.05);               // spout over the rim
-  box(M.bronze, fx, F + 0.84, 0.14, 0.04, 0.04, 0.16);                  // handle
-  box(M.fabric, 0, F + 0.47, -wid / 2 - 0.01, 0.36, 0.28, 0.07);        // towel over the rim
+  shape(G.cyl, M.bronze, fx, F + 0.025, 0, 0.17, 0.05, 0.17);
+  shape(G.cylBase, M.bronze, fx, F + 0.04, 0, 0.045, 0.92, 0.045);
+  shape(G.arc, M.bronze, fx + 0.13, F + 0.94, 0, 1.15, 1.15, 1.15, { ry: Math.PI / 2 });
+  box(M.bronze, fx + 0.26, F + 0.91, 0, 0.28, 0.045, 0.045);
+  shape(G.cylBase, M.bronze, fx + 0.13, F + 0.77, 0.13, 0.028, 0.17, 0.028);
+  box(M.fabric, 0.18, F + 0.53, -wid / 2, 0.42, 0.3, 0.055);
 }
 function shower(w, d) {
-  // Walk-in: walls on -X and -Z, fixed glass screens on +X and +Z
+  // Walk-in: walls on -X and -Z, fixed glass screen on +Z, walk-in entry on +X
   box(M.marble, 0, F + 0.02, 0, w, 0.04, d);                           // flush tray
   box(M.steel, 0, F + 0.045, -d / 2 + 0.22, w - 0.5, 0.012, 0.06);     // linear drain
-  box(M.glass, w / 2, F + 1.15, 0, 0.03, 2.3, d);
-  box(M.glass, 0, F + 1.15, d / 2, w, 2.3, 0.03);
+  box(M.glass, 0, F + 1.15, d / 2, w, 2.3, 0.03);                      // fixed glass partition
   box(M.bronze, w / 2, F + 1.15, d / 2, 0.05, 2.3, 0.05);              // corner post
   box(M.bronze, w / 2, F + 2.32, 0, 0.05, 0.05, d);                    // head rails
   box(M.bronze, 0, F + 2.32, d / 2, w, 0.05, 0.05);
@@ -2061,6 +2088,12 @@ frame(-10.05, -9.4, -Math.PI / 2, () => dresser(1.6));
 
 // Master bath: soaker under the west window, double vanity beside it on the
 // same wall, shower boxed into the north-east corner, WC on the south wall.
+slab(M.bathStone, VX0 + 0.01, VX0 + 0.055, PZ_MB, PZ_B2, FLOOR, FLOOR + 2.45);
+slab(M.bathStone, VX0, PX_BATH, PZ_B2 - 0.055, PZ_B2 - 0.01, FLOOR, FLOOR + 1.18);
+for (let z = PZ_MB + 0.62; z < PZ_B2; z += 0.62)
+  slab(M.marbleDark, VX0 + 0.052, VX0 + 0.06, z - 0.012, z + 0.012, FLOOR, FLOOR + 2.45);
+for (let y = FLOOR + 0.62; y < FLOOR + 2.45; y += 0.62)
+  slab(M.marbleDark, VX0 + 0.052, VX0 + 0.06, PZ_MB, PZ_B2, y - 0.01, y + 0.01);
 frame(-15.32, 1.35, -Math.PI / 2, () => bathtub());
 frame(-15.5, -0.75, Math.PI / 2, () => vanity(1.8));
 frame(-13.05, 1.65, Math.PI, () => shower(1.7, 1.3));
@@ -2331,7 +2364,7 @@ for (const [x, z, w, d, h] of HILLSIDE_ESTATES) {
 }
 // Downtown far away in the marine layer — LA/SF financial-district towers
 // standing on an asphalt street grid (terrain is flattened under the district).
-slab(M.asphalt, -230, 210, -434, -312, URBAN_Y - 0.5, URBAN_Y + 0.1);
+slab(M.asphalt, -260, 250, -448, -267, URBAN_Y - 0.6, URBAN_Y + 0.1);
 // sidewalk / avenue bands breaking up the asphalt
 for (const zz of [-330, -362, -396]) slab(M.concrete, -230, 210, zz - 3.2, zz + 3.2, URBAN_Y - 0.4, URBAN_Y + 0.16);
 for (const xx of [-130, -58, -24, 42, 76, 110]) slab(M.concrete, xx - 3, xx + 3, -434, -312, URBAN_Y - 0.4, URBAN_Y + 0.15);
@@ -2350,7 +2383,6 @@ function facadeWindowsX(x0, x1, zFace, dir, y0, y1, rows, cols, xSeed, zSeed) {
   const stepY = spanY / rows;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      if (litRatio(xSeed, zSeed, r, c) < 0.1) continue;
       const wx0 = x0 + mx + c * stepX + 0.12;
       const wx1 = x0 + mx + (c + 1) * stepX - 0.12;
       const wy0 = y0 + my + r * stepY + 0.1;
@@ -2359,7 +2391,8 @@ function facadeWindowsX(x0, x1, zFace, dir, y0, y1, rows, cols, xSeed, zSeed) {
       const lit = litRatio(xSeed * 0.7, zSeed * 1.1, r + 11, c + 7) > 0.84;
       slab(lit ? M.towerGlassLit : M.towerGlass, wx0, wx1, paneZ0, paneZ1, wy0, wy1);
       const sh0 = wy1 - (wy1 - wy0) * 0.38;
-      slab(M.towerGlassShadow, wx0, wx1, paneZ0 + dir * 0.01, paneZ1 + dir * 0.01, sh0, wy1 - 0.02);
+      if (litRatio(xSeed, zSeed, r, c) > 0.45)
+        slab(M.towerGlassShadow, wx0, wx1, paneZ0 + dir * 0.08, paneZ1 + dir * 0.08, sh0, wy1 - 0.02);
     }
   }
   for (let c = 1; c < cols; c++) {
@@ -2377,7 +2410,6 @@ function facadeWindowsZ(z0, z1, xFace, dir, y0, y1, rows, cols, xSeed, zSeed) {
   const stepY = spanY / rows;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      if (litRatio(xSeed, zSeed, r + 3, c + 5) < 0.1) continue;
       const wz0 = z0 + mz + c * stepZ + 0.12;
       const wz1 = z0 + mz + (c + 1) * stepZ - 0.12;
       const wy0 = y0 + my + r * stepY + 0.1;
@@ -2386,7 +2418,8 @@ function facadeWindowsZ(z0, z1, xFace, dir, y0, y1, rows, cols, xSeed, zSeed) {
       const lit = litRatio(xSeed * 1.2, zSeed * 0.8, r + 17, c + 2) > 0.84;
       slab(lit ? M.towerGlassLit : M.towerGlass, paneX0, paneX1, wz0, wz1, wy0, wy1);
       const sh0 = wy1 - (wy1 - wy0) * 0.38;
-      slab(M.towerGlassShadow, paneX0 + dir * 0.01, paneX1 + dir * 0.01, wz0, wz1, sh0, wy1 - 0.02);
+      if (litRatio(xSeed, zSeed, r + 3, c + 5) > 0.45)
+        slab(M.towerGlassShadow, paneX0 + dir * 0.08, paneX1 + dir * 0.08, wz0, wz1, sh0, wy1 - 0.02);
     }
   }
   for (let c = 1; c < cols; c++) {
@@ -2399,10 +2432,16 @@ function shaftWindows(x0, x1, z0, z1, y0, y1, sx, sz) {
   const rows = Math.max(4, Math.round((y1 - y0) / 3.4));
   const colsX = Math.max(3, Math.round((x1 - x0) / 2.9));
   const colsZ = Math.max(3, Math.round((z1 - z0) / 2.9));
-  facadeWindowsX(x0, x1, z0 + 0.03, -1, y0, y1, rows, colsX, sx, sz);
-  facadeWindowsX(x0, x1, z1 - 0.03, 1, y0, y1, rows, colsX, sx + 19, sz - 13);
-  facadeWindowsZ(z0, z1, x0 + 0.03, -1, y0, y1, rows, colsZ, sx - 11, sz + 7);
-  facadeWindowsZ(z0, z1, x1 - 0.03, 1, y0, y1, rows, colsZ, sx + 5, sz + 23);
+  // Opaque distant glazing must sit OUTSIDE the shaft. The old inward
+  // offsets left glass exactly coplanar with concrete and caused z-fighting.
+  facadeWindowsX(x0, x1, z0 - 0.12, -1, y0, y1, rows, colsX, sx, sz);
+  facadeWindowsX(x0, x1, z1 + 0.12, 1, y0, y1, rows, colsX, sx + 19, sz - 13);
+  facadeWindowsZ(z0, z1, x0 - 0.12, -1, y0, y1, rows, colsZ, sx - 11, sz + 7);
+  facadeWindowsZ(z0, z1, x1 + 0.12, 1, y0, y1, rows, colsZ, sx + 5, sz + 23);
+  // Thin slab edges give each floor a readable horizontal rhythm.
+  for (let y = y0; y < y1; y += 3.4) {
+    slab(M.towerTrim, x0 - 0.18, x1 + 0.18, z0 - 0.18, z1 + 0.18, y, y + 0.14);
+  }
 }
 function downtownTower(x, z, w, d, h, style, dark) {
   const g = terrainHeight(x, z);
@@ -2415,7 +2454,22 @@ function downtownTower(x, z, w, d, h, style, dark) {
 
   // massing: single shaft, or classic FiDi setback (lower block + inset upper)
   let pTop = 0;   // parapet inset
-  if (style === 'setback') {
+  if (style === 'crown' || style === 'spire') {
+    // Successively narrower occupied floors form a skyline, not an antenna
+    // stuck on a rectangular slab. All tiers retain real window grids.
+    const tiers = style === 'spire'
+      ? [[0, 0.72, 0], [0.72, 0.87, 2.0], [0.87, 0.96, 4.2], [0.96, 1, 6.0]]
+      : [[0, 0.80, 0], [0.80, 0.94, 2.3], [0.94, 1, 4.5]];
+    for (const [lo, hi, inset] of tiers) {
+      const a = g + h * lo, b = g + h * hi;
+      slab(shaft, x0 + inset, x1 - inset, z0 + inset, z1 - inset, a, b);
+      shaftWindows(x0 + inset, x1 - inset, z0 + inset, z1 - inset,
+        a + (lo === 0 ? 6 : 0.7), b - 0.6, x, z);
+      slab(M.towerTrim, x0 + inset - 0.3, x1 - inset + 0.3,
+        z0 + inset - 0.3, z1 - inset + 0.3, b - 0.35, b);
+      pTop = inset;
+    }
+  } else if (style === 'setback') {
     const mid = g + h * 0.62, ins = 1.8;
     slab(shaft, x0, x1, z0, z1, g, mid);
     shaftWindows(x0, x1, z0, z1, g + 6, mid - 0.8, x, z);
@@ -2443,7 +2497,7 @@ function downtownTower(x, z, w, d, h, style, dark) {
   }
 
   // strong verticals common on West Coast business towers (Downtown LA / FiDi)
-  const finTop = style === 'setback' ? g + h * 0.62 : yTop + 0.4;
+  const finTop = g + h * (style === 'setback' ? 0.62 : style === 'spire' ? 0.72 : style === 'crown' ? 0.80 : 1);
   for (const [fx, fz, sx, sz] of [
     [x0 + 0.22, z, 0.18, z1 - z0 - 0.7],
     [x1 - 0.22, z, 0.18, z1 - z0 - 0.7],
@@ -2454,18 +2508,40 @@ function downtownTower(x, z, w, d, h, style, dark) {
   }
 }
 const DOWNTOWN_TOWERS = [
-  [-40, -340, 22, 20, 82, 'setback', false],
-  [-8, -352, 26, 24, 104, 'crown', true],
-  [26, -336, 20, 18, 68, 'box', false],
-  [58, -358, 24, 22, 90, 'setback', true],
-  [-74, -348, 20, 18, 64, 'box', true],
-  [92, -342, 22, 20, 76, 'setback', false],
-  [10, -390, 28, 26, 118, 'spire', false],
-  [-110, -366, 24, 22, 72, 'box', false],
-  [128, -374, 26, 24, 86, 'crown', true],
-  [-150, -352, 22, 20, 66, 'setback', false],
+  [-42, -354, 24, 22, 88, 'setback', false],
+  [-8, -374, 28, 26, 112, 'crown', true],
+  [26, -331, 23, 20, 51, 'box', false],
+  [66, -388, 25, 24, 94, 'setback', true],
+  [-79, -341, 22, 24, 58, 'box', true],
+  [100, -350, 28, 23, 63, 'setback', false],
+  [22, -414, 30, 28, 137, 'spire', false],
+  [-116, -382, 23, 23, 79, 'crown', false],
+  [143, -393, 27, 25, 92, 'crown', true],
+  [-157, -365, 26, 22, 54, 'setback', false],
+  [-63, -422, 24, 24, 104, 'spire', true],
+  [112, -430, 21, 24, 81, 'box', true],
+  [-192, -411, 25, 23, 72, 'setback', true],
+  [186, -418, 24, 24, 63, 'setback', false],
 ];
 for (const [x, z, w, d, h, style, dark] of DOWNTOWN_TOWERS) downtownTower(x, z, w, d, h, style, dark);
+
+// Lower neighbourhoods connect the towers to a city, with overlapping blocks
+// in front of the financial district and a lower silhouette at either edge.
+for (let i = 0; i < 17; i++) {
+  const x = -238 + i * 28;
+  const z = -291 - (i % 3) * 9;
+  const h = 12 + litRatio(x, z, 2, 3) * 22;
+  downtownTower(x, z, 18 + (i % 3) * 2, 19, h, i % 4 === 0 ? 'setback' : 'box', i % 3 === 0);
+}
+for (let i = 0; i < 10; i++) {
+  const x = -232 + i * 48;
+  downtownTower(x, -437, 21, 18, 23 + litRatio(x, -437, 7, 9) * 29, 'box', i % 2 === 0);
+}
+// A palm-lined boulevard softens the district's front edge from the hillside.
+slab(M.concrete, -258, 248, -273, -269, URBAN_Y - 0.3, URBAN_Y + 0.2);
+for (let x = -247; x < 245; x += 19) {
+  plant(x, -271, () => palm(7 + litRatio(x, -271, 1, 2) * 3), 1.2);
+}
 
 flushKits();
 flushLeafCards();
