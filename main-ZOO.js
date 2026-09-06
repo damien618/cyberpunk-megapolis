@@ -5,7 +5,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=7';
 import { CameraRig } from './cameraRig.js?v=5';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
-import { buildCar } from './cars.js?v=4';
+import { buildCar } from './cars.js?v=6-glb';
 import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=22';
 import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=31';
 
@@ -2371,10 +2371,11 @@ const WALK_HALF = 6.2;
 const CAR_COLORS = [0xb8483c, 0x2f4f7a, 0xe8e4dc, 0x2b2f33, 0x6b8f5a, 0xc9a23f];
 
 // The model is measured rather than assumed, because assuming is what put every
-// car across three bays: `buildCar` lofts its sedan 5.59 m along X and 2.22 m
-// along Z, so at yaw 0 the car lies ACROSS the markings — it overlapped both
-// neighbours by three metres. The bays are 2.55 m wide and 5 m deep, so the car
-// is turned a quarter and taken down to the size of a car that fits one.
+// car across three bays: `buildCar` lays its sedan out along X (4.9 m) and only
+// 1.9 m across Z, so at yaw 0 the car lies ACROSS the markings — it overlapped
+// both neighbours. The bays are 2.55 m wide and 5 m deep, so the car is turned a
+// quarter and taken down to the size of a car that fits one. Measuring also
+// means the bays survived the switch from lofted bodies to the modelled ones.
 const carProbe = buildCar('sedan', 0xffffff);
 const carBox = new THREE.Box3().setFromObject(carProbe);
 const carSize = carBox.getSize(new THREE.Vector3());
@@ -2389,7 +2390,7 @@ const CAR_H = carSize.y * CAR_SCALE;
 // plaza, so arriving from L.A. drops you somewhere you'd naturally walk past.
 const ZOO_TRAVEL_ROW = BAY_ROWS[0];
 const ZOO_TRAVEL_BAY_K = 15;
-const laCarProbe = buildCar('suv', 0xb8bec6, { metallic: false });
+const laCarProbe = buildCar('suv', 0xf0ece6, { metallic: true, pearl: true });
 const laCarBox = new THREE.Box3().setFromObject(laCarProbe);
 const laCarSize = laCarBox.getSize(new THREE.Vector3());
 const LA_CAR_SCALE = Math.min(1, (BAY_PITCH - 0.55) / laCarSize.z, (BAY_DEPTH - 0.1) / laCarSize.x);
@@ -2428,7 +2429,7 @@ for (const row of BAY_ROWS) {
   }
 }
 
-const zooTravelCar = buildCar('suv', 0xb8bec6, { metallic: false });
+const zooTravelCar = buildCar('suv', 0xf0ece6, { metallic: true, pearl: true });
 zooTravelCar.scale.setScalar(LA_CAR_SCALE);
 zooTravelCar.position.set(ZOO_TRAVEL_CAR.x, ZOO_TRAVEL_CAR.ground, ZOO_TRAVEL_CAR.z);
 zooTravelCar.rotation.y = ZOO_TRAVEL_CAR.yaw;

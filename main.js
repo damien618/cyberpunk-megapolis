@@ -10,7 +10,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Player } from './player.js?v=22';
-import { buildCar, carBounds } from './cars.js?v=3';
+import { buildCar, carBounds } from './cars.js?v=6-glb';
 
 // build stamp: shown in the HUD + console so a stale-cache session is
 // recognizable at a glance (a mixed old/new module graph once reproduced the
@@ -1179,7 +1179,7 @@ const MEGAPOLIS_TRAVEL_CAR = Object.freeze({
   // safety slab at -1.24 m. The car origin is the tyre contact plane.
   type: 'suv', x: -52, z: 2.5, yaw: 0, ground: 0.02,
 });
-const megapolisTravelCar = buildCar(MEGAPOLIS_TRAVEL_CAR.type, 0xb8bec6, { metallic: false });
+const megapolisTravelCar = buildCar(MEGAPOLIS_TRAVEL_CAR.type, 0xf0ece6, { metallic: true, pearl: true });
 megapolisTravelCar.position.set(
   MEGAPOLIS_TRAVEL_CAR.x, MEGAPOLIS_TRAVEL_CAR.ground, MEGAPOLIS_TRAVEL_CAR.z,
 );

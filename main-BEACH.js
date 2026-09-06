@@ -5,7 +5,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=7';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes } from './cityBoxes.js?v=5';
-import { buildCar, carBounds } from './cars.js?v=4';
+import { buildCar, carBounds } from './cars.js?v=6-glb';
 import { cloneSkinned, makeVisitor, loadGuestRig, groundSitRig, lyingRig, customRig, rootBoneOf } from './crowd.js?v=59';
 
 // ---------------------------------------------------------------------------
@@ -1522,8 +1522,8 @@ const BEACH_TRAVEL_CAR = Object.freeze({
   type: 'suv', x: -6.0, z: 56.5, yaw: Math.PI / 2, ground: PROM_Y - 0.06,
 });
 const beachTravelCar = parkCar(
-  BEACH_TRAVEL_CAR.type, 0xb8bec6, BEACH_TRAVEL_CAR.x, BEACH_TRAVEL_CAR.z,
-  BEACH_TRAVEL_CAR.yaw, BEACH_TRAVEL_CAR.ground, { metallic: false },
+  BEACH_TRAVEL_CAR.type, 0xf0ece6, BEACH_TRAVEL_CAR.x, BEACH_TRAVEL_CAR.z,
+  BEACH_TRAVEL_CAR.yaw, BEACH_TRAVEL_CAR.ground, { metallic: true, pearl: true },
 );
 const beachTravelBounds = carBounds(BEACH_TRAVEL_CAR.type);
 const beachTravelInteraction = {

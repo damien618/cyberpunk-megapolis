@@ -5,7 +5,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=7';
 import { CameraRig } from './cameraRig.js?v=6';
 import { buildCityBoxes } from './cityBoxes.js?v=5';
-import { buildCar, carBounds } from './cars.js?v=4';
+import { buildCar, carBounds } from './cars.js?v=6-glb';
 import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=22';
 import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=31';
 import { initTurtleHermit, updateTurtleHermit, triggerHermitDialogue, isHermitDialogueOpen } from './turtle-hermit.js?v=15';

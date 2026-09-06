@@ -6,7 +6,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=7';
 import { CameraRig } from './cameraRig.js?v=5';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
-import { buildCar, carBounds, rollCars, setCarLightsDay, setCarLightsNight } from './cars.js?v=4';
+import { buildCar, carBounds, rollCars, setCarLightsDay, setCarLightsNight } from './cars.js?v=6-glb';
 
 // ---------------------------------------------------------------------------
 // Villa LA — single-storey modern California estate, laid out like the hillside
@@ -2613,13 +2613,13 @@ for (let i = 0; i < 6; i++) {
   slab(M.stuccoWarm, 19.2, 23.4, 15.9, 16.02, 0.4 + i * 0.44, 0.46 + i * 0.44);
   slab(M.stuccoWarm, 24.6, 28.8, 15.9, 16.02, 0.4 + i * 0.44, 0.46 + i * 0.44);
 }
-parkCar('coupe', 0x1b2b4d, 4.5, 26.5, Math.PI / 2, 0.15);
+parkCar('coupe', 0x1b2b4d, 4.5, 26.5, Math.PI / 2, 0.15, { metallic: true });
 const LA_TRAVEL_CAR = Object.freeze({
   type: 'suv', x: -6.0, z: 27.5, yaw: Math.PI / 2 + 0.25, ground: 0.15,
 });
 const laTravelCar = parkCar(
-  LA_TRAVEL_CAR.type, 0xb8bec6, LA_TRAVEL_CAR.x, LA_TRAVEL_CAR.z,
-  LA_TRAVEL_CAR.yaw, LA_TRAVEL_CAR.ground, { metallic: false },
+  LA_TRAVEL_CAR.type, 0xf0ece6, LA_TRAVEL_CAR.x, LA_TRAVEL_CAR.z,
+  LA_TRAVEL_CAR.yaw, LA_TRAVEL_CAR.ground, { metallic: true, pearl: true },
 );
 const laTravelBounds = carBounds(LA_TRAVEL_CAR.type);
 const laTravelInteraction = {
@@ -3046,11 +3046,11 @@ scene.add(fireLight);
 // ---------------------------------------------------------------------------
 const traffic = [
   { mesh: buildCar('coupe', 0xa8231c), x: -180, z: 69.5, speed: 15.5, dir: 1 },
-  { mesh: buildCar('suv', 0x1b1d21, { metallic: false }), x: -60, z: 69.5, speed: 11.0, dir: 1 },
-  { mesh: buildCar('sedan', 0xeae7e0, { metallic: false }), x: 70, z: 69.5, speed: 12.6, dir: 1 },
+  { mesh: buildCar('suv', 0x1b1d21, { metallic: true }), x: -60, z: 69.5, speed: 11.0, dir: 1 },
+  { mesh: buildCar('sedan', 0xeae7e0, { metallic: true, pearl: true }), x: 70, z: 69.5, speed: 12.6, dir: 1 },
   { mesh: buildCar('sedan', 0x27303e), x: 170, z: 76.5, speed: 12.0, dir: -1 },
   { mesh: buildCar('coupe', 0x93a0ad), x: 30, z: 76.5, speed: 13.8, dir: -1 },
-  { mesh: buildCar('suv', 0x5f6b57), x: -110, z: 76.5, speed: 11.4, dir: -1 },
+  { mesh: buildCar('suv', 0x3a414c, { metallic: true }), x: -110, z: 76.5, speed: 11.4, dir: -1 },
 ];
 for (const c of traffic) {
   c.mesh.position.set(c.x, 0.02, c.z);

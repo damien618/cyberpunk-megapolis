@@ -5,7 +5,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=7';
 import { CameraRig } from './cameraRig.js?v=6';
 import { buildCityBoxes } from './cityBoxes.js?v=5';
-import { buildCar, carBounds } from './cars.js?v=4';
+import { buildCar, carBounds } from './cars.js?v=6-glb';
 import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=22';
 
 // ---------------------------------------------------------------------------
@@ -3702,7 +3702,7 @@ function girlMatFor(name) {
 const AIR_TRAVEL_CAR = Object.freeze({
   type: 'suv', x: -10, z: -44.5, yaw: Math.PI / 2, ground: 0.12,
 });
-const airTravelCar = buildCar(AIR_TRAVEL_CAR.type, 0xb8bec6, { metallic: false });
+const airTravelCar = buildCar(AIR_TRAVEL_CAR.type, 0xf0ece6, { metallic: true, pearl: true });
 airTravelCar.position.set(AIR_TRAVEL_CAR.x, AIR_TRAVEL_CAR.ground, AIR_TRAVEL_CAR.z);
 airTravelCar.rotation.y = AIR_TRAVEL_CAR.yaw;
 airTravelCar.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
