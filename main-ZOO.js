@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { createShopProducts, shopSign, textileBump, beadboardTexture, rugTexture,
+  posterTexture } from './zooShopProducts.js?v=3';
 import { Player } from './player.js?v=49';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
@@ -651,7 +653,13 @@ const M = {
   plank: new THREE.MeshStandardMaterial({
     map: woodA, normalMap: woodN, color: 0xc49a68, roughness: 0.9,
   }),
-  ceilingIn: new THREE.MeshStandardMaterial({ color: 0x8a6a48, roughness: 0.95 }),
+  // The shop ceilings, seen from under a pendant lamp: boarded like the walls
+  // rather than a flat brown lid, and darker than the lining so the lamp's
+  // spill on it reads as light on a surface instead of a blown-out patch.
+  ceilingIn: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, normalScale: new THREE.Vector2(0.5, 0.5),
+    color: 0x7c5c3e, roughness: 0.96,
+  }),
   timberDark: new THREE.MeshStandardMaterial({
     map: woodA, normalMap: woodN, color: 0x8a5c38, roughness: 0.84,
   }),
@@ -677,6 +685,12 @@ const M = {
     color: 0xb9b3a8, roughness: 0.94, metalness: 0.02,
   }),
   steel: new THREE.MeshStandardMaterial({ color: 0x4a5158, roughness: 0.42, metalness: 0.72 }),
+  // Shop appliances: brushed rather than mirrored. `steel` has nothing to
+  // reflect indoors — there is no environment map on this world — so the
+  // coffee machine and the gelato case came out as black slabs.
+  applianceSteel: new THREE.MeshStandardMaterial({
+    color: 0xb4b9bd, roughness: 0.34, metalness: 0.18,
+  }),
   steelDark: new THREE.MeshStandardMaterial({ color: 0x2b3036, roughness: 0.46, metalness: 0.66 }),
   // Barrier glass: laminated and thick, so it is greener and less clear than a
   // window. Kept single-pass alpha — a refraction pass on 40 m of glazing is
@@ -737,12 +751,70 @@ const M = {
   // than the shadow it hangs in.
   chalkboard: new THREE.MeshStandardMaterial({ color: 0x37453d, roughness: 0.9 }),
   ceramic: new THREE.MeshStandardMaterial({ color: 0xece7de, roughness: 0.38 }),
-  rug: new THREE.MeshStandardMaterial({ color: 0x8d4a3c, roughness: 0.96 }),
+  ceramicBlue: new THREE.MeshPhysicalMaterial({ color: 0x5f8f99, roughness: 0.34, clearcoat: 0.35 }),
+  ceramicRed: new THREE.MeshPhysicalMaterial({ color: 0xb85d48, roughness: 0.36, clearcoat: 0.3 }),
+  glassClear: new THREE.MeshPhysicalMaterial({
+    color: 0xeaf6f3, roughness: 0.08, transmission: 0.35,
+    transparent: true, opacity: 0.58, depthWrite: false, clearcoat: 1,
+  }),
+  bottleGreen: new THREE.MeshPhysicalMaterial({
+    color: 0x3f725b, roughness: 0.18, transparent: true, opacity: 0.8, clearcoat: 0.8,
+  }),
+  labelCream: new THREE.MeshStandardMaterial({ color: 0xf2dfb9, roughness: 0.72 }),
+  iceVanilla: new THREE.MeshStandardMaterial({ color: 0xf4dfb2, roughness: 0.68 }),
+  iceBerry: new THREE.MeshStandardMaterial({ color: 0xd77986, roughness: 0.72 }),
+  iceMint: new THREE.MeshStandardMaterial({ color: 0x92bea1, roughness: 0.72 }),
+  waffle: new THREE.MeshStandardMaterial({ color: 0xc68b49, roughness: 0.88 }),
+  paperBlue: new THREE.MeshStandardMaterial({ color: 0x477987, roughness: 0.84 }),
+  paperOchre: new THREE.MeshStandardMaterial({ color: 0xd19a4b, roughness: 0.84 }),
+  paperGreen: new THREE.MeshStandardMaterial({ color: 0x66865a, roughness: 0.84 }),
   poster: new THREE.MeshStandardMaterial({ color: 0xdfd3b6, roughness: 0.9 }),
+  // Shelf lighting. Not a light: a strip under each shelf board that carries
+  // its own emission, which is how a real display case reads lit from the
+  // aisle without a point light per shelf.
+  shelfGlow: new THREE.MeshStandardMaterial({
+    color: 0xffe9c6, emissive: 0xffd9a0, emissiveIntensity: 1.15, roughness: 0.7,
+  }),
+  // Counter fronts and shelf ends: painted joinery, a shade off the lining so
+  // the two planes separate under one lamp.
+  paintSage: new THREE.MeshStandardMaterial({ color: 0x5d7261, roughness: 0.66 }),
+  paintCream: new THREE.MeshStandardMaterial({ color: 0xdcd2bb, roughness: 0.7 }),
   collider: new THREE.MeshBasicMaterial({ visible: false }),
 };
 
 const world = new THREE.Group();
+const shopProducts = createShopProducts(scene, maxAniso);
+const shopFurBump = textileBump();
+for (const mat of [M.plushBrown, M.plushPink, M.plushBlue, M.plushYellow, M.plushCream]) {
+  mat.bumpMap = shopFurBump;
+  mat.bumpScale = 0.018;
+}
+const shopShelf = new THREE.MeshStandardMaterial({
+  map: woodA, normalMap: woodN, normalScale: new THREE.Vector2(0.5, 0.5),
+  color: 0xcfb287, roughness: 0.7,
+});
+// The wall behind the shelves: boarded, not a painted slab. It is the largest
+// surface in the room and it was the flattest.
+const shopLiningMap = beadboardTexture(14);
+const shopLining = new THREE.MeshStandardMaterial({
+  map: shopLiningMap, bumpMap: shopLiningMap, bumpScale: 0.02,
+  color: 0xf0e8d6, roughness: 0.86,
+});
+// Woven, with a border. `M.rug` is emitted as floor rather than as a prop, so
+// this is the one shop surface the player actually stands on.
+const rugMap = rugTexture();
+// Both canvases are seen at grazing angles — the floor under your feet and a
+// wall you stand a metre from — so they want the same filtering as the park's.
+rugMap.anisotropy = shopLiningMap.anisotropy = maxAniso;
+M.rug = new THREE.MeshStandardMaterial({
+  map: rugMap, bumpMap: shopFurBump, bumpScale: 0.03,
+  color: 0xffffff, roughness: 0.97,
+});
+const shopPosters = [0, 1, 2].map(i => new THREE.MeshStandardMaterial({
+  map: posterTexture(i), roughness: 0.92,
+}));
+const souvenirSign = shopSign('LA BOUTIQUE DU ZOO', 'Peluches • Céramiques • Souvenirs');
+const cafeSign = shopSign('LA PAUSE GOURMANDE', 'Café • Boissons fraîches • Glaces artisanales');
 scene.add(world);
 // Animated scenery. Outside `world` on purpose: nothing here is collidable and
 // nothing here should ever be a candidate for the ground probe.
@@ -1734,89 +1806,358 @@ function chalet(w, d, { h = 3.5, roof = M.shingle, windows = 3, doorW = 1.8,
   return top;
 }
 
+// Small products are assembled from the same instanced geometry as the park.
+// Their layered silhouettes (neck + cap + label, cup + handle, cone + scoops)
+// read as real merchandise while keeping the shop to a handful of draw calls.
+function drinkBottle(x, base, z, mat = M.bottleGreen, s = 1) {
+  shape(G.cylBase, mat, x, base, z, 0.16 * s, 0.42 * s, 0.16 * s);
+  shape(G.cylBase, mat, x, base + 0.4 * s, z, 0.09 * s, 0.16 * s, 0.09 * s);
+  shape(G.cylBase, M.brass, x, base + 0.55 * s, z, 0.095 * s, 0.045 * s, 0.095 * s);
+  shape(G.cyl, M.labelCream, x, base + 0.25 * s, z - 0.082 * s, 0.17 * s, 0.15 * s, 0.02 * s,
+    { rx: Math.PI / 2 });
+}
+
+function ceramicCup(x, base, z, mat = M.ceramic, s = 1, ry = 0) {
+  const c = Math.cos(FR), sn = Math.sin(FR);
+  shopProducts.place('cup_small_01', FX + x * c + z * sn, base,
+    FZ - x * sn + z * c, FR + ry, 0.23 * s);
+}
+
+function iceCreamCone(x, base, z, scoops = [M.iceVanilla], s = 1) {
+  shape(G.cone, M.waffle, x, base + 0.48 * s, z, 0.25 * s, 0.48 * s, 0.25 * s, { rx: Math.PI });
+  scoops.slice(0, 2).forEach((mat, i) => {
+    shape(G.sphere, mat, x + (i ? 0.03 : 0), base + (0.5 + i * 0.2) * s, z,
+      0.3 * s, 0.27 * s, 0.3 * s);
+  });
+}
+
+function foldedShirt(x, base, z, mat, s = 1) {
+  box(mat, x, base + 0.07 * s, z, 0.46 * s, 0.14 * s, 0.34 * s);
+  box(M.labelCream, x, base + 0.145 * s, z - 0.06 * s, 0.16 * s, 0.012 * s, 0.11 * s);
+}
+
+function souvenirPlate(x, base, z, mat = M.ceramicBlue, s = 1) {
+  const c = Math.cos(FR), sn = Math.sin(FR);
+  shopProducts.place('plate_large_circular_03', FX + x * c + z * sn, base,
+    FZ - x * sn + z * c, FR, 0.34 * s, true);
+  box(M.brass, x, base + 0.03, z + 0.02, 0.14 * s, 0.06, 0.12);
+}
+
+// One cafe table with two chairs, drawn from the floor it stands on. The zoo's
+// restaurant had a counter, a rug and nothing to sit at: an empty hall with a
+// till in it. Same build as the terrace tables outside, one size down and with
+// a cloth, because indoors you see the table from a metre away.
+function cafeTable(x, z, y0, ry = 0) {
+  prop(() => {
+    frame(x, z, ry, () => {
+      shape(G.post, M.steelDark, 0, y0, 0, 0.11, 0.71, 0.11);
+      shape(G.cylBase, M.steelDark, 0, y0, 0, 0.5, 0.04, 0.5);        // foot
+      shape(G.cylBase, M.timberPale, 0, y0 + 0.71, 0, 1.15, 0.07, 1.15);
+      shape(G.cylBase, M.fabricCream, 0, y0 + 0.78, 0, 0.62, 0.015, 0.62);
+      shape(G.cylBase, M.ceramicBlue, 0, y0 + 0.79, 0, 0.12, 0.18, 0.12);
+      shape(G.blob, M.foliage, 0, y0 + 0.95, 0, 0.17, 0.15, 0.17);    // posy
+      shape(G.blob, M.iceBerry, 0, y0 + 1.0, 0.03, 0.08, 0.07, 0.08);
+      for (const [cx, cz, cr] of [[-0.86, 0, Math.PI / 2], [0.86, 0, -Math.PI / 2]]) {
+        frame(cx, cz, cr, () => {
+          furnitureInteraction('sit', 0.4, 0.4, 0, y0 + CHAIR_SEAT - 0.01, y0);
+          chairBody(y0);
+        });
+      }
+    });
+  });
+}
+
 // What you see once you are inside. Kept to the back of the room so the doorway
 // stays clear, and flagged as prop so none of it is mistaken for floor.
 //
-// A counter, three bare shelves and nothing else was a stockroom with a till in
-// it — you walk in, there is no light, no floor, nothing on the walls and
-// nothing overhead, and you walk straight back out. What a real shop interior
-// carries, and what is built below: light of its own, something underfoot,
-// something at eye level on the side walls, and greenery in the dead corners.
+// The room is built as four things, in the order you meet them: the floor you
+// stand on, the back-bar you walk up to, the counter you are served at, and the
+// walls and ceiling that close the other three in. Everything below is written
+// off `hw`/`hd`/`top` so the same code fits the 17 m restaurant and the 6.4 m
+// kiosk — the kiosk has 2.4 m of headroom, which is why the shelf count, the
+// cornice and the interior sign are all clamped rather than fixed.
 function shopInterior({ hw, hd, top }, kind) {
   const F = 0.5;                    // floorboard top
   const back = hd - 0.35;           // the shelving wall
   const T = i => F + 0.635 + i * 0.62;             // top of shelf i
   const ceiling = (top ?? F + 3.0) - 0.16;
+  const HEAD = ceiling - F;                        // clear height of the room
+  const shelves = HEAD > 2.6 ? 3 : 2;              // two of them in the kiosk
+  const wide = hw > 5.0;                           // restaurant and gift shop
+  const barW = hw * 1.72;                          // width of the back-bar
+  const bays = wide ? 5 : 3;                       // uprights, ends included
+  const bayW = barW / (bays - 1);
+  const capY = Math.min(T(shelves - 1) + 0.72, ceiling - 0.14);   // cornice top
+  const linY0 = F + 0.2, linY1 = capY - 0.07;      // the boarded lining
+  // The counter runs along ONE side rather than across the whole room. A 9 m
+  // slab a metre in front of the shelves is a barricade: it hides the bottom
+  // shelf, it stops you reaching anything, and it is why the shop read as a
+  // stockroom seen over a bar.
+  const CW = hw * 0.92, CX = -hw * 0.46, CZ = hd - 1.55;
+  const CTOP = F + 0.97;            // counter top surface
+
   // The rug is FLOOR, and it is emitted out here on purpose, where the
   // floorboards are: a prop AABB is solid at whatever height it sits at,
   // because the step-up shortcut that lets you walk onto a low box is skipped
   // for props. Flagged as one, four centimetres of rug is a wall across the
   // room — which is what shut all three shops.
-  box(M.rug, 0, F + 0.02, -hd * 0.3, hw * 1.1, 0.04, hd * 0.85);
+  box(M.rug, 0, F + 0.02, -hd * 0.28, hw * 1.15, 0.04, hd * 0.9);
   prop(() => {
-    box(M.timber, 0, F + 0.5, hd - 1.4, hw * 1.5, 1.0, 0.7);          // counter
-    box(M.timberPale, 0, F + 1.02, hd - 1.4, hw * 1.5 + 0.1, 0.06, 0.8);
-    for (let i = 0; i < 3; i++) {                                     // back shelves
-      box(M.plank, 0, F + 0.6 + i * 0.62, back, hw * 1.7, 0.07, 0.5);
+    // ---- ceiling ------------------------------------------------------
+    // Beams across the span. A boarded lid with nothing crossing it takes the
+    // lamp's spill as one flat wash, which is what blew the ceiling out.
+    const beams = Math.max(2, Math.round(hw * 1.1));
+    for (let i = 0; i < beams; i++) {
+      box(M.timberDark, -hw + (i + 0.5) * (hw * 2 / beams), ceiling - 0.07, 0,
+        0.15, 0.14, hd * 2 - 0.3);
     }
 
-    // Pendant lamps on cords, and one point light between them doing the work
-    // of all three. The shades are emissive, so they still read as lit from the
-    // far corner where the light itself has fallen off.
-    const lamps = hw > 4.5 ? 3 : 1;
+    // ---- back-bar -----------------------------------------------------
+    box(M.timberDark, 0, F + 0.1, back - 0.02, barW, 0.2, 0.6);       // plinth
+    box(shopLining, 0, (linY0 + linY1) / 2, back + 0.16, barW, linY1 - linY0, 0.05);
+    for (let i = 0; i < bays; i++) {                                  // bay ends
+      box(shopShelf, -barW / 2 + i * bayW, (linY0 + linY1) / 2, back - 0.05,
+        0.07, linY1 - linY0, 0.62);
+    }
+    for (let i = 0; i < shelves; i++) {
+      box(shopShelf, 0, T(i) - 0.035, back - 0.05, barW - 0.06, 0.07, 0.62);
+      box(M.timberPale, 0, T(i) - 0.045, back - 0.345, barW - 0.06, 0.05, 0.03);
+      // Strip light under each board. Not a light — an emissive sliver, which
+      // is how a display case reads lit from the aisle without one point light
+      // per shelf. It is also what puts a highlight on the merchandise.
+      box(M.shelfGlow, 0, T(i) - 0.105, back - 0.30, barW - 0.55, 0.035, 0.05);
+    }
+    box(M.timberDark, 0, capY - 0.07, back - 0.02, barW + 0.14, 0.14, 0.74);  // cornice
+    // The sign hangs on the cornice, not in mid-air over it. In the kiosk there
+    // is no wall left above the shelving, and it used to be drawn straight
+    // through the ice creams on the top shelf.
+    const signY = Math.min(ceiling - 0.30, capY + 0.40);
+    if (signY - 0.23 > capY + 0.02) {
+      shape(G.card, kind === 'shop' ? souvenirSign : cafeSign, 0, signY,
+        back - 0.12, Math.min(4.6, hw * 1.25), 0.46, 1, { ry: Math.PI });
+    }
+
+    // ---- counter ------------------------------------------------------
+    box(M.timber, CX, F + 0.47, CZ, CW, 0.86, 0.72);                  // carcass
+    box(kind === 'shop' ? M.paintSage : M.paintCream,
+      CX, F + 0.52, CZ - 0.375, CW, 0.78, 0.04);                      // painted front
+    for (let i = 0; i <= 3; i++) {                                    // stiles
+      box(M.timberDark, CX - CW / 2 + i * (CW / 3), F + 0.52, CZ - 0.39,
+        0.08, 0.78, 0.05);
+    }
+    box(M.timberDark, CX, F + 0.52, CZ - 0.40, CW, 0.07, 0.05);       // mid-rail
+    box(M.timberDark, CX, F + 0.14, CZ - 0.36, CW, 0.16, 0.06);       // kick rail
+    box(M.timberPale, CX, CTOP - 0.04, CZ - 0.03, CW + 0.18, 0.08, 0.86);  // top
+    box(M.shelfGlow, CX, F + 0.90, CZ - 0.43, CW - 0.4, 0.03, 0.04);  // under-lip
+    // A counter end you can walk round, rather than a wall meeting a wall.
+    box(M.timber, CX + CW / 2 + 0.09, F + 0.47, CZ - 0.15, 0.18, 0.86, 0.42);
+
+    // ---- lighting -----------------------------------------------------
+    // Two point lights, as before — a third per shop is three more in every
+    // fragment shader in the park. What changed is where they sit: the back one
+    // was 28 units a metre off the lining and washed it to white paper, and the
+    // room one sat ABOVE the lamp shade, which is what put the burnt patch on
+    // the ceiling in every shop.
+    roomLight(0, Math.min(capY - 0.3, ceiling - 0.45), back - 0.9, 9, hw * 2.2);
     // Clamped to the room: the kiosk's walls are 2.6 m and a pendant hung at
     // the chalets' height puts its cord through its own ceiling. The rim also
     // has to stay over head height (floor + 1.7), or the lamp is a prop you
     // walk into in the middle of your own shop.
     const shadeY = Math.min(F + 2.1, ceiling - 0.4);
     const cord = ceiling - shadeY - 0.34;
+    const lamps = hw > 4.5 ? 3 : 1;
     for (let i = 0; i < lamps; i++) {
       const lx = lamps === 1 ? 0 : (i - 1) * hw * 0.6;
       if (cord > 0.05) {
-        box(M.steelDark, lx, ceiling - cord / 2, -hd * 0.15, 0.05, cord, 0.05);
+        box(M.steelDark, lx, ceiling - cord / 2, -hd * 0.15, 0.045, cord, 0.045);
+        box(M.brass, lx, ceiling - 0.16, -hd * 0.15, 0.12, 0.06, 0.12);  // rose
       }
       shape(G.cone, M.lampShade, lx, shadeY, -hd * 0.15, 0.62, 0.34, 0.62);
-      shape(G.sphere, M.lampGlow, lx, shadeY + 0.1, -hd * 0.15, 0.17, 0.17, 0.17);
+      shape(G.torus, M.brass, lx, shadeY + 0.03, -hd * 0.15, 0.66, 0.66, 0.05,
+        { rx: Math.PI / 2 });                                          // rim
+      shape(G.sphere, M.lampGlow, lx, shadeY + 0.1, -hd * 0.15, 0.15, 0.15, 0.15);
     }
-    roomLight(0, shadeY + 0.25, -hd * 0.1, 7 + hw * 1.2, hw * 3.4);
+    // A single lamp at the centre leaves both ends of the restaurant in the
+    // dark — 17 m of room off one point light is a pool of light with furniture
+    // around it. Wide rooms get one under each outer pendant instead.
+    if (wide) {
+      for (const sx of [-1, 1]) {
+        roomLight(sx * hw * 0.55, shadeY - 0.12, -hd * 0.08, 6 + hw * 0.55, hw * 2.8);
+      }
+    } else {
+      roomLight(0, shadeY - 0.12, -hd * 0.06, 8 + hw * 0.9, hw * 3.6);
+    }
 
-    // Greenery in the two corners the counter leaves empty — that, and the rug
-    // above, are what stop a room reading as unfinished.
+    // ---- walls --------------------------------------------------------
+    // Greenery in the two corners the counter leaves empty — that, and the rug,
+    // are what stop a room reading as unfinished. Potted properly now: a rim,
+    // and soil you can see under the leaves.
     for (const sx of [-1, 1]) {
       const px = sx * (hw - 0.75);
-      shape(G.cylBase, M.rockWarm, px, F, -hd + 1.0, 0.58, 0.52, 0.58);
-      shape(G.bush, M.foliage, px, F + 0.55, -hd + 1.0, 1.05, 1.35, 1.05);
+      shape(G.cylBase, M.rockWarm, px, F, -hd + 1.0, 0.56, 0.5, 0.56);
+      shape(G.cylBase, M.timberDark, px, F + 0.46, -hd + 1.0, 0.62, 0.07, 0.62);
+      shape(G.cylBase, M.plushDark, px, F + 0.47, -hd + 1.0, 0.5, 0.04, 0.5);
+      shape(G.bush, M.foliage, px, F + 0.5, -hd + 1.0, 1.05, 1.35, 1.05);
+      shape(G.bush, M.foliageLight, px + sx * 0.12, F + 0.62, -hd + 0.85,
+        0.66, 0.8, 0.66);
     }
     // Framed prints on the side walls, at the height a picture is actually
-    // hung. The log courses stop 15 cm inside the half-width.
+    // hung. The log courses stop 15 cm inside the half-width. The frames held a
+    // blank card and a green smudge before this, which at eye level is the one
+    // thing in the room you are guaranteed to look at.
+    const pics = wide ? 2 : 1;
     for (const sx of [-1, 1]) {
-      for (let i = 0; i < 2; i++) {
-        const pz = -hd * 0.5 + i * hd * 0.72;
-        box(M.timberDark, sx * (hw - 0.19), F + 1.6, pz, 0.05, 0.78, 1.0);
-        box(M.poster, sx * (hw - 0.23), F + 1.6, pz, 0.03, 0.6, 0.82);
-        shape(G.blob, M.foliageDark, sx * (hw - 0.26), F + 1.5, pz, 0.02, 0.34, 0.46);
+      for (let i = 0; i < pics; i++) {
+        const pz = pics === 1 ? -hd * 0.25 : -hd * 0.5 + i * hd * 0.72;
+        box(M.timberDark, sx * (hw - 0.17), F + 1.62, pz, 0.06, 1.06, 0.86);
+        box(M.paintCream, sx * (hw - 0.21), F + 1.62, pz, 0.03, 0.94, 0.74);
+        shape(G.card, shopPosters[(i + (sx > 0 ? 1 : 0)) % shopPosters.length],
+          sx * (hw - 0.23), F + 1.62, pz, 0.58, 0.8, 1, { ry: -sx * Math.PI / 2 });
       }
     }
 
+    // ---- merchandise, bay by bay ---------------------------------------
+    // A real shelf is grouped: a run of one thing, a gap, then a run of the
+    // next. Twenty-two identical cups spread evenly across nine metres is a
+    // wallpaper pattern, which is what all three shops had.
+    const bayRun = (b, step, fn) => {
+      const x0 = -barW / 2 + b * bayW + 0.26, x1 = x0 + bayW - 0.52;
+      const n = Math.max(1, Math.round((x1 - x0) / step));
+      const gap = (x1 - x0) / n;
+      for (let i = 0; i < n; i++) fn(x0 + gap * (i + 0.5), i);
+    };
+    for (let b = 0; b < bays - 1; b++) {
+      if (kind === 'shop') {
+        // Plush low enough for children, textiles in the middle, ceramics and
+        // small keepsakes at eye level — the order a gift shop actually racks.
+        if (b % 3 === 1) {
+          bayRun(b, 0.56, (x, i) => {                    // a crate of them
+            plushBear(x, back - 0.07, T(0) + 0.16, 0.38, BEAR_FURS[(b + i) % 4],
+              ((i % 3) - 1) * 0.3);
+          });
+          box(M.timber, -barW / 2 + b * bayW + bayW / 2, T(0) + 0.08, back - 0.08,
+            bayW - 0.5, 0.16, 0.5);
+          box(M.timberDark, -barW / 2 + b * bayW + bayW / 2, T(0) + 0.09,
+            back - 0.33, bayW - 0.5, 0.14, 0.04);
+        } else {
+          bayRun(b, 0.62, (x, i) => {
+            plushBear(x, back - 0.08, T(0), 0.44, BEAR_FURS[(b + i) % 4],
+              ((i % 3) - 1) * 0.22);
+          });
+        }
+        if (b % 2 === 0) {
+          bayRun(b, 0.66, (x, i) => {                    // folded tees, stacked
+            const tint = [M.paperBlue, M.paperOchre, M.paperGreen, M.fabricRed];
+            for (let k = 0; k < 3; k++) {
+              foldedShirt(x, T(1) + k * 0.145, back - 0.1, tint[(b + i + k) % 4], 1);
+            }
+          });
+        } else {
+          bayRun(b, 0.44, (x, i) => {
+            if (i % 3 === 2) souvenirPlate(x, T(1), back - 0.1, M.ceramicBlue, 0.8);
+            else ceramicCup(x, T(1), back - 0.12, i % 3 ? M.ceramicRed : M.ceramic, 0.95);
+          });
+        }
+        if (shelves > 2) {
+          bayRun(b, 0.46, (x, i) => {
+            if ((b + i) % 3 === 0) {
+              souvenirPlate(x, T(2), back - 0.08, i % 2 ? M.ceramicBlue : M.ceramicRed, 0.85);
+            } else {
+              ceramicCup(x, T(2), back - 0.08,
+                (b + i) % 3 === 1 ? M.ceramic : M.ceramicBlue, 0.78);
+            }
+          });
+        }
+      } else {
+        // Bottles low, cups and jars in the middle, the gelato range at eye
+        // level — a cafe is legible from the door or it is a shed with a till.
+        bayRun(b, 0.34, (x, i) => {
+          drinkBottle(x, T(0), back - 0.06,
+            (b + i) % 3 === 0 ? M.glassClear : M.bottleGreen, 0.82);
+        });
+        if (b % 2 === 0) {
+          bayRun(b, 0.52, (x, i) => {                    // stacked cups
+            const n = 2 + ((b + i) % 2);
+            for (let k = 0; k < n; k++) {
+              ceramicCup(x, T(1) + k * 0.1, back - 0.08,
+                (i + k) % 3 === 0 ? M.ceramicRed : (i % 2 ? M.ceramicBlue : M.ceramic),
+                0.72);
+            }
+          });
+        } else {
+          bayRun(b, 0.42, (x, i) => {                    // jars of syrup
+            shape(G.cylBase, M.glassClear, x, T(1), back - 0.08, 0.19, 0.26, 0.19);
+            shape(G.cylBase, i % 2 ? M.iceBerry : M.waffle, x, T(1) + 0.02,
+              back - 0.08, 0.165, 0.17, 0.165);
+            shape(G.cylBase, M.brass, x, T(1) + 0.26, back - 0.08, 0.2, 0.035, 0.2);
+          });
+        }
+        if (shelves > 2) {
+          const flavours = [M.iceVanilla, M.iceBerry, M.iceMint];
+          bayRun(b, 0.62, (x, i) => {
+            iceCreamCone(x, T(2), back - 0.1,
+              [flavours[(b + i) % 3], flavours[(b + i + 1) % 3]], 0.72);
+          });
+        }
+      }
+    }
+
+    // ---- what stands in the room ---------------------------------------
     if (kind === 'shop') {
-      // The stock, sitting on all three back shelves and facing the door. Six
-      // spread over eleven metres of shelving read as a shop being emptied.
-      for (let i = 0; i < 24; i++) {
-        const row = Math.floor(i / 8), col = i % 8;
-        plushBear(-hw * 0.77 + col * (hw * 0.22), back, T(row), 0.34,
-          BEAR_FURS[(col + row) % BEAR_FURS.length], ((col % 3) - 1) * 0.2);
+      // Accessible display tables bring fine objects into the foreground.
+      if (wide) for (const side of [-1, 1]) {
+        const px = side * hw * 0.53, pz = -hd * 0.28;
+        box(shopShelf, px, F + 0.88, pz, 2.15, 0.10, 0.85);
+        box(M.timberDark, px, F + 0.83, pz - 0.42, 2.15, 0.1, 0.05);
+        for (const dx of [-0.93, 0.93]) box(M.steelDark, px + dx, F + 0.43, pz, 0.07, 0.86, 0.7);
+        box(M.timber, px, F + 0.2, pz, 1.9, 0.06, 0.62);            // under-shelf
+        for (let i = 0; i < 5; i++) {
+          souvenirPlate(px - 0.85 + i * 0.42, F + 0.94, pz + 0.18, M.ceramic, 1);
+          ceramicCup(px - 0.85 + i * 0.42, F + 0.94, pz - 0.2, M.ceramic, 1);
+        }
+        for (let i = 0; i < 3; i++) {                               // stock below
+          foldedShirt(px - 0.62 + i * 0.62, F + 0.23, pz, M.paperBlue, 1.05);
+          foldedShirt(px - 0.62 + i * 0.62, F + 0.38, pz, M.paperOchre, 1.05);
+        }
       }
-      // Till, a spinner of postcards by the door, and bunting overhead.
-      box(M.steelDark, -hw * 0.5, F + 1.13, hd - 1.55, 0.42, 0.16, 0.34);
-      box(M.ceramic, -hw * 0.5, F + 1.26, hd - 1.62, 0.36, 0.12, 0.2, 0.4);
-      shape(G.post, M.steelDark, hw * 0.62, F, -hd * 0.55, 0.09, 1.5, 0.09);
+      // A rail of tee-shirts against the far side wall: the one thing in a gift
+      // shop that hangs rather than sits, and the room needs the vertical.
+      if (wide) frame(hw - 0.95, hd - 3.4, 0, () => {
+        box(M.steelDark, 0, F + 1.62, 0, 0.05, 0.05, 2.2);
+        for (const sz of [-1.05, 1.05]) {
+          box(M.steelDark, 0, F + 0.83, sz, 0.06, 1.62, 0.06);
+          box(M.steelDark, 0, F + 0.03, sz, 0.5, 0.06, 0.5);
+        }
+        const tint = [M.paperBlue, M.paperOchre, M.paperGreen, M.fabricRed, M.ceramicBlue];
+        for (let i = 0; i < 8; i++) {
+          const tz = -0.91 + i * 0.26, mat = tint[i % tint.length];
+          // Facing the room, not edge-on to it: the rail runs along the wall,
+          // so a shirt's front is its -X face and its width is in Z.
+          box(M.timberPale, 0, F + 1.56, tz, 0.03, 0.03, 0.28);      // hanger
+          box(mat, -0.02, F + 1.24, tz, 0.06, 0.58, 0.34);           // body
+          box(mat, -0.02, F + 1.44, tz, 0.06, 0.16, 0.54);           // sleeves
+        }
+      });
+      // Till, a basket of plush by the door and a spinner of postcards.
+      box(M.steelDark, CX + CW * 0.34, CTOP + 0.09, CZ - 0.06, 0.42, 0.16, 0.34);
+      box(M.ceramic, CX + CW * 0.34, CTOP + 0.22, CZ - 0.13, 0.36, 0.12, 0.2, 0.4);
+      box(M.paperOchre, CX - CW * 0.3, CTOP + 0.13, CZ, 0.5, 0.24, 0.36);  // gift boxes
+      box(M.fabricRed, CX - CW * 0.3, CTOP + 0.27, CZ, 0.38, 0.05, 0.28);
+      // Clear of the door: a basket a metre off the centre line is the first
+      // thing you walk into coming in.
+      const bx = hw * 0.45;
+      shape(G.cylBase, M.timberPale, bx, F, -hd + 1.5, 0.9, 0.42, 0.9);
+      shape(G.cylBase, M.timberDark, bx, F + 0.38, -hd + 1.5, 0.96, 0.07, 0.96);
+      for (let i = 0; i < 4; i++) {
+        plushBear(bx + (i % 2 ? 0.2 : -0.2), -hd + 1.5 + (i < 2 ? -0.18 : 0.18),
+          F + 0.34, 0.34, BEAR_FURS[i], i * 1.1);
+      }
+      shape(G.post, M.steelDark, -hw * 0.62, F, -hd * 0.5, 0.09, 1.5, 0.09);
+      shape(G.cylBase, M.steelDark, -hw * 0.62, F, -hd * 0.5, 0.5, 0.05, 0.5);
       for (let i = 0; i < 3; i++) {
-        box(M.poster, hw * 0.62, F + 1.15, -hd * 0.55, 0.5, 0.62, 0.04,
-          i * (Math.PI / 3));
+        box(M.poster, -hw * 0.62, F + 1.15, -hd * 0.5, 0.5, 0.62, 0.04, i * (Math.PI / 3));
       }
-      // Bunting: a cord across the room with pennants hanging off it. Flat
-      // squares stuck to the ceiling was the first pass, and they read as
-      // sticky notes.
+      // Bunting: a cord across the room with pennants hanging off it.
       const cordY = ceiling - 0.22;
       box(M.timberDark, 0, cordY, -hd * 0.55, hw * 1.9, 0.03, 0.03);
       for (let i = 0; i < 11; i++) {
@@ -1825,32 +2166,79 @@ function shopInterior({ hw, hd, top }, kind) {
           { rx: Math.PI });
       }
     } else {
-      for (let i = 0; i < 8; i++) {                                   // stock
-        box(i % 2 ? M.fabricCream : M.fabricRed,
-          -hw * 0.7 + i * (hw * 0.2), F + 0.76, back, 0.28, 0.26, 0.3);
+      // Coffee machine and grinder ON the counter, where a barista reaches
+      // them, and the menu over the shelving rather than across it.
+      // Sized off the room: the kiosk is 6.4 m end to end, and a full-size
+      // machine in it is a wardrobe on the counter.
+      const mw = Math.min(0.86, hw * 0.24), mh = Math.min(0.58, hw * 0.17);
+      const mx = CX + CW * 0.3;
+      box(M.applianceSteel, mx, CTOP + mh / 2 + 0.01, CZ + 0.06, mw, mh, 0.5);
+      box(M.steelDark, mx, CTOP + mh + 0.06, CZ + 0.06, mw + 0.06, 0.1, 0.54);
+      box(M.chalkboard, mx, CTOP + mh * 0.72, CZ - 0.19, mw * 0.72, mh * 0.3, 0.06);
+      for (const sx of [-0.18, 0.18]) {
+        shape(G.cylBase, M.brass, mx + sx, CTOP + 0.02, CZ - 0.22, 0.06, 0.22, 0.06);
       }
-      box(M.steel, hw * 0.55, F + 0.6, hd - 1.4, 0.9, 1.2, 0.6);      // coffee machine
-      // Menu board over the shelves, cups and jars on them, and a cake under a
-      // dome on the counter — a cafe is its menu and its crockery. The board
-      // only goes up where there is wall left above the shelving: in the kiosk
-      // there are 50 cm between the top shelf and the ceiling, and it would sit
-      // across both.
-      if (ceiling - T(2) > 0.9) {
-        const boardY = T(2) + 0.55;
-        box(M.chalkboard, -hw * 0.35, boardY, back + 0.12, hw * 0.9, 0.86, 0.06);
-        for (let i = 0; i < 5; i++) {
-          box(M.signPale, -hw * 0.47, boardY + 0.28 - i * 0.15, back + 0.08,
-            hw * 0.4 - i * 0.06, 0.028, 0.02);
+      shape(G.cylBase, M.applianceSteel, mx + mw * 0.78, CTOP, CZ + 0.04,
+        0.2, 0.42, 0.2);                                    // grinder
+      for (let i = 0; i < 6; i++) {                          // takeaway cup stack
+        ceramicCup(CX - CW * 0.36, CTOP + 0.02 + i * 0.1, CZ + 0.04, M.ceramic, 0.7);
+      }
+      // Cake stand under a dome, on the customer's side of the counter.
+      shape(G.cylBase, M.timberPale, CX - CW * 0.12, CTOP, CZ - 0.12, 0.56, 0.06, 0.56);
+      shape(G.cylBase, M.waffle, CX - CW * 0.12, CTOP + 0.06, CZ - 0.12, 0.42, 0.14, 0.42);
+      shape(G.sphere, M.vivGlass, CX - CW * 0.12, CTOP + 0.09, CZ - 0.12, 0.6, 0.62, 0.6);
+      if (ceiling - capY > 0.5) {
+        // Over the shelving, above the till end of the counter. Framed in pale
+        // timber: an unframed dark rectangle on a dark wall is not a board, it
+        // is a hole, and the chalk lines on it read as litter.
+        const boardY = Math.min(ceiling - 0.36, capY + 0.42);
+        const bw = Math.min(3.0, hw * 0.62), bh = Math.min(0.8, ceiling - capY - 0.16);
+        box(M.timberPale, hw * 0.5, boardY, back + 0.08, bw + 0.14, bh + 0.14, 0.05);
+        box(M.chalkboard, hw * 0.5, boardY, back + 0.04, bw, bh, 0.05);
+        for (let i = 0; i < 4; i++) {
+          box(M.signPale, hw * 0.5 - bw * 0.12, boardY + bh * 0.28 - i * (bh * 0.19),
+            back + 0.01, bw * (0.62 - i * 0.09), 0.026, 0.02);
         }
       }
-      for (let i = 0; i < 9; i++) {
-        const px = -hw * 0.8 + i * (hw * 0.2);
-        shape(G.cyl, M.ceramic, px, T(1) + 0.09, back, 0.17, 0.18, 0.17);
-        if (i % 2) shape(G.cyl, M.brass, px + 0.24, T(2) + 0.13, back, 0.15, 0.26, 0.15);
+      const tubs = [M.iceVanilla, M.iceBerry, M.iceMint, M.waffle];
+      if (wide) {
+        // Refrigerated gelato case, beside the counter rather than in front of
+        // the shelving: it is the thing a visitor walks to first.
+        const gx = hw * 0.42, gw = Math.min(2.2, hw * 0.52);
+        box(M.applianceSteel, gx, F + 0.46, CZ, gw, 0.84, 0.74);
+        box(M.steelDark, gx, F + 0.06, CZ, gw, 0.12, 0.66);
+        box(M.timberPale, gx, F + 0.93, CZ, gw + 0.1, 0.07, 0.8);
+        box(M.glassClear, gx, F + 1.18, CZ - 0.24, gw, 0.44, 0.05);
+        box(M.glassClear, gx, F + 1.36, CZ + 0.02, gw, 0.06, 0.5);
+        box(M.shelfGlow, gx, F + 1.36, CZ + 0.26, gw - 0.14, 0.04, 0.05);
+        for (let i = 0; i < 5; i++) {
+          const tx = gx - gw * 0.4 + i * (gw * 0.2);
+          box(M.steelDark, tx, F + 1.0, CZ, gw * 0.17, 0.1, 0.6);
+          box(tubs[i % 4], tx, F + 1.06, CZ, gw * 0.155, 0.06, 0.56);
+          shape(G.cylBase, M.steel, tx, F + 1.08, CZ - 0.2, 0.07, 0.16, 0.07);
+        }
+      } else {
+        // The kiosk is 6.4 m end to end. A floor-standing case beside a 3 m
+        // counter leaves a slot to sidle down, so its gelato goes ON the
+        // counter, under a hood, where a hatch-served kiosk keeps it anyway.
+        const gx = CX + CW * 0.06, gw = CW * 0.5;
+        box(M.applianceSteel, gx, CTOP + 0.1, CZ - 0.02, gw, 0.2, 0.56);
+        for (let i = 0; i < 4; i++) {
+          const tx = gx - gw * 0.36 + i * (gw * 0.24);
+          box(M.steelDark, tx, CTOP + 0.18, CZ - 0.02, gw * 0.2, 0.08, 0.46);
+          box(tubs[i % 4], tx, CTOP + 0.23, CZ - 0.02, gw * 0.18, 0.05, 0.42);
+        }
+        box(M.glassClear, gx, CTOP + 0.34, CZ - 0.3, gw, 0.3, 0.04);
+        box(M.glassClear, gx, CTOP + 0.48, CZ - 0.04, gw, 0.05, 0.56);
+        box(M.shelfGlow, gx, CTOP + 0.46, CZ + 0.22, gw - 0.12, 0.035, 0.05);
       }
-      shape(G.cylBase, M.timberPale, -hw * 0.62, F + 1.05, hd - 1.4, 0.62, 0.06, 0.62);
-      shape(G.sphere, M.vivGlass, -hw * 0.62, F + 1.11, hd - 1.4, 0.6, 0.66, 0.6);
-      shape(G.cyl, M.fabricCream, -hw * 0.62, F + 1.2, hd - 1.4, 0.36, 0.18, 0.36);
+      // Tables. The restaurant is a 17 m hall and it had nowhere to sit.
+      if (hw > 6.5) {
+        for (const [tx, tz, tr] of [[-6.4, -2.5, 0], [-3.2, -2.5, Math.PI / 2],
+          [3.2, -2.5, Math.PI / 2], [6.4, -2.5, 0], [-6.4, -4.2, 0], [6.4, -4.2, 0]]) {
+          cafeTable(tx, tz, F, tr);
+        }
+      }
     }
   });
 }
@@ -2036,6 +2424,9 @@ function plushBear(x, z, base, s, fur, ry = 0) {
     at(fur, 0, 0.76, 0, 0.46, 0.44, 0.44);                        // head
     at(M.plushCream, 0, 0.71, -0.18, 0.25, 0.20, 0.20);           // muzzle
     at(M.plushDark, 0, 0.74, -0.28, 0.09, 0.07, 0.07);            // nose
+    at(M.fabricRed, -0.075, 0.57, -0.23, 0.14, 0.085, 0.055, { rz: -0.3 });
+    at(M.fabricRed, 0.075, 0.57, -0.23, 0.14, 0.085, 0.055, { rz: 0.3 });
+    at(M.fabricRed, 0, 0.57, -0.25, 0.055, 0.065, 0.045);
     for (const sx of [-1, 1]) {
       at(M.plushDark, sx * 0.10, 0.82, -0.19, 0.06, 0.06, 0.06);  // eye
       at(fur, sx * 0.19, 0.94, 0.01, 0.20, 0.20, 0.11);           // ear
@@ -2670,6 +3061,7 @@ loopEach((a, b, i) => {
 });
 
 hubPlaza();
+shopProducts.finish();
 lionExhibit();
 zebraPaddock();
 foxEnclosure();
