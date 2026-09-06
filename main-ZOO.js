@@ -278,7 +278,7 @@ function makeNeedleTex() {
   const size = 512, mid = size / 2, SAFE = 234;
   const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
   const ctx = c.getContext('2d');
-  const tones = ['#22371f', '#2a4225', '#324d2b', '#3b5a33', '#46683c', '#527747'];
+  const tones = ['#33482b', '#3b5331', '#445e38', '#4e6b40', '#597a49', '#658a55'];
   let seed = 29;
   const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   ctx.lineCap = 'round';
@@ -309,11 +309,19 @@ function makeNeedleTex() {
       }
     }
   };
-  const N = 13;
+  // Two rings of sprays of unequal length. One ring of equal ones draws a star,
+  // which is what a conifer clump must not look like at arm's length.
+  const N = 19;
   for (let k = 0; k < N; k++) {
-    const ang = (k / N) * 6.283185 + (rnd() - 0.5) * 0.3;
-    const r0 = 12 + rnd() * 30;
-    spray(mid + Math.cos(ang) * r0, mid + Math.sin(ang) * r0, ang, 96 + rnd() * 74, 1);
+    const ang = (k / N) * 6.283185 + (rnd() - 0.5) * 0.42;
+    const r0 = 10 + rnd() * 34;
+    spray(mid + Math.cos(ang) * r0, mid + Math.sin(ang) * r0, ang, 80 + rnd() * 88, 1);
+  }
+  for (let k = 0; k < 12; k++) {
+    const ang = rnd() * 6.283185;
+    const r0 = 20 + rnd() * 70;
+    spray(mid + Math.cos(ang) * r0, mid + Math.sin(ang) * r0, ang + (rnd() - 0.5) * 1.2,
+      48 + rnd() * 52, 0.8);
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -590,6 +598,10 @@ const M = {
   crownDark: new THREE.MeshStandardMaterial({
     map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(1.1, 1.1),
     color: 0x76895c, roughness: 0.95,
+  }),
+  conifer: new THREE.MeshStandardMaterial({
+    map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(1.1, 1.1),
+    color: 0x3e5238, roughness: 0.96,
   }),
   crownLight: new THREE.MeshStandardMaterial({
     map: canopyA, normalMap: canopyN, normalScale: new THREE.Vector2(0.9, 0.9),
@@ -1035,30 +1047,57 @@ function cloakCrown(x, y, z, sx, sy, sz, seed, tints, cardScale = 0.58, cover = 
 }
 // Same, on a cone: the pine's sprays sit on the slanted flank and hang off the
 // tiers, so the profile breaks into needles rather than ending on a lathe edge.
-function cloakCone(x, yBase, z, rBase, height, seed, tints, cardScale = 0.5, cover = 7) {
-  const w0 = rBase * cardScale;
-  const slant = Math.hypot(rBase, height);
-  const count = Math.min(380, Math.max(18,
-    Math.round(cover * Math.PI * rBase * slant / (w0 * w0))));
-  for (let i = 0; i < count; i++) {
-    const t = (i + 0.5) / count;                  // 0 at the base, 1 at the tip
-    const u = Math.pow(t, 0.72);
-    const angle = i * 2.399963 + seed * 1.3;
-    const h = hash1(i * 4.7 + seed);
-    const depth = [0.72, 0.9, 1.02][i % 3];
-    const r = rBase * (1 - u) * (1 + 0.1 * Math.sin(u * Math.PI * 5.2 - 0.6)) * depth;
-    const ax = x + Math.cos(angle) * r;
-    const az = z + Math.sin(angle) * r;
-    const ay = yBase + height * u;
-    _fN.set(Math.cos(angle), 0.42, Math.sin(angle)).normalize();
-    _fT1.set(-Math.sin(angle), 0, Math.cos(angle));
-    _fDir.copy(_fN).multiplyScalar(0.9).addScaledVector(_fT1, (h - 0.5) * 0.9);
-    _fDir.y -= 0.62;                              // conifer sprays droop hard
-    _fDir.normalize();
-    _fFace.copy(_fN).addScaledVector(_fT1, (hash1(i * 9.1 + seed) - 0.5) * 1.2).normalize();
-    const w = w0 * (0.8 + 0.4 * h) * (1 - 0.4 * u);
-    const mat = tints[h < 0.45 ? 0 : tints.length - 1];
-    leafCard(mat, ax, ay, az, w, w, cardQuat(_fDir, _fFace));
+// A conifer is not a cone with needles glued on. It is a stack of WHORLS —
+// rings of branches, each a flat spray that droops at its tip, with a gap of
+// sky between one tier and the next. That gap is the whole silhouette: a solid
+// cone has a straight edge, and no fringe of needles round the outside of one
+// stops it reading as an ice-cream cone.
+function pineWhorls(x, yBase, z, rBase, height, seed, tints) {
+  const TIERS = 13;
+  for (let t = 0; t < TIERS; t++) {
+    // Never quite 1: a tier of zero radius is a bald leader poking out the top.
+    const u = t / TIERS;                            // 0 at the skirt, ~0.92 at the spire
+    const hz = hash1(t * 3.37 + seed);
+    const ty = yBase + height * (0.02 + 0.95 * Math.pow(u, 1.04));
+    // Tier radius, jittered: whorls of identical reach stack into a cone again.
+    const rad = rBase * Math.pow(1 - u, 0.62) * (0.82 + 0.34 * hz);
+    if (rad < 0.12) continue;
+    const branches = Math.max(7, Math.round(rad * 7.5));
+    const w0 = Math.max(0.26, rad * 0.44);
+    for (let b = 0; b < branches; b++) {
+      const hb = hash1(t * 17.1 + b * 5.9 + seed);
+      const a = (b / branches) * 6.283185 + t * 1.71 + seed + (hb - 0.5) * 0.5;
+      const reach = rad * (0.78 + 0.4 * hb);
+      const per = Math.max(2, Math.round(reach / (w0 * 0.5)));
+      for (let k = 0; k < per; k++) {
+        const f = (k + 0.5) / per;                  // along the branch, 0 → tip
+        const rr = reach * (0.16 + 0.84 * f);
+        // Branches lift off the trunk and hang at the tip: that droop is what
+        // turns a flat disc of foliage into a spruce skirt. Any deeper and the
+        // outboard cards of every tier fall three tiers' worth, piling the whole
+        // crown into a skirt round the ankles with a bare spike above it.
+        const droop = rad * (0.12 - 0.3 * f * f);
+        const ax = x + Math.cos(a) * rr;
+        const az = z + Math.sin(a) * rr;
+        const ay = ty + droop;
+        _fN.set(Math.cos(a), 0, Math.sin(a));
+        _fT1.set(-Math.sin(a), 0, Math.cos(a));
+        _fDir.copy(_fN).addScaledVector(_fT1, (hb - 0.5) * 0.4);
+        _fDir.y -= 0.28 + 0.9 * f;                  // the spray hangs harder outboard
+        _fDir.normalize();
+        // `face` is the card's NORMAL, not the side it leans towards. Aim it up,
+        // as a conifer spray lying flat would suggest, and every card in the
+        // whorl is edge-on from the ground: the tiers vanish and all that is
+        // left is the solid cone. It leans out, with a little lift and enough
+        // jitter that a tier is never a ring of coplanar plates.
+        _fFace.copy(_fN).addScaledVector(_yAxis, 0.4)
+          .addScaledVector(_fT1, (hash1(t * 7.3 + b * 2.1 + k + seed) - 0.5) * 1.15).normalize();
+        const w = w0 * (0.8 + 0.36 * hash1(t * 4.1 + b * 9.7 + k * 3.3 + seed))
+          * (1 - 0.28 * f);
+        const mat = tints[(k + b) % 2 === 0 && f < 0.6 ? 0 : tints.length - 1];
+        leafCard(mat, ax, ay, az, w, w, cardQuat(_fDir, _fFace));
+      }
+    }
   }
 }
 function flushLeafCards() {
@@ -1321,10 +1360,18 @@ function pine(x, z, s = 1) {
   prop(() => {
     const g = groundAt(x, z) - 0.15;
     const j = Math.sin(x * 45.164 + z * 21.9) * 0.5;
-    shape(G.trunk, M.barkDark, x, g, z, 0.55 * s, 3.4 * s, 0.55 * s, { rz: j * 0.03 });
-    const cy = g + 1.35 * s, cr = 3.3 * s, chh = 5.6 * s;
-    shape(G.pineCrown, M.crownDark, x, cy, z, cr * 0.72, chh * 0.94, cr * 0.72, { ry: j * 4 });
-    cloakCone(x, cy, z, cr * 0.5, chh, x * 0.53 + z * 0.29, [M.needleShade, M.needleSun]);
+    const rB = 2.35 * s;                  // crown radius at the skirt
+    const cH = 5.9 * s;                   // skirt to spire
+    const cy = g + 1.1 * s;
+    // The bole stops inside the lower whorls. Run it to the top and it is a bare
+    // dark spike above the foliage, which is what a leader with no needles is.
+    shape(G.trunk, M.barkDark, x, g, z, 0.34 * s, cy - g + cH * 0.42, 0.34 * s,
+      { rz: j * 0.03 });
+    // Inner cone: the dark between the tiers, and the shadow caster, at barely
+    // a fifth of the crown's reach and near-black, so that where it does show
+    // through it reads as the depth of the canopy and not as smooth green skin.
+    shape(G.pineCrown, M.conifer, x, cy, z, rB * 0.3, cH * 0.7, rB * 0.3, { ry: j * 4 });
+    pineWhorls(x, cy, z, rB, cH, x * 0.53 + z * 0.29, [M.needleShade, M.needleSun]);
   });
 }
 function birch(x, z, s = 1) {
