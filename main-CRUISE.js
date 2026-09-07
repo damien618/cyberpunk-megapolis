@@ -443,6 +443,12 @@ const weaveTex = canvasTex(256, 256, (g, W, H) => {
 });
 weaveTex.colorSpace = THREE.NoColorSpace;
 
+// Atrium centrepiece. This is a single, non-repeating composition rather than
+// a floor pattern: the Circle/Cylinder cap UVs map the full compass rose once.
+// Clamp the edge so the dark navy binding remains clean at grazing angles.
+const atriumRugTex = tex('./textures/cruise/atrium-compass-rug.webp');
+atriumRugTex.wrapS = atriumRugTex.wrapT = THREE.ClampToEdgeWrapping;
+
 // Ballroom Axminster. The Edwardian saloon carpet the tables stand on: a deep
 // crimson ground, a gold medallion in every repeat, and a strapwork of gold
 // scroll between them. Repeated 7×13 over a 26 × 44 m room, which puts a
@@ -1135,11 +1141,20 @@ const M = {
   }),
   cream: new THREE.MeshStandardMaterial({ color: 0xe8dcc4, roughness: 0.8 }),
   teak: new THREE.MeshStandardMaterial({ map: teakTex, bumpMap: teakRelief, bumpScale: 0.008, roughness: 0.82, metalness: 0 }),
+  // The stair needs face-aware UVs: using the deck's horizontal projection on
+  // its risers collapses Y and stretches one scanline over the whole face.
+  stairTeak: new THREE.MeshStandardMaterial({
+    map: teakTex, bumpMap: teakRelief, bumpScale: 0.006,
+    color: 0xf4eadc, roughness: 0.86, metalness: 0,
+  }),
   benchWood: new THREE.MeshStandardMaterial({ map: woodA, normalMap: woodN,
     normalScale: new THREE.Vector2(0.18, 0.18), color: 0xcba77a, roughness: 0.54 }),
   benchMetal: new THREE.MeshStandardMaterial({ color: 0x465760, roughness: 0.42, metalness: 0.55 }),
   steel: new THREE.MeshStandardMaterial({ color: 0xcdd3d8, roughness: 0.42, metalness: 0.35 }),
   brass: new THREE.MeshStandardMaterial({ color: 0xd8ae5c, roughness: 0.32, metalness: 0.62 }),
+  artDecoEbony: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0x17100e, roughness: 0.30, metalness: 0.08,
+  }),
   black: new THREE.MeshStandardMaterial({ color: 0x1b1e24, roughness: 0.5 }),
   darkWood: new THREE.MeshStandardMaterial({
     map: woodA, normalMap: woodN, color: 0x6a4526, roughness: 0.72,
@@ -1164,6 +1179,10 @@ const M = {
   // --- Soft furnishing -----------------------------------------------------
   parquet: new THREE.MeshPhysicalMaterial({ map: parquetTex, normalMap: parquetNormal, normalScale: new THREE.Vector2(0.22, 0.22), roughnessMap: parquetRoughness, roughness: 0.72, clearcoat: 0.28, clearcoatRoughness: 0.38 }),
   casinoCarpet: new THREE.MeshStandardMaterial({ map: casinoCarpetTex, roughness: 0.95 }),
+  atriumRug: new THREE.MeshStandardMaterial({
+    map: atriumRugTex, bumpMap: weaveTex, bumpScale: 0.006,
+    roughness: 0.96, metalness: 0,
+  }),
   cabinCarpet: new THREE.MeshStandardMaterial({ map: cabinCarpetTex, roughness: 0.96 }),
   corridorCarpet: new THREE.MeshStandardMaterial({ map: corridorCarpetTex, roughness: 0.95 }),
   baize: new THREE.MeshStandardMaterial({ color: 0x14603c, roughness: 0.93 }),
@@ -1516,6 +1535,7 @@ const G = {
   cyl: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 16)),
   cylBase: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 16).translate(0, 0.5, 0)),
   cyl32: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 32)),
+  cyl64: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 64)),
   sphere: withUV2(new THREE.SphereGeometry(0.5, 16, 12)),
   card: withUV2(new THREE.PlaneGeometry(1, 1)),
   cone: withUV2(new THREE.ConeGeometry(0.5, 1, 16).translate(0, 0.5, 0)),
@@ -1626,6 +1646,36 @@ M.teak.onBeforeCompile = shader => {
 };
 M.teak.customProgramCacheKey = () => 'teak-world-metres-v1';
 
+// Exterior stair joinery uses the same teak as the deck, but laid as it would
+// be by a shipwright. Treads remain fore-and-aft; the riser boards run across
+// the full stair width, while the closed stringer faces follow the flight.
+// BoxGeometry duplicates vertices at every edge, so selecting the projection
+// from the local face normal stays crisp and does not blend UVs round corners.
+M.stairTeak.onBeforeCompile = shader => {
+  shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', `
+    #include <uv_vertex>
+    vec4 stairPosition = vec4(position, 1.0);
+    #ifdef USE_INSTANCING
+      stairPosition = instanceMatrix * stairPosition;
+    #endif
+    stairPosition = modelMatrix * stairPosition;
+
+    vec3 stairFace = abs(normal);
+    if (stairFace.y > stairFace.x && stairFace.y > stairFace.z) {
+      // Tread: narrow boards across X, their grain running along Z.
+      vMapUv = stairPosition.xz / vec2(1.44, 4.0);
+    } else if (stairFace.z >= stairFace.x) {
+      // Riser: turn the boards 90 degrees so their grain runs across X.
+      vMapUv = stairPosition.yx / vec2(1.44, 4.0);
+    } else {
+      // Stringer/side: boards follow the direction of the flight.
+      vMapUv = stairPosition.yz / vec2(1.44, 4.0);
+    }
+    vBumpMapUv = vMapUv;
+  `);
+};
+M.stairTeak.customProgramCacheKey = () => 'teak-stair-face-projection-v1';
+
 // World-space floor sampling keeps boards and carpet patterns continuous at
 // thresholds, stairwell cuts and slab boundaries. Runner borders retain local U.
 for (const [name, width, length] of [
@@ -1681,7 +1731,9 @@ const loungeBack = benchTimber(0.86, 0.62, 0.24, 0.075);
 const loungeArm = benchTimber(0.23, 0.43, 1.02, 0.085);
 const loungePillow = benchTimber(0.40, 0.39, 0.16, 0.06);
 const receptionTop = benchTimber(5.6, 0.10, 1.12, 0.035);
-const loungeTable = benchTimber(1.8, 0.10, 1.1, 0.035);
+const atriumTableTop = benchTimber(1.65, 0.12, 0.88, 0.055);
+const atriumTableUnderTop = benchTimber(1.38, 0.07, 0.68, 0.04);
+const atriumTableInset = benchTimber(1.24, 0.012, 0.52, 0.025);
 function loungeChair(x, z, rotation = 0, seats = 1) {
   atY(0, x, z, rotation, () => {
     const width = seats * 0.9;
@@ -2875,8 +2927,10 @@ console.log('[cruise] casino room done');
   const F = DECK_Y + 0.02;
   stairwellSlab(M.parquet, -SUP_X2 + WALL_T, SUP_X2 - WALL_T, z0 + WALL_T, z1 - WALL_T,
     DECK_Y, F);
-  // A compass rose inlaid in the floor — the one thing that tells you where
-  // amidships is once you are inside and have lost the horizon.
+  // A woven compass-rose rug — the one thing that tells you where amidships is
+  // once you are inside and have lost the horizon. Its detailed 16-point rose,
+  // rope border and Greek-key band live in one high-resolution texture so the
+  // design remains coherent instead of breaking into overlapping box edges.
   //
   // NOT a prop, and this is the trap the whole map fell into once: `prop` in
   // cityBoxes means "solid at ANY height", because the step-up shortcut must
@@ -2884,18 +2938,7 @@ console.log('[cruise] casino room done');
   // makes it a full-height wall — this rose was a 5 m bollard across the
   // atrium, and you could not walk forward out of the lobby. Anything laid
   // FLAT ON a floor is part of that floor and is emitted plain.
-  shape(G.cyl32, M.darkWood, 0, F + 0.005, -5, 5.4, 0.02, 5.4);
-  shape(G.cyl32, M.brass, 0, F + 0.012, -5, 4.6, 0.02, 4.6);
-  // Points of the compass. Slim and reaching only to the brass ring: at 3 m
-  // long and 0.8 wide, set at radius 1.6, they overhung the rose by half their
-  // length and the whole thing read as a ceiling fan lying on the floor.
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    const len = i % 2 ? 1.5 : 2.2;
-    box(i % 2 ? M.cream : M.hullNavy,
-      Math.sin(a) * len / 2, F + 0.02, -5 + Math.cos(a) * len / 2,
-      i % 2 ? 0.18 : 0.30, 0.02, len, a);
-  }
+  shape(G.cyl64, M.atriumRug, 0, F + 0.008, -5, 5.4, 0.016, 5.4);
 
   prop(() => {
     // Reception desk, against the forward bulkhead.
@@ -2933,11 +2976,38 @@ console.log('[cruise] casino room done');
 
     for (const [sx, sz, ry] of [[4.5, -2.4, 0], [4.5, -7.6, Math.PI]])
       loungeChair(sx, sz, ry, 3);
-    shape(loungeTable, M.mahoganyGloss, 4.5, DECK_Y + 0.42, -5, 1, 1, 1);
-    box(M.brass, 4.5, DECK_Y + 0.395, -5.54, 1.71, 0.018, 0.012);
-    box(M.linen, 4.75, DECK_Y + 0.48, -5, 0.35, 0.025, 0.26, 0.15);
-    for (const dx of [-0.7, 0.7]) for (const dz of [-0.4, 0.4])
-      shape(G.cylBase, M.brass, 4.5 + dx, DECK_Y, -5 + dz, 0.07, 0.42, 0.07);
+    // Compact 1930s ocean-liner coffee table: an almost-black ebony top on a
+    // broad stepped pedestal. The old four thin brass legs vanished into the
+    // parquet; this dark central silhouette stays legible without crowding the
+    // narrow passage between the two sofas.
+    const tableX = 4.5, tableZ = -5;
+    shape(G.cylBase, M.artDecoEbony, tableX, DECK_Y + 0.015, tableZ,
+      0.70, 0.075, 0.50);
+    shape(G.cylBase, M.mahoganyGloss, tableX, DECK_Y + 0.09, tableZ,
+      0.54, 0.09, 0.38);
+    shape(G.cylBase, M.artDecoEbony, tableX, DECK_Y + 0.18, tableZ,
+      0.29, 0.22, 0.22);
+    // Four gilt flutes catch the light on every side of the pedestal.
+    box(M.brass, tableX, DECK_Y + 0.29, tableZ - 0.114, 0.035, 0.19, 0.018);
+    box(M.brass, tableX, DECK_Y + 0.29, tableZ + 0.114, 0.035, 0.19, 0.018);
+    box(M.brass, tableX - 0.154, DECK_Y + 0.29, tableZ, 0.018, 0.19, 0.035);
+    box(M.brass, tableX + 0.154, DECK_Y + 0.29, tableZ, 0.018, 0.19, 0.035);
+    shape(G.cylBase, M.brass, tableX, DECK_Y + 0.40, tableZ,
+      0.43, 0.025, 0.31);
+    shape(atriumTableUnderTop, M.mahoganyGloss,
+      tableX, DECK_Y + 0.415, tableZ, 1, 1, 1);
+    shape(atriumTableTop, M.artDecoEbony,
+      tableX, DECK_Y + 0.475, tableZ, 1, 1, 1);
+    // A restrained mahogany inset and perimeter stringing keep the top cosy
+    // rather than reading as a flat black slab.
+    shape(atriumTableInset, M.mahoganyGloss,
+      tableX, DECK_Y + 0.541, tableZ, 1, 1, 1);
+    box(M.brass, tableX, DECK_Y + 0.527, tableZ - 0.414, 1.46, 0.018, 0.018);
+    box(M.brass, tableX, DECK_Y + 0.527, tableZ + 0.414, 1.46, 0.018, 0.018);
+    box(M.brass, tableX - 0.799, DECK_Y + 0.527, tableZ, 0.018, 0.018, 0.70);
+    box(M.brass, tableX + 0.799, DECK_Y + 0.527, tableZ, 0.018, 0.018, 0.70);
+    box(M.linen, tableX + 0.25, DECK_Y + 0.556, tableZ,
+      0.35, 0.025, 0.26, 0.15);
 
     // Potted palms, because every liner lobby has them.
     for (const [px, pz] of [[-11, -3], [-11, -9.5], [11, -3], [11, -9.5]]) {
@@ -3511,8 +3581,13 @@ const cabinLights = [];
       const dz = 6.6, dx = RX1 - 0.43;
       box(M.maple, dx, DECK_Y + 0.735, dz, 0.70, 0.05, 1.62);
       box(M.walnutBurr, dx, DECK_Y + 0.70, dz, 0.72, 0.03, 1.64);
-      box(M.leatherBurgundy, dx + 0.02, DECK_Y + 0.762, dz, 0.46, 0.006, 1.10);
-      box(M.giltPale, dx + 0.02, DECK_Y + 0.763, dz, 0.50, 0.004, 1.16);
+      // Gilt rim, leather blotter and letter used to share a top at +0.765, so
+      // the desk flickered cream-through-burgundy from any glancing angle —
+      // the same coplanar-face trap as the promenade teak. Each layer's top
+      // sits a few millimetres above the one below; bottoms bury into the
+      // layer under them so no two faces occupy the same plane.
+      box(M.giltPale, dx + 0.02, DECK_Y + 0.762, dz, 0.50, 0.008, 1.16);
+      box(M.leatherBurgundy, dx + 0.02, DECK_Y + 0.771, dz, 0.46, 0.012, 1.10);
       // A three-drawer pedestal one side, tapered legs the other.
       box(M.walnutBurr, dx + 0.06, DECK_Y + 0.355, dz - 0.56, 0.58, 0.71, 0.46);
       for (let k = 0; k < 3; k++) {
@@ -3522,9 +3597,9 @@ const cabinLights = [];
       for (const lx of [dx - 0.28, dx + 0.28])
         shape(G.taperLeg, M.walnutBurr, lx, DECK_Y + 0.71, dz + 0.72, 0.075, 0.71, 0.075);
       // A brass lamp, a blotter and an open letter.
-      tableLamp(dx + 0.16, DECK_Y + 0.762, dz + 0.52, 0.86);
-      box(M.linen, dx - 0.02, DECK_Y + 0.768, dz - 0.10, 0.26, 0.004, 0.20, -0.25);
-      shape(G.cyl, M.brassDark, dx + 0.20, DECK_Y + 0.79, dz - 0.34, 0.07, 0.06, 0.07);
+      tableLamp(dx + 0.16, DECK_Y + 0.777, dz + 0.52, 0.86);
+      box(M.linen, dx - 0.02, DECK_Y + 0.781, dz - 0.10, 0.26, 0.006, 0.20, -0.25);
+      shape(G.cyl, M.brassDark, dx + 0.20, DECK_Y + 0.807, dz - 0.34, 0.07, 0.06, 0.07);
 
       // The writing chair, on four real legs. The old one was a velvet pad
       // hanging 44 cm off the carpet with a plank behind it.
@@ -4696,7 +4771,8 @@ const STAIR_W = 4.4;
       const top = DECK_Y + (i + 1) * rise;
       // Each tread reaches back under the one before it so the flight is solid
       // to the ground probe rather than 20 floating slabs.
-      slab(M.teak, -STAIR_W / 2, STAIR_W / 2, z0, z0 + tread + 0.06, DECK_Y - 0.4, top);
+      slab(M.stairTeak, -STAIR_W / 2, STAIR_W / 2,
+        z0, z0 + tread + 0.06, DECK_Y - 0.4, top);
     }
   });
   // The top tread finishes at z ≈ -65.6, which is already under the pool
@@ -5534,6 +5610,7 @@ const hook = {
   get cabinAskOpen() { return typeof cabinAskOpen !== 'undefined' ? cabinAskOpen : false; },
   islandData,
   marineFauna,
+  gulls,
 };
 window.__cruise = hook;
 window.__villa = hook;
@@ -6135,7 +6212,13 @@ function animate() {
     }
   }
 
-  const onDeck = Math.abs(ctrl.pos.x) > SUP_X2 - 0.5 || ctrl.pos.y >= POOL_Y - 1.2;
+  // Open air: side promenades, pool roof, and the bow/stern outside the house.
+  // The old |x| / pool-height test missed the teak at the foot of the aft
+  // stair (x ≈ 0, y = DECK_Y), so the gulls froze in the sky until you climbed.
+  const onDeck = Math.abs(ctrl.pos.x) > SUP_X2 - 0.5
+    || ctrl.pos.y >= POOL_Y - 1.2
+    || ctrl.pos.z < SUP_Z0
+    || ctrl.pos.z > SUP_Z1;
   const inCasino = ctrl.pos.z >= CASINO_Z[0] - 4 && ctrl.pos.z <= CASINO_Z[1] + 4
     && Math.abs(ctrl.pos.x) <= SUP_X2 && ctrl.pos.y < POOL_Y - 1.5;
 
@@ -6163,16 +6246,19 @@ function animate() {
     m.material.opacity = TIME_STATES[cruiseTime].wake
       * (0.82 + 0.18 * Math.sin(t * 1.7 + i));
   }
+  // Five gulls in the open sky — visible from the promenade, the pool, and
+  // through house windows. Gating the flap on onDeck froze them wherever
+  // the player could see the sky without standing on a side walkway.
+  for (const gu of gulls) {
+    const g = gu.g;
+    g.position.z += gu.speed * 6 * dt;
+    if (g.position.z > 120) g.position.z = -160;
+    g.position.y += Math.sin(t * 0.6 + gu.phase) * 0.03;
+    const flap = Math.sin(t * 5.5 + gu.phase) * 0.5;
+    if (g.userData.wL) g.userData.wL.rotation.z = -flap;
+    if (g.userData.wR) g.userData.wR.rotation.z = flap;
+  }
   if (onDeck) {
-    for (const gu of gulls) {
-      const g = gu.g;
-      g.position.z += gu.speed * 6 * dt;
-      if (g.position.z > 120) g.position.z = -160;
-      g.position.y += Math.sin(t * 0.6 + gu.phase) * 0.03;
-      const flap = Math.sin(t * 5.5 + gu.phase) * 0.5;
-      if (g.userData.wL) g.userData.wL.rotation.z = -flap;
-      if (g.userData.wR) g.userData.wR.rotation.z = flap;
-    }
     updateMarineLife(dt, t, marineFauna, islandData);
   }
 
