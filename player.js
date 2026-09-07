@@ -4,8 +4,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { buildBareLegs, buildFlipFlops, buildSleeves } from './limbs.js?v=43';
-import { buildKimono } from './kimono.js?v=25';
+import { buildBareLegs, buildFlipFlops, buildSleeves } from './limbs.js?v=44';
+import { buildKimono } from './kimono.js?v=26';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
 
@@ -616,6 +616,7 @@ export class Player {
     );
     this.headMesh = null;
     this.bodySkinMeshes = [];
+    this.decolleteMesh = null;
     this.hairMesh = null;
     this.hairMaterial = null;
     this.wardrobe = null;
@@ -652,6 +653,7 @@ export class Player {
         sourceMaterials.forEach((material, index) => {
           const part = clothingPart(material?.name);
           if (part) {
+            if (part === 'tshirt') materials[index].side = THREE.DoubleSide;
             this.clothing[part].materials.push(materials[index]);
             if (o.isSkinnedMesh && !this.clothing[part].mesh) this.clothing[part].mesh = o;
           }
@@ -677,6 +679,7 @@ export class Player {
             // that is not sleeve-covered is under the t-shirt anyway.
             const skeleton = o.isSkinnedMesh ? o.skeleton.bones.map(b => b.name) : [];
             if (skeleton.includes('upperarm_l') && skeleton.includes('hand_l')) this.armsMesh = o;
+            if (o.isSkinnedMesh && o.name.includes('Parts07')) this.decolleteMesh = o;
           }
         });
         o.frustumCulled = false;
@@ -709,6 +712,26 @@ export class Player {
     this.thighDrop = restHip && restKnee ? restHip.y - restKnee.y : 0.456;
     this.shinDrop = restKnee && restAnkle ? restKnee.y - restAnkle.y : 0.430;
     this.createWardrobeAlternates();
+    // Prevent inner skin poke-through during animation strides.
+    // The décolleté mesh extends deep into the chest below the collar (Y < 1.50),
+    // and the arms mesh extends up into the shoulder and armpit inside the sleeve (Y > 1.34).
+    // In motion, bone rotations swing these covered skin vertices outside the clothing fabric.
+    if (this.decolleteMesh) {
+      this.decolleteMesh.geometry = croppedGeometry(
+        this.decolleteMesh.geometry, 1.50, { axis: 'y', keep: 1, standoff: false }
+      );
+    }
+    if (this.armsMesh) {
+      this.armsMesh.geometry = croppedGeometry(
+        this.armsMesh.geometry, 1.34, { axis: 'y', keep: -1, standoff: false }
+      );
+    }
+    if (this.clothing.tshirt.mesh) {
+      const mats = Array.isArray(this.clothing.tshirt.mesh.material)
+        ? this.clothing.tshirt.mesh.material
+        : [this.clothing.tshirt.mesh.material];
+      mats.forEach(m => { if (m) m.side = THREE.DoubleSide; });
+    }
     this.setOutfit();
     this.seatHipRise = this.measureSeatHipRise();
     this.mixer = new THREE.AnimationMixer(this.model);
@@ -764,6 +787,7 @@ export class Player {
       color: 0xfdfdf7,
       roughness: 0.82,
       metalness: 0.02,
+      side: THREE.DoubleSide,
     });
     // Skin tone sampled off the pack's own body albedo, so the bare legs read
     // as the same person as the bare arms.

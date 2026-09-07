@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Player } from './player.js?v=74';
+import { Player } from './player.js?v=20260906-seam-fix';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=7';
@@ -5699,7 +5699,7 @@ function girlMatFor(name) {
   // are pitched at the silk's own ground and left matt: no skirt keeps a
   // sprinting leg in for the whole stride, so what matters is that the moment
   // it does show it reads as the under-layer rather than as a white flash.
-  if (n.includes('tshirt')) { m.map = null; m.color.set('#f7f2e8'); }
+  if (n.includes('tshirt')) { m.map = null; m.color.set('#f7f2e8'); m.side = THREE.DoubleSide; }
   else if (n.includes('pants')) {
     m.map = null;
     m.color.set('#e3d9c3');

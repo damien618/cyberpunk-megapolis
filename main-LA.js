@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { Player } from './player.js?v=49';
+import { Player } from './player.js?v=20260906-seam-fix';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=7';
@@ -601,6 +601,7 @@ function girlMatFor(name) {
     m.opacity = Math.max(rec.color[3] ?? 1, rec.mode >= 3 ? 0.04 : 0.32);
     m.depthWrite = rec.mode < 3;
   }
+  if (name.toLowerCase().includes('tshirt')) m.side = THREE.DoubleSide;
   tintCaliforniaStyle(m, name);
   return m;
 }

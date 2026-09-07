@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Player } from './player.js?v=89';
+import { Player } from './player.js?v=20260906-seam-fix';
 import { harmoniseHair } from './hair.js?v=11';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=10';
@@ -325,6 +325,7 @@ function girlMatFor(name) {
     m.opacity = Math.max(rec.color[3] ?? 1, rec.mode >= 3 ? 0.04 : 0.32);
     m.depthWrite = rec.mode < 3;
   }
+  if (name.toLowerCase().includes('tshirt')) m.side = THREE.DoubleSide;
   tintCruiseStyle(m, name);
   return m;
 }
@@ -420,25 +421,27 @@ const teakRelief = teakTex.clone();
 teakRelief.colorSpace = THREE.NoColorSpace;
 teakRelief.needsUpdate = true;
 
-// Ballroom parquet, laid as a chequer of alternating grain.
-const parquetTex = canvasTex(256, 256, (g, W, H) => {
-  const S = W / 4;
-  for (let i = 0; i < 4; i++) {
-    for (let j = 0; j < 4; j++) {
-      const light = (i + j) % 2 === 0;
-      g.fillStyle = light ? '#d2ab74' : '#8a5a33';
-      g.fillRect(i * S, j * S, S, S);
-      g.strokeStyle = 'rgba(60,36,16,0.35)';
-      g.lineWidth = 1;
-      for (let k = 1; k < 5; k++) {
-        g.beginPath();
-        if (light) { g.moveTo(i * S, j * S + k * S / 5); g.lineTo(i * S + S, j * S + k * S / 5); }
-        else { g.moveTo(i * S + k * S / 5, j * S); g.lineTo(i * S + k * S / 5, j * S + S); }
-        g.stroke();
-      }
-    }
+// Photographic timber with matching relief and varnish response. One repeat
+// covers 3.2 metres: the individual boards are approximately 20 cm wide.
+const parquetTex = tex('./textures/nature/wood_diff.jpg');
+const parquetNormal = ntex('./textures/nature/wood_n.jpg');
+const parquetRoughness = ntex('./textures/nature/wood_r.jpg');
+
+// Fine woven relief shared by carpets and upholstery, independent of motifs.
+const weaveTex = canvasTex(256, 256, (g, W, H) => {
+  const pixels = g.createImageData(W, H);
+  let state = 9721;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    const v = 128 + ((state >>> 24) - 128) * 0.18
+      + Math.sin(x * Math.PI / 2) * 18 + Math.sin(y * Math.PI / 2) * 12;
+    const i = (y * W + x) * 4;
+    pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = v;
+    pixels.data[i + 3] = 255;
   }
-}, 6, 8);
+  g.putImageData(pixels, 0, 0);
+});
+weaveTex.colorSpace = THREE.NoColorSpace;
 
 // Ballroom Axminster. The Edwardian saloon carpet the tables stand on: a deep
 // crimson ground, a gold medallion in every repeat, and a strapwork of gold
@@ -1159,7 +1162,7 @@ const M = {
   }),
 
   // --- Soft furnishing -----------------------------------------------------
-  parquet: new THREE.MeshStandardMaterial({ map: parquetTex, roughness: 0.42, metalness: 0.03 }),
+  parquet: new THREE.MeshPhysicalMaterial({ map: parquetTex, normalMap: parquetNormal, normalScale: new THREE.Vector2(0.22, 0.22), roughnessMap: parquetRoughness, roughness: 0.72, clearcoat: 0.28, clearcoatRoughness: 0.38 }),
   casinoCarpet: new THREE.MeshStandardMaterial({ map: casinoCarpetTex, roughness: 0.95 }),
   cabinCarpet: new THREE.MeshStandardMaterial({ map: cabinCarpetTex, roughness: 0.96 }),
   corridorCarpet: new THREE.MeshStandardMaterial({ map: corridorCarpetTex, roughness: 0.95 }),
@@ -1623,9 +1626,40 @@ M.teak.onBeforeCompile = shader => {
 };
 M.teak.customProgramCacheKey = () => 'teak-world-metres-v1';
 
+// World-space floor sampling keeps boards and carpet patterns continuous at
+// thresholds, stairwell cuts and slab boundaries. Runner borders retain local U.
+for (const [name, width, length] of [
+  ['parquet', 3.2, 3.2], ['casinoCarpet', 3.0, 3.0],
+  ['ballCarpet', 3.6, 3.6], ['cabinCarpet', 2.4, 2.4],
+  ['corridorCarpet', 1.0, 3.2],
+]) {
+  const material = M[name];
+  if (name !== 'parquet') {
+    material.bumpMap = weaveTex;
+    material.bumpScale = 0.003;
+  }
+  material.onBeforeCompile = shader => {
+    shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', `
+      #include <uv_vertex>
+      vec4 floorPosition = vec4(position, 1.0);
+      #ifdef USE_INSTANCING
+        floorPosition = instanceMatrix * floorPosition;
+      #endif
+      floorPosition = modelMatrix * floorPosition;
+      vMapUv = floorPosition.xz / vec2(${width.toFixed(2)}, ${length.toFixed(2)});
+      ${name === 'corridorCarpet' ? 'vMapUv.x = uv.x;' : ''}
+      ${name === 'parquet' ? 'vNormalMapUv = vMapUv; vRoughnessMapUv = vMapUv;' : 'vBumpMapUv = floorPosition.xz / 0.32;'}
+    `);
+  };
+  material.customProgramCacheKey = () => `cruise-floor-${name}-v1`;
+}
+for (const name of ['velvetRed', 'cushionTeal', 'leatherBurgundy']) {
+  M[name].bumpMap = weaveTex;
+  M[name].bumpScale = 0.002;
+}
+
 // Rounded timber with bevels measured in metres, shared by all bench instances.
-function benchTimber(width, height, length) {
-  const r = 0.012;
+function benchTimber(width, height, length, r = 0.012) {
   const outline = new THREE.Shape();
   outline.moveTo(-width / 2 + r, -height / 2 + r);
   outline.lineTo(width / 2 - r, -height / 2 + r);
@@ -1640,6 +1674,35 @@ function benchTimber(width, height, length) {
 const benchSeatSlat = benchTimber(0.095, 0.055, 2.2);
 const benchBackSlat = benchTimber(0.055, 0.10, 2.2);
 const benchArm = benchTimber(0.57, 0.055, 0.075);
+
+// Shared rounded cushions and joinery keep furnishing geometry instanced.
+const loungeSeat = benchTimber(0.86, 0.20, 0.82, 0.065);
+const loungeBack = benchTimber(0.86, 0.62, 0.24, 0.075);
+const loungeArm = benchTimber(0.23, 0.43, 1.02, 0.085);
+const loungePillow = benchTimber(0.40, 0.39, 0.16, 0.06);
+const receptionTop = benchTimber(5.6, 0.10, 1.12, 0.035);
+const loungeTable = benchTimber(1.8, 0.10, 1.1, 0.035);
+function loungeChair(x, z, rotation = 0, seats = 1) {
+  atY(0, x, z, rotation, () => {
+    const width = seats * 0.9;
+    box(M.mahoganyGloss, 0, DECK_Y + 0.23, 0, width + 0.20, 0.16, 0.95);
+    for (const dx of [-width / 2, width / 2]) for (const dz of [-0.34, 0.34]) {
+      shape(G.taperLeg, M.mahoganyGloss, dx, DECK_Y + 0.24, dz, 0.10, 0.23, 0.10);
+      shape(G.cyl, M.brass, dx, DECK_Y + 0.055, dz, 0.085, 0.075, 0.085);
+    }
+    for (let i = 0; i < seats; i++) {
+      const cx = (i - (seats - 1) / 2) * 0.9;
+      shape(loungeSeat, M.velvetRed, cx, DECK_Y + 0.40, -0.05, 1, 1, 1);
+      shape(loungeBack, M.velvetRed, cx, DECK_Y + 0.73, 0.36, 1, 1, 1, { rx: -0.10 });
+      for (const dx of [-0.23, 0.23])
+        shape(G.sphere, M.leatherBurgundy, cx + dx, DECK_Y + 0.78, 0.225, 0.032, 0.032, 0.018);
+      if (i % 2 === 0)
+        shape(loungePillow, M.cushionTeal, cx + 0.17, DECK_Y + 0.63, 0.08, 1, 1, 1, { rx: -0.20, rz: 0.12 });
+    }
+    for (const dx of [-1, 1])
+      shape(loungeArm, M.velvetRed, dx * (width / 2 + 0.09), DECK_Y + 0.57, 0, 1, 1, 1);
+  });
+}
 
 const kits = new Map();
 function emit(geo, mat, item) {
@@ -2837,24 +2900,42 @@ console.log('[cruise] casino room done');
   prop(() => {
     // Reception desk, against the forward bulkhead.
     box(M.darkWood, 6.5, DECK_Y + 0.55, 0.6, 5.4, 1.1, 0.9);
-    box(M.brass, 6.5, DECK_Y + 1.13, 0.6, 5.6, 0.06, 1.1);
+    shape(receptionTop, M.mahoganyGloss, 6.5, DECK_Y + 1.13, 0.6, 1, 1, 1);
+    box(M.brass, 6.5, DECK_Y + 1.075, 0.07, 5.42, 0.024, 0.025);
+    box(M.brass, 6.5, DECK_Y + 0.13, 0.13, 5.25, 0.045, 0.035);
+    for (let i = 0; i < 5; i++) {
+      const x = 4.42 + i * 1.04;
+      box(M.midWood, x, DECK_Y + 0.60, 0.135, 0.94, 0.72, 0.065);
+      box(M.mahoganyGloss, x, DECK_Y + 0.60, 0.095, 0.79, 0.57, 0.035);
+      for (const dx of [-0.43, 0.43])
+        box(M.brass, x + dx, DECK_Y + 0.60, 0.085, 0.013, 0.64, 0.012);
+    }
+    // Brochure display: timber stand, brass dividers and cream paper inserts.
+    box(M.midWood, 8.1, DECK_Y + 1.31, 0.60, 0.85, 0.24, 0.32);
+    for (let i = 0; i < 3; i++) {
+      box(M.linen, 7.83 + i * 0.27, DECK_Y + 1.43, 0.55, 0.21, 0.26, 0.035);
+      box(M.hullNavy, 7.83 + i * 0.27, DECK_Y + 1.45, 0.527, 0.16, 0.075, 0.008);
+      box(M.brass, 7.72 + i * 0.27, DECK_Y + 1.32, 0.42, 0.014, 0.23, 0.025);
+    }
     box(M.lamp, 6.5, DECK_Y + 1.2, 0.55, 0.24, 0.1, 0.24);
     // Key rack on the bulkhead wall behind the desk.
     box(M.midWood, 6.5, DECK_Y + 2.2, 1.79, 5.0, 1.8, 0.08);
-    for (let i = 0; i < 24; i++)
-      shape(G.cyl, M.brass, 4.4 + (i % 12) * 0.38, DECK_Y + 2.55 - Math.floor(i / 12) * 0.55,
-        1.72, 0.05, 0.18, 0.05);
-
-    // Sofas and a low table, in the middle of the lobby.
-    for (const [sx, sz, ry] of [[4.5, -2.4, 0], [4.5, -7.6, Math.PI]]) {
-      atY(0, sx, sz, ry, () => {
-        box(M.velvetRed, 0, DECK_Y + 0.28, 0, 3.0, 0.42, 0.95);
-        box(M.velvetRed, 0, DECK_Y + 0.68, 0.42, 3.0, 0.55, 0.22);
-        for (let i = 0; i < 3; i++)
-          box(M.cushionTeal, -0.9 + i * 0.9, DECK_Y + 0.56, 0.22, 0.5, 0.16, 0.5);
-      });
+    for (let row = 0; row < 3; row++) for (let col = 0; col < 12; col++) {
+      const x = 4.4 + col * 0.38, y = DECK_Y + 2.78 - row * 0.53;
+      box(M.mahoganyGloss, x, y, 1.70, 0.33, 0.44, 0.09);
+      box(M.brass, x, y - 0.12, 1.644, 0.15, 0.065, 0.018);
+      shape(G.sphere, M.brass, x, y + 0.02, 1.635, 0.035, 0.035, 0.025);
     }
-    box(M.darkWood, 4.5, DECK_Y + 0.42, -5, 1.8, 0.1, 1.1);
+    for (const y of [1.32, 3.1])
+      box(M.mahoganyGloss, 6.5, DECK_Y + y, 1.68, 5.15, 0.10, 0.18);
+    for (const x of [3.95, 9.05])
+      box(M.mahoganyGloss, x, DECK_Y + 2.2, 1.68, 0.10, 1.85, 0.18);
+
+    for (const [sx, sz, ry] of [[4.5, -2.4, 0], [4.5, -7.6, Math.PI]])
+      loungeChair(sx, sz, ry, 3);
+    shape(loungeTable, M.mahoganyGloss, 4.5, DECK_Y + 0.42, -5, 1, 1, 1);
+    box(M.brass, 4.5, DECK_Y + 0.395, -5.54, 1.71, 0.018, 0.012);
+    box(M.linen, 4.75, DECK_Y + 0.48, -5, 0.35, 0.025, 0.26, 0.15);
     for (const dx of [-0.7, 0.7]) for (const dz of [-0.4, 0.4])
       shape(G.cylBase, M.brass, 4.5 + dx, DECK_Y, -5 + dz, 0.07, 0.42, 0.07);
 
@@ -3710,8 +3791,7 @@ const cabinLights = [];
     CABIN_Z[0], CABIN_Z[1], DECK_Y, DECK_Y + 0.02);
   for (const x of [-10.5, 10.5]) for (const z of [10, 15]) {
     prop(() => {
-      box(M.velvetRed, x, DECK_Y + 0.35, z, 1.4, 0.5, 1.5);
-      box(M.darkWood, x, DECK_Y + 0.8, z + 0.65, 1.4, 0.7, 0.16);
+      loungeChair(x, z, x < 0 ? Math.PI / 2 : -Math.PI / 2);
     });
   }
   for (const z of [5, 11, 16])
@@ -3736,7 +3816,7 @@ const cabinLights = [];
     for (let i = 0; i < s.steps; i++) {
       const z = s.z0 + i * tread;
       const top = DECK_Y - i * rise;
-      slab(M.midWood, s.x0, s.x1, z, z + tread + 0.015, CABIN_Y - 0.1, top);
+      slab(M.parquet, s.x0, s.x1, z, z + tread + 0.015, CABIN_Y - 0.1, top);
       slab(M.brass, s.x0, s.x1, z + tread - 0.035, z + tread, top, top + 0.012);
     }
   });
