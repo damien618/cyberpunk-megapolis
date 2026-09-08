@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildVerneMuseum } from './cruiseMuseum.js?v=20260908-engravings6';
 import { Player } from './player.js?v=20260906-seam-fix';
 import { harmoniseHair } from './hair.js?v=11';
 import { Input } from './input.js';
@@ -3860,7 +3861,8 @@ const cabinLights = [];
   // This lower-deck suite is enclosed by its own outer bulkhead.
 }
 
-// Public gallery above the former cabin corridor; accommodation stays below.
+// Public Jules Verne museum above the accommodation deck.
+const museumExhibits = buildVerneMuseum({ THREE, G, M, box, shape, prop, atY, scene, floor: DECK_Y + 0.02 });
 {
   stairwellSlab(M.parquet, -SUP_X2 + WALL_T, SUP_X2 - WALL_T,
     CABIN_Z[0], CABIN_Z[1], DECK_Y, DECK_Y + 0.02);
@@ -5679,6 +5681,14 @@ try {
         speed: v.speed * (0.7 + rnd() * 0.3),
       });
     };
+
+    // Museum guests observe the models; walkers use unobstructed side aisles.
+    for (let i = 0; i < 4; i++) {
+      const [x, z] = museumExhibits[i];
+      stand(80 + i, x + .55, DECK_Y + .02, z - 1.8, 0, { look: null });
+    }
+    patrol(84, -3.4, DECK_Y + .02, 4, 15.5, 0, { look: null });
+    patrol(85, 3.4, DECK_Y + .02, 4, 15.5, 0, { look: null });
 
     // Promenade deck, both sides.
     patrol(0, SUP_X2 + 2.2, DECK_Y, -40, 40, 0);
