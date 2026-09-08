@@ -643,8 +643,8 @@ export function buildVerneMuseum({ THREE, G, M, box, shape, prop, atY, scene, fl
     const light = new THREE.PointLight(0xffdca0, 8, 6, 2);
     light.position.set(x, floor + 3.8, z); scene.add(light);
   });
-  // Signs face arrivals from either end. The centre aisle stays four metres wide.
-  panel(0, floor + 4.15, 2.22, 7, 1.45, ['JULES VERNE', 'LE CABINET DES VOYAGES EXTRAORDINAIRES', 'Cinq machines · cinq rêves de voyage', 'Maquettes inspirées des romans']);
-  panel(0, floor + 4.15, 17.78, 7, 1.45, ['JULES VERNE', 'LE CABINET DES VOYAGES EXTRAORDINAIRES', 'Explorez les inventions en miniature', 'Sous la mer · sur terre · dans les airs'], Math.PI);
+  // Each doorway names the room ahead: museum from the ballroom, ballroom from the museum.
+  panel(0, floor + 4.15, 18.22, 7, 1.45, ['JULES VERNE', 'LE CABINET DES VOYAGES EXTRAORDINAIRES', 'Cinq machines · cinq rêves de voyage', 'Maquettes inspirées des romans']);
+  panel(0, floor + 4.15, 17.78, 7, 1.45, ['SALLE DE BAL', 'MUSIQUE & DANSE', 'Entrez dans le grand salon', 'Le plaisir d’une soirée à bord'], Math.PI);
   return exhibits;
 }

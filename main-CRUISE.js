@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildVerneMuseum } from './cruiseMuseum.js?v=20260908-engravings6';
+import { buildVerneMuseum } from './cruiseMuseum.js?v=20260908-signs7';
 import { Player } from './player.js?v=20260906-seam-fix';
 import { harmoniseHair } from './hair.js?v=11';
 import { Input } from './input.js';
@@ -3080,7 +3080,7 @@ console.log('[cruise] casino room done');
     prop(() => shape(G.card, m, 0, DECK_Y + 3.35, z, 3.8, 0.68, 1, { ry }));
   };
   wayfind('◄ CASINO ROYALE', z0 + 0.4, 0);
-  wayfind('SALLE DE BAL ►', z1 - 0.4, Math.PI);
+  wayfind('MUSÉE JULES VERNE ►', z1 - 0.4, Math.PI);
 }
 
 // ---------------------------------------------------------------------------
