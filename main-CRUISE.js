@@ -662,6 +662,9 @@ const slotReelCanvas = Object.assign(document.createElement('canvas'), { width: 
 const slotReelCtx = slotReelCanvas.getContext('2d');
 const slotReelTex = new THREE.CanvasTexture(slotReelCanvas);
 slotReelTex.colorSpace = THREE.SRGBColorSpace;
+// This small animated display is uploaded repeatedly; do not rebuild mipmaps.
+slotReelTex.generateMipmaps = false;
+slotReelTex.minFilter = THREE.LinearFilter;
 const slotScreenMat = new THREE.MeshStandardMaterial({
   map: slotReelTex,
   emissive: 0xffffff,
@@ -2529,14 +2532,21 @@ console.log('[cruise] casino room start');
     const rotorMesh = new THREE.Mesh(coneGeo, M.brass);
     rotorGroup.add(rotorMesh);
 
-    // 37 pocket facets (alternating red/black + green 0)
-    for (let p = 0; p < 37; p++) {
-      const pa = (p / 37) * Math.PI * 2;
-      const pmat = p === 0 ? M.feltGreen : (p % 2 === 0 ? M.rubyBottle : M.black);
-      const pocket = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.02, 0.09), pmat);
-      pocket.position.set(Math.cos(pa) * 0.50, 0.02, Math.sin(pa) * 0.50);
-      pocket.rotation.y = -pa;
-      rotorGroup.add(pocket);
+    // Three draws per wheel instead of 37, with the same pocket geometry.
+    const pocketGeo = new THREE.BoxGeometry(0.045, 0.02, 0.09);
+    const pocketPose = new THREE.Object3D();
+    for (const [material, first, count] of [[M.feltGreen, 0, 1], [M.rubyBottle, 2, 18], [M.black, 1, 18]]) {
+      const pockets = new THREE.InstancedMesh(pocketGeo, material, count);
+      for (let i = 0; i < count; i++) {
+        const pa = ((first + i * 2) / 37) * Math.PI * 2;
+        pocketPose.position.set(Math.cos(pa) * 0.50, 0.02, Math.sin(pa) * 0.50);
+        pocketPose.rotation.y = -pa;
+        pocketPose.updateMatrix();
+        pockets.setMatrixAt(i, pocketPose.matrix);
+      }
+      pockets.instanceMatrix.needsUpdate = true;
+      pockets.computeBoundingSphere();
+      rotorGroup.add(pockets);
     }
     // Center brass turret
     const turret = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.10, 0.14, 16), M.brass);
@@ -5174,6 +5184,25 @@ prop(() => {
 flushKits();
 world.matrixAutoUpdate = false;
 world.updateMatrixWorld(true);
+// The opaque casino floor and ceiling occlude the other decks. Keep the
+// enclosing slabs and all main-deck geometry, including the atrium doorway.
+const casinoOccludedMeshes = [];
+for (const mesh of world.children) {
+  if (!mesh.isInstancedMesh || !mesh.visible) continue;
+  mesh.computeBoundingBox();
+  if (mesh.boundingBox.min.y > CEIL_Y + 0.5 || mesh.boundingBox.max.y < DECK_Y - 0.5)
+    casinoOccludedMeshes.push(mesh);
+}
+let casinoInteriorView = false;
+function updateCasinoOcclusion() {
+  const p = camera.position;
+  const inside = Math.abs(p.x) < SUP_X2 - 1
+    && p.z > CASINO_Z[0] + 2 && p.z < CASINO_Z[1] - 5
+    && p.y > DECK_Y + 0.1 && p.y < CEIL_Y - 0.1;
+  if (inside === casinoInteriorView) return;
+  casinoInteriorView = inside;
+  for (const mesh of casinoOccludedMeshes) mesh.visible = !inside;
+}
 console.log('[cruise] flushKits completed');
 
 // ---------------------------------------------------------------------------
@@ -5829,14 +5858,23 @@ try {
 }
 console.log('[cruise] people placed, total:', people.length);
 
+const peopleFrustum = new THREE.Frustum();
+const peopleViewProjection = new THREE.Matrix4();
+const peopleBounds = new THREE.Sphere(new THREE.Vector3(), 1.5);
 function tickPeople(dt) {
+  camera.updateMatrixWorld();
+  peopleViewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  peopleFrustum.setFromProjectionMatrix(peopleViewProjection);
   const pPos = ctrl?.pos;
   for (const p of people) {
+    let distanceSq = 0;
     if (pPos) {
       const dx = p.group.position.x - pPos.x;
       const dy = p.group.position.y - pPos.y;
       const dz = p.group.position.z - pPos.z;
-      const far = dx * dx + dy * dy + dz * dz > 52 * 52;
+      distanceSq = dx * dx + dy * dy + dz * dz;
+      const far = distanceSq > 52 * 52
+        || (casinoInteriorView && (p.group.position.y < DECK_Y - 2.5 || p.group.position.y > CEIL_Y));
       if (p.group.visible === far) p.group.visible = !far;
       if (far) continue;
     }
@@ -5847,29 +5885,48 @@ function tickPeople(dt) {
         const lo = Math.min(p.z0, p.z1), hi = Math.max(p.z0, p.z1);
         if (g.position.z > hi) { g.position.z = hi; p.dir = -1; g.rotation.y = Math.PI; }
         if (g.position.z < lo) { g.position.z = lo; p.dir = 1; g.rotation.y = 0; }
-        p.mixer.update(dt);
         break;
       }
-      default:
-        p.mixer.update(dt);
-        break;
+    }
+    // Patrol translation remains continuous. Only skeletal poses are sampled
+    // less often at a distance or outside the view (including their shadows).
+    peopleBounds.center.copy(p.group.position);
+    peopleBounds.center.y += 0.9;
+    const inView = peopleFrustum.intersectsSphere(peopleBounds);
+    const interval = !inView ? 1 / 10 : distanceSq > 24 * 24 ? 1 / 20 : 0;
+    p.animationElapsed = (p.animationElapsed || 0) + dt;
+    if (p.animationElapsed >= interval) {
+      p.mixer.update(p.animationElapsed);
+      p.animationElapsed = 0;
     }
   }
 }
 
+// Keep the shader light count constant while crossing room boundaries.
+// Source lights retain their day/night settings; eight reusable render lights
+// cover the nearest room without compiling new programs during a walk.
+const localLightSources = [...casinoLights, ...cabinLights, ...ballLights];
+for (const light of localLightSources) scene.remove(light);
+const localLightPool = Array.from({ length: 8 }, () => {
+  const light = new THREE.PointLight(0xffffff, 0);
+  scene.add(light);
+  return light;
+});
 function updateLocalLights(px, py, pz) {
-  const near = (lights, r) => {
-    const r2 = r * r;
-    for (let i = 0; i < lights.length; i++) {
-      const l = lights[i];
-      const dx = l.position.x - px, dy = l.position.y - py, dz = l.position.z - pz;
-      const on = dx * dx + dy * dy + dz * dz < r2;
-      if (l.visible !== on) l.visible = on;
-    }
-  };
-  near(cabinLights, 32);
-  near(casinoLights, 48);
-  near(ballLights, 48);
+  for (const light of localLightSources) {
+    const dx = light.position.x - px, dy = light.position.y - py, dz = light.position.z - pz;
+    light.userData.viewDistanceSq = dx * dx + dy * dy + dz * dz;
+  }
+  localLightSources.sort((a, b) => a.userData.viewDistanceSq - b.userData.viewDistanceSq);
+  for (let i = 0; i < localLightPool.length; i++) {
+    const target = localLightPool[i], source = localLightSources[i];
+    if (!source) { target.intensity = 0; continue; }
+    target.position.copy(source.position);
+    target.color.copy(source.color);
+    target.distance = source.distance;
+    target.decay = source.decay;
+    target.intensity = source.intensity;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -6277,6 +6334,7 @@ function animate() {
   updateSunShadow(ctrl.pos);
   updateAvatar(dt);
   rig.update(dt, input, ctrl);
+  updateCasinoOcclusion();
   // Keep the sea and the sky centred on the camera: both are finite, and the
   // player can walk 190 m along the ship. After the rig so the dome sits on
   // this frame's camera, not last frame's — a 3000 m sphere one tick behind
