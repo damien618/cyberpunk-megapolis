@@ -3226,13 +3226,9 @@ const cabinLights = [];
   // real brass porthole where there used to be a rectangle of the ship's own
   // window glass hung on the wall like a television.
   //
-  // Two things were doing most of the damage. The room is a 9.8 × 11.7 m box
-  // with a 3.98 m deckhead — a squash court, and no quantity of furniture put
-  // into a squash court will ever read as feutré — and everything in it was a
-  // flat colour, which at arm's length is exactly what makes an interior read
-  // as a corridor. So the ceiling comes down to 2.50 m, an entrance lobby is
-  // screened off the door, and every surface carries a woven or veneered
-  // pattern.
+  // A 3.40 m deckhead leaves comfortable clearance above the character and
+  // the suspended lamps. The entrance screen and textured finishes retain
+  // the suite's intimate proportions.
   //
   // Every dimension the rest of the file depends on is UNCHANGED: BED_X,
   // BED_Z, BED_W and BED_L still describe the bed BED_SPOT parks the player on,
@@ -3245,8 +3241,9 @@ const cabinLights = [];
   // porthole's glass — is buried inside 17 cm of wall and never seen.
   const RX0 = 3.17, RX1 = SUP_X2 - WALL_T / 2;
   const RZ0 = 4.17, RZ1 = 15.83;       // inside faces: aft and forward bulkheads
-  const CAB_SOFFIT = DECK_Y + 2.50;    // the deckhead you actually see
-  const CAB_CEIL = DECK_Y + 2.62;      // the top of its slab
+  const CAB_HEIGHT = 3.40;             // clearance for the player and pendant lamps
+  const CAB_SOFFIT = DECK_Y + CAB_HEIGHT;    // the deckhead you actually see
+  const CAB_CEIL = CAB_SOFFIT + 0.12;      // the top of its slab
   const LOBBY_Z = 8.2, LOBBY_X = 6.3;  // the screen that makes an entrance hall
 
   longSlab(M.cabinCarpet, RX0, RX1, RZ0, RZ1, DECK_Y, F);
@@ -3287,20 +3284,20 @@ const cabinLights = [];
     prop(() => {
       band(M.walnutBurr, 0, 0.055, 0.00, 0.145, lo, hi);        // skirting
       band(M.brassDark, 0.050, 0.062, 0.145, 0.170, lo, hi);    // its brass bead
-      band(M.cabinSilk, 0, 0.020, 1.46, 2.50, lo, hi);          // parchment silk
+      band(M.cabinSilk, 0, 0.020, 1.46, CAB_HEIGHT, lo, hi);          // parchment silk
       band(M.giltPale, 0.068, 0.082, 1.295, 1.345, lo, hi);     // gilt under the rail
       band(M.maple, 0, 0.075, 1.345, 1.46, lo, hi);             // the dado rail
       // The cornice stops 8 cm SHORT of the deckhead. The trough that leaves is
       // where the cove strip lives, and from anywhere on the floor you are
       // looking up at the cornice's underside, so the trough is never in shot.
-      band(M.walnutBurr, 0, 0.12, 2.30, 2.42, lo, hi);
-      band(M.giltPale, 0.113, 0.128, 2.295, 2.335, lo, hi);
+      band(M.walnutBurr, 0, 0.12, CAB_HEIGHT - 0.20, CAB_HEIGHT - 0.08, lo, hi);
+      band(M.giltPale, 0.113, 0.128, CAB_HEIGHT - 0.205, CAB_HEIGHT - 0.165, lo, hi);
       if (along === 'x')
         longSlab(M.warmLamp, lo + 0.12, hi - 0.12,
-          face + dir * 0.02, face + dir * 0.09, DECK_Y + 2.43, DECK_Y + 2.465);
+          face + dir * 0.02, face + dir * 0.09, CAB_SOFFIT - 0.07, CAB_SOFFIT - 0.035);
       else
         longSlab(M.warmLamp, face + dir * 0.02, face + dir * 0.09,
-          lo + 0.12, hi - 0.12, DECK_Y + 2.43, DECK_Y + 2.465);
+          lo + 0.12, hi - 0.12, CAB_SOFFIT - 0.07, CAB_SOFFIT - 0.035);
       // Panels and the stiles between them.
       for (let i = 0; i < n; i++) {
         const q0 = lo + i * step;
@@ -3322,13 +3319,13 @@ const cabinLights = [];
   // The screen's free end, capped as a pilaster so it does not read as a wall
   // sliced through with a knife.
   prop(() => {
-    box(M.walnutBurr, LOBBY_X + 0.09, DECK_Y + 1.31, LOBBY_Z, 0.18, 2.62, 0.46);
+    box(M.walnutBurr, LOBBY_X + 0.09, DECK_Y + (CAB_HEIGHT + 0.12) / 2, LOBBY_Z, 0.18, CAB_HEIGHT + 0.12, 0.46);
     box(M.giltPale, LOBBY_X + 0.09, DECK_Y + 1.36, LOBBY_Z, 0.20, 0.03, 0.48);
-    shape(G.cyl, M.brassPolished, LOBBY_X + 0.09, DECK_Y + 2.66, LOBBY_Z, 0.22, 0.08, 0.5);
+    shape(G.cyl, M.brassPolished, LOBBY_X + 0.09, CAB_CEIL + 0.04, LOBBY_Z, 0.22, 0.08, 0.5);
   });
 
   // -------------------------------------------------------------------------
-  // The deckhead, dropped to 2.50 m over the whole suite.
+  // The deckhead, raised to 3.40 m over the whole suite.
   // -------------------------------------------------------------------------
   prop(() => {
     longSlab(M.cabinDeckhead, RX0 - 0.05, RX1 + 0.05, RZ0 - 0.05, RZ1 + 0.05,
@@ -3857,11 +3854,11 @@ const cabinLights = [];
     scene.add(pl);
     cabinLights.push(pl);
   }
-  addCabinLight(8.6, DECK_Y + 2.10, 9.6, 0xffcf94, 11, 10);      // the pendant
-  addCabinLight(9.4, DECK_Y + 1.95, 14.5, 0xffc888, 8, 8);       // the lounge end
+  addCabinLight(8.6, CAB_SOFFIT - 0.40, 9.6, 0xffcf94, 11, 10);      // the pendant
+  addCabinLight(9.4, CAB_SOFFIT - 0.55, 14.5, 0xffc888, 8, 8);       // the lounge end
   addCabinLight(BED_X, DECK_Y + 1.25, 12.4, 0xffbd78, 7, 6);     // the bedside pair
   addCabinLight(12.3, DECK_Y + 1.05, 6.9, 0xffc888, 6, 5.5);     // the desk lamp
-  addCabinLight(4.7, DECK_Y + 1.95, 6.3, 0xffcf94, 6, 6);        // the lobby
+  addCabinLight(4.7, CAB_SOFFIT - 0.55, 6.3, 0xffcf94, 6, 6);        // the lobby
 
   // The rugs go down OUTSIDE prop(): they are 1 cm of floor, and as props they
   // would be walls between the door and the bed.

@@ -7,7 +7,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=7';
 import { CameraRig } from './cameraRig.js?v=5';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
-import { buildCar } from './cars.js?v=6-glb';
+import { buildCar } from './cars.js?v=8-optics';
 import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=22';
 import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=31';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';

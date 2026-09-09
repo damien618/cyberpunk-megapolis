@@ -5,7 +5,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=7';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes } from './cityBoxes.js?v=5';
-import { buildCar, carBounds } from './cars.js?v=6-glb';
+import { buildCar, carBounds } from './cars.js?v=8-optics';
 import { cloneSkinned, makeVisitor, loadGuestRig, groundSitRig, lyingRig, customRig, rootBoneOf } from './crowd.js?v=59';
 
 // ---------------------------------------------------------------------------
@@ -1693,6 +1693,27 @@ function bin() {
   shape(G.cylBase, M.kioskTrim, 0, 0, 0, 0.5, 0.86, 0.5);
   shape(G.cyl, M.black, 0, 0.9, 0, 0.54, 0.08, 0.54);
 }
+// A fixed pool lights nearby architecture and every character with the same lights.
+const beachLightSources = [];
+const beachLightPool = Array.from({ length: 8 }, () => {
+  const light = new THREE.PointLight(0xffdfab, 0, 22, 2);
+  scene.add(light);
+  return light;
+});
+function beachLight(x, y, z, power, radius) {
+  beachLightSources.push({ position: new THREE.Vector3(x, y, z), power, radius });
+}
+function updateBeachLights() {
+  const strength = beachTime === 'night' ? 1 : beachTime === 'sunset' ? 0.45 : 0;
+  beachLightSources.sort((a, b) => a.position.distanceToSquared(ctrl.pos) - b.position.distanceToSquared(ctrl.pos));
+  beachLightPool.forEach((light, i) => {
+    const source = beachLightSources[i];
+    if (!source) { light.intensity = 0; return; }
+    light.position.copy(source.position);
+    light.distance = source.radius;
+    light.intensity = source.power * strength;
+  });
+}
 // Promenade lamp. Doubles as the only web anchor on the corniche, which is why
 // it is a real mast rather than a bollard.
 function lampPost(h = 5.2) {
@@ -2474,6 +2495,10 @@ function shopUnit(s, muralMat) {
       shopUnit(s, i % 3 === 1 ? null : MURALS[i % MURALS.length]));
     fasciaSign(x, PROM_Y + GF + FASCIA / 2, SHOP_Z - 0.18,
       s.w - 0.15, FASCIA, s.label, PALETTE[s.c], s.ink);
+    beachLight(x, PROM_Y + 3.8, SHOP_Z + 1.2, 65, 17);
+    onDeck(x, SHOP_Z - 0.25, 0, () => prop(() =>
+      box(M.lampGlass, 0, 3.8, 0, 1.2, 0.12, 0.35)));
+    beachLight(x, PROM_Y + 3.7, SHOP_Z - 0.8, 45, 15);
     SHOP_FRONT.push({ x, kind: s.kind, w: s.w, label: s.label });
   });
 }
@@ -2514,8 +2539,10 @@ for (let i = -9; i <= 9; i++) {
   onDeck(x, 33.2, 0, () => palm(8.4 + rnd() * 2.6));
   if (i % 2 === 0 && clearOfFerris(x + 5.6, 34.6))
     onDeck(x + 5.6, 34.6, 0, () => prop(bench));
-  if (i % 3 === 0 && clearOfFerris(x + 3.0, 32.2))
+  if (clearOfFerris(x + 3.0, 32.2)) {
     onDeck(x + 3.0, 32.2, 0, () => prop(() => lampPost(5.4)));
+    beachLight(x + 3.0, PROM_Y + 5.2, 32.2, 100, 23);
+  }
   if (i % 4 === 0 && clearOfFerris(x - 4.2, 34.8))
     onDeck(x - 4.2, 34.8, 0, () => prop(bin));
 }
@@ -4061,8 +4088,7 @@ function setBeachTime(name) {
   M.wetSand.color.setHex(s.wetSand);
   seaUniforms.uShallow.value.setHex(s.shallow);
   foamUniforms.uOpacity.value = s.foam;
-  // The promenade and pier lamps: emissive glass rather than real lights, so
-  // a hundred of them cost nothing. Only the sky decides whether they are on.
+  // Luminous glass follows the same time of day as the nearby light pool.
   M.lampGlass.emissive.setHex(s.lamp > 0 ? 0xffe9b0 : 0x000000);
   M.lampGlass.emissiveIntensity = s.lamp;
   // Carnival bulbs stay faintly on in daylight (they are painted glass) and
@@ -4151,6 +4177,23 @@ function addFootwear(body) {
 function guestVisitor(g, opts = {}) {
   const v = makeVisitor(g.scene, g.walkClip, rnd, {
     guest: g, idleClip: g.idleClip, look: 'beach', ...opts,
+  });
+  // Some guest GLBs use unlit materials. Convert them locally so the beach
+  // crowd receives the same moonlight and street lighting as the player.
+  v.group.traverse(o => {
+    if (!o.isMesh) return;
+    const convert = m => {
+      if (!m?.isMeshBasicMaterial) return m;
+      const lit = new THREE.MeshStandardMaterial({
+        name: m.name, color: m.color, map: m.map, alphaMap: m.alphaMap,
+        transparent: m.transparent, opacity: m.opacity, alphaTest: m.alphaTest,
+        side: m.side, vertexColors: m.vertexColors, depthWrite: m.depthWrite,
+        roughness: 0.85, metalness: 0,
+      });
+      lit.visible = m.visible;
+      return lit;
+    };
+    o.material = Array.isArray(o.material) ? o.material.map(convert) : convert(o.material);
   });
   if (!opts.barefoot && !opts.authoredBody) addFootwear(v.group);
   return v;
@@ -5443,6 +5486,7 @@ function updateHud() {
 
 function animate() {
   requestAnimationFrame(animate);
+  updateBeachLights();
   const dt = Math.min(0.033, clock.getDelta());
   const t = clock.elapsedTime;
   tickFerris(dt, t);

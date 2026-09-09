@@ -6,7 +6,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=7';
 import { CameraRig } from './cameraRig.js?v=5';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
-import { buildCar, carBounds, rollCars, setCarLightsDay, setCarLightsNight } from './cars.js?v=6-glb';
+import { buildCar, carBounds, rollCars, setCarLightsDay, setCarLightsNight } from './cars.js?v=8-optics';
 
 // ---------------------------------------------------------------------------
 // Villa LA — single-storey modern California estate, laid out like the hillside

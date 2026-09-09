@@ -1,18 +1,9 @@
 // cars.js — road cars for the villa, beach, airport and zoo maps.
-//
-// The bodies come from the CC0 low-poly car pack by Quaternius (see
-// glb/cars/CREDITS.md). They replace a procedural loft: a dozen superellipse
-// cross-sections per car, which produced bulbous 50s silhouettes with a fifth
-// of every tyre buried in the sheet metal and no greenhouse you could read.
-// Pushing those tables into looking like a modern car is a losing game — a
-// modelled body gets there in one step, for 3 000 triangles.
-//
-// The pack ships flat-shaded meshes with named material slots and separate
-// wheel nodes, so everything the game needs is layered on at load: per-car
-// paint, tinted glass, emissive optics that switch to night, and wheels
-// re-pivoted onto their own axles so they can actually turn.
+// GLB templates are refined once at load for curved panels and smooth highlights.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { refineCarGeometry } from './carGeometry.js';
+import { lampMap, lampEmission, mapHeadlights, detailGrille } from './carDetails.js';
 
 // ---------------------------------------------------------------------------
 // Shared materials (paint is per-car, everything else is shared)
@@ -40,7 +31,7 @@ const MAT = {
   glass: new THREE.MeshPhysicalMaterial({
     color: 0x2c3640, roughness: 0.06, metalness: 0.15,
     transparent: true, opacity: 0.9, clearcoat: 1, clearcoatRoughness: 0.04,
-    envMapIntensity: 0.55,
+    envMapIntensity: 1.1,
   }),
   tyre: new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.92, metalness: 0.0 }),
   // The pack shares one "Grey" slot between the alloy faces and the bumper
@@ -49,7 +40,8 @@ const MAT = {
   // Daylight scene: the lens is mostly a dark reflective optic and only the
   // filament reads as lit. Pushing it harder just clips under ACES.
   headlight: new THREE.MeshPhysicalMaterial({
-    color: 0xd7e2ee, roughness: 0.08, metalness: 0.3,
+    color: 0xffffff, map: lampMap, emissiveMap: lampEmission,
+    roughness: 0.16, metalness: 0.35,
     clearcoat: 1, clearcoatRoughness: 0.03, emissive: 0x2b3a4a, emissiveIntensity: 0.5,
   }),
   taillight: new THREE.MeshStandardMaterial({
@@ -61,7 +53,7 @@ function paintMaterial(color, { metallic = true, pearl = false } = {}) {
   return new THREE.MeshPhysicalMaterial({
     color,
     roughnessMap: flakeMap,
-    roughness: pearl ? 0.26 : metallic ? 0.36 : 0.44,
+    roughness: pearl ? 0.23 : metallic ? 0.29 : 0.36,
     metalness: pearl ? 0.22 : metallic ? 0.55 : 0.08,
     clearcoat: 1.0,
     clearcoatRoughness: pearl ? 0.028 : 0.045,
@@ -107,8 +99,14 @@ for (const [type, cfg] of Object.entries(TYPES)) {
     o.castShadow = true;
     o.receiveShadow = true;
     const slot = SLOTS[o.material?.name];
+    // Keep optical surfaces planar; round bodywork and tyres, smooth alloys.
+    if (!slot || slot === 'tyre' || slot === 'alloy') {
+      o.geometry = refineCarGeometry(o.geometry, slot === 'alloy' ? 0 : 2);
+    }
     if (slot) o.material = MAT[slot];
     else o.userData.body = true;
+    if (slot === 'headlight') mapHeadlights(o);
+    if (slot === 'alloy') detailGrille(o);
 
     // Wheels arrive with their pivot at the model origin, so spinning a node
     // as-is swings the wheel around the middle of the car. Move the geometry

@@ -10,7 +10,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Player } from './player.js?v=20260906-seam-fix';
-import { buildCar, carBounds } from './cars.js?v=6-glb';
+import { buildCar, carBounds } from './cars.js?v=8-optics';
 
 // build stamp: shown in the HUD + console so a stale-cache session is
 // recognizable at a glance (a mixed old/new module graph once reproduced the
