@@ -7,7 +7,7 @@ import { Controller } from './controller.js?v=10';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes, segmentAABB } from './cityBoxes.js?v=7';
 import { loadGuestRig, makeVisitor, rootBoneOf } from './crowd.js?v=57';
-import { buildDesertedIsland, createMarineFauna, updateMarineLife } from './marineLife.js?v=1';
+import { buildDesertedIsland, createMarineFauna, updateMarineLife } from './marineLife.js?v=2';
 
 console.log('[cruise] starting module evaluation');
 

@@ -230,9 +230,14 @@ export function buildDesertedIsland(scene) {
     const falloff = 1.0 - THREE.MathUtils.smoothstep(normDist, 0.62, 1.01);
     let y = rawH * falloff;
 
-    // Submerged skirt
+    // Submerged skirt. The falloff below is a power law with no floor, and the
+    // plane's corners sit close to three coast-radii out, so they ended up some
+    // ten kilometres down: a funnel whose near walls, read at a grazing angle
+    // through the 94 %-opaque sea, drew two pale vertical bands either side of
+    // the island right down to the ship's rail. Bottom it out well below
+    // anything the water actually shows.
     if (normDist >= 0.96) {
-      y = (y - 1.0) - Math.pow((normDist - 0.96) / 0.05, 1.6) * 26;
+      y = Math.max(-45, (y - 1.0) - Math.pow((normDist - 0.96) / 0.05, 1.6) * 26);
     } else {
       y = Math.max(-10, y);
     }
