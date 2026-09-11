@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Player } from './player.js?v=20260906-seam-fix';
+import { Player } from './player.js?v=20260911-cafe-arms';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=7';
@@ -3438,7 +3438,6 @@ function buildAirliner(livery = 0xc8102e, name = 'PACIFIC', hasInterior = false,
 
       // Trigger sits in the aisle at this row. Seat-bank colliders keep the
       // player off the cushion, so a window-centred trigger could never fire.
-      // keepLock: walking the aisle must not drop pointer-lock every row.
       if (planePos) {
         const { px, py, pz, pyaw } = planePos;
         const c = Math.cos(pyaw), s = Math.sin(pyaw);
@@ -3462,7 +3461,6 @@ function buildAirliner(livery = 0xc8102e, name = 'PACIFIC', hasInterior = false,
             yaw: faceNose,
             halfWidth: 0.40, halfDepth: 0.36,
             triggerDistance: 0.14,
-            keepLock: true,
             occupied: false,
             label: spec.label,
             isPlaneSeat: true,
@@ -3817,6 +3815,7 @@ ctrl.rescueTo(spawnPoint);
 const rig = new CameraRig(camera, bw);
 const input = new Input(renderer.domElement);
 function requestGamePointerLock() {
+  if (choosingFurniturePrompt || choosingPlaneDestination || flightTakeoffActive) return;
   try { renderer.domElement.requestPointerLock?.()?.catch?.(() => {}); } catch (_) {}
 }
 input.yaw = Math.PI;
@@ -4097,7 +4096,102 @@ function fitSeatedLegs(v, groundY) {
   }
   soleAtKnee(hi);
 }
-function seatOn(v, x, cushionY, z, ry, floorY) {
+// Fit arms once, then reuse their rotations after each idle update. Reuse the
+// player's two-bone solver so hands reach the surface despite body-size changes.
+//
+// `reach` puts the hand a fixed distance in front of the SEAT, which is what a
+// hand dropped onto a thigh wants. A hand sent to a table wants the opposite:
+// the café chairs stand 35 cm back from the tabletop, further than the arm can
+// carry a hand from an upright spine, so a seat-relative target spent the whole
+// arm on the reach and locked the elbow out — five people holding their arms
+// straight ahead at table height. `extend` instead names the fraction of its
+// own span the arm is allowed to spend, measured from the shoulder the sitter
+// actually has, and the forward distance is whatever is left once the drop onto
+// the surface is paid for. The elbow then keeps a real angle, and `lean` buys
+// the last few centimetres the way anyone at a café table buys them.
+const _armPole = new THREE.Vector3();
+const _armFwd = new THREE.Vector3();
+const _armRight = new THREE.Vector3();
+const _armShoulder = new THREE.Vector3();
+const _armElbow = new THREE.Vector3();
+const _armWrist = new THREE.Vector3();
+const _armTarget = new THREE.Vector3();
+const _armQ = new THREE.Quaternion();
+function restSeatedArms(v, surfaceY,
+  { reach = null, extend = 0.84, spread = 0.14, lean = 0 } = {}) {
+  const bones = {};
+  v.group.traverse(o => { if (o.isBone) bones[o.name] = o; });
+  const solver = {
+    bones, poseRoot: v.group,
+    setBoneWorldQuaternion: Player.prototype.setBoneWorldQuaternion,
+  };
+
+  // The lean is split over the three spine joints so it reads as a body curving
+  // toward the table rather than a plank hinged at the waist. Applied in world
+  // space, about the body's own right axis: which local axis flexes a spine
+  // bone differs between the rigs in this project, that one does not.
+  if (lean) {
+    _armQ.setFromAxisAngle(
+      _armRight.set(1, 0, 0).transformDirection(v.group.matrixWorld).normalize(), lean / 3);
+    const world = new THREE.Quaternion();
+    for (const name of ['spine_01', 'spine_02', 'spine_03']) {
+      const bone = bones[name];
+      if (!bone) continue;
+      bone.getWorldQuaternion(world);
+      solver.setBoneWorldQuaternion(bone, world.premultiply(_armQ));
+      v.group.updateMatrixWorld(true);
+    }
+  }
+
+  _armFwd.set(0, 0, 1).transformDirection(v.group.matrixWorld).normalize();
+  _armRight.set(1, 0, 0).transformDirection(v.group.matrixWorld).normalize();
+  for (const side of ['l', 'r']) {
+    const sign = side === 'l' ? 1 : -1;
+    const lateral = sign * spread;
+    // Elbow down and tucked slightly back, never out level with the shoulder —
+    // only for the forward targets that need it. A hand dropped onto a thigh is
+    // already aimed almost straight down, where the solver's own sideways pole
+    // is what an arm hanging off a shoulder does.
+    let pole = null;
+    if (reach === null) {
+      pole = _armPole.set(sign * 0.34, -1, -0.22);
+      const upper = bones[`upperarm_${side}`];
+      const lower = bones[`lowerarm_${side}`];
+      const hand = bones[`hand_${side}`];
+      if (!upper || !lower || !hand) continue;
+      upper.getWorldPosition(_armShoulder);
+      lower.getWorldPosition(_armElbow);
+      hand.getWorldPosition(_armWrist);
+      const span = _armShoulder.distanceTo(_armElbow) + _armElbow.distanceTo(_armWrist);
+      const drop = surfaceY - _armShoulder.y;
+      const forward = Math.sqrt(Math.max(0.0025,
+        (extend * span) ** 2 - drop * drop - lateral * lateral));
+      _armTarget.copy(_armShoulder)
+        .addScaledVector(_armRight, lateral)
+        .addScaledVector(_armFwd, forward);
+      _armTarget.y = surfaceY;
+      v.group.worldToLocal(_armTarget);
+    } else {
+      _armTarget.set(lateral, surfaceY - v.group.position.y, reach).divide(v.group.scale);
+    }
+    Player.prototype.solveRestingArm.call(solver, side, _armTarget, pole);
+  }
+
+  // Hold the spine and clavicles as well: otherwise the standing idle moves
+  // the shoulders and pulls the fitted hands away from the table or thighs.
+  const held = Object.entries(bones)
+    .filter(([name]) => /^(pelvis|spine_\d+|clavicle_[lr]|(?:upperarm|lowerarm)(?:_twist_\d+)?_[lr]|hand_[lr])$/.test(name))
+    .map(([, bone]) => [bone, bone.quaternion.clone()]);
+  const legPose = v.pose;
+  const pose = () => {
+    legPose?.();
+    for (const [bone, rotation] of held) bone.quaternion.copy(rotation);
+  };
+  Object.assign(pose, legPose);
+  v.pose = pose;
+}
+
+function seatOn(v, x, cushionY, z, ry, floorY, arms = null) {
   v.group.position.set(x, 0, z);
   v.group.rotation.y = ry;
   // The mixer has never run, so the skeleton is still in its bind pose and
@@ -4110,6 +4204,8 @@ function seatOn(v, x, cushionY, z, ry, floorY) {
   v.group.position.y = cushionY + 0.07 - _v3seat.setFromMatrixPosition(pelvis.matrixWorld).y;
   v.group.updateMatrixWorld(true);
   fitSeatedLegs(v, floorY);
+  restSeatedArms(v, arms?.surfaceY ?? cushionY + 0.16,
+    arms ?? { reach: 0.24, spread: 0.18 });
 }
 
 {
@@ -4125,6 +4221,35 @@ function seatOn(v, x, cushionY, z, ry, floorY) {
   const walkClip = player?.actions.walk?.getClip();
   const idleClip = player?.actions.idle?.getClip();
   if (bases.length && walkClip) {
+    // Two pairs and a solo traveler, using the same seated rig as the cabins.
+    // Match the actual chair anchors so occupied seats cannot be offered to
+    // the player. The remaining seven café chairs stay available.
+    const cafeSeats = [
+      [-17.6 - 0.85, 4.8], [-17.6 + 0.85, 4.8],
+      [-13.6 - 0.85, 9.4], [-13.6 + 0.85, 9.4],
+      [-17.6 - 0.85, 13.2],
+    ];
+    for (const [x, z] of cafeSeats) {
+      const spot = furnitureInteractions.find(s => s.type === 'sit'
+        && Math.abs(s.x - x) < 0.01 && Math.abs(s.z - z) < 0.01);
+      if (!spot) continue;
+      const v = makeVisitor(bases[0], walkClip, rngCrowd,
+        { seated: true, still: true, idleClip });
+      crowd.add(v.group);
+      // Hands on the tabletop (F + 0.77), wrist bone a little over it so the
+      // palm lands on the wood, with the lean and the reach varied per person:
+      // the two halves of a pair face each other across a metre of table, so
+      // one shared pose would read as a mirror trick.
+      seatOn(v, spot.x, spot.y, spot.z, spot.yaw, F, {
+        surfaceY: F + 0.805,
+        lean: 0.20 + rngCrowd() * 0.14,
+        extend: 0.80 + rngCrowd() * 0.09,
+        spread: 0.11 + rngCrowd() * 0.06,
+      });
+      spot.occupied = 'visitor';
+      statics.push(v);
+    }
+
     // Seat map, in cabin-local coordinates. Window seats are left for the
     // player wherever possible — those are the ones the sit prompt offers — so
     // the load sits mostly in the middle and aisle columns, thinning out aft
@@ -4201,7 +4326,7 @@ function distanceToFurniture(spot, position) {
     Math.max(0, Math.abs(localX) - spot.halfWidth),
     Math.max(0, Math.abs(localZ) - spot.halfDepth));
 }
-function setFurniturePrompt(spot) {
+function setFurniturePrompt(spot, restoreLock = true) {
   if (promptedFurniture === spot) return;
   promptedFurniture = spot;
   furnitureActionRequested = false;
@@ -4209,11 +4334,12 @@ function setFurniturePrompt(spot) {
   furniturePrompt.textContent = show ? (spot.label || "S'asseoir") : '';
   furniturePrompt.classList.toggle('show', show);
   furniturePrompt.setAttribute('aria-hidden', show ? 'false' : 'true');
-  const stealLock = show && !spot.keepLock;
+  const stealLock = show;
   choosingFurniturePrompt = stealLock;
   if (stealLock) {
+    input.locked = false;
     if (document.pointerLockElement === renderer.domElement) document.exitPointerLock?.();
-  } else if (started && !paused && !show) {
+  } else if (restoreLock && started && !paused && !show) {
     requestGamePointerLock();
   }
 }
@@ -4221,8 +4347,6 @@ furniturePrompt.addEventListener('click', event => {
   event.stopPropagation();
   if (!promptedFurniture) return;
   furnitureActionRequested = true;
-  choosingFurniturePrompt = false;
-  requestGamePointerLock();
 });
 renderer.domElement.addEventListener('click', () => {
   if (started && !paused && !choosingFurniturePrompt
@@ -4239,6 +4363,7 @@ const FLIGHT_TAKEOFF_DURATION = 3.8;
 function showPlanePrompt() {
   if (!planePromptGroup) return;
   choosingPlaneDestination = true;
+  input.locked = false;
   planePromptGroup.classList.add('show');
   planePromptGroup.setAttribute('aria-hidden', 'false');
   if (document.pointerLockElement === renderer.domElement) {
@@ -4331,7 +4456,9 @@ function updateFlightTakeoff(dt) {
 }
 
 function enterFurnitureInteraction(spot) {
-  setFurniturePrompt(null);
+  // A plane seat opens another clickable choice: keep the cursor free across
+  // the transition instead of racing a new lock request against its release.
+  setFurniturePrompt(null, !spot.isPlaneSeat);
   if (spot.occupied !== 'visitor') spot.occupied = 'player';
   activeFurnitureInteraction = { ...spot, source: spot, returnPosition: ctrl.pos.clone(), readyToExit: false };
   ctrl.pos.set(spot.x, spot.y, spot.z);
@@ -4445,7 +4572,10 @@ function tickCrowd(dt) {
     const dx = v.group.position.x - px, dz = v.group.position.z - pz;
     const near = dx * dx + dz * dz < CROWD_CULL_R2;
     if (near !== v.group.visible) v.group.visible = near;
-    if (near) v.mixer.update(dt);
+    if (near) {
+      v.mixer.update(dt);
+      v.pose?.();
+    }
   }
   // Cabin passengers exist only for the aircraft you are actually at. Every
   // visitor runs with frustum culling off — a skinned bounding sphere from the
@@ -4510,9 +4640,16 @@ function updateLightBudget() {
   for (let i = 0; i < lightRank.length; i++) lightRank[i].light.visible = i < LIGHT_BUDGET;
 }
 
+// Keep real-time movement on slow frames, but bound catch-up after a stall.
+// Only the first physics step may consume a key press (jump, reset, zip).
+const heldInput = {
+  down: code => input.down(code),
+  pressed: () => false,
+  moveVector: out => input.moveVector(out),
+};
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(0.033, clock.getDelta());
+  const dt = Math.min(0.25, clock.getDelta());
   const t = clock.elapsedTime;
   if (flightTakeoffActive) {
     updateFlightTakeoff(dt);
@@ -4527,7 +4664,11 @@ function animate() {
     forward.set(-Math.sin(input.yaw) * cp, Math.sin(input.pitch), -Math.cos(input.yaw) * cp).normalize();
     const locked = updateFurnitureInteraction(dt);
     if (!locked) {
-      ctrl.update(dt, input, input.yaw, forward);
+      const steps = Math.max(1, Math.ceil(dt / (1 / 60)));
+      const stepDt = dt / steps;
+      for (let step = 0; step < steps; step++) {
+        ctrl.update(stepDt, step === 0 ? input : heldInput, input.yaw, forward);
+      }
       updateFurnitureInteraction(0);
     }
     if (ctrl.pos.y < -60) ctrl.rescueTo(spawnPoint);
@@ -4569,7 +4710,9 @@ if (arrivedFromLA || arrivedFromJapan || window.__startRequested) {
 document.addEventListener('pointerlockchange', () => {
   const hasLock = document.pointerLockElement !== null;
   usedLock = usedLock || hasLock;
-  if ((choosingFurniturePrompt || choosingPlaneDestination) && !hasLock) {
+  if (choosingFurniturePrompt || choosingPlaneDestination) {
+    input.locked = false;
+    if (hasLock) document.exitPointerLock?.();
     paused = false;
     overlay.style.display = 'none';
     return;

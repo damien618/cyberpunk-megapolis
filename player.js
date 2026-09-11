@@ -1468,10 +1468,9 @@ export class Player {
     const hat = outfit.hat && dressed;
     this.setPartVisible('hat', hat);
     this.setPartVisible('backpack', outfit.backpack && dressed);
-    // Kimono keeps the tee and trousers on as the nagajuban: the lofted
-    // robe sits over them, and they plug any hole the shells leave at the
-    // collar or the stride.
-    this.setPartVisible('tshirt', (outfit.tshirt && !outfit.night && !outfit.casino && !outfit.swimsuit) || outfit.kimono);
+    // The kimono supplies its own robe and collar. The crew-neck tee protrudes
+    // above that neckline at the nape and shoulders, so hide it with this outfit.
+    this.setPartVisible('tshirt', outfit.tshirt && !outfit.night && !outfit.casino && !outfit.swimsuit && !outfit.kimono);
     this.setPartVisible('pants', (outfit.pants && !noTrousers && !outfit.zoo && !outfit.casino) || outfit.kimono);
     this.setPartVisible('shoes', outfit.shoes && !legs && !outfit.casino);
     if (this.wardrobe.sleeves) this.wardrobe.sleeves.visible = outfit.longSleeves && dressed;
@@ -1764,7 +1763,13 @@ export class Player {
     bone.quaternion.copy(parentWorld.invert().multiply(worldQuaternion));
   }
 
-  solveRestingArm(side, targetLocal) {
+  // `poleLocal` steers the elbow: the solver keeps the hand on the target and
+  // swings the elbow around the shoulder-to-wrist line, so the pole is the
+  // direction that line is pushed away from. The default sends it straight out
+  // sideways, which is right for a hand dropped onto a thigh and badly wrong
+  // for one sent forward onto a table — there it splays the elbows out level
+  // with the shoulders. Pass a downward pole for those.
+  solveRestingArm(side, targetLocal, poleLocal = null) {
     const upper = this.bones[`upperarm_${side}`];
     const lower = this.bones[`lowerarm_${side}`];
     const hand = this.bones[`hand_${side}`];
@@ -1791,7 +1796,7 @@ export class Player {
 
     const along = (upperLength ** 2 - lowerLength ** 2 + distance ** 2) / (2 * distance);
     const outward = Math.sqrt(Math.max(0, upperLength ** 2 - along ** 2));
-    const pole = new THREE.Vector3(side === 'l' ? 1 : -1, 0, 0)
+    const pole = (poleLocal ? poleLocal.clone() : new THREE.Vector3(side === 'l' ? 1 : -1, 0, 0))
       .transformDirection(this.poseRoot.matrixWorld);
     pole.addScaledVector(direction, -pole.dot(direction)).normalize();
     const desiredElbow = shoulder.clone()

@@ -12,8 +12,8 @@
 //   obi     — gold brocade sash + taiko musubi on the back
 //   collar  — overlapping eri in cream over a pink date-eri
 //
-// The t-shirt and trousers stay on underneath as the nagajuban, so a gap in
-// the loft never opens onto missing body skin.
+// The trousers stay underneath the skirt. The robe replaces the t-shirt;
+// its neckline is finished by the separate eri bands above.
 import * as THREE from 'three';
 
 const RADIAL = 24;
