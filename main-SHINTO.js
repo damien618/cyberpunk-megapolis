@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Player } from './player.js?v=20260911-kimono-shoulders';
+import { Player } from './player.js?v=20260911-kimono-tex';
 import { harmoniseHair } from './hair.js?v=8';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=7';
@@ -294,12 +294,20 @@ function canvasTexture(canvas, { srgb = true, rx = 1, ry = 1 } = {}) {
 // each procedural surface gets relief that matches its own artwork instead of
 // borrowing an unrelated one. Sampling wraps, so the result tiles like the
 // source does.
-function normalFromCanvas(src, strength = 2.0) {
+function normalFromCanvas(src, strength = 2.0, { useAlpha = false } = {}) {
   const size = src.width;
   const px = src.getContext('2d').getImageData(0, 0, size, size).data;
   const h = new Float32Array(size * size);
-  for (let i = 0; i < size * size; i++) {
-    h[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114) / 255;
+  if (useAlpha) {
+    for (let i = 0; i < size * size; i++) {
+      const a = px[i * 4 + 3] / 255;
+      const lum = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114) / 255;
+      h[i] = a * (0.35 + 0.65 * lum);
+    }
+  } else {
+    for (let i = 0; i < size * size; i++) {
+      h[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114) / 255;
+    }
   }
   const at = (x, y) => h[((y + size) % size) * size + ((x + size) % size)];
   const out = makeCanvas(size);
@@ -321,192 +329,6 @@ function normalFromCanvas(src, strength = 2.0) {
   return out;
 }
 
-// Leaf silhouettes for alpha-tested cards. Ellipses on an opaque sheet
-// wrapped a sphere and read as painted cloth; these are real blades with
-// a transparent field so the crown silhouette is ragged.
-function drawMapleLeaf(g, scale, fill, vein) {
-  const lobes = [
-    { a: -1.18, len: 0.64, w: 0.24 },
-    { a: -0.58, len: 0.86, w: 0.20 },
-    { a:  0.00, len: 1.00, w: 0.17 },
-    { a:  0.58, len: 0.86, w: 0.20 },
-    { a:  1.18, len: 0.64, w: 0.24 },
-  ];
-  const pt = (a, r) => [Math.sin(a) * scale * r, -Math.cos(a) * scale * r];
-  g.beginPath();
-  g.moveTo(0, scale * 0.14);
-  for (let i = 0; i < lobes.length; i++) {
-    const L = lobes[i];
-    const [sx, sy] = pt(L.a - L.w, L.len * 0.40);
-    const [tx, ty] = pt(L.a, L.len);
-    const [ex, ey] = pt(L.a + L.w, L.len * 0.40);
-    if (i > 0) {
-      const mid = (lobes[i - 1].a + L.a) / 2;
-      const [ix, iy] = pt(mid, 0.20);
-      g.quadraticCurveTo(ix, iy, sx, sy);
-    } else {
-      g.lineTo(sx, sy);
-    }
-    g.quadraticCurveTo(
-      Math.sin(L.a - L.w * 0.32) * scale * L.len * 0.78,
-      -Math.cos(L.a - L.w * 0.32) * scale * L.len * 0.78,
-      tx, ty);
-    g.quadraticCurveTo(
-      Math.sin(L.a + L.w * 0.32) * scale * L.len * 0.78,
-      -Math.cos(L.a + L.w * 0.32) * scale * L.len * 0.78,
-      ex, ey);
-  }
-  g.closePath();
-  g.fillStyle = fill;
-  g.fill();
-  g.strokeStyle = vein;
-  g.lineWidth = Math.max(1.1, scale * 0.034);
-  g.lineCap = 'round';
-  g.globalAlpha *= 0.5;
-  g.beginPath();
-  g.moveTo(0, scale * 0.12);
-  g.lineTo(0, -scale * 0.82);
-  g.stroke();
-  for (const L of lobes) {
-    if (L.a === 0) continue;
-    g.beginPath();
-    g.moveTo(0, scale * 0.04);
-    g.lineTo(Math.sin(L.a) * scale * L.len * 0.7, -Math.cos(L.a) * scale * L.len * 0.7);
-    g.stroke();
-  }
-  g.globalAlpha /= 0.5;
-}
-
-function drawPineTuft(g, scale, fill, vein) {
-  g.strokeStyle = fill;
-  g.lineCap = 'round';
-  const n = 16;
-  for (let i = 0; i < n; i++) {
-    const a = -1.15 + (i / (n - 1)) * 2.3;
-    const len = scale * (0.72 + (i % 3) * 0.12);
-    g.lineWidth = Math.max(1.2, scale * 0.045);
-    g.beginPath();
-    g.moveTo(0, scale * 0.08);
-    g.quadraticCurveTo(
-      Math.sin(a) * scale * 0.28, -Math.cos(a) * scale * 0.35,
-      Math.sin(a) * len, -Math.cos(a) * len);
-    g.stroke();
-  }
-  g.fillStyle = vein;
-  g.beginPath();
-  g.ellipse(0, scale * 0.06, scale * 0.08, scale * 0.1, 0, 0, Math.PI * 2);
-  g.fill();
-}
-
-function drawSakuraPetal(g, len, w, fill1, fill2) {
-  g.save();
-  const grad = g.createLinearGradient(0, 0, 0, -len);
-  grad.addColorStop(0, fill1);
-  grad.addColorStop(0.55, fill2);
-  // A pure white tip drained the hue out of the canopy once a few hundred petals
-  // overlapped; lightening the petal's own colour keeps the mass pink.
-  grad.addColorStop(1, mixHex(fill2, '#ffffff', 0.6));
-  g.fillStyle = grad;
-  g.beginPath();
-  g.moveTo(0, 0);
-  g.bezierCurveTo(-w * 0.75, -len * 0.35, -w, -len * 0.82, -w * 0.35, -len);
-  g.quadraticCurveTo(0, -len * 0.88, w * 0.35, -len);
-  g.bezierCurveTo(w, -len * 0.82, w * 0.75, -len * 0.35, 0, 0);
-  g.fill();
-  g.restore();
-}
-
-function drawSakuraBlossom(g, scale, fillBase, fillEdge, centerColor = '#e2487a') {
-  g.save();
-  // Calyx / depth shadow at the blossom center
-  g.fillStyle = 'rgba(90, 30, 42, 0.45)';
-  g.beginPath();
-  g.arc(0, 0, scale * 0.22, 0, Math.PI * 2);
-  g.fill();
-
-  // 5 notched petals
-  const pLen = scale * 0.65;
-  const pW = scale * 0.38;
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
-    g.save();
-    g.rotate(a);
-    drawSakuraPetal(g, pLen, pW, fillBase, fillEdge);
-    g.restore();
-  }
-
-  // Soft rosy central glow
-  const gradCenter = g.createRadialGradient(0, 0, 0, 0, 0, scale * 0.28);
-  gradCenter.addColorStop(0, centerColor);
-  gradCenter.addColorStop(0.5, 'rgba(235, 70, 120, 0.65)');
-  gradCenter.addColorStop(1, 'rgba(255, 180, 200, 0)');
-  g.fillStyle = gradCenter;
-  g.beginPath();
-  g.arc(0, 0, scale * 0.28, 0, Math.PI * 2);
-  g.fill();
-
-  // Stamens and golden anther tips
-  const stamenCount = 8;
-  g.strokeStyle = 'rgba(215, 80, 115, 0.85)';
-  g.lineWidth = Math.max(1, scale * 0.025);
-  for (let s = 0; s < stamenCount; s++) {
-    const sa = (s / stamenCount) * Math.PI * 2;
-    const sl = scale * (0.13 + (s % 3) * 0.04);
-    const sx = Math.cos(sa) * sl;
-    const sy = Math.sin(sa) * sl;
-    g.beginPath();
-    g.moveTo(0, 0);
-    g.lineTo(sx, sy);
-    g.stroke();
-    g.fillStyle = '#ffde59';
-    g.beginPath();
-    g.arc(sx, sy, Math.max(1.1, scale * 0.034), 0, Math.PI * 2);
-    g.fill();
-  }
-
-  // Central pistil
-  g.fillStyle = '#6e9828';
-  g.beginPath();
-  g.arc(0, 0, Math.max(1, scale * 0.038), 0, Math.PI * 2);
-  g.fill();
-
-  g.restore();
-}
-
-function drawBambooBlade(g, scale, fill, vein) {
-  g.beginPath();
-  g.moveTo(0, -scale * 0.95);
-  g.quadraticCurveTo(scale * 0.26, -scale * 0.28, 0, scale);
-  g.quadraticCurveTo(-scale * 0.26, -scale * 0.28, 0, -scale * 0.95);
-  g.fillStyle = fill;
-  g.fill();
-
-  // Subtle highlight along left half of the blade
-  g.fillStyle = 'rgba(255, 255, 255, 0.12)';
-  g.beginPath();
-  g.moveTo(0, -scale * 0.9);
-  g.quadraticCurveTo(scale * 0.14, -scale * 0.28, 0, scale * 0.85);
-  g.lineTo(0, -scale * 0.9);
-  g.fill();
-
-  // Fine central midrib
-  g.strokeStyle = vein;
-  g.lineWidth = Math.max(1, scale * 0.028);
-  g.globalAlpha *= 0.55;
-  g.beginPath();
-  g.moveTo(0, -scale * 0.85);
-  g.lineTo(0, scale * 0.9);
-  g.stroke();
-  g.globalAlpha /= 0.55;
-}
-
-function drawLeafKind(g, kind, scale, fill, vein, fillEdge) {
-  if (kind === 'pine') drawPineTuft(g, scale, fill, vein);
-  else if (kind === 'sakura' || kind === 'sakuraWhite') drawSakuraBlossom(g, scale, fill, fillEdge || fill, vein);
-  else if (kind === 'bamboo') drawBambooBlade(g, scale, fill, vein);
-  else drawMapleLeaf(g, scale, fill, vein);
-}
-
 // Blend two hex colours. The shaded understorey tones are derived from the
 // species palette this way rather than hand-listed a second time.
 function mixHex(a, b, t) {
@@ -515,12 +337,488 @@ function mixHex(a, b, t) {
   return `#${((1 << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).slice(1)}`;
 }
 
-// One card = a clump of blossoms/leaves. Two things stop a canopy of these from
-// reading as stamped plates. The silhouette has to stop at a torn contour well
-// inside the UV square, or every card shows its own rectangle; and the depth
-// behind the blossoms has to be made of more blossoms, because alphaTest slices
-// a soft gradient into a hard-edged disc — the plate artefact the old volume
-// layer was meant to hide, and the one it actually produced.
+// ---------------------------------------------------------------------------
+// Botanical Leaf & Blossom Art: Realistic Japanese Flora
+// ---------------------------------------------------------------------------
+
+// Japanese Maple (Momiji / Acer palmatum): 7 deeply cleft, sharply serrated lobes
+// with primary radiating veins and delicate sub-veins.
+function drawMapleLeaf(g, scale, fill, vein, accentFill) {
+  g.save();
+  const lobes = [
+    { a: -1.45, len: 0.44, w: 0.13, teeth: 2 },
+    { a: -0.96, len: 0.72, w: 0.16, teeth: 3 },
+    { a: -0.45, len: 0.90, w: 0.18, teeth: 4 },
+    { a:  0.00, len: 1.05, w: 0.19, teeth: 4 },
+    { a:  0.45, len: 0.90, w: 0.18, teeth: 4 },
+    { a:  0.96, len: 0.72, w: 0.16, teeth: 3 },
+    { a:  1.45, len: 0.44, w: 0.13, teeth: 2 },
+  ];
+
+  // Slender crimson petiole (leaf stem)
+  g.strokeStyle = '#72121e';
+  g.lineWidth = Math.max(1.3, scale * 0.038);
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.quadraticCurveTo(scale * 0.04, scale * 0.18, scale * 0.02, scale * 0.38);
+  g.stroke();
+
+  const pt = (a, r) => [Math.sin(a) * scale * r, -Math.cos(a) * scale * r];
+
+  // Serrated leaf contour with fine sharp marginal teeth
+  g.beginPath();
+  const [bStartX, bStartY] = pt(-1.58, 0.12);
+  g.moveTo(bStartX, bStartY);
+
+  for (let i = 0; i < lobes.length; i++) {
+    const L = lobes[i];
+    const tipR = L.len;
+    const [tx, ty] = pt(L.a, tipR);
+    const sinusR = 0.24;
+
+    // Up left side with serrations
+    const numT = L.teeth;
+    for (let t = 1; t <= numT; t++) {
+      const frac = t / (numT + 1);
+      const sideA = L.a - L.w * Math.sin(frac * Math.PI);
+      const toothBaseR = sinusR + (tipR - sinusR) * (frac - 0.05);
+      const toothTipR = sinusR + (tipR - sinusR) * frac + 0.035;
+      const [tbx, tby] = pt(sideA, toothBaseR);
+      const [ttx, tty] = pt(sideA - 0.04, toothTipR);
+      g.lineTo(tbx, tby);
+      g.lineTo(ttx, tty);
+    }
+
+    // Lobe tip
+    g.lineTo(tx, ty);
+
+    // Down right side with serrations
+    for (let t = numT; t >= 1; t--) {
+      const frac = t / (numT + 1);
+      const sideA = L.a + L.w * Math.sin(frac * Math.PI);
+      const toothTipR = sinusR + (tipR - sinusR) * frac + 0.035;
+      const toothBaseR = sinusR + (tipR - sinusR) * (frac - 0.05);
+      const [ttx, tty] = pt(sideA + 0.04, toothTipR);
+      const [tbx, tby] = pt(sideA, toothBaseR);
+      g.lineTo(ttx, tty);
+      g.lineTo(tbx, tby);
+    }
+
+    // Sinus between lobes
+    if (i < lobes.length - 1) {
+      const midA = (lobes[i].a + lobes[i + 1].a) * 0.5;
+      const [sx, sy] = pt(midA, sinusR);
+      g.quadraticCurveTo(sx * 1.1, sy * 1.1, sx, sy);
+    }
+  }
+
+  const [bEndX, bEndY] = pt(1.58, 0.12);
+  g.lineTo(bEndX, bEndY);
+  g.quadraticCurveTo(0, scale * 0.08, bStartX, bStartY);
+  g.closePath();
+
+  // Autumn flame gradient
+  const grad = g.createRadialGradient(0, scale * 0.05, scale * 0.05, 0, 0, scale * 1.05);
+  grad.addColorStop(0, '#6d0b16');
+  grad.addColorStop(0.3, fill);
+  grad.addColorStop(0.72, accentFill || mixHex(fill, '#ff8c2b', 0.55));
+  grad.addColorStop(1, '#ffaf38');
+  g.fillStyle = grad;
+  g.fill();
+
+  // Delicate translucent rim highlight
+  g.strokeStyle = 'rgba(255, 185, 80, 0.35)';
+  g.lineWidth = Math.max(0.8, scale * 0.018);
+  g.stroke();
+
+  // Primary radiating veins
+  g.strokeStyle = vein || 'rgba(255, 215, 110, 0.65)';
+  g.lineWidth = Math.max(1.1, scale * 0.026);
+  g.lineCap = 'round';
+  for (const L of lobes) {
+    const [tx, ty] = pt(L.a, L.len * 0.92);
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.lineTo(tx, ty);
+    g.stroke();
+
+    // Lateral secondary veins
+    g.save();
+    g.lineWidth = Math.max(0.7, scale * 0.014);
+    g.globalAlpha *= 0.5;
+    for (let s = 1; s <= 3; s++) {
+      const f = s * 0.24;
+      const [vx, vy] = pt(L.a, L.len * f);
+      const [vlx, vly] = pt(L.a - 0.22, L.len * (f + 0.12));
+      const [vrx, vry] = pt(L.a + 0.22, L.len * (f + 0.12));
+      g.beginPath(); g.moveTo(vx, vy); g.lineTo(vlx, vly); g.stroke();
+      g.beginPath(); g.moveTo(vx, vy); g.lineTo(vrx, vry); g.stroke();
+    }
+    g.restore();
+  }
+
+  g.restore();
+}
+
+// Japanese Black Pine (Matsu / Pinus thunbergii): dense needle pairs radiating
+// in a layered brush-like cushion with woody bud candles and silvery highlights.
+function drawPineTuft(g, scale, fill, vein) {
+  g.save();
+  const n = 28;
+
+  // Woody central candle bud
+  const budGrad = g.createLinearGradient(0, scale * 0.12, 0, -scale * 0.14);
+  budGrad.addColorStop(0, '#3a2211');
+  budGrad.addColorStop(0.6, '#724823');
+  budGrad.addColorStop(1, '#9e6a37');
+  g.fillStyle = budGrad;
+  g.beginPath();
+  g.ellipse(0, 0, scale * 0.09, scale * 0.14, 0, 0, Math.PI * 2);
+  g.fill();
+
+  // 1. Deep shadow needles (background depth)
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const a = -1.35 + t * 2.7;
+    const len = scale * (0.75 + ((i * 7) % 5) * 0.06);
+    const curve = Math.sin(a) * scale * 0.22;
+    g.strokeStyle = '#0d210f';
+    g.lineWidth = Math.max(1.2, scale * 0.040);
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(0, scale * 0.04);
+    g.quadraticCurveTo(Math.sin(a) * len * 0.45 + curve, -Math.cos(a) * len * 0.45,
+      Math.sin(a) * len, -Math.cos(a) * len);
+    g.stroke();
+  }
+
+  // 2. Mid-layer needles (rich evergreen body)
+  for (let i = 0; i < n - 4; i++) {
+    const t = (i + 0.5) / (n - 4);
+    const a = -1.22 + t * 2.44;
+    const len = scale * (0.82 + ((i * 5) % 4) * 0.06);
+    const curve = Math.sin(a) * scale * 0.18;
+    g.strokeStyle = fill;
+    g.lineWidth = Math.max(1.4, scale * 0.046);
+    g.beginPath();
+    g.moveTo(0, scale * 0.02);
+    g.quadraticCurveTo(Math.sin(a) * len * 0.5 + curve, -Math.cos(a) * len * 0.5,
+      Math.sin(a) * len, -Math.cos(a) * len);
+    g.stroke();
+  }
+
+  // 3. Foreground sunlit needles with silvery stoma band
+  for (let i = 0; i < n - 8; i += 2) {
+    const t = i / (n - 9);
+    const a = -1.1 + t * 2.2;
+    const len = scale * (0.78 + ((i * 3) % 4) * 0.05);
+    const curve = Math.sin(a) * scale * 0.15;
+    g.strokeStyle = '#4e9241';
+    g.lineWidth = Math.max(1.1, scale * 0.034);
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.quadraticCurveTo(Math.sin(a) * len * 0.5 + curve, -Math.cos(a) * len * 0.5,
+      Math.sin(a) * len, -Math.cos(a) * len);
+    g.stroke();
+
+    // Silvery needle sheen
+    g.strokeStyle = 'rgba(225, 248, 220, 0.45)';
+    g.lineWidth = Math.max(0.6, scale * 0.016);
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.quadraticCurveTo(Math.sin(a) * len * 0.5 + curve, -Math.cos(a) * len * 0.5,
+      Math.sin(a) * len * 0.88, -Math.cos(a) * len * 0.88);
+    g.stroke();
+  }
+
+  // Fascicle sheath collar at needle base
+  g.fillStyle = '#654e31';
+  g.beginPath();
+  g.ellipse(0, scale * 0.05, scale * 0.11, scale * 0.06, 0, 0, Math.PI * 2);
+  g.fill();
+
+  g.restore();
+}
+
+// Single Sakura Petal: heart-shaped, notched apex, delicate translucent gradient
+// and fine radial vein creases.
+function drawSakuraPetal(g, len, w, fillBase, fillEdge) {
+  g.save();
+  const grad = g.createLinearGradient(0, 0, 0, -len);
+  grad.addColorStop(0, fillBase);
+  grad.addColorStop(0.35, fillEdge);
+  // Keep a blush in the sunlit half. Pure white across most of every petal
+  // clipped all the flowers into one paper-looking patch under the strong sun.
+  grad.addColorStop(0.82, mixHex(fillEdge, '#ffffff', 0.42));
+  grad.addColorStop(1, mixHex(fillEdge, '#ffffff', 0.68));
+  g.fillStyle = grad;
+
+  // Notched obovate petal
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.bezierCurveTo(-w * 0.72, -len * 0.32, -w * 1.05, -len * 0.76, -w * 0.42, -len);
+  g.quadraticCurveTo(-w * 0.15, -len * 0.86, 0, -len * 0.88);
+  g.quadraticCurveTo(w * 0.15, -len * 0.86, w * 0.42, -len);
+  g.bezierCurveTo(w * 1.05, -len * 0.76, w * 0.72, -len * 0.32, 0, 0);
+  g.fill();
+
+  // Translucent petal crease streaks
+  g.strokeStyle = 'rgba(215, 65, 105, 0.22)';
+  g.lineWidth = Math.max(0.6, len * 0.024);
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.quadraticCurveTo(-w * 0.15, -len * 0.5, -w * 0.22, -len * 0.82);
+  g.stroke();
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.quadraticCurveTo(w * 0.15, -len * 0.5, w * 0.22, -len * 0.82);
+  g.stroke();
+
+  g.restore();
+}
+
+// Fully open Cherry Blossom (Sakura): 5 overlapping notched petals, wine-red
+// calyx cup, radiating stamen filaments with golden anthers, and central pistil.
+function drawSakuraBlossom(g, scale, fillBase, fillEdge, centerColor = '#b31d45') {
+  g.save();
+
+  // Calyx sepals visible between petals
+  g.fillStyle = '#661528';
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 - Math.PI / 2 + Math.PI / 5;
+    const sx = Math.cos(a) * scale * 0.32;
+    const sy = Math.sin(a) * scale * 0.32;
+    g.beginPath();
+    g.arc(sx, sy, scale * 0.06, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  // 5 overlapping petals
+  const pLen = scale * 0.70;
+  const pW = scale * 0.42;
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 - Math.PI / 2 + (i % 2 === 0 ? 0.02 : -0.02);
+    g.save();
+    g.rotate(a);
+    drawSakuraPetal(g, pLen, pW, fillBase, fillEdge);
+    g.restore();
+  }
+
+  // Deep wine-red central cup / nectary
+  const gradCenter = g.createRadialGradient(0, 0, 0, 0, 0, scale * 0.30);
+  gradCenter.addColorStop(0, centerColor);
+  gradCenter.addColorStop(0.45, 'rgba(185, 30, 75, 0.85)');
+  gradCenter.addColorStop(0.75, 'rgba(235, 75, 125, 0.4)');
+  gradCenter.addColorStop(1, 'rgba(255, 190, 210, 0)');
+  g.fillStyle = gradCenter;
+  g.beginPath();
+  g.arc(0, 0, scale * 0.30, 0, Math.PI * 2);
+  g.fill();
+
+  // Delicate stamen filaments & golden anthers
+  const stamenCount = 18;
+  g.lineWidth = Math.max(0.8, scale * 0.022);
+  for (let s = 0; s < stamenCount; s++) {
+    const sa = (s / stamenCount) * Math.PI * 2 + ((s * 3) % 7) * 0.06;
+    const sl = scale * (0.16 + (s % 4) * 0.035);
+    const sx = Math.cos(sa) * sl;
+    const sy = Math.sin(sa) * sl;
+
+    g.strokeStyle = s % 2 === 0 ? 'rgba(245, 185, 205, 0.9)' : 'rgba(220, 75, 115, 0.8)';
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.lineTo(sx, sy);
+    g.stroke();
+
+    g.fillStyle = '#ffc820';
+    g.beginPath();
+    g.arc(sx, sy, Math.max(1.1, scale * 0.035), 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#e59400';
+    g.beginPath();
+    g.arc(sx, sy, Math.max(0.6, scale * 0.018), 0, Math.PI * 2);
+    g.fill();
+  }
+
+  // Emerald central pistil
+  g.fillStyle = '#5c8a24';
+  g.beginPath();
+  g.arc(0, 0, Math.max(1.2, scale * 0.042), 0, Math.PI * 2);
+  g.fill();
+
+  g.restore();
+}
+
+// Side-profile Sakura Blossom: shows red pedicel, calyx cup, upward opening petals
+function drawSakuraSideBlossom(g, scale, fillBase, fillEdge) {
+  g.save();
+  // Pedicel stem
+  g.strokeStyle = '#7c2836';
+  g.lineWidth = Math.max(1.2, scale * 0.038);
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(0, scale * 0.45);
+  g.quadraticCurveTo(scale * 0.06, scale * 0.22, 0, scale * 0.05);
+  g.stroke();
+
+  // Wine-red calyx cup
+  g.fillStyle = '#6a1224';
+  g.beginPath();
+  g.moveTo(-scale * 0.16, scale * 0.08);
+  g.lineTo(scale * 0.16, scale * 0.08);
+  g.lineTo(scale * 0.10, -scale * 0.08);
+  g.lineTo(-scale * 0.10, -scale * 0.08);
+  g.closePath();
+  g.fill();
+
+  const grad = g.createLinearGradient(0, scale * 0.05, 0, -scale * 0.55);
+  grad.addColorStop(0, fillBase);
+  grad.addColorStop(0.45, fillEdge);
+  grad.addColorStop(1, '#ffffff');
+  g.fillStyle = grad;
+
+  // Left petal
+  g.beginPath();
+  g.moveTo(-scale * 0.06, 0);
+  g.bezierCurveTo(-scale * 0.38, -scale * 0.2, -scale * 0.42, -scale * 0.48, -scale * 0.15, -scale * 0.55);
+  g.bezierCurveTo(-scale * 0.05, -scale * 0.45, -scale * 0.02, -scale * 0.2, 0, 0);
+  g.fill();
+
+  // Right petal
+  g.beginPath();
+  g.moveTo(scale * 0.06, 0);
+  g.bezierCurveTo(scale * 0.38, -scale * 0.2, scale * 0.42, -scale * 0.48, scale * 0.15, -scale * 0.55);
+  g.bezierCurveTo(scale * 0.05, -scale * 0.45, scale * 0.02, -scale * 0.2, 0, 0);
+  g.fill();
+
+  // Center petal
+  g.beginPath();
+  g.moveTo(-scale * 0.12, 0);
+  g.bezierCurveTo(-scale * 0.18, -scale * 0.3, -scale * 0.12, -scale * 0.60, 0, -scale * 0.62);
+  g.bezierCurveTo(scale * 0.12, -scale * 0.60, scale * 0.18, -scale * 0.3, scale * 0.12, 0);
+  g.fill();
+
+  // Stamens peeking out
+  for (let s = -2; s <= 2; s++) {
+    const sx = s * scale * 0.05;
+    g.strokeStyle = 'rgba(240, 180, 200, 0.9)';
+    g.lineWidth = Math.max(0.8, scale * 0.022);
+    g.beginPath();
+    g.moveTo(sx * 0.4, -scale * 0.2);
+    g.lineTo(sx, -scale * 0.65);
+    g.stroke();
+    g.fillStyle = '#ffca28';
+    g.beginPath();
+    g.arc(sx, -scale * 0.65, Math.max(1, scale * 0.03), 0, Math.PI * 2);
+    g.fill();
+  }
+
+  g.restore();
+}
+
+// Sakura Bud on pedicel
+function drawSakuraBud(g, scale, fillBase) {
+  g.save();
+  g.strokeStyle = '#7c2836';
+  g.lineWidth = Math.max(1.1, scale * 0.036);
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(0, scale * 0.35);
+  g.quadraticCurveTo(scale * 0.05, scale * 0.15, 0, 0);
+  g.stroke();
+
+  g.fillStyle = '#5c1020';
+  g.beginPath();
+  g.arc(0, 0, scale * 0.12, 0, Math.PI * 2);
+  g.fill();
+
+  const bGrad = g.createRadialGradient(0, -scale * 0.12, 0, 0, -scale * 0.12, scale * 0.25);
+  bGrad.addColorStop(0, '#ffffff');
+  bGrad.addColorStop(0.4, fillBase);
+  bGrad.addColorStop(1, '#9e1438');
+  g.fillStyle = bGrad;
+  g.beginPath();
+  g.moveTo(-scale * 0.11, 0);
+  g.quadraticCurveTo(-scale * 0.15, -scale * 0.18, 0, -scale * 0.28);
+  g.quadraticCurveTo(scale * 0.15, -scale * 0.18, scale * 0.11, 0);
+  g.closePath();
+  g.fill();
+
+  g.restore();
+}
+
+// Young bronze-copper leaflet emerging alongside sakura blossoms
+function drawSakuraYoungLeaf(g, scale) {
+  g.save();
+  const lGrad = g.createLinearGradient(0, scale * 0.2, 0, -scale * 0.5);
+  lGrad.addColorStop(0, '#752216');
+  lGrad.addColorStop(0.35, '#826f34');
+  lGrad.addColorStop(1, '#617a2e');
+  g.fillStyle = lGrad;
+
+  g.beginPath();
+  g.moveTo(0, scale * 0.2);
+  g.quadraticCurveTo(-scale * 0.14, -scale * 0.15, 0, -scale * 0.5);
+  g.quadraticCurveTo(scale * 0.14, -scale * 0.15, 0, scale * 0.2);
+  g.fill();
+
+  g.strokeStyle = '#8e2b18';
+  g.lineWidth = Math.max(0.7, scale * 0.022);
+  g.beginPath();
+  g.moveTo(0, scale * 0.2);
+  g.lineTo(0, -scale * 0.45);
+  g.stroke();
+
+  g.restore();
+}
+
+// Bamboo Blade: graceful arching lanceolate leaf with sunlit highlight and midrib
+function drawBambooBlade(g, scale, fill, vein) {
+  g.save();
+  const grad = g.createLinearGradient(-scale * 0.2, 0, scale * 0.2, 0);
+  grad.addColorStop(0, mixHex(fill, '#234412', 0.35));
+  grad.addColorStop(0.4, fill);
+  grad.addColorStop(0.7, mixHex(fill, '#a2d658', 0.4));
+  grad.addColorStop(1, mixHex(fill, '#234412', 0.4));
+  g.fillStyle = grad;
+
+  g.beginPath();
+  g.moveTo(0, -scale * 1.05);
+  g.quadraticCurveTo(scale * 0.24, -scale * 0.32, 0, scale * 0.92);
+  g.quadraticCurveTo(-scale * 0.24, -scale * 0.32, 0, -scale * 1.05);
+  g.fill();
+
+  g.fillStyle = 'rgba(255, 255, 255, 0.18)';
+  g.beginPath();
+  g.moveTo(0, -scale * 1.0);
+  g.quadraticCurveTo(scale * 0.12, -scale * 0.32, 0, scale * 0.85);
+  g.lineTo(0, -scale * 1.0);
+  g.fill();
+
+  g.strokeStyle = vein;
+  g.lineWidth = Math.max(0.9, scale * 0.028);
+  g.globalAlpha *= 0.65;
+  g.beginPath();
+  g.moveTo(0, -scale * 0.98);
+  g.lineTo(0, scale * 0.92);
+  g.stroke();
+  g.globalAlpha /= 0.65;
+
+  g.restore();
+}
+
+function drawLeafKind(g, kind, scale, fill, vein, fillEdge) {
+  if (kind === 'pine') drawPineTuft(g, scale, fill, vein);
+  else if (kind === 'sakura' || kind === 'sakuraWhite') drawSakuraBlossom(g, scale, fill, fillEdge || fill, vein);
+  else if (kind === 'bamboo') drawBambooBlade(g, scale, fill, vein);
+  else drawMapleLeaf(g, scale, fill, vein, fillEdge);
+}
+
+// One card = a realistic botanical foliage clump. Branching woody twigs anchor
+// the leaves/blossoms organically, multiple depth layers provide rich volume,
+// and the perimeter is formed of intact, natural leaf tips and petals rather
+// than arbitrary cutout masks.
 function makeFoliageClump(kind, tones, vein, {
   size = 512, count = 38, seed = 7, scaleMin = 0.06, scaleMax = 0.13, spray = false,
 } = {}) {
@@ -529,138 +827,163 @@ function makeFoliageClump(kind, tones, vein, {
   const rnd = mulberry32(seed);
   g.clearRect(0, 0, size, size);
   const cx = size / 2, cy = spray ? size * 0.22 : size / 2;
+  const isBlossom = kind === 'sakura' || kind === 'sakuraWhite';
 
-  const stamp = (x, y, sc, rot, palette, alpha) => {
-    g.save();
-    g.translate(x, y);
-    g.rotate(rot);
-    g.globalAlpha = alpha;
-    drawLeafKind(g, kind, sc,
-      palette[(rnd() * palette.length) | 0], vein,
-      palette[(rnd() * palette.length) | 0]);
-    g.restore();
-  };
+  // 1. Organic branching woody twig structure
+  const twigCount = spray ? 6 : isBlossom ? 4 : 8;
+  g.strokeStyle = isBlossom ? '#824754' : '#3d2b1b';
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  for (let t = 0; t < twigCount; t++) {
+    const baseAng = spray ? (t / twigCount - 0.5) * 1.4 + Math.PI / 2 : (t / twigCount) * Math.PI * 2 + (rnd() - 0.5) * 0.4;
+    const twigLen = size * (spray ? (0.28 + rnd() * 0.15) : (0.22 + rnd() * 0.16));
+    const tx = cx + Math.cos(baseAng) * twigLen;
+    const ty = cy + Math.sin(baseAng) * twigLen;
+    g.lineWidth = Math.max(1.4, size * (isBlossom ? 0.0045 : 0.007));
+    g.globalAlpha = isBlossom ? 0.58 : 0.85;
+    g.beginPath();
+    g.moveTo(cx, cy);
+    const midX = cx + Math.cos(baseAng + (rnd() - 0.5) * 0.3) * twigLen * 0.55;
+    const midY = cy + Math.sin(baseAng + (rnd() - 0.5) * 0.3) * twigLen * 0.55;
+    g.quadraticCurveTo(midX, midY, tx, ty);
+    g.stroke();
 
-  // Branching petiole stem lines for spray cards so leaf fans attach organically
-  if (spray) {
-    g.strokeStyle = vein;
-    g.lineWidth = Math.max(1.6, size * 0.0055);
-    g.globalAlpha = 0.7;
-    for (let i = 0; i < count; i += 2) {
-      const ang = (rnd() - 0.5) * 1.5 + Math.PI / 2;
-      const rad = Math.pow(rnd(), 0.5) * size * 0.38;
-      const x = cx + Math.cos(ang) * rad * 0.55;
-      const y = cy + Math.sin(ang) * rad;
+    if (rnd() < 0.6) {
+      const subAng = baseAng + (rnd() < 0.5 ? 0.5 : -0.5);
+      const subLen = twigLen * (0.35 + rnd() * 0.3);
+      g.lineWidth = Math.max(1.2, size * 0.0045);
       g.beginPath();
-      g.moveTo(cx, cy);
-      g.quadraticCurveTo(cx + (x - cx) * 0.35, cy + (y - cy) * 0.65, x, y);
+      g.moveTo(midX, midY);
+      g.lineTo(midX + Math.cos(subAng) * subLen, midY + Math.sin(subAng) * subLen);
       g.stroke();
     }
-    g.globalAlpha = 1;
   }
+  g.globalAlpha = 1;
 
-  // Understorey: the same blades one size up, shaded, packed into the core.
+  // 2. Understorey deep core layer
   if (!spray) {
-    // Shade toward a deeper tone of the species' own hue — a neutral grey here
-    // turns the understorey muddy the moment it sits in the tree's shadow.
-    const shade = kind === 'pine' ? '#0c1a0b' : kind === 'maple' ? '#4a1208' : '#c2547d';
-    const backTones = tones.map(t => mixHex(t, shade, 0.5));
+    const shade = kind === 'pine' ? '#081708' : kind === 'maple' ? '#3d0c06' : '#941c42';
+    // Real self-shadowing already darkens the core; baking in more on top
+    // turned the crown into a dusty mauve.
+    const backTones = tones.map(t => mixHex(t, shade, 0.4));
     const backCount = Math.round(count * 0.6);
     for (let i = 0; i < backCount; i++) {
       const ang = rnd() * Math.PI * 2;
-      const rad = Math.pow(rnd(), 0.5) * size * 0.28;
-      stamp(cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad,
-        size * (scaleMin + rnd() * (scaleMax - scaleMin)) * 1.4,
-        rnd() * Math.PI * 2, backTones, 1);
+      const rad = Math.pow(rnd(), 0.6) * size * 0.22;
+      const x = cx + Math.cos(ang) * rad;
+      const y = cy + Math.sin(ang) * rad;
+      const sc = size * (scaleMin + rnd() * (scaleMax - scaleMin)) * 1.35;
+      const rot = rnd() * Math.PI * 2;
+      g.save();
+      g.translate(x, y);
+      g.rotate(rot);
+      g.globalAlpha = 0.92;
+      drawLeafKind(g, kind, sc, backTones[(rnd() * backTones.length) | 0], vein, backTones[(rnd() * backTones.length) | 0]);
+      g.restore();
     }
   }
 
-  // Crisp foreground floral/leaf detail layer
-  for (let i = 0; i < count; i++) {
+  // 3. Mid layer: lush foliage body
+  const midCount = count;
+  for (let i = 0; i < midCount; i++) {
     const ang = spray ? (rnd() - 0.5) * 1.6 + Math.PI / 2 : rnd() * Math.PI * 2;
-    const rad = Math.pow(rnd(), spray ? 0.45 : 0.52) * size * (spray ? 0.42 : 0.34);
-    const x = cx + Math.cos(ang) * rad * (spray ? 0.55 : 1);
+    const rad = Math.pow(rnd(), spray ? 0.45 : 0.55) * size * (spray ? 0.40 : 0.32);
+    const x = cx + Math.cos(ang) * rad * (spray ? 0.6 : 1);
     const y = cy + Math.sin(ang) * rad;
     const sc = size * (scaleMin + rnd() * (scaleMax - scaleMin));
-    const rot = spray ? ang + (rnd() - 0.5) * 0.35 : rnd() * Math.PI * 2;
-    stamp(x, y, sc, rot, tones, 0.88 + rnd() * 0.12);
+    const rot = spray ? ang + (rnd() - 0.5) * 0.4 : rnd() * Math.PI * 2;
+    g.save();
+    g.translate(x, y);
+    g.rotate(rot);
+    g.globalAlpha = 0.95;
+
+    if (kind === 'sakura' || kind === 'sakuraWhite') {
+      const r = rnd();
+      const col = tones[(rnd() * tones.length) | 0];
+      const colEdge = tones[(rnd() * tones.length) | 0];
+      if (r < 0.65) {
+        drawSakuraBlossom(g, sc, col, colEdge, vein);
+      } else if (r < 0.82) {
+        drawSakuraSideBlossom(g, sc * 1.05, col, colEdge);
+      } else if (r < 0.92) {
+        drawSakuraBud(g, sc * 0.85, col);
+      } else {
+        drawSakuraYoungLeaf(g, sc * 0.95);
+      }
+    } else {
+      drawLeafKind(g, kind, sc, tones[(rnd() * tones.length) | 0], vein, tones[(rnd() * tones.length) | 0]);
+    }
+    g.restore();
   }
 
-  // Torn silhouette. The lobes accumulate on their own sheet so they add up
-  // instead of erasing one another, then punch through the artwork in one pass.
-  // Overlapping falloffs put the alphaTest cut on an irregular contour, so the
-  // card ends in a ragged rim rather than at the edge of its own square.
-  if (!spray) {
-    const maskC = makeCanvas(size);
-    const mg = maskC.getContext('2d');
-    mg.globalCompositeOperation = 'lighter';
-    const lobes = 7;
-    for (let i = 0; i < lobes; i++) {
-      const ang = (i / lobes) * Math.PI * 2 + rnd() * 1.5;
-      const off = size * (0.06 + rnd() * 0.22);
-      const lx = cx + Math.cos(ang) * off;
-      const ly = cy + Math.sin(ang) * off;
-      const lr = size * (0.11 + rnd() * 0.20);
-      const grad = mg.createRadialGradient(lx, ly, 0, lx, ly, lr);
-      grad.addColorStop(0, 'rgba(255,255,255,1)');
-      grad.addColorStop(0.55, 'rgba(255,255,255,1)');
-      grad.addColorStop(1, 'rgba(255,255,255,0)');
-      mg.fillStyle = grad;
-      mg.beginPath();
-      mg.arc(lx, ly, lr, 0, Math.PI * 2);
-      mg.fill();
-    }
-    // Bite a couple of gaps out of the mass so daylight gets through it.
-    mg.globalCompositeOperation = 'destination-out';
-    for (let i = 0; i < 2; i++) {
-      const ang = rnd() * Math.PI * 2;
-      const off = size * (0.10 + rnd() * 0.18);
-      const hx = cx + Math.cos(ang) * off;
-      const hy = cy + Math.sin(ang) * off;
-      const hr = size * (0.035 + rnd() * 0.04);
-      const hole = mg.createRadialGradient(hx, hy, 0, hx, hy, hr);
-      hole.addColorStop(0, 'rgba(0,0,0,1)');
-      hole.addColorStop(0.6, 'rgba(0,0,0,1)');
-      hole.addColorStop(1, 'rgba(0,0,0,0)');
-      mg.fillStyle = hole;
-      mg.beginPath();
-      mg.arc(hx, hy, hr, 0, Math.PI * 2);
-      mg.fill();
-    }
-    g.globalAlpha = 1;
-    g.globalCompositeOperation = 'destination-in';
-    g.drawImage(maskC, 0, 0);
-    g.globalCompositeOperation = 'source-over';
+  // 4. Foreground / Outer Rim Layer: perfectly formed leaves, buds, and petals
+  // that form the natural organic perimeter without harsh cutting
+  const rimCount = Math.round(count * 0.42);
+  for (let i = 0; i < rimCount; i++) {
+    const ang = spray ? (rnd() - 0.5) * 1.7 + Math.PI / 2 : rnd() * Math.PI * 2;
+    const rad = size * (0.28 + Math.pow(rnd(), 0.7) * 0.16);
+    const x = cx + Math.cos(ang) * rad * (spray ? 0.65 : 1);
+    const y = cy + Math.sin(ang) * rad;
+    const sc = size * (scaleMin + rnd() * (scaleMax - scaleMin)) * 0.9;
+    const rot = spray ? ang + (rnd() - 0.5) * 0.45 : rnd() * Math.PI * 2;
+    g.save();
+    g.translate(x, y);
+    g.rotate(rot);
+    g.globalAlpha = 1.0;
 
-    // Loose blossoms scattered past the mask, drawn after it so they keep their
-    // own outline. Without them the mask contour is what the eye reads, and a
-    // crown of masked cards turns into a heap of soft round bubbles.
-    const rimCount = Math.round(count * 0.3);
-    for (let i = 0; i < rimCount; i++) {
-      const ang = rnd() * Math.PI * 2;
-      const rad = size * (0.27 + Math.pow(rnd(), 0.7) * 0.19);
-      stamp(cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad,
-        size * (scaleMin + rnd() * (scaleMax - scaleMin)) * 0.85,
-        rnd() * Math.PI * 2, tones, 1);
+    if (kind === 'sakura' || kind === 'sakuraWhite') {
+      const r = rnd();
+      const col = tones[(rnd() * tones.length) | 0];
+      const colEdge = tones[(rnd() * tones.length) | 0];
+      if (r < 0.55) {
+        drawSakuraBlossom(g, sc, col, colEdge, vein);
+      } else if (r < 0.75) {
+        drawSakuraSideBlossom(g, sc, col, colEdge);
+      } else if (r < 0.88) {
+        drawSakuraBud(g, sc * 0.85, col);
+      } else {
+        drawSakuraPetal(g, sc * 0.75, sc * 0.45, col, colEdge);
+      }
+    } else {
+      drawLeafKind(g, kind, sc, tones[(rnd() * tones.length) | 0], vein, tones[(rnd() * tones.length) | 0]);
     }
+    g.restore();
   }
+
   return c;
 }
 
-// A canopy built from one sheet repeats that sheet a few hundred times, and the
-// eye picks the repeat out immediately. Several sheets per species, chosen per
-// card, is what breaks the pattern up.
+// These cards are small and physically curved in 3D, so generating a 512px
+// Sobel normal map for every variation adds a long main-thread stall for detail
+// that is below a pixel at normal play distance. Keep normals opt-in for the
+// rare close-up card; colour + alpha are enough for tree foliage.
 function foliageSheets(n, kind, tones, vein, opts = {}) {
-  return Array.from({ length: n }, (_, i) =>
-    canvasTexture(makeFoliageClump(kind, tones, vein, { ...opts, seed: (opts.seed ?? 7) + i * 101 })));
+  return Array.from({ length: n }, (_, i) => {
+    const c = makeFoliageClump(kind, tones, vein, { ...opts, seed: (opts.seed ?? 7) + i * 101 });
+    const map = canvasTexture(c);
+    const nC = opts.normalStrength
+      ? normalFromCanvas(c, opts.normalStrength, { useAlpha: true })
+      : null;
+    const normalMap = nC ? canvasTexture(nC, { srgb: false }) : null;
+    return { map, normalMap };
+  });
 }
 
-function foliageMats(texes, { alphaTest = 0.3, roughness = 0.78 } = {}) {
-  return texes.map(map => new THREE.MeshStandardMaterial({
-    color: 0xffffff, roughness, metalness: 0.0,
-    map, alphaTest, alphaToCoverage: true,
-    side: THREE.DoubleSide,
-  }));
+function foliageMats(texes, { alphaTest = 0.22, roughness = 0.64, normalScale = 1.15 } = {}) {
+  return texes.map(entry => {
+    const map = entry.map || entry;
+    const normalMap = entry.normalMap || null;
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xffffff, roughness, metalness: 0.02,
+      map, alphaTest, alphaToCoverage: true,
+      side: THREE.DoubleSide,
+    });
+    if (normalMap) {
+      mat.normalMap = normalMap;
+      mat.normalScale = new THREE.Vector2(normalScale, normalScale);
+    }
+    return mat;
+  });
 }
 
 // Washi: long paper fibres caught in the pulp, plus a faint cloudiness.
@@ -1546,24 +1869,26 @@ function makeCelestialVaultCanvas({ size = 512, seed = 97 } = {}) {
 
 const pineLeafTs = foliageSheets(2, 'pine',
   ['#1b3819', '#244820', '#2d5828', '#1a3318', '#3d6c34'], '#0f200e',
-  { count: 46, seed: 5, scaleMin: 0.10, scaleMax: 0.18 });
+  { size: 256, count: 30, seed: 5, scaleMin: 0.085, scaleMax: 0.14 });
+// Density lives in the sheets, not in more cards: at two dozen blossoms a sheet
+// the crowns let the sky through every sprig and read as a sparse speckle.
 const sakuraLeafTs = foliageSheets(3, 'sakura',
-  ['#ff9dbf', '#ff86ad', '#ffb6d2', '#f97ba6', '#ffcede'], '#e85d88',
-  { count: 88, seed: 13, scaleMin: 0.075, scaleMax: 0.14 });
+  ['#f178a2', '#ef8fb1', '#f5a6bf', '#e96998', '#f8bbcd'], '#c83f70',
+  { size: 256, count: 40, seed: 13, scaleMin: 0.062, scaleMax: 0.105 });
 const sakuraWhiteLeafTs = foliageSheets(3, 'sakuraWhite',
-  ['#ffffff', '#fff5f8', '#f8edf2', '#fff0f4', '#ffffff'], '#df9bb4',
-  { count: 88, seed: 17, scaleMin: 0.075, scaleMax: 0.14 });
+  ['#f9e9ef', '#fff4f6', '#eedbe4', '#f7e3ea', '#fff8f8'], '#cf829e',
+  { size: 256, count: 40, seed: 17, scaleMin: 0.062, scaleMax: 0.105 });
 const momijiLeafTs = foliageSheets(3, 'maple',
   ['#c92a2a', '#e03131', '#e8590c', '#f76707', '#a61e1e', '#d9480f'], '#491212',
-  { count: 54, seed: 29, scaleMin: 0.085, scaleMax: 0.16 });
-const bambooLeafTs = foliageSheets(3, 'bamboo',
+  { size: 256, count: 34, seed: 29, scaleMin: 0.07, scaleMax: 0.12 });
+const bambooLeafTs = foliageSheets(2, 'bamboo',
   ['#5f8f33', '#4d7a28', '#79a845', '#365c1e', '#6b9a3a', '#8ec449'], '#2a4416',
-  { count: 26, seed: 31, scaleMin: 0.09, scaleMax: 0.19, spray: true });
+  { size: 256, count: 24, seed: 31, scaleMin: 0.09, scaleMax: 0.19, spray: true });
 // Ivy on the plaza fountain wall: the same blade, packed as a clump rather than
 // a spray, so the mass reads as climbing Hedera instead of a bamboo fan.
-const ivyLeafTs = foliageSheets(3, 'bamboo',
+const ivyLeafTs = foliageSheets(2, 'bamboo',
   ['#2f6d28', '#3d8a32', '#1e4f1c', '#4a9a3a', '#6bb34a', '#245820'], '#1a3a14',
-  { count: 48, seed: 47, scaleMin: 0.07, scaleMax: 0.14, spray: false });
+  { size: 256, count: 36, seed: 47, scaleMin: 0.07, scaleMax: 0.14, spray: false });
 
 const washiC = makeWashiCanvas();
 const washiT = canvasTexture(washiC);
@@ -1737,10 +2062,10 @@ const M = {
   waterLanternWood: new THREE.MeshStandardMaterial({
     color: 0x4a2e1e, roughness: 0.8, metalness: 0.05,
   }),
-  sakuraBlossom: foliageMats(sakuraLeafTs, { alphaTest: 0.4, roughness: 0.76 }),
-  sakuraBlossomWhite: foliageMats(sakuraWhiteLeafTs, { alphaTest: 0.4, roughness: 0.76 }),
-  pineFoliage: foliageMats(pineLeafTs, { alphaTest: 0.4, roughness: 0.84 }),
-  momijiRed: foliageMats(momijiLeafTs, { alphaTest: 0.4, roughness: 0.78 }),
+  sakuraBlossom: foliageMats(sakuraLeafTs, { alphaTest: 0.24, roughness: 0.8, normalScale: 0.72 }),
+  sakuraBlossomWhite: foliageMats(sakuraWhiteLeafTs, { alphaTest: 0.24, roughness: 0.8, normalScale: 0.72 }),
+  pineFoliage: foliageMats(pineLeafTs, { alphaTest: 0.28, roughness: 0.88, normalScale: 0.8 }),
+  momijiRed: foliageMats(momijiLeafTs, { alphaTest: 0.25, roughness: 0.82, normalScale: 0.78 }),
   bambooGreen: new THREE.MeshStandardMaterial({
     color: 0xdfe6cf, roughness: 0.42, metalness: 0.05,
     map: bambooSkinT, normalMap: bambooSkinN, normalScale: new THREE.Vector2(0.7, 0.7),
@@ -2058,17 +2383,38 @@ function makeCanopyGeometry(seed) {
   return geo;
 }
 
+// A foliage card is only an impostor for a small leafy twig, not a whole crown.
+// Give it a shallow irregular cup so highlights and silhouettes no longer expose
+// a perfectly straight plane when the player walks around a tree. Nine thousand
+// cards share this, so a 2x2 grid: the cup lives in the interpolated normals,
+// and a 5x5 grid put 430k triangles into the foliage alone.
+function makeFoliageCardGeometry() {
+  const geo = new THREE.PlaneGeometry(1, 1, 2, 2);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const edgeCurl = (x * x + y * y) * 0.105;
+    const organicWarp = Math.sin((x + 0.31) * 5.2) * Math.cos((y - 0.17) * 4.4) * 0.018;
+    pos.setZ(i, edgeCurl + organicWarp - 0.025);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
 const G = {
   box: new THREE.BoxGeometry(1, 1, 1),
   cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 16),
   cyl8: new THREE.CylinderGeometry(0.5, 0.5, 1, 8),
-  taperCyl: new THREE.CylinderGeometry(0.38, 0.5, 1, 12),
+  taperCyl: new THREE.CylinderGeometry(0.38, 0.5, 1, 24, 2),
   sphere: new THREE.SphereGeometry(0.5, 16, 12),
+  smoothSphere: new THREE.SphereGeometry(0.5, 24, 18),
   cone: new THREE.ConeGeometry(0.5, 1, 16),
   dome: new THREE.SphereGeometry(0.5, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.5),
   invDome: new THREE.SphereGeometry(0.5, 24, 16, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5),
   canopy: [makeCanopyGeometry(101), makeCanopyGeometry(202), makeCanopyGeometry(303)],
-  card: new THREE.PlaneGeometry(1, 1),
+  card: makeFoliageCardGeometry(),
   // Axis is +Z, so a ring lies flat in the XY plane: yaw alone aims it at a wall.
   // A torus scales its tube along with its radius, so window frames and pull
   // rings take `ring` while the metre-scale chandelier hoops take `hoop` —
@@ -2107,7 +2453,7 @@ const nextCanopy = () => G.canopy[canopyPick++ % G.canopy.length];
 // AABBs. Crossed planes break the cloth shading a closed canopy sphere has.
 const foliageCards = [];
 function puffFoliage(mats, cx, cy, cz, rx, ry, rz, {
-  seed = 1, count = 9, flatten = 0, cardScale = 0.55, pair = true,
+  seed = 1, count = 9, flatten = 0, cardScale = 0.32, pair = false,
 } = {}) {
   const rnd = mulberry32(seed >>> 0);
   // Each card draws its own sheet and its own mirroring, so two neighbours never
@@ -2124,14 +2470,16 @@ function puffFoliage(mats, cx, cy, cz, rx, ry, rz, {
     dx = (dx / len) * rx * (0.12 + rnd() * 0.78);
     dy = (dy / len) * ry * (0.12 + rnd() * 0.78) * (1 - flatten * 0.82);
     dz = (dz / len) * rz * (0.12 + rnd() * 0.78);
-    const yaw = Math.atan2(dx, dz) + (rnd() - 0.5) * 0.85;
+    // Broad orientation spread makes the little sprigs read from every angle;
+    // the former crossed pair at each point was the visible origami "X".
+    const yaw = Math.atan2(dx, dz) + (rnd() - 0.5) * 1.65;
     const pitch = flatten > 0.45
-      ? -1.12 + (rnd() - 0.5) * 0.4
-      : (rnd() - 0.5) * 0.95;
-    const roll = (rnd() - 0.5) * 0.4;
-    const cs = cardScale * (0.72 + rnd() * 0.5);
+      ? -1.02 + (rnd() - 0.5) * 0.65
+      : (rnd() - 0.5) * 1.25;
+    const roll = (rnd() - 0.5) * 0.75;
+    const cs = cardScale * (0.58 + rnd() * 0.68);
     const sx = Math.max(rx, rz) * cs;
-    const sy = Math.max(ry, Math.max(rx, rz) * 0.7) * cs;
+    const sy = sx * (0.78 + rnd() * 0.34);
     const push = extraYaw => foliageCards.push({
       mat: pickMat(), x: cx + dx, y: cy + dy, z: cz + dz,
       sx: rnd() < 0.5 ? -sx : sx, sy, rx: pitch, ry: yaw + extraYaw, rz: roll,
@@ -2207,17 +2555,28 @@ function branch(mat, x1, y1, z1, x2, y2, z2, r1, r2, isProp = true) {
 }
 
 function treeRootFlairs(mat, x, y, z, S, count = 5) {
-  for (let i = 0; i < count; i++) {
-    const a = (i / count) * Math.PI * 2 + 0.35;
-    const rStart = 0.38 * S;
-    const rEnd = 0.75 * S;
-    const x1 = x + Math.cos(a) * rStart;
-    const z1 = z + Math.sin(a) * rStart;
-    const y1 = y + 0.55 * S;
-    const x2 = x + Math.cos(a) * rEnd;
-    const z2 = z + Math.sin(a) * rEnd;
-    const y2 = y + 0.05 * S;
-    branch(mat, x1, y1, z1, x2, y2, z2, 0.20 * S, 0.08 * S, true);
+  // Buried, flattened bark — a nebari that swells out of the lawn, not a
+  // wooden disc or a star of dowels. Equators sit under the grass so no rim
+  // reads as a lid, and surface roots are squashed knuckles, not cylinders.
+  emit(G.smoothSphere, M.pondBed, x, y - 0.02 * S, z,
+    1.18 * S, 0.10 * S, 1.18 * S, 0, 0, 0, true);
+  emit(G.smoothSphere, M.mossGrass, x, y - 0.004 * S, z,
+    0.82 * S, 0.05 * S, 0.82 * S, 0, 0, 0, true);
+
+  emit(G.smoothSphere, mat, x, y - 0.02 * S, z,
+    1.18 * S, 0.46 * S, 1.18 * S, 0, 0, 0, true);
+  emit(G.smoothSphere, mat, x, y + 0.14 * S, z,
+    0.94 * S, 0.44 * S, 0.94 * S, 0, 0, 0, true);
+
+  const rnd = mulberry32(seedAt(x, z, 71));
+  const knobs = Math.max(4, count);
+  for (let i = 0; i < knobs; i++) {
+    const a = (i / knobs) * Math.PI * 2 + (rnd() - 0.5) * 0.55;
+    const dist = (0.36 + rnd() * 0.22) * S;
+    emit(G.smoothSphere, mat,
+      x + Math.cos(a) * dist, y + 0.028 * S, z + Math.sin(a) * dist,
+      (0.36 + rnd() * 0.14) * S, (0.08 + rnd() * 0.03) * S, (0.16 + rnd() * 0.05) * S,
+      (rnd() - 0.5) * 0.18, a, (rnd() - 0.5) * 0.12, true);
   }
 }
 
@@ -2271,6 +2630,9 @@ const stoneLanternSpots = [];
 function buildStoneLantern(x, y, z, scale = 1, ry = 0) {
   const S = scale;
   stoneLanternSpots.push({ x, y, z, scale: S, ry });
+  // Foundation sunk into the lawn. `y` is the grass plane; the old kiso sat
+  // 15 cm above it, so from the sando the sao read as a hovering stone post.
+  box(M.stoneLantern, x, y - 0.02 * S, z, 1.18 * S, 0.20 * S, 1.18 * S, ry, 0, 0, true);
   // Stepped stone base (Kiso)
   box(M.stoneLantern, x, y + 0.12 * S, z, 1.0 * S, 0.24 * S, 1.0 * S, ry, 0, 0, true);
   box(M.stoneLantern, x, y + 0.32 * S, z, 0.8 * S, 0.20 * S, 0.8 * S, ry, 0, 0, true);
@@ -2801,28 +3163,28 @@ function buildSakuraTree(x, y, z, scale = 1, isWhite = false) {
   // Blossom Cloud Clusters (Dense, lush, voluminous foliage puffs attached directly to branches)
   const clusters = [
     // Center & Apex
-    { dx: 0, dy: 5.0, dz: 0, sx: 4.8, sy: 3.2, sz: 4.8, count: 18, cardScale: 0.72 },
-    { dx: 0, dy: 6.3, dz: 0, sx: 4.0, sy: 2.8, sz: 4.0, count: 16, cardScale: 0.70 },
+    { dx: 0, dy: 5.0, dz: 0, sx: 4.8, sy: 3.2, sz: 4.8, count: 54, cardScale: 0.37 },
+    { dx: 0, dy: 6.3, dz: 0, sx: 4.0, sy: 2.8, sz: 4.0, count: 48, cardScale: 0.38 },
     // East / NE branch clusters
-    { dx: 1.8, dy: 4.7, dz: -1.3, sx: 3.8, sy: 2.6, sz: 3.8, count: 16, cardScale: 0.68 },
-    { dx: 2.6, dy: 5.1, dz: -1.9, sx: 3.4, sy: 2.4, sz: 3.4, count: 14, cardScale: 0.65 },
-    { dx: 1.6, dy: 5.6, dz: -0.4, sx: 3.2, sy: 2.2, sz: 3.2, count: 14, cardScale: 0.65 },
+    { dx: 1.8, dy: 4.7, dz: -1.3, sx: 3.8, sy: 2.6, sz: 3.8, count: 45, cardScale: 0.38 },
+    { dx: 2.6, dy: 5.1, dz: -1.9, sx: 3.4, sy: 2.4, sz: 3.4, count: 41, cardScale: 0.39 },
+    { dx: 1.6, dy: 5.6, dz: -0.4, sx: 3.2, sy: 2.2, sz: 3.2, count: 39, cardScale: 0.39 },
     // West / SW branch clusters
-    { dx: -1.8, dy: 4.4, dz: 1.2, sx: 3.8, sy: 2.6, sz: 3.8, count: 16, cardScale: 0.68 },
-    { dx: -2.7, dy: 4.7, dz: 1.7, sx: 3.4, sy: 2.4, sz: 3.4, count: 14, cardScale: 0.65 },
-    { dx: -1.8, dy: 5.3, dz: 0.2, sx: 3.2, sy: 2.2, sz: 3.2, count: 14, cardScale: 0.65 },
+    { dx: -1.8, dy: 4.4, dz: 1.2, sx: 3.8, sy: 2.6, sz: 3.8, count: 45, cardScale: 0.38 },
+    { dx: -2.7, dy: 4.7, dz: 1.7, sx: 3.4, sy: 2.4, sz: 3.4, count: 41, cardScale: 0.39 },
+    { dx: -1.8, dy: 5.3, dz: 0.2, sx: 3.2, sy: 2.2, sz: 3.2, count: 39, cardScale: 0.39 },
     // South-East
-    { dx: 1.6, dy: 4.5, dz: 1.8, sx: 3.6, sy: 2.4, sz: 3.6, count: 15, cardScale: 0.66 },
-    { dx: 2.3, dy: 4.9, dz: 2.4, sx: 3.0, sy: 2.2, sz: 3.0, count: 13, cardScale: 0.64 },
+    { dx: 1.6, dy: 4.5, dz: 1.8, sx: 3.6, sy: 2.4, sz: 3.6, count: 44, cardScale: 0.38 },
+    { dx: 2.3, dy: 4.9, dz: 2.4, sx: 3.0, sy: 2.2, sz: 3.0, count: 38, cardScale: 0.40 },
     // North-West
-    { dx: -1.3, dy: 4.9, dz: -1.4, sx: 3.6, sy: 2.5, sz: 3.6, count: 15, cardScale: 0.66 },
-    { dx: -1.9, dy: 5.6, dz: -2.0, sx: 3.0, sy: 2.2, sz: 3.0, count: 13, cardScale: 0.64 },
+    { dx: -1.3, dy: 4.9, dz: -1.4, sx: 3.6, sy: 2.5, sz: 3.6, count: 44, cardScale: 0.38 },
+    { dx: -1.9, dy: 5.6, dz: -2.0, sx: 3.0, sy: 2.2, sz: 3.0, count: 38, cardScale: 0.40 },
   ];
 
   clusters.forEach((c, i) => {
     puffFoliage(mat, x + c.dx * S, y + c.dy * S, z + c.dz * S,
       c.sx * S * 0.5, c.sy * S * 0.5, c.sz * S * 0.5,
-      { seed: seedAt(x, z, i + 1), count: c.count, cardScale: c.cardScale });
+      { seed: seedAt(x, z, i + 1), count: c.count, cardScale: c.cardScale, pair: false });
   });
 }
 
@@ -2878,7 +3240,7 @@ function buildJapanesePine(x, y, z, scale = 1) {
   pads.forEach((p, i) => {
     puffFoliage(M.pineFoliage, x + p.dx * S, y + p.dy * S, z + p.dz * S,
       p.sx * S * 0.5, p.sy * S * 0.5, p.sz * S * 0.5,
-      { seed: seedAt(x, z, i + 20), count: 18, flatten: 0.82, cardScale: 0.75 });
+      { seed: seedAt(x, z, i + 20), count: 46, flatten: 0.72, cardScale: 0.38, pair: false });
   });
 }
 
@@ -2920,15 +3282,15 @@ function buildMomijiMaple(x, y, z, scale = 1) {
 
   // Vibrant foliage clouds
   const clusters = [
-    { dx: 0, dy: 4.2, dz: 0, sx: 3.8, sy: 2.4, sz: 3.8, count: 18, cardScale: 0.72 },
-    { dx: -1.7, dy: 3.6, dz: 0.9, sx: 3.2, sy: 2.0, sz: 3.2, count: 16, cardScale: 0.70 },
-    { dx: 1.8, dy: 3.8, dz: -1.0, sx: 3.4, sy: 2.1, sz: 3.4, count: 16, cardScale: 0.70 },
-    { dx: 0.1, dy: 4.8, dz: -0.1, sx: 3.0, sy: 1.9, sz: 3.0, count: 14, cardScale: 0.68 },
+    { dx: 0, dy: 4.2, dz: 0, sx: 3.8, sy: 2.4, sz: 3.8, count: 48, cardScale: 0.36 },
+    { dx: -1.7, dy: 3.6, dz: 0.9, sx: 3.2, sy: 2.0, sz: 3.2, count: 42, cardScale: 0.38 },
+    { dx: 1.8, dy: 3.8, dz: -1.0, sx: 3.4, sy: 2.1, sz: 3.4, count: 43, cardScale: 0.37 },
+    { dx: 0.1, dy: 4.8, dz: -0.1, sx: 3.0, sy: 1.9, sz: 3.0, count: 38, cardScale: 0.39 },
   ];
   clusters.forEach((c, i) => {
     puffFoliage(M.momijiRed, x + c.dx * S, y + c.dy * S, z + c.dz * S,
       c.sx * S * 0.5, c.sy * S * 0.5, c.sz * S * 0.5,
-      { seed: seedAt(x, z, i + 40), count: c.count, cardScale: c.cardScale });
+      { seed: seedAt(x, z, i + 40), count: c.count, cardScale: c.cardScale, pair: false });
   });
 }
 
@@ -4457,14 +4819,15 @@ function sandoRun(z0, z1) {
 sandoRun(SANDO_AXIS_Z0, SANDO_SOUTH_Z1);
 sandoRun(SANDO_NORTH_Z0, SANDO_AXIS_Z1);
 
-// Double row of stone lanterns along the Sando
+// Double row of stone lanterns along the Sando. `y = 0` is the lawn plane;
+// 0.15 left a hand of daylight under every kiso.
 for (let z = -20; z <= 90; z += 9) {
   if (z > 16 && z < 50) continue; // pond + bridge crossing
-  buildStoneLantern(-3.8, 0.15, z, 1.0, 0);
-  buildStoneLantern(3.8, 0.15, z, 1.0, Math.PI);
+  buildStoneLantern(-3.8, 0, z, 1.0, 0);
+  buildStoneLantern(3.8, 0, z, 1.0, Math.PI);
 }
-buildStoneLantern(-3.8, 0.15, 48.2, 1.0, 0);
-buildStoneLantern(3.8, 0.15, 48.2, 1.0, Math.PI);
+buildStoneLantern(-3.8, 0, 48.2, 1.0, 0);
+buildStoneLantern(3.8, 0, 48.2, 1.0, Math.PI);
 
 // Parking lot (Z: -100 to -24). Perpendicular stalls: dividers run along Z
 // (stall depth), 4.2 m apart on X. buildCar is +X-forward, so yaw π/2 puts
@@ -5821,48 +6184,42 @@ function requestGamePointerLock() {
 }
 input.yaw = Math.PI;
 
-try {
-  player = new Player(scene);
-  await player.load('girl', girlMatFor);
+// Start fetching the avatar immediately, but do not hold the whole map behind
+// its complete traversal-animation set. The garden becomes playable first and
+// the character appears as soon as its rig is ready.
+player = new Player(scene);
+player.load('girl', girlMatFor).then(async () => {
   player.addWardrobePart('hairCrown', harmoniseHair(player, {
     scalp: await charImage(CHAR_MATS?.MAT_SurvGirl_Head?.tex || 'survgirl_head_diff.webp'),
     strands: await charImage(CHAR_MATS?.MAT_SurvGirl_Hair?.tex || 'survgirl_hair_diff.webp'),
     strandsAO: await charImage(CHAR_MATS?.MAT_SurvGirl_Hair?.aoTex || 'survgirl_hair_ao.webp'),
   }));
-} catch (e) {
-  console.warn('[shinto] player load issue:', e);
-}
+}).catch(e => console.warn('[shinto] player load issue:', e));
 
-try {
-  // Out on the open checkerboard, between the palace colonnade and the
-  // reflecting pool, turned toward the stairhead the player arrives on.
-  await initTurtleHermit({
-    scene,
-    furnitureInteractions,
-    posX: 55,
-    posY: 180.20,
-    posZ: 20.5,
-    yaw: 0,
-  });
-  // He stands out on the open checkerboard, past the chandelier's 22 m
-  // reach, so night leaves him lit by moon + hemi alone — dim and cool
-  // enough that his grey hair reads black and the cream kimono trim loses
-  // the contrast that makes it read as a collar instead of a flat plate.
-  // A small warm light pinned to him (same pattern as palaceTableLight)
-  // fixes that without touching the plaza's own night mood.
+// The hermit lives at the remote celestial plaza and is not required to enter
+// the ground map. Load him in the background: awaiting his rig here kept the
+// start overlay up long after the playable scene and player were ready.
+initTurtleHermit({
+  scene,
+  furnitureInteractions,
+  posX: 55,
+  posY: 180.20,
+  posZ: 20.5,
+  yaw: 0,
+}).then(() => {
+  // He stands out on the open checkerboard, past the chandelier's 22 m reach.
+  // A small warm light keeps his pale trim readable at night.
   hermitLight = new THREE.PointLight(0xffb877, 0, 6.5, 2.0);
   hermitLight.position.set(55, 181.2, 20.5);
   scene.add(hermitLight);
-} catch (e) {
-  console.warn('[shinto] hermit load issue:', e);
-}
+}).catch(e => console.warn('[shinto] hermit load issue:', e));
 
 // ---------------------------------------------------------------------------
 // 18. Interaction & Travel Handling
 // ---------------------------------------------------------------------------
 const forward = new THREE.Vector3();
 const clock = new THREE.Clock();
-let started = false, usedLock = false, paused = false;
+let started = false, animationStarted = false, usedLock = false, paused = false;
 let activeFurnitureInteraction = null;
 let furnitureInteractionCooldown = 0;
 let promptedFurniture = null;
@@ -6165,7 +6522,7 @@ function updateHud() {
 }
 
 function updateAvatar(dt) {
-  if (!player) return;
+  if (!player?.mixer) return;
   player.setOutfit({ hat: false, backpack: false, kimono: true });
   player.update({
     dt, mode: ctrl.mode, pos: ctrl.pos, vel: ctrl.vel,
@@ -6279,8 +6636,6 @@ function animate() {
   composer.render();
   input.endFrame();
 }
-animate();
-
 function resumePlay() {
   overlay.style.display = 'none';
   paused = false;
@@ -6292,9 +6647,20 @@ function startShinto() {
   started = true;
   setShintoTime(window.__nightMode === true);
   resumePlay();
+  if (!animationStarted) {
+    animationStarted = true;
+    // Let the browser paint the dismissed overlay before the first expensive
+    // WebGL frame. Starting the loop during module evaluation prevented queued
+    // click events from running and looked exactly like a frozen loader.
+    setTimeout(() => requestAnimationFrame(animate), 80);
+  }
 }
 window.__startShinto = startShinto;
-startBtn?.addEventListener('click', startShinto);
+// index.html dispatches the start action, including clicks made while loading.
+if (startBtn) {
+  startBtn.disabled = false;
+  startBtn.querySelector('.brief-shinto').textContent = 'Entrer dans le temple';
+}
 window.addEventListener('keydown', e => {
   if (!started && (e.code === 'Enter' || e.code === 'Space')) {
     startShinto();

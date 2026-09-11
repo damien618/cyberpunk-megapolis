@@ -269,6 +269,9 @@ function paintBrocadeFallback(ctx, n) {
 function loadTex(url, fallback) {
   const tex = fallback;
   new THREE.TextureLoader().load(url, loaded => {
+    // The fallback may already be on the GPU at its own size; a new image of
+    // another size must reallocate, or the upload overflows the old storage.
+    tex.dispose();
     tex.image = loaded.image;
     tex.needsUpdate = true;
   });
