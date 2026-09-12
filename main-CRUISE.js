@@ -839,28 +839,395 @@ const cabinPanelTex = canvasTex(256, 512, (g, W, H) => {
   g.strokeRect(m - 2, m - 2, W - m * 2 + 4, H - m * 2 + 4);
 }, 1, 1);
 
-// The parchment silk above the dado rail. A tone-on-tone Deco fan, faint
-// enough that from the middle of the room it reads as a woven texture and not
-// as wallpaper with a motif.
-const cabinSilkTex = canvasTex(256, 256, (g, W, H) => {
+// Edwardian / Titanic-style figured silk above the dado rail. A dusty mauve
+// ground with cream-and-gold rosettes, Greek keys and fan motifs so the wall
+// reads like a liner's first-class cabin rather than a plain painted band.
+const cabinSilkTex = canvasTex(512, 256, (g, W, H) => {
   const rand = texRandom(1618);
-  g.fillStyle = '#ddcaa6';
+  g.fillStyle = '#d8c0d7';
   g.fillRect(0, 0, W, H);
-  for (let i = 0; i < 2800; i++) {
-    g.fillStyle = rand() < 0.5 ? 'rgba(188,168,132,0.30)' : 'rgba(246,236,212,0.30)';
-    g.fillRect(rand() * W, rand() * H, 1.7, 1.7);
+  // Fine paper-grain so it reads as woven silk and not as a flat wash.
+  for (let i = 0; i < 6200; i++) {
+    g.fillStyle = rand() < 0.55 ? 'rgba(124,92,120,0.12)' : 'rgba(255,247,228,0.18)';
+    g.fillRect(rand() * W, rand() * H, 2.2, 2.2);
   }
-  g.strokeStyle = 'rgba(172,144,98,0.32)';
-  for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
-    const cx = (i + 0.5) * W / 2, cy = (j + 1) * H / 2;
-    for (let k = 1; k <= 5; k++) {
-      g.lineWidth = k % 2 ? 1.7 : 1;
+  // Outer framing and rope-like border in warm ivory and tarnished gold.
+  g.strokeStyle = 'rgba(118,92,101,0.72)';
+  g.lineWidth = 12;
+  g.strokeRect(18, 18, W - 36, H - 36);
+  g.strokeStyle = 'rgba(242,219,160,0.65)';
+  g.lineWidth = 4;
+  g.strokeRect(32, 32, W - 64, H - 64);
+
+  const motifW = W / 6;
+  const motifH = H * 0.62;
+  const cxBase = [0.85 * motifW, 2.95 * motifW, 5.05 * motifW];
+  for (const cx of cxBase) {
+    const cy = H / 2;
+    const petals = 12;
+    g.strokeStyle = 'rgba(110,78,66,0.7)';
+    g.lineWidth = 2.4;
+    g.beginPath(); g.arc(cx, cy, 34, 0, Math.PI * 2); g.stroke();
+    for (let i = 0; i < petals; i++) {
+      const a = (i / petals) * Math.PI * 2;
+      g.fillStyle = i % 2 ? 'rgba(245,231,193,0.72)' : 'rgba(196,153,108,0.58)';
       g.beginPath();
-      g.arc(cx, cy, k * (W / 22), Math.PI, 0);
+      g.ellipse(cx + Math.cos(a) * 26, cy + Math.sin(a) * 26, 11, 22, a, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.fillStyle = 'rgba(219,188,109,0.8)';
+    g.beginPath(); g.arc(cx, cy, 12, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(136,94,69,0.65)';
+    g.lineWidth = 1.6;
+    g.beginPath(); g.arc(cx, cy, 42, 0, Math.PI * 2); g.stroke();
+  }
+
+  // A repeated meander / Greek-key band to echo liner paneling.
+  g.strokeStyle = 'rgba(247,236,210,0.58)';
+  g.lineWidth = 3;
+  for (let y = 12; y < H; y += 56) {
+    for (let x = 0; x < W; x += 32) {
+      g.beginPath();
+      g.moveTo(x, y + 14);
+      g.lineTo(x + 16, y + 14);
+      g.lineTo(x + 16, y + 28);
+      g.lineTo(x + 32, y + 28);
+      g.lineTo(x + 32, y + 14);
       g.stroke();
     }
   }
+  // A more architectural fan motif and vertical ribbing to keep the wall from
+  // looking like a wallpaper repeat rather than a hand-painted panel.
+  g.strokeStyle = 'rgba(119,83,102,0.38)';
+  g.lineWidth = 2;
+  for (let i = 0; i < 7; i++) {
+    const x = 30 + i * (W - 60) / 6;
+    g.beginPath();
+    g.moveTo(x, H * 0.18);
+    g.bezierCurveTo(x + 4, H * 0.36, x + 8, H * 0.48, x, H * 0.82);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(x + 12, H * 0.18);
+    g.bezierCurveTo(x + 8, H * 0.36, x + 4, H * 0.48, x + 12, H * 0.82);
+    g.stroke();
+  }
 }, 4, 1.4);
+
+// Casino wall frieze. The first casino hung a flat burgundy slab over the
+// window band and it read as painted MDF. This is a Wiener Werkstätte mosaic
+// panel — gold tesserae, Klimt's Tree of Life spirals, Kandinsky circles —
+// the same language as the 1905–11 Stoclet dining-room frieze, which is the
+// contemporary of a 1912 liner even if White Star itself stayed Jacobean.
+function paintSecessionPanel(g, W, H, seedValue, kind) {
+  const rand = texRandom(seedValue);
+  const GOLD = ['#e8c547', '#d4af37', '#c49a3c', '#f0d78c', '#aa8418'];
+  const CREAM = ['#f3e6c4', '#e8d5a3', '#f7f1e4', '#dcc48a'];
+  const TEAL = ['#2d6b5a', '#1a4a40', '#3d7a62'];
+  const WINE = ['#6b1c2a', '#8b2d3e', '#4a121c'];
+  const BLUE = ['#1e3a5f', '#3d6ea5', '#163050'];
+  const INK = '#1a1208';
+
+  g.fillStyle = '#c9a24a';
+  g.fillRect(0, 0, W, H);
+  const tile = 8;
+  for (let y = 0; y < H; y += tile) {
+    for (let x = 0; x < W; x += tile) {
+      const n = rand();
+      g.fillStyle = n < 0.46 ? CREAM[n * 8 | 0]
+        : n < 0.72 ? GOLD[(n * 20 | 0) % GOLD.length]
+        : n < 0.84 ? TEAL[(n * 10 | 0) % TEAL.length]
+        : n < 0.93 ? WINE[(n * 10 | 0) % WINE.length]
+        : BLUE[(n * 10 | 0) % BLUE.length];
+      g.fillRect(x + 1, y + 1, tile - 2, tile - 2);
+    }
+  }
+
+  const m = 22, bw = 14;
+  g.fillStyle = INK;
+  g.fillRect(m, m, W - 2 * m, bw);
+  g.fillRect(m, H - m - bw, W - 2 * m, bw);
+  g.fillRect(m, m, bw, H - 2 * m);
+  g.fillRect(W - m - bw, m, bw, H - 2 * m);
+  const chk = 10;
+  g.fillStyle = '#e8c547';
+  for (let i = 0; i < (W - 2 * m) / chk; i++) if (i % 2) {
+    g.fillRect(m + i * chk, m, chk, bw);
+    g.fillRect(m + i * chk, H - m - bw, chk, bw);
+  }
+  for (let i = 0; i < (H - 2 * m) / chk; i++) if (i % 2) {
+    g.fillRect(m, m + i * chk, bw, chk);
+    g.fillRect(W - m - bw, m + i * chk, bw, chk);
+  }
+  g.strokeStyle = '#f0d78c';
+  g.lineWidth = 4;
+  g.strokeRect(m + bw + 6, m + bw + 6, W - 2 * (m + bw + 6), H - 2 * (m + bw + 6));
+  g.strokeStyle = INK;
+  g.lineWidth = 1.6;
+  g.strokeRect(m + bw + 12, m + bw + 12, W - 2 * (m + bw + 12), H - 2 * (m + bw + 12));
+
+  const keyY = [m + bw + 18, H - m - bw - 30];
+  g.strokeStyle = 'rgba(26,18,8,0.72)';
+  g.lineWidth = 2.2;
+  g.lineCap = 'square';
+  for (const y of keyY) {
+    for (let x = m + bw + 20; x < W - m - bw - 36; x += 28) {
+      g.beginPath();
+      g.moveTo(x, y + 12);
+      g.lineTo(x, y);
+      g.lineTo(x + 14, y);
+      g.lineTo(x + 14, y + 8);
+      g.lineTo(x + 28, y + 8);
+      g.stroke();
+    }
+  }
+
+  function spiral(cx, cy, r, turns, dir, width, color) {
+    g.strokeStyle = color;
+    g.lineWidth = width;
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    g.beginPath();
+    const n = 72;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const a = dir * t * turns * Math.PI * 2 + dir * 0.4;
+      const rr = r * (1 - t * 0.88);
+      const x = cx + Math.cos(a) * rr;
+      const y = cy + Math.sin(a) * rr * 0.86;
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.stroke();
+  }
+  function vine(x0, y0, x1, y1, x2, y2, width, color) {
+    g.strokeStyle = color;
+    g.lineWidth = width;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(x0, y0);
+    g.quadraticCurveTo(x1, y1, x2, y2);
+    g.stroke();
+  }
+  function kCircle(cx, cy, r, rings) {
+    for (let i = rings.length - 1; i >= 0; i--) {
+      g.fillStyle = rings[i];
+      g.beginPath();
+      g.arc(cx, cy, r * (i + 1) / rings.length, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.strokeStyle = INK;
+    g.lineWidth = Math.max(1.4, r * 0.04);
+    g.beginPath();
+    g.arc(cx, cy, r, 0, Math.PI * 2);
+    g.stroke();
+  }
+  function eye(cx, cy, s) {
+    g.fillStyle = '#f7f1e4';
+    g.beginPath();
+    g.ellipse(cx, cy, s * 1.15, s * 0.78, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = INK;
+    g.lineWidth = 1.6;
+    g.stroke();
+    g.fillStyle = '#1e3a5f';
+    g.beginPath();
+    g.arc(cx, cy, s * 0.42, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = INK;
+    g.beginPath();
+    g.arc(cx, cy, s * 0.22, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#f0d78c';
+    g.beginPath();
+    g.arc(cx + s * 0.12, cy - s * 0.12, s * 0.12, 0, Math.PI * 2);
+    g.fill();
+  }
+  function triangles(x, y, w, h) {
+    const s = 13;
+    for (let yy = y; yy < y + h; yy += s) {
+      for (let xx = x; xx < x + w; xx += s) {
+        g.fillStyle = rand() < 0.55 ? GOLD[rand() * GOLD.length | 0] : INK;
+        g.beginPath();
+        if (((xx + yy) / s | 0) % 2) {
+          g.moveTo(xx, yy + s); g.lineTo(xx + s / 2, yy); g.lineTo(xx + s, yy + s);
+        } else {
+          g.moveTo(xx, yy); g.lineTo(xx + s, yy); g.lineTo(xx + s / 2, yy + s);
+        }
+        g.closePath();
+        g.fill();
+      }
+    }
+  }
+
+  if (kind === 'klimt') {
+    triangles(W * 0.10, H * 0.58, W * 0.16, H * 0.22);
+    triangles(W * 0.74, H * 0.58, W * 0.16, H * 0.22);
+    const tx = W * 0.5, ty = H * 0.82;
+    vine(tx, H * 0.88, tx - 10, H * 0.54, tx + 8, H * 0.24, 18, '#2a1606');
+    vine(tx, H * 0.88, tx - 10, H * 0.54, tx + 8, H * 0.24, 11, '#e8c547');
+    vine(tx, H * 0.88, tx - 10, H * 0.54, tx + 8, H * 0.24, 4.5, '#f7e7a4');
+    const arms = [
+      [tx, H * 0.72, tx - 120, H * 0.50, tx - 210, H * 0.38, -1],
+      [tx, H * 0.68, tx + 130, H * 0.48, tx + 220, H * 0.34, 1],
+      [tx, H * 0.52, tx - 90, H * 0.30, tx - 170, H * 0.22, -1],
+      [tx, H * 0.50, tx + 100, H * 0.28, tx + 190, H * 0.20, 1],
+      [tx, H * 0.40, tx - 40, H * 0.18, tx - 80, H * 0.16, -1],
+      [tx, H * 0.38, tx + 50, H * 0.16, tx + 110, H * 0.18, 1],
+    ];
+    for (const [x0, y0, x1, y1, x2, y2, dir] of arms) {
+      vine(x0, y0, x1, y1, x2, y2, 12, '#2a1606');
+      vine(x0, y0, x1, y1, x2, y2, 7, '#e8c547');
+      spiral(x2, y2, 56 + rand() * 16, 1.45, dir, 9, '#2a1606');
+      spiral(x2, y2, 52 + rand() * 14, 1.45, dir, 5.5, '#f0d78c');
+    }
+    kCircle(W * 0.28, H * 0.36, 42, ['#6b1c2a', '#e8c547', '#1a4a40', '#f3e6c4']);
+    kCircle(W * 0.72, H * 0.32, 36, ['#1e3a5f', '#f0d78c', '#8b2d3e', '#f7f1e4']);
+    kCircle(W * 0.50, H * 0.22, 28, ['#c49a3c', '#1a1208', '#e8c547']);
+    kCircle(W * 0.18, H * 0.52, 22, ['#3d7a62', '#f0d78c', '#4a121c']);
+    kCircle(W * 0.84, H * 0.50, 24, ['#3d6ea5', '#e8c547', '#1a1208']);
+    eye(W * 0.42, H * 0.44, 11);
+    eye(W * 0.58, H * 0.41, 10);
+    eye(W * 0.33, H * 0.24, 8);
+  } else {
+    triangles(W * 0.12, H * 0.62, W * 0.20, H * 0.16);
+    triangles(W * 0.68, H * 0.62, W * 0.20, H * 0.16);
+    g.strokeStyle = INK;
+    g.lineWidth = 3.2;
+    g.beginPath();
+    g.moveTo(W * 0.16, H * 0.78);
+    g.lineTo(W * 0.42, H * 0.22);
+    g.lineTo(W * 0.70, H * 0.70);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(W * 0.22, H * 0.30);
+    g.lineTo(W * 0.86, H * 0.48);
+    g.stroke();
+    kCircle(W * 0.38, H * 0.46, 92, ['#1e3a5f', '#e8c547', '#6b1c2a', '#f3e6c4', '#1a4a40']);
+    kCircle(W * 0.68, H * 0.38, 70, ['#8b2d3e', '#f0d78c', '#163050', '#e8d5a3']);
+    kCircle(W * 0.58, H * 0.62, 48, ['#2d6b5a', '#1a1208', '#e8c547', '#f7f1e4']);
+    kCircle(W * 0.22, H * 0.58, 34, ['#c49a3c', '#1e3a5f', '#f3e6c4']);
+    kCircle(W * 0.82, H * 0.58, 30, ['#4a121c', '#f0d78c', '#3d7a62']);
+    kCircle(W * 0.48, H * 0.24, 22, ['#1a1208', '#e8c547', '#f7f1e4']);
+    spiral(W * 0.78, H * 0.28, 44, 1.2, 1, 3.4, '#5a3a10');
+    spiral(W * 0.20, H * 0.32, 36, 1.15, -1, 3.2, '#c49a3c');
+    g.fillStyle = INK;
+    for (let i = 0; i < 7; i++) {
+      const x = W * (0.18 + i * 0.10), y = H * 0.76;
+      g.fillStyle = i % 2 ? '#e8c547' : INK;
+      g.fillRect(x, y, 16, 16);
+    }
+  }
+}
+
+const casinoFriezeKlimtTex = canvasTex(1024, 512, (g, W, H) =>
+  paintSecessionPanel(g, W, H, 1909, 'klimt'), 1, 1);
+const casinoFriezeKandinskyTex = canvasTex(1024, 512, (g, W, H) =>
+  paintSecessionPanel(g, W, H, 1913, 'kandinsky'), 1, 1);
+const casinoFriezeBump = canvasTex(256, 256, (g, W, H) => {
+  g.fillStyle = '#787878';
+  g.fillRect(0, 0, W, H);
+  const s = 8;
+  for (let y = 0; y < H; y += s) for (let x = 0; x < W; x += s) {
+    const v = 96 + ((x * 13 + y * 7) % 90);
+    g.fillStyle = `rgb(${v},${v},${v})`;
+    g.fillRect(x + 1, y + 1, s - 2, s - 2);
+  }
+}, 14, 7);
+casinoFriezeBump.colorSpace = THREE.NoColorSpace;
+
+// Casino deckhead coffer. Olympic's smoking-room ceiling was moulded plaster
+// with a carved oak architrave whose motif was "a central star surrounded by
+// a larger circular star" — that, not a blank cream slab, is what a 1912
+// feutré salon has between the beams. Drawn as one panel per coffer.
+const casinoCofferTex = canvasTex(512, 512, (g, W, H) => {
+  const rand = texRandom(1911);
+  g.fillStyle = '#e8d7b4';
+  g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 4200; i++) {
+    g.fillStyle = rand() < 0.5 ? 'rgba(120,92,54,0.10)' : 'rgba(255,244,214,0.16)';
+    g.fillRect(rand() * W, rand() * H, 2.4, 2.4);
+  }
+  const cx = W / 2, cy = H / 2;
+  g.strokeStyle = 'rgba(168,122,42,0.22)';
+  g.lineWidth = 1.4;
+  for (let k = -8; k <= 8; k++) {
+    g.beginPath(); g.moveTo(k * 40, 0); g.lineTo(k * 40 + W, H); g.stroke();
+    g.beginPath(); g.moveTo(k * 40, H); g.lineTo(k * 40 + W, 0); g.stroke();
+  }
+  const m = 18;
+  g.fillStyle = '#2a1606';
+  g.fillRect(m, m, W - 2 * m, 16);
+  g.fillRect(m, H - m - 16, W - 2 * m, 16);
+  g.fillRect(m, m, 16, H - 2 * m);
+  g.fillRect(W - m - 16, m, 16, H - 2 * m);
+  const chk = 10;
+  g.fillStyle = '#e8c547';
+  for (let i = 0; i < (W - 2 * m) / chk; i++) if (i % 2) {
+    g.fillRect(m + i * chk, m, chk, 16);
+    g.fillRect(m + i * chk, H - m - 16, chk, 16);
+  }
+  for (let i = 0; i < (H - 2 * m) / chk; i++) if (i % 2) {
+    g.fillRect(m, m + i * chk, 16, chk);
+    g.fillRect(W - m - 16, m + i * chk, 16, chk);
+  }
+  g.strokeStyle = '#f0d78c';
+  g.lineWidth = 5;
+  g.strokeRect(m + 22, m + 22, W - 2 * (m + 22), H - 2 * (m + 22));
+  g.strokeStyle = '#5a3a10';
+  g.lineWidth = 1.6;
+  g.strokeRect(m + 28, m + 28, W - 2 * (m + 28), H - 2 * (m + 28));
+
+  g.strokeStyle = 'rgba(90,58,16,0.7)';
+  g.lineWidth = 2.2;
+  const key = 26, inner = m + 38;
+  for (let x = inner; x < W - inner - key; x += key) {
+    for (const y of [inner, H - inner - 14]) {
+      g.beginPath();
+      g.moveTo(x, y + 12); g.lineTo(x, y); g.lineTo(x + 12, y);
+      g.lineTo(x + 12, y + 8); g.lineTo(x + key, y + 8);
+      g.stroke();
+    }
+  }
+
+  function star(r, fill, stroke, n = 8) {
+    g.beginPath();
+    for (let i = 0; i < n * 2; i++) {
+      const a = (i / (n * 2)) * Math.PI * 2 - Math.PI / 2;
+      const rr = i % 2 ? r * 0.42 : r;
+      const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.closePath();
+    if (fill) { g.fillStyle = fill; g.fill(); }
+    if (stroke) { g.strokeStyle = stroke; g.lineWidth = 2.4; g.stroke(); }
+  }
+  g.strokeStyle = 'rgba(201,162,55,0.55)';
+  g.lineWidth = 3;
+  g.beginPath(); g.arc(cx, cy, 118, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = 'rgba(42,22,6,0.55)';
+  g.lineWidth = 2;
+  g.beginPath(); g.arc(cx, cy, 108, 0, Math.PI * 2); g.stroke();
+  star(96, 'rgba(232,197,71,0.55)', '#5a3a10', 16);
+  star(58, '#e8c547', '#2a1606', 8);
+  g.fillStyle = '#f7e7a4';
+  g.beginPath(); g.arc(cx, cy, 14, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#2a1606';
+  g.lineWidth = 2;
+  g.beginPath(); g.arc(cx, cy, 14, 0, Math.PI * 2); g.stroke();
+
+  g.strokeStyle = 'rgba(201,162,55,0.62)';
+  g.lineWidth = 2.6;
+  g.lineCap = 'round';
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + 0.4;
+    const x0 = cx + Math.cos(a) * 128, y0 = cy + Math.sin(a) * 128;
+    const x1 = cx + Math.cos(a + 0.55) * 168, y1 = cy + Math.sin(a + 0.55) * 168;
+    const x2 = cx + Math.cos(a + 1.1) * 128, y2 = cy + Math.sin(a + 1.1) * 128;
+    g.beginPath();
+    g.moveTo(x0, y0);
+    g.quadraticCurveTo(x1, y1, x2, y2);
+    g.stroke();
+  }
+}, 1, 1);
 
 // The stateroom Axminster. Stepped Deco lozenges in gold and dusty rose over a
 // warm aubergine-taupe ground. Warm, deliberately: the cold blue speckle it
@@ -1208,6 +1575,23 @@ const M = {
   potSoil: new THREE.MeshStandardMaterial({ color: 0x24170f, roughness: 1 }),
   rouletteFelt: new THREE.MeshStandardMaterial({ map: rouletteFeltTex, roughness: 0.92 }),
   velvetRed: new THREE.MeshStandardMaterial({ color: 0x7a1f2c, roughness: 0.9 }),
+  // Backing behind the mosaic panels: a dark wine so the window glass never
+  // reads through a bay, and a gap at a pilaster looks like lining, not sea.
+  casinoFriezeBack: new THREE.MeshStandardMaterial({ color: 0x4a121c, roughness: 0.9 }),
+  casinoFriezeKlimt: new THREE.MeshStandardMaterial({
+    map: casinoFriezeKlimtTex, bumpMap: casinoFriezeBump, bumpScale: 0.016,
+    roughness: 0.48, metalness: 0.22,
+    emissive: 0x3a2710, emissiveMap: casinoFriezeKlimtTex, emissiveIntensity: 0.42,
+  }),
+  casinoFriezeKandinsky: new THREE.MeshStandardMaterial({
+    map: casinoFriezeKandinskyTex, bumpMap: casinoFriezeBump, bumpScale: 0.016,
+    roughness: 0.48, metalness: 0.22,
+    emissive: 0x3a2710, emissiveMap: casinoFriezeKandinskyTex, emissiveIntensity: 0.42,
+  }),
+  casinoCoffer: new THREE.MeshStandardMaterial({
+    map: casinoCofferTex, roughness: 0.78, metalness: 0.06,
+    emissive: 0x2a1c08, emissiveMap: casinoCofferTex, emissiveIntensity: 0.55,
+  }),
   velvetGold: new THREE.MeshStandardMaterial({ color: 0xb8913f, roughness: 0.72, metalness: 0.2 }),
   linen: new THREE.MeshStandardMaterial({ color: 0xf6f1e4, roughness: 0.92 }),
   duvet: new THREE.MeshStandardMaterial({ color: 0xf2ece0, roughness: 0.94 }),
@@ -2430,14 +2814,31 @@ console.log('[cruise] casino room start');
   longSlab(M.casinoCarpet, -SUP_X2 + WALL_T, SUP_X2 - WALL_T, z0 + WALL_T, z1 - WALL_T,
     DECK_Y, F);
 
-  // Ambiance feutrée: Rich crimson velvet draperies covering the window bands
-  // completely to shut out daylight and create an intimate, cozy, luxury Monte Carlo setting.
+  // Mosaic frieze over the window band. One framed panel per bay, Klimt and
+  // Kandinsky alternating, so the long wall reads as a 1910 Wiener Werkstätte
+  // dining room rather than as a single slab of burgundy paint.
   prop(() => {
     for (const sx of [-1, 1]) {
-      const x = sx * (SUP_X2 - 0.35);
-      box(M.velvetRed, x, DECK_Y + 2.45, (z0 + z1) / 2, 0.25, 2.7, Math.abs(z1 - z0) - 1.0);
-      box(M.goldTrim, sx * (SUP_X2 - 0.38), DECK_Y + 3.75, (z0 + z1) / 2, 0.32, 0.24, Math.abs(z1 - z0) - 0.8);
-      for (let z = z0 + 4; z < z1 - 2; z += 5.5) {
+      const len = Math.abs(z1 - z0) - 1.0;
+      const xBack = sx * (SUP_X2 - 0.22);
+      const xFrieze = sx * (SUP_X2 - 0.30);
+      box(M.casinoFriezeBack, xBack, DECK_Y + 2.45, (z0 + z1) / 2, 0.10, 2.72, len);
+      box(M.goldTrim, sx * (SUP_X2 - 0.38), DECK_Y + 3.75, (z0 + z1) / 2, 0.32, 0.14, len + 0.2);
+      box(M.goldTrim, sx * (SUP_X2 - 0.38), DECK_Y + 1.14, (z0 + z1) / 2, 0.32, 0.10, len + 0.2);
+
+      const posts = [];
+      for (let z = z0 + 4; z < z1 - 2; z += 5.5) posts.push(z);
+      const splits = [z0 + 0.55, ...posts, z1 - 0.55];
+      for (let i = 0; i < splits.length - 1; i++) {
+        const za = splits[i] + (i === 0 ? 0 : 0.34);
+        const zb = splits[i + 1] - (i === splits.length - 2 ? 0 : 0.34);
+        const zw = zb - za;
+        if (zw < 0.6) continue;
+        const mat = i % 2 ? M.casinoFriezeKandinsky : M.casinoFriezeKlimt;
+        box(mat, xFrieze, DECK_Y + 2.45, (za + zb) / 2, 0.05, 2.50, zw);
+      }
+
+      for (const z of posts) {
         box(M.darkWood, sx * (SUP_X2 - 0.45), DECK_Y + 2.0, z, 0.42, 4.0, 0.6);
         box(M.goldTrim, sx * (SUP_X2 - 0.5), DECK_Y + 0.8, z, 0.46, 0.08, 0.64);
         box(M.goldTrim, sx * (SUP_X2 - 0.5), DECK_Y + 3.4, z, 0.46, 0.08, 0.64);
@@ -2478,27 +2879,45 @@ console.log('[cruise] casino room start');
     casinoLights.push(pl);
   }
 
-  function chandelier(cx, cz, cy = CEIL_Y - 0.1) {
+  function chandelier(cx, cz, cy = CEIL_Y - 0.08) {
     prop(() => {
-      shape(G.cyl, M.brass, cx, cy - 0.2, cz, 0.12, 0.4, 0.12);
-      shape(G.cyl32, M.brass, cx, cy - 0.45, cz, 2.2, 0.08, 2.2);
-      shape(G.cyl32, M.goldTrim, cx, cy - 0.85, cz, 1.4, 0.06, 1.4);
-      for (let i = 0; i < 14; i++) {
-        const a = (i / 14) * Math.PI * 2;
-        shape(G.cyl, M.warmLampBright, cx + Math.cos(a) * 1.0, cy - 0.52, cz + Math.sin(a) * 1.0,
-          0.09, 0.18, 0.09);
+      const s = 0.78;
+      const top = cy;
+      shape(G.cyl32, M.plasterShade, cx, top + 0.02, cz, 1.28 * s, 0.07, 1.28 * s);
+      shape(G.ring, M.gilt, cx, top - 0.02, cz, 1.10 * s, 2.4 * s, 1.10 * s);
+      shape(G.ring, M.giltPale, cx, top - 0.06, cz, 0.78 * s, 1.8 * s, 0.78 * s);
+      shape(G.cyl, M.gilt, cx, top - 0.22 * s, cz, 0.11 * s, 0.38 * s, 0.11 * s);
+      shape(G.cone, M.gilt, cx, top - 0.48 * s, cz, 0.78 * s, 0.22 * s, 0.78 * s,
+        { rx: Math.PI });
+      const tiers = [[1.28, 0.74, 10], [0.74, 1.16, 7]];
+      for (const [rad, drop, n] of tiers) {
+        const r = rad * s, y = top - drop * s;
+        shape(G.ring, M.gilt, cx, y, cz, r * 2, 2.4 * s, r * 2);
+        shape(G.ring, M.giltPale, cx, y - 0.08 * s, cz, r * 1.86, 1.7 * s, r * 1.86);
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2 + 0.12;
+          const px = cx + Math.sin(a) * r, pz = cz + Math.cos(a) * r;
+          shape(G.cyl, M.gilt, (cx + px) / 2, y + 0.12 * s, (cz + pz) / 2,
+            0.045 * s, r, 0.045 * s, { ry: a, rx: Math.PI / 2 });
+          shape(G.cyl, M.gilt, px, y + 0.12 * s, pz, 0.12 * s, 0.12 * s, 0.12 * s);
+          shape(G.cyl, M.candleWax, px, y + 0.32 * s, pz, 0.065 * s, 0.28 * s, 0.065 * s);
+          shape(G.cone, M.candleFlame, px, y + 0.50 * s, pz, 0.07 * s, 0.16 * s, 0.07 * s);
+          shape(G.crystalDrop, M.crystalGlass, px, y - 0.16 * s, pz,
+            0.08 * s, 0.18 * s, 0.08 * s);
+        }
+        for (let i = 0; i < n * 4; i++) {
+          const a = (i / (n * 4)) * Math.PI * 2;
+          const k = (i % 4) - 1.5;
+          shape(G.crystalDrop, M.crystalGlass,
+            cx + Math.sin(a) * r * 1.04, y - (0.12 + Math.abs(k) * 0.07) * s,
+            cz + Math.cos(a) * r * 1.04, 0.055 * s, 0.13 * s, 0.055 * s, { ry: a });
+        }
       }
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2 + 0.3;
-        shape(G.cyl, M.warmLampBright, cx + Math.cos(a) * 0.6, cy - 0.88, cz + Math.sin(a) * 0.6,
-          0.08, 0.16, 0.08);
-      }
-      for (let i = 0; i < 20; i++) {
-        const a = (i / 20) * Math.PI * 2;
-        const rad = 0.4 + (i % 3) * 0.25;
-        shape(G.cyl, M.crystalGlass, cx + Math.cos(a) * rad, cy - 0.65 - (i % 4) * 0.08, cz + Math.sin(a) * rad,
-          0.04, 0.22, 0.04);
-      }
+      shape(G.cyl, M.gilt, cx, top - 1.12 * s, cz, 0.08 * s, 1.10 * s, 0.08 * s);
+      shape(G.sphere, M.crystalGlass, cx, top - 1.58 * s, cz, 0.24 * s, 0.24 * s, 0.24 * s);
+      shape(G.crystalDrop, M.crystalGlass, cx, top - 1.78 * s, cz,
+        0.15 * s, 0.32 * s, 0.15 * s);
+      shape(G.sphere, M.candleFlame, cx, top - 1.56 * s, cz, 0.18 * s, 0.18 * s, 0.18 * s);
     });
   }
 
@@ -2911,19 +3330,60 @@ console.log('[cruise] casino room start');
     addCasinoLight(0, DECK_Y + 2.8, barZ, 0xffd280, 24, 18);
   }
 
-  // Coffered dark mahogany ceiling beams across the room
+  // Coffered mahogany deckhead. The first version was three fat beams and a
+  // blank cream slab — a warehouse, not a 1912 smoking room. Each bay now
+  // carries a plaster coffer with the Olympic star medallion, the beams are
+  // stepped and gilt-beaded, and a cornice runs the room.
   prop(() => {
-    for (let z = z0 + 5; z < z1 - 2; z += 6.0) {
-      box(M.darkWood, 0, CEIL_Y - 0.12, z, SUP_X2 * 2 - 1.2, 0.22, 0.35);
-      box(M.goldTrim, 0, CEIL_Y - 0.23, z, SUP_X2 * 2 - 1.2, 0.04, 0.12);
-    }
-    for (const x of [-6.4, 0, 6.4]) {
-      box(M.darkWood, x, CEIL_Y - 0.12, (z0 + z1) / 2, 0.35, 0.22, Math.abs(z1 - z0) - 1.2);
-    }
-    for (const sx of [-1, 1]) {
-      for (let z = z0 + 3; z < z1 - 2; z += 8) {
-        box(M.warmLampBright, sx * 11.9, CEIL_Y - 0.35, z, 0.1, 0.1, 6.4);
+    const xBeams = [-9.6, -4.8, 0, 4.8, 9.6];
+    const zBeams = [];
+    for (let z = z0 + 3.6; z < z1 - 1.4; z += 4.8) zBeams.push(z);
+    const xEdge = [-(SUP_X2 - 0.52), ...xBeams, SUP_X2 - 0.52];
+    const zEdge = [z0 + 0.52, ...zBeams, z1 - 0.52];
+
+    for (let i = 0; i < xEdge.length - 1; i++) {
+      for (let j = 0; j < zEdge.length - 1; j++) {
+        const xa = xEdge[i] + 0.18, xb = xEdge[i + 1] - 0.18;
+        const za = zEdge[j] + 0.18, zb = zEdge[j + 1] - 0.18;
+        const w = xb - xa, d = zb - za;
+        if (w < 0.7 || d < 0.7) continue;
+        box(M.casinoCoffer, (xa + xb) / 2, CEIL_Y - 0.04, (za + zb) / 2, w, 0.035, d);
+        const mx = (xa + xb) / 2, mz = (za + zb) / 2;
+        shape(G.cyl32, M.plasterShade, mx, CEIL_Y - 0.08, mz, 0.95, 0.04, 0.95);
+        shape(G.ring, M.gilt, mx, CEIL_Y - 0.11, mz, 0.82, 1.7, 0.82);
+        shape(G.sphere, M.giltPale, mx, CEIL_Y - 0.14, mz, 0.16, 0.12, 0.16);
       }
+    }
+
+    const spanX = SUP_X2 * 2 - 1.05;
+    const spanZ = Math.abs(z1 - z0) - 1.05;
+    for (const z of zBeams) {
+      box(M.mahoganyGloss, 0, CEIL_Y - 0.09, z, spanX, 0.08, 0.40);
+      box(M.darkWood, 0, CEIL_Y - 0.18, z, spanX, 0.12, 0.24);
+      box(M.gilt, 0, CEIL_Y - 0.26, z, spanX, 0.03, 0.11);
+    }
+    for (const x of xBeams) {
+      box(M.mahoganyGloss, x, CEIL_Y - 0.09, (z0 + z1) / 2, 0.40, 0.08, spanZ);
+      box(M.darkWood, x, CEIL_Y - 0.18, (z0 + z1) / 2, 0.24, 0.12, spanZ);
+      box(M.gilt, x, CEIL_Y - 0.26, (z0 + z1) / 2, 0.11, 0.03, spanZ);
+    }
+    for (const x of xBeams) for (const z of zBeams) {
+      shape(G.cyl32, M.mahoganyGloss, x, CEIL_Y - 0.20, z, 0.52, 0.10, 0.52);
+      shape(G.ring, M.gilt, x, CEIL_Y - 0.26, z, 0.40, 1.8, 0.40);
+      shape(G.sphere, M.giltPale, x, CEIL_Y - 0.30, z, 0.13, 0.11, 0.13);
+    }
+
+    const corniceX = SUP_X2 - 0.40;
+    for (const sx of [-1, 1]) {
+      box(M.mahoganyGloss, sx * corniceX, CEIL_Y - 0.16, (z0 + z1) / 2, 0.36, 0.22, spanZ + 0.3);
+      box(M.gilt, sx * (corniceX - 0.08), CEIL_Y - 0.28, (z0 + z1) / 2, 0.10, 0.04, spanZ + 0.2);
+      for (let z = z0 + 3; z < z1 - 2; z += 8) {
+        box(M.warmLampBright, sx * 11.85, CEIL_Y - 0.36, z, 0.08, 0.05, 6.2);
+      }
+    }
+    for (const z of [z0 + 0.48, z1 - 0.48]) {
+      box(M.mahoganyGloss, 0, CEIL_Y - 0.16, z, spanX + 0.2, 0.22, 0.36);
+      box(M.gilt, 0, CEIL_Y - 0.28, z, spanX + 0.1, 0.04, 0.10);
     }
   });
 }
