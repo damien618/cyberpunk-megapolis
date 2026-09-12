@@ -2740,7 +2740,12 @@ const BRIDGE_W = 3.8;
 const BRIDGE_ARCH_H = 2.4;
 const BRIDGE_Z0 = BRIDGE_Z - BRIDGE_SPAN / 2;
 const BRIDGE_Z1 = BRIDGE_Z + BRIDGE_SPAN / 2;
-const DECK_TOP = BRIDGE_Y + 0.09;
+const DECK_PLANK_H = 0.18;
+const DECK_HALF = DECK_PLANK_H / 2;
+// Sit the timber a finger above the pier pavers — same Y as the stone made the
+// deck flicker (z-fight) where the planks still overlap the landing.
+const DECK_LIFT = 0.06;
+const DECK_TOP = BRIDGE_Y + DECK_HALF;
 
 const LANDING_W = 5.6;
 const LANDING_D = 2.7;
@@ -2752,14 +2757,19 @@ const STEP1_TOP = DECK_TOP;
 const SOUTH_STEP0_Z = 16.58;
 const SOUTH_STEP1_Z = 17.26;
 const SOUTH_LAND_Z = 18.85;
-const SOUTH_WOOD_Z0 = 19.85;
 const SANDO_SOUTH_Z1 = SOUTH_STEP0_Z - STEP_D / 2;
 
-const NORTH_WOOD_Z1 = 44.15;
 const NORTH_LAND_Z = 45.15;
 const NORTH_STEP1_Z = 46.74;
 const NORTH_STEP0_Z = 47.42;
 const SANDO_NORTH_Z0 = NORTH_STEP0_Z + STEP_D / 2;
+
+// Timber walkable span: pier face → pier face (flat slabs + arched planks).
+const PIER_SOUTH_FACE = SOUTH_LAND_Z + LANDING_D / 2;
+const PIER_NORTH_FACE = NORTH_LAND_Z - LANDING_D / 2;
+const BRIDGE_PLANK_N = 28;
+const SOUTH_WOOD_Z0 = PIER_SOUTH_FACE;
+const NORTH_WOOD_Z1 = PIER_NORTH_FACE;
 
 // Cosine drum: flat derivative at the arch ends, so the timber approaches meet it.
 function crossingDeckY(z) {
@@ -2774,7 +2784,7 @@ function crossingPitch(z) {
   return Math.atan(dydz);
 }
 function crossingTop(z) {
-  return crossingDeckY(z) + 0.09;
+  return crossingDeckY(z) + DECK_HALF + DECK_LIFT;
 }
 
 // ---------------------------------------------------------------------------
@@ -2819,22 +2829,42 @@ function buildApproachSteps(x, step0Z, step1Z) {
 }
 
 function buildTaikoBashi(x, y, z, span = 14, width = 3.6) {
-  const woodZ0 = SOUTH_WOOD_Z0;
-  const woodZ1 = NORTH_WOOD_Z1;
-  const woodLen = woodZ1 - woodZ0;
-  const n = 28;
-  const plankD = woodLen / n + 0.08;
+  // Flat approaches are one continuous slab each. Segmenting them into
+  // coplanar planks made the deck flicker (self-shadow / depth fight) at the
+  // exits onto the stone piers — exactly where you leave the bridge.
+  const deckY = BRIDGE_Y + DECK_LIFT;
+  const southFlatZ1 = Math.min(BRIDGE_Z0, PIER_NORTH_FACE);
+  if (southFlatZ1 > PIER_SOUTH_FACE) {
+    const d = southFlatZ1 - PIER_SOUTH_FACE;
+    box(M.bridgeRed, x, deckY, PIER_SOUTH_FACE + d / 2, width, DECK_PLANK_H, d, 0, 0, 0, false);
+  }
+  const northFlatZ0 = Math.max(BRIDGE_Z1, PIER_SOUTH_FACE);
+  if (PIER_NORTH_FACE > northFlatZ0) {
+    const d = PIER_NORTH_FACE - northFlatZ0;
+    box(M.bridgeRed, x, deckY, northFlatZ0 + d / 2, width, DECK_PLANK_H, d, 0, 0, 0, false);
+  }
 
-  const railZ0 = SOUTH_LAND_Z + LANDING_D / 2 + 0.25;
-  const railZ1 = NORTH_LAND_Z - LANDING_D / 2 - 0.25;
-  for (let i = 0; i <= n; i++) {
-    const pz = woodZ0 + (i / n) * woodLen;
-    const py = crossingDeckY(pz);
+  // Cosine drum — pitched planks only where the surface actually curves.
+  const archLen = BRIDGE_Z1 - BRIDGE_Z0;
+  const n = BRIDGE_PLANK_N;
+  const plankD = archLen / n;
+  const railZ0 = PIER_SOUTH_FACE + 0.25;
+  const railZ1 = PIER_NORTH_FACE - 0.25;
+  for (let i = 0; i < n; i++) {
+    const pz = BRIDGE_Z0 + (i + 0.5) * plankD;
+    const py = crossingDeckY(pz) + DECK_LIFT;
     const pitch = crossingPitch(pz);
-    box(M.templeWood, x, py, pz, width, 0.18, plankD, 0, pitch, 0, false);
-    if (pz > railZ0 && pz < railZ1) {
-      bridgeRails(x, py, pz, width, plankD, pitch, i % 4 === 0);
-    }
+    box(M.bridgeRed, x, py, pz, width, DECK_PLANK_H, plankD, 0, pitch, 0, false);
+  }
+  // Rails follow the full walkable timber, including the flat approaches.
+  const railN = Math.round((PIER_NORTH_FACE - PIER_SOUTH_FACE) / plankD);
+  const railD = (PIER_NORTH_FACE - PIER_SOUTH_FACE) / railN;
+  for (let i = 0; i < railN; i++) {
+    const pz = PIER_SOUTH_FACE + (i + 0.5) * railD;
+    if (pz <= railZ0 || pz >= railZ1) continue;
+    const py = crossingDeckY(pz) + DECK_LIFT;
+    const pitch = crossingPitch(pz);
+    bridgeRails(x, py, pz, width, railD, pitch, i % 4 === 0);
   }
 
   // Stone piers sit in the pond banks and receive the timber deck.
@@ -2901,17 +2931,18 @@ function buildMainShrine(x, y, z) {
     cylinder(M.goldGiboshi, x + k * (W * 0.08), ridgeY + 0.15, z, 0.22, 1.8, 0, Math.PI / 2, 0, true);
   }
 
-  // Sacred Braided Straw Rope (Shimenawa 注連縄) above portal
-  cylinder(M.shimenawa, x, y + 1.4 + H - 0.4, z - D / 2 - 0.3, 0.26, 6.4, 0, 0, Math.PI / 2, true);
+  // Sacred Braided Straw Rope (Shimenawa 注連縄) above portal.
+  // Hung 0.8 m below the eave chōchin so the rope no longer bores through them.
+  cylinder(M.shimenawa, x, y + 1.4 + H - 1.2, z - D / 2 - 0.3, 0.26, 6.4, 0, 0, Math.PI / 2, true);
   // Hanging white zigzag streamers (Shide 紙垂)
   for (let s = -2.2; s <= 2.2; s += 1.1) {
-    box(M.shideWhite, x + s, y + 1.4 + H - 0.9, z - D / 2 - 0.35, 0.28, 0.75, 0.02, 0, 0, 0.15, true);
+    box(M.shideWhite, x + s, y + 1.4 + H - 1.7, z - D / 2 - 0.35, 0.28, 0.75, 0.02, 0, 0, 0.15, true);
   }
 
   // Brass shrine bells (Suzu) and ceremonial cords
   for (const bx of [-1.2, 1.2]) {
-    cylinder(M.toriiRed, x + bx, y + 1.4 + H - 1.2, z - D / 2 - 0.4, 0.06, 1.8, 0, 0, 0, true);
-    cylinder(M.brassBell, x + bx, y + 1.4 + H - 0.7, z - D / 2 - 0.4, 0.32, 0.45, 0, 0, 0, true);
+    cylinder(M.toriiRed, x + bx, y + 1.4 + H - 2.0, z - D / 2 - 0.4, 0.06, 1.8, 0, 0, 0, true);
+    cylinder(M.brassBell, x + bx, y + 1.4 + H - 1.5, z - D / 2 - 0.4, 0.32, 0.45, 0, 0, 0, true);
   }
 
   // Wooden coin offering box (Saisen-bako 賽銭箱)
