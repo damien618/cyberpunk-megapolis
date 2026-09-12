@@ -845,6 +845,7 @@ const RIGS = {
     root: ['pelvis'], head: ['head'], spine: ['spine_01', 'spine_02', 'spine_03'],
     thigh: ['thigh_l', 'thigh_r'], calf: ['calf_l', 'calf_r'], foot: ['foot_l', 'foot_r'],
     upperarm: ['upperarm_l', 'upperarm_r'], lowerarm: ['lowerarm_l', 'lowerarm_r'],
+    hand: ['hand_l', 'hand_r'],
     flex: 'z', abduct: 'y', flexSign: 1, abductSign: 1,
   },
   mixamo: {
@@ -854,6 +855,7 @@ const RIGS = {
     foot: ['LeftFoot', 'RightFoot'],
     shoulder: ['LeftShoulder', 'RightShoulder'],
     upperarm: ['LeftArm', 'RightArm'], lowerarm: ['LeftForeArm', 'RightForeArm'],
+    hand: ['LeftHand', 'RightHand'],
     flex: 'x', abduct: 'z', flexSign: 1, abductSign: -1,
   },
 };
@@ -908,8 +910,51 @@ function limbs(root, rig) {
     thigh: grab(root, rig.thigh), calf: grab(root, rig.calf), foot: grab(root, rig.foot),
     shoulder: rig.shoulder ? grab(root, rig.shoulder) : [null, null],
     upperarm: grab(root, rig.upperarm), lowerarm: grab(root, rig.lowerarm),
-    spine: grab(root, rig.spine), head: grab(root, rig.head),
+    hand: grab(root, rig.hand), spine: grab(root, rig.spine), head: grab(root, rig.head),
   };
+}
+
+// Two-bone reach: the hand goes to a world point, the elbow bends toward a
+// world pole direction. Joint angles never survived the Mixamo shoulder —
+// flex, abduction and the bind A-pose couple, and every hand-tuned triple
+// threw the casino bar's arms out sideways into the air. Aiming each bone at
+// a point uses nothing but the bone's own direction to its child, so it holds
+// on both rigs, and the twist is the minimal one from bind: a lowered arm
+// keeps its palm toward the body, which is how a hand rests round a glass.
+const _ikA = new THREE.Vector3(), _ikB = new THREE.Vector3();
+const _ikS = new THREE.Vector3(), _ikE = new THREE.Vector3(), _ikH = new THREE.Vector3();
+const _ikN = new THREE.Vector3(), _ikP = new THREE.Vector3(), _ikT = new THREE.Vector3();
+const _ikQ = new THREE.Quaternion(), _ikQp = new THREE.Quaternion();
+function aimBone(j, child, target) {
+  const bone = j.bone;
+  bone.quaternion.copy(j.rest);
+  bone.updateMatrixWorld(true);
+  bone.getWorldPosition(_ikA);
+  child.getWorldPosition(_ikB);
+  _ikB.sub(_ikA).normalize();
+  _ikA.subVectors(target, _ikA).normalize();
+  _ikQ.setFromUnitVectors(_ikB, _ikA);
+  bone.parent.getWorldQuaternion(_ikQp);
+  // local' = parent⁻¹ · delta · parent · rest
+  bone.quaternion.premultiply(_ikQp).premultiply(_ikQ).premultiply(_ikQp.invert());
+  bone.updateMatrixWorld(true);
+}
+function reachArm(upper, lower, hand, target, pole) {
+  upper.bone.getWorldPosition(_ikS);
+  lower.bone.getWorldPosition(_ikE);
+  hand.getWorldPosition(_ikH);
+  const a = _ikS.distanceTo(_ikE), b = _ikE.distanceTo(_ikH);
+  _ikN.subVectors(target, _ikS);
+  // Out of reach, the arm straightens toward the target instead of snapping.
+  const d = THREE.MathUtils.clamp(_ikN.length(), Math.abs(a - b) + 1e-3, a + b - 1e-3);
+  _ikN.normalize();
+  _ikP.copy(pole).addScaledVector(_ikN, -pole.dot(_ikN)).normalize();
+  const cos = (a * a + d * d - b * b) / (2 * a * d);
+  const sin = Math.sqrt(Math.max(0, 1 - cos * cos));
+  _ikE.copy(_ikS).addScaledVector(_ikN, a * cos).addScaledVector(_ikP, a * sin);
+  _ikT.copy(_ikS).addScaledVector(_ikN, d);
+  aimBone(upper, lower.bone, _ikE);
+  aimBone(lower, hand, _ikT);
 }
 
 // Seated on a chair or a bench: thighs forward, shins down. The knee and the
@@ -921,9 +966,27 @@ function seatedRig(group) {
   if (!rig) return null;
   const L = limbs(group, rig);
   const apply = () => {
+    const s = apply.state;
     for (const j of L.thigh) if (j) setJoint(j.bone, j.rest, rig, SEAT.hip, SEAT.spread, j.side);
-    for (const j of L.calf) if (j) setJoint(j.bone, j.rest, rig, apply.state.knee);
-    for (const j of L.foot) if (j) setJoint(j.bone, j.rest, rig, apply.state.ankle);
+    for (const j of L.calf) if (j) setJoint(j.bone, j.rest, rig, s.knee);
+    for (const j of L.foot) if (j) setJoint(j.bone, j.rest, rig, s.ankle);
+    // Positive flex already leans forward on both rigs — measured directly
+    // on the mixamo skeleton, where the earlier `-s.lean` here sent the
+    // head backward instead of toward the counter.
+    if (s.lean) {
+      const sp = L.spine[0];
+      if (sp) setJoint(sp.bone, sp.rest, rig, s.lean);
+    }
+    // Optional arms, as world targets: cruise bar sitters rest their forearms
+    // on the counter, lounge guests hold a glass. Left unset, the idle clip
+    // keeps driving the arms — zoo and airport overwrite them afterwards.
+    if (s.reach) {
+      group.updateMatrixWorld(true);
+      s.reach.forEach((r, i) => {
+        const up = L.upperarm[i], lo = L.lowerarm[i], hd = L.hand[i];
+        if (r && up && lo && hd) reachArm(up, lo, hd.bone, r.hand, r.pole);
+      });
+    }
   };
   apply.state = { knee: SEAT.knee, ankle: SEAT.ankle };
   apply.rest = { knee: SEAT.knee, ankle: SEAT.ankle };

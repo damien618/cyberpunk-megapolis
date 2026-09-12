@@ -6,7 +6,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=10';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes, segmentAABB } from './cityBoxes.js?v=7';
-import { loadGuestRig, makeVisitor, rootBoneOf } from './crowd.js?v=57';
+import { loadGuestRig, makeVisitor, rootBoneOf } from './crowd.js?v=62';
 import { buildDesertedIsland, createMarineFauna, updateMarineLife } from './marineLife.js?v=2';
 
 console.log('[cruise] starting module evaluation');
@@ -3139,7 +3139,10 @@ console.log('[cruise] casino room start');
   {
     const backZ = z0 + 1.2;  // -58.8 against aft wall
     const barZ = z0 + 3.6;   // -56.4 counter position
-    const stoolZ = z0 + 5.0; // -55.0 stools in front
+    // Stools close enough to lean on the bar: a guest's knees go under the
+    // 15 cm overhang. At +5.0 the seated shoulders were 88 cm off the edge,
+    // out of an arm's reach, and there was no way for a hand to rest on it.
+    const stoolZ = z0 + 4.58; // -55.42 stools in front
 
     // What the back bar actually pours. Each family names a lathed profile,
     // the tint of its glass, the spirit standing inside it, its printed label
@@ -6156,6 +6159,86 @@ try {
       people.push({ ...v, kind: 'idle', baseYaw: yaw, phase: rnd() * 6.28 });
       return v;
     };
+    // Sit on a stool or sofa: idle plus the seated leg pose, then drop the
+    // hips onto the cushion. Standing at the same xz put the guests through
+    // the furniture — there is a sit pose now, so use it.
+    const _sitHip = new THREE.Vector3();
+    const _glassUp = new THREE.Vector3(0, 1, 0);
+    const _glassInv = new THREE.Matrix4();
+    const _glassLocal = new THREE.Vector3();
+    function boneOn(root, ...names) {
+      for (const n of names) {
+        const hit = root.getObjectByName(n);
+        if (hit) return hit;
+      }
+      const want = new Set(names.map(n => n.toLowerCase()));
+      let found = null;
+      root.traverse(o => {
+        if (found || !o.isBone) return;
+        const n = o.name.toLowerCase().replace(/^mixamorig:?/, '');
+        if (want.has(n)) found = o;
+      });
+      return found;
+    }
+    // A coupe in the palm, stood up in world space so it does not tip with
+    // the Mixamo wrist's local axes.
+    function putGlassInHand(group, side, drink = M.liqCampari) {
+      const hand = boneOn(group,
+        side === 'l' ? 'LeftHand' : 'RightHand',
+        side === 'l' ? 'hand_l' : 'hand_r');
+      if (!hand) return;
+      group.updateMatrixWorld(true);
+      const hold = new THREE.Group();
+      const glass = new THREE.Mesh(G.coupeGlass, M.crystalCut);
+      glass.scale.set(0.078, 0.12, 0.078);
+      const liq = new THREE.Mesh(G.cylBase, drink);
+      liq.scale.set(0.046, 0.028, 0.046);
+      liq.position.y = 0.055;
+      hold.add(liq, glass);
+      hand.add(hold);
+      hold.position.set(side === 'l' ? 0.028 : -0.028, 0.09, 0.035);
+      _glassInv.copy(hand.matrixWorld).invert();
+      _glassUp.set(0, 1, 0);
+      _glassLocal.copy(_glassUp).transformDirection(_glassInv).normalize();
+      hold.quaternion.setFromUnitVectors(_glassUp, _glassLocal);
+    }
+    // A point in the sitter's body frame — `side` +1 is their left — from
+    // the hips. They face +Z at yaw 0, so their left is +X.
+    const bodyPt = (o, yaw, side, lat, up, fwd) => new THREE.Vector3(
+      o.x + Math.cos(yaw) * lat * side + Math.sin(yaw) * fwd,
+      o.y + up,
+      o.z - Math.sin(yaw) * lat * side + Math.cos(yaw) * fwd);
+    const ZERO = new THREE.Vector3();
+    const sit = (i, x, seatTop, z, yaw, opts = {}) => {
+      const { reach, lean, glass: glassHand, hipY = 0.13, drink, ...rest } = opts;
+      const v = visitor(i, { playIdle: true, seated: true, ...rest });
+      v.group.position.set(x, DECK_Y, z);
+      v.group.rotation.y = yaw;
+      scene.add(v.group);
+      if (v.pose?.state && lean) v.pose.state.lean = lean;
+      v.mixer.update(0);
+      v.pose?.();
+      v.group.updateMatrixWorld(true);
+      const hips = rootBoneOf(v.group);
+      if (hips) {
+        hips.getWorldPosition(_sitHip);
+        v.group.position.y += (seatTop + hipY) - _sitHip.y;
+        _sitHip.y = seatTop + hipY;
+      }
+      // Arms last: each hand target is `[lat, up, fwd]` from where the hips
+      // landed, its elbow pole a direction in the same frame.
+      if (v.pose?.state && reach) {
+        v.pose.state.reach = reach.map((r, k) => r && {
+          hand: bodyPt(_sitHip, yaw, k ? -1 : 1, ...r.hand),
+          pole: bodyPt(ZERO, yaw, k ? -1 : 1, ...r.pole),
+        });
+        v.pose();
+        v.group.updateMatrixWorld(true);
+      }
+      if (glassHand) putGlassInHand(v.group, glassHand, drink);
+      people.push({ ...v, kind: 'sit', baseYaw: yaw, phase: rnd() * 6.28 });
+      return v;
+    };
     // Someone walking a beat, back and forth along Z.
     const patrol = (i, x, y, z0, z1, yaw, opts = {}) => {
       const v = visitor(i, opts);
@@ -6239,11 +6322,56 @@ try {
     // 6. Grand Casino Royale Bar & Lounge
     stand(npcIdx++, -1.6, DECK_Y, CASINO_Z[0] + 2.3, 0, casinoStaff); // Barman 1
     stand(npcIdx++, 1.6, DECK_Y, CASINO_Z[0] + 2.3, 0, casinoStaff);  // Barman 2
-    stand(npcIdx++, -3.0, DECK_Y, CASINO_Z[0] + 5.0, Math.PI, casinoGuest);
-    stand(npcIdx++, 0.0, DECK_Y, CASINO_Z[0] + 5.0, Math.PI, casinoGuest);
-    stand(npcIdx++, 3.0, DECK_Y, CASINO_Z[0] + 5.0, Math.PI, casinoGuest);
-    stand(npcIdx++, -9.5, DECK_Y, CASINO_Z[0] + 4.2, 0.4, casinoGuest);
-    stand(npcIdx++, 9.5, DECK_Y, CASINO_Z[0] + 4.2, -0.4, casinoGuest);
+    // Stool X matches `-6 + i*1.5` in the bar prop (i = 2, 4, 6). Cushion is
+    // a 16 cm cylinder centred at DECK_Y+0.78, so the top is +0.86.
+    const BAR_STOOL_TOP = DECK_Y + 0.86;
+    const BAR_STOOL_Z = CASINO_Z[0] + 4.60;
+    // Arms are reached, not bent: `hand` is [out, up, forward] from the
+    // hips, `pole` the way the elbow points. The counter top is 20 cm above
+    // the hips and its brass edge 35 cm ahead, so a forearm laid on it has
+    // its hand ~45 cm out and 23 cm up (the wrist bone sits mid-thickness);
+    // the elbow flares out rather than down, or the forearm cuts the rail.
+    // What people at a bar actually do: forearms on the counter, elbows out,
+    // a glass between the hands — or one elbow on it and a hand on the thigh.
+    const ON_BAR = (out, fwd) => ({ hand: [out, 0.23, fwd], pole: [1, -0.25, 0] });
+    const ON_THIGH = { hand: [0.14, 0.07, 0.24], pole: [0.5, -0.4, -1] };
+    const barGlass = (x, fwd, drink) => {
+      // Stood on the counter just inside the hand, where the palm closes on it.
+      const gz = BAR_STOOL_Z - fwd;
+      const glass = new THREE.Mesh(G.tumblerGlass, M.crystalCut);
+      glass.scale.set(0.078, 0.100, 0.078);
+      glass.position.set(x, DECK_Y + 1.19, gz);
+      const liq = new THREE.Mesh(G.cylBase, drink);
+      liq.scale.set(0.064, 0.038, 0.064);
+      liq.position.set(x, DECK_Y + 1.20, gz);
+      scene.add(glass, liq);
+    };
+    const BAR_LEAN = 0.46;
+    // Both forearms down, the drink between the hands (their right is -X
+    // in the world here: they face the bar, down -Z).
+    sit(npcIdx++, -3.0, BAR_STOOL_TOP, BAR_STOOL_Z, Math.PI,
+      { ...casinoGuest, lean: BAR_LEAN, reach: [ON_BAR(0.07, 0.45), ON_BAR(0.10, 0.46)] });
+    barGlass(-3.0 + 0.02, 0.53, M.liqWhisky);
+    // One elbow on the bar round a glass, the other hand on the thigh.
+    sit(npcIdx++, 0.0, BAR_STOOL_TOP, BAR_STOOL_Z, Math.PI,
+      { ...casinoGuest, lean: BAR_LEAN * 0.8, reach: [ON_BAR(0.06, 0.45), ON_THIGH] });
+    barGlass(0.0 + 0.03, 0.52, M.liqCampari);
+    sit(npcIdx++, 3.0, BAR_STOOL_TOP, BAR_STOOL_Z, Math.PI,
+      { ...casinoGuest, lean: BAR_LEAN, reach: [ON_BAR(0.12, 0.44), ON_BAR(0.05, 0.46)] });
+    barGlass(3.0 - 0.02, 0.52, M.liqChampagne);
+    // Chesterfields: seat box 1.2 m deep centred at z0+4.2 (front at +4.8),
+    // 48 cm thick. Sit on the front half, hips well above the cushion, or
+    // the torso reads as standing through the backrest. Inboard of centre
+    // so they are on the open end, not buried in the corner.
+    const LOUNGE_SEAT_TOP = DECK_Y + 0.56;
+    const LOUNGE_Z = CASINO_Z[0] + 4.42;
+    // A coupe held at the chest, elbow tucked against the ribs; the free
+    // hand rests on the thigh.
+    const HOLD_GLASS = { hand: [0.10, 0.31, 0.25], pole: [0.4, -1, -0.6] };
+    sit(npcIdx++, -8.55, LOUNGE_SEAT_TOP, LOUNGE_Z, 0.12, { ...casinoGuest, lean: 0.05,
+      reach: [ON_THIGH, HOLD_GLASS], glass: 'r', drink: M.liqChampagne, hipY: 0.24 });
+    sit(npcIdx++, 8.55, LOUNGE_SEAT_TOP, LOUNGE_Z, -0.12, { ...casinoGuest, lean: 0.05,
+      reach: [HOLD_GLASS, ON_THIGH], glass: 'l', drink: M.liqCampari, hipY: 0.24 });
 
     // 7. Casino Floor Patrolling server & walker
     patrol(npcIdx++, -2.2, DECK_Y, CASINO_Z[0] + 10, CASINO_Z[0] + 38, 0, casinoStaff);
@@ -6354,6 +6482,7 @@ function tickPeople(dt) {
     p.animationElapsed = (p.animationElapsed || 0) + dt;
     if (p.animationElapsed >= interval) {
       p.mixer.update(p.animationElapsed);
+      p.pose?.();
       p.animationElapsed = 0;
     }
   }
