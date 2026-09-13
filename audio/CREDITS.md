@@ -11,4 +11,6 @@ The composition is in the public domain. This recording is released under the
 - Archive: https://archive.org/details/MusopenCollectionAsFlac
 
 `cruise-ballroom-quartet.ogg` / `.mp3` are a local re-encode (loudness
-normalization and short fades for looping). No other musical changes.
+normalization and short fades for looping), with an original light brush
+and ride layer in 3/4 — no bass drum — so the on-stage drummer is heard
+without covering the strings.

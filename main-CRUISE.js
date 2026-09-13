@@ -6769,8 +6769,8 @@ let started = false, usedLock = false, paused = false;
 // Ballroom quartet — one listener on the camera, one PositionalAudio on the
 // stage. Isolated from the band meshes and their animation.
 const BALLROOM_AUDIO_URLS = [
-  './audio/cruise-ballroom-quartet.ogg?v=haydn-lark1',
-  './audio/cruise-ballroom-quartet.mp3?v=haydn-lark1',
+  './audio/cruise-ballroom-quartet.ogg?v=haydn-lark-drums4',
+  './audio/cruise-ballroom-quartet.mp3?v=haydn-lark-drums4',
 ];
 const BALLROOM_AUDIO_VOLUME = 0.7;
 let ballroomListener = null;
