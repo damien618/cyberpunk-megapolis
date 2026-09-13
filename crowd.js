@@ -1140,6 +1140,18 @@ export function customRig(group) {
     L.lowerarm.forEach((j, i) => { if (j) setJoint(j.bone, j.rest, rig, s.forearm[i]); });
     const sp = L.spine[0];
     if (sp) setJoint(sp.bone, sp.rest, rig, s.lean);
+    // Optional nod and sideways tilt; left unset, the idle keeps the head.
+    const hd = L.head[0];
+    if (hd && s.head) setJoint(hd.bone, hd.rest, rig, s.head[0], s.head[1] || 0, 1);
+    // Optional hand targets, world points as in seatedRig — a musician's hands
+    // on the instrument. Reached after the spine, which moves the shoulders.
+    if (s.reach) {
+      group.updateMatrixWorld(true);
+      s.reach.forEach((r, i) => {
+        const up = L.upperarm[i], lo = L.lowerarm[i], hand = L.hand[i];
+        if (r && up && lo && hand) reachArm(up, lo, hand.bone, r.hand, r.pole);
+      });
+    }
   };
   apply.state = {
     hip: [0, 0], knee: [0, 0], spread: 0.06, ankle: 0,

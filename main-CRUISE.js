@@ -6,8 +6,9 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=10';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes, segmentAABB } from './cityBoxes.js?v=7';
-import { loadGuestRig, makeVisitor, rootBoneOf, customRig } from './crowd.js?v=62';
+import { loadGuestRig, makeVisitor, rootBoneOf, customRig } from './crowd.js?v=63';
 import { buildDesertedIsland, createMarineFauna, updateMarineLife } from './marineLife.js?v=2';
+import { createBandInstruments, PIANO_HANDS, DRUM_HITS } from './cruiseBand.js?v=6';
 
 console.log('[cruise] starting module evaluation');
 
@@ -5089,32 +5090,14 @@ const ballLights = [];
           SZ - 0.56, 0.2, 0.42, 0.2, { rz: -a + Math.PI / 2, rx: Math.PI / 2 });
       }
 
-      // The band. A grand piano with its lid up, a double bass, a drum kit and
-      // brass on stands — the Wallace Hartley line-up.
-      box(M.mahoganyGloss, -3.6, DECK_Y + 0.95, SZ + 0.4, 2.6, 0.3, 1.9);
-      shape(G.cyl, M.mahoganyGloss, -4.5, DECK_Y + 0.95, SZ - 0.3, 1.5, 0.3, 1.5);
-      shape(G.box, M.mahoganyGloss, -3.6, DECK_Y + 1.52, SZ + 0.66, 2.5, 1.2, 0.10,
-        { rx: -0.52 });
-      for (const dx of [-4.5, -2.6, -3.6])
-        shape(G.cylBase, M.mahoganyGloss, dx, DECK_Y + 0.62, SZ + 0.4, 0.09, 0.2, 0.09);
-      box(M.linen, -3.6, DECK_Y + 0.98, SZ - 0.62, 1.3, 0.04, 0.16);
-      box(M.oakDark, -3.6, DECK_Y + 0.45, SZ - 1.15, 0.9, 0.1, 0.4);
-      for (const dx of [-3.95, -3.25])
-        shape(G.cylBase, M.oakDark, dx, DECK_Y + 0.62, SZ - 1.15, 0.06, 0.45, 0.06);
-
-      shape(G.hull, M.oakMid, 2.4, DECK_Y + 1.5, SZ + 0.6, 0.8, 1.5, 0.5, { rx: -0.18 });
-      shape(G.cylBase, M.oakDark, 2.4, DECK_Y + 1.9, SZ + 0.75, 0.07, 1.0, 0.07);
-      shape(G.cyl, M.linen, 4.8, DECK_Y + 1.0, SZ + 1.0, 1.0, 0.7, 1.0);
-      for (const [dx, dz, r] of [[4.0, 0.2, 0.32], [5.4, 0.2, 0.28], [6.2, 0.9, 0.4]]) {
-        shape(G.cyl, M.gilt, dx, DECK_Y + 1.5, SZ + dz, r, 0.04, r);
-        shape(G.cylBase, M.steel, dx, DECK_Y + 0.62, SZ + dz, 0.05, 0.88, 0.05);
+      // Music stands only here: the quartet's instruments are unique meshes
+      // (see placeBallroomBand) so they can carry figured wood and sit in the
+      // players' hands rather than as a few instanced boxes behind them.
+      // One stand before the violin, one at the bassist's right hand.
+      for (const [dx, dz] of [[0.62, -1.66], [-1.05, -0.32]]) {
+        shape(G.cylBase, M.black, dx, DECK_Y + 0.64, SZ + dz, 0.04, 1.12, 0.04);
+        shape(G.box, M.black, dx, DECK_Y + 1.82, SZ + dz, 0.48, 0.34, 0.03, { rx: -0.42 });
       }
-      // Two music stands and a cello case leaning at the back.
-      for (const dx of [0.2, 1.4]) {
-        shape(G.cylBase, M.black, dx, DECK_Y + 0.62, SZ - 1.4, 0.05, 1.05, 0.05);
-        shape(G.box, M.black, dx, DECK_Y + 1.74, SZ - 1.4, 0.5, 0.36, 0.04, { rx: -0.5 });
-      }
-      shape(G.hull, M.oakDark, -6.2, DECK_Y + 1.4, SZ + 2.2, 0.7, 1.6, 0.35, { rz: 0.24 });
     });
     addBallLight(0, DECK_Y + 3.4, SZ - 1.0, 0xffb055, 18, 16);
   }
@@ -6079,6 +6062,27 @@ document.querySelectorAll('.tt-btn').forEach(btn => {
   btn.addEventListener('click', () => setCruiseTime(btn.dataset.time));
 });
 
+const bandKit = createBandInstruments({
+  woodMap: woodA, woodNormal: woodN, anisotropy: maxAniso,
+});
+// Both groups have their player's seat at the origin, facing +Z. The pianist
+// sits starboard in profile with the audience on the right hand, so the lid
+// opens towards the room; the drums sit back on the port side.
+const band = (() => {
+  const stageY = DECK_Y + 0.64;
+  const SZ = BALL_Z[0] + 36;
+  const piano = bandKit.piano();
+  piano.position.set(5.55, stageY, SZ + 0.55);
+  piano.rotation.y = -Math.PI / 2;
+  const drums = bandKit.drums();
+  drums.position.set(-3.75, stageY, SZ + 1.8);
+  drums.rotation.y = Math.PI - 0.25;
+  scene.add(piano, drums);
+  piano.updateMatrixWorld(true);
+  drums.updateMatrixWorld(true);
+  return { stageY, SZ, piano, drums };
+})();
+
 const people = [];
 const hook = {
   THREE, scene, camera, renderer, world, ctrl, rig, input, spawnPoint, bw,
@@ -6094,6 +6098,7 @@ const hook = {
   updateLie: (...a) => updateLie(...a),
   POOL_X0, POOL_X1, POOL_Z_A, POOL_Z_B, POOL_FLOOR,
   people,
+  band,
   halfBeam,
   get player() { return player; },
   get cruiseTime() { return cruiseTime; },
@@ -6417,36 +6422,226 @@ try {
     stand(npcIdx++, -5.1, DECK_Y, B0 + 2.1, 0, gownIvory);
     stand(npcIdx++, 5.1, DECK_Y, B0 + 2.1, 0.3, tails);
 
-    // The band, on the stage. The stage deck is DECK_Y + 0.64.
-    stand(npcIdx++, -3.6, DECK_Y + 0.64, B0 + 34.8, Math.PI, steward);   // at the piano
-    stand(npcIdx++, 2.4, DECK_Y + 0.64, B0 + 36.4, Math.PI, steward);    // double bass
-    // Idle Mixamo kept running; customRig is the beach `kind: 'play'` overlay.
+    // The band, on the stage. Hands are reached to points ON the instrument
+    // every frame (customRig's `reach`): joint angles on the Mixamo shoulder
+    // threw the arms out into the air, and nothing held the hands on the keys,
+    // the neck or the bow. All four play off one clock, 112 to the minute.
+    const BEAT = 60 / 112;
+    const { stageY, SZ, piano, drums } = band;
+    const _loc = new THREE.Vector3();
+    const smooth = u => u * u * (3 - 2 * u);
+    // Lift of a stick or a hand between the hits of a four-beat pattern:
+    // zero on each hit, highest half-way to the next.
+    function strokeLift(b, pattern, max) {
+      const bar = ((b % 4) + 4) % 4;
+      let prev = pattern[pattern.length - 1] - 4, next = pattern[0] + 4;
+      for (const h of pattern) if (h <= bar) prev = h;
+      for (let i = pattern.length - 1; i >= 0; i--) if (pattern[i] > bar) next = pattern[i];
+      const span = next - prev;
+      return max * Math.min(1, span) * Math.pow(Math.sin(Math.PI * (bar - prev) / span), 0.8);
+    }
+    const frameAt = (x, z, yaw) => {
+      const f = new THREE.Group();
+      f.position.set(x, stageY, z);
+      f.rotation.y = yaw;
+      scene.add(f);
+      f.updateMatrixWorld(true);
+      return f;
+    };
+    // `frame` is the object whose axes the poles are written in.
+    const setReach = (r, obj, x, y, z, frame, px, py, pz) => {
+      r.hand.copy(obj.localToWorld(_loc.set(x, y, z)));
+      r.pole.set(px, py, pz).transformDirection(frame.matrixWorld);
+    };
+    function musician(x, z, yaw, state) {
+      stand(1, x, stageY, z, yaw, steward);
+      const p = people[people.length - 1];
+      const pose = p?.group ? customRig(p.group) : null;
+      if (!pose) return null;
+      Object.assign(pose.state, state);
+      p.mixer.update(0);
+      pose();
+      p.group.updateMatrixWorld(true);
+      p.pose = pose;
+      p.kind = 'play';
+      return p;
+    }
+    // Onto a seat: drop the hips onto the cushion, then fit the knee so the
+    // soles reach the floor — knee-to-sole on these rigs is no chair's height.
+    function seatOn(p, seatTop) {
+      const hips = rootBoneOf(p.group);
+      if (!hips) return;
+      hips.getWorldPosition(_loc);
+      p.group.position.y += seatTop + 0.1 - _loc.y;
+      const s = p.pose.state;
+      const feet = [boneOn(p.group, 'LeftFoot'), boneOn(p.group, 'RightFoot')].filter(Boolean);
+      let best = s.knee.slice(), err = Infinity;
+      for (let k = -0.5; k >= -1.9; k -= 0.05) {
+        s.knee = [k, k];
+        p.pose();
+        p.group.updateMatrixWorld(true);
+        let e = 0;
+        for (const f of feet) e += Math.abs(f.getWorldPosition(_loc).y - (stageY + 0.09));
+        if (e < err) { err = e; best = [k, k]; }
+      }
+      s.knee = best;
+      p.pose();
+    }
+    const twoArms = () => [
+      { hand: new THREE.Vector3(), pole: new THREE.Vector3() },
+      { hand: new THREE.Vector3(), pole: new THREE.Vector3() },
+    ];
+
+    // Piano: seated on the bench, comping on 2 and 4 with the left hand,
+    // a swung line in the right.
     {
-      const bassist = people[people.length - 1];
-      const pose = bassist?.group ? customRig(bassist.group) : null;
-      if (pose) {
-        pose.state.hip = [0.08, 0.10];
-        pose.state.knee = [-0.12, -0.14];
-        pose.state.spread = -0.08;
-        pose.state.ankle = 0.04;
-        pose.state.arm = [1.12, 0.42];
-        pose.state.armOut = [0.20, 0.10];
-        pose.state.forearm = [0.82, 1.12];
-        pose.state.lean = 0.10;
-        bassist.mixer.update(0);
-        pose();
-        bassist.pose = pose;
-        bassist.kind = 'play';
-        bassist.playRest = {
-          arm: pose.state.arm.slice(),
-          armOut: pose.state.armOut.slice(),
-          forearm: pose.state.forearm.slice(),
-          lean: pose.state.lean,
+      piano.getWorldPosition(_loc);
+      const p = musician(_loc.x, _loc.z, piano.rotation.y, {
+        hip: [1.32, 1.32], knee: [-1.2, -1.2], spread: 0.12, ankle: 0.1, lean: 0.14,
+      });
+      if (p) {
+        seatOn(p, piano.position.y + piano.userData.seatTop);
+        const s = p.pose.state;
+        s.reach = twoArms();
+        const H = PIANO_HANDS;
+        const COMP = [1, 3], LINE = [0, 0.67, 1, 1.67, 2, 2.67, 3, 3.67];
+        p.play = t => {
+          const b = t / BEAT;
+          const xl = (H.bass[0] + H.bass[1]) / 2 + 0.08 * Math.sin(Math.PI * b / 8);
+          const xr = (H.treble[0] + H.treble[1]) / 2 + 0.12 * Math.sin(Math.PI * b / 8 + 1.1)
+            + 0.04 * Math.sin(Math.PI * b / 1.35);
+          setReach(s.reach[0], piano, xl, H.wristY + strokeLift(b, COMP, 0.05), H.wristZ, piano, 1, -0.7, -0.5);
+          setReach(s.reach[1], piano, xr, H.wristY + strokeLift(b, LINE, 0.025), H.wristZ + 0.02, piano, -1, -0.7, -0.5);
+          s.lean = 0.14 + 0.03 * Math.sin(Math.PI * b / 4);
+          s.head = [0.32 + 0.04 * Math.sin(Math.PI * b), 0.05 * Math.sin(Math.PI * b / 8)];
         };
       }
     }
-    stand(npcIdx++, 0.6, DECK_Y + 0.64, B0 + 35.2, Math.PI, steward);    // violin, front
-    stand(npcIdx++, 5.2, DECK_Y + 0.64, B0 + 37.4, Math.PI, steward);    // drums
+
+    // Drums: seated on the throne; swing on the ride, the backbeat on the
+    // snare, kick on 1 and 3, the hi-hat foot on 2 and 4.
+    {
+      drums.getWorldPosition(_loc);
+      const p = musician(_loc.x, _loc.z, drums.rotation.y, {
+        hip: [1.28, 1.28], knee: [-1.2, -1.2], spread: 0.3, ankle: 0.1, lean: 0.16,
+      });
+      if (p) {
+        seatOn(p, drums.position.y + drums.userData.seatTop);
+        const s = p.pose.state;
+        const hip0 = s.hip.slice();
+        s.reach = twoArms();
+        const sticks = [bandKit.stick(), bandKit.stick()];
+        scene.add(...sticks);
+        const RIDE = [0, 1, 1.67, 2, 3, 3.67], SNARE = [1, 3, 3.67];
+        const hands = [
+          { hit: DRUM_HITS.snare, wrist: new THREE.Vector3(0.20, 0.83, 0.08), pat: SNARE, lift: 0.16, pole: [1, -0.8, -0.3] },
+          { hit: DRUM_HITS.ride, wrist: new THREE.Vector3(-0.28, 0.98, 0.20), pat: RIDE, lift: 0.10, pole: [-1, -0.8, -0.3] },
+        ];
+        const T = new THREE.Vector3(), W = new THREE.Vector3(), dir = new THREE.Vector3();
+        const X = new THREE.Vector3(1, 0, 0);
+        p.play = t => {
+          const b = t / BEAT;
+          hands.forEach((h, i) => {
+            const lift = strokeLift(b, h.pat, h.lift);
+            T.set(h.hit.x, h.hit.y + lift, h.hit.z - lift * 0.3);
+            W.set(h.wrist.x, h.wrist.y + lift * 0.35, h.wrist.z);
+            setReach(s.reach[i], drums, W.x, W.y, W.z, drums, ...h.pole);
+            drums.localToWorld(T);
+            dir.subVectors(T, s.reach[i].hand).normalize();
+            sticks[i].position.copy(T).addScaledVector(dir, -0.21);
+            sticks[i].quaternion.setFromUnitVectors(X, dir);
+          });
+          const kick = Math.pow(Math.max(0, Math.cos(Math.PI * b)), 6);
+          const hat = Math.pow(Math.max(0, -Math.cos(Math.PI * b)), 6);
+          s.hip = [hip0[0] + 0.07 * (1 - hat), hip0[1] + 0.07 * (1 - kick)];
+          s.lean = 0.16 + 0.02 * Math.cos(2 * Math.PI * b);
+          s.head = [0.18 + 0.06 * Math.pow(Math.max(0, Math.cos(2 * Math.PI * b)), 2), 0];
+        };
+      }
+    }
+
+    // Double bass: standing behind the instrument, a walking line, one
+    // pizzicato per beat.
+    {
+      const x = -1.7, z = SZ + 0.45, yaw = Math.PI - 0.2;
+      const p = musician(x, z, yaw, {
+        hip: [0.06, 0.10], knee: [-0.10, -0.14], spread: 0.10, ankle: 0.03, lean: 0.12,
+      });
+      if (p) {
+        const frame = frameAt(x, z, yaw);
+        const bass = bandKit.bass();
+        bass.scale.setScalar(0.9);
+        bass.position.set(0.22, 0.30, 0.14);
+        bass.rotation.set(-0.12, -0.3, -0.04);
+        frame.add(bass);
+        bass.updateMatrixWorld(true);
+        const s = p.pose.state;
+        const knee0 = s.knee.slice();
+        s.reach = twoArms();
+        const WALK = [0, 1, 2, 1, 3, 2, 1, -1];
+        p.play = t => {
+          const b = t / BEAT;
+          const u = ((b % 1) + 1) % 1;
+          const sweep = u < 0.18 ? Math.sin(u / 0.18 * Math.PI / 2) : 0.5 * (1 + Math.cos(Math.PI * (u - 0.18) / 0.82));
+          const n = Math.floor(b);
+          const from = WALK[((n - 1) % 8 + 8) % 8], to = WALK[n % 8];
+          const note = from + (to - from) * smooth(Math.min(1, u / 0.15));
+          setReach(s.reach[0], bass, 0.075, 1.40 - note * 0.035, 0.19, frame, 1, -0.4, -0.5);
+          setReach(s.reach[1], bass, -0.10 - 0.07 * sweep, 0.80 + 0.02 * sweep, 0.36 + 0.02 * sweep, frame, -1, -0.5, -0.7);
+          s.lean = 0.12 + 0.02 * Math.sin(2 * Math.PI * b);
+          s.knee = [knee0[0], knee0[1] - 0.05 * (1 + Math.cos(2 * Math.PI * b)) / 2];
+          s.head = [0.14 + 0.05 * Math.pow(Math.max(0, Math.cos(2 * Math.PI * b)), 2), -0.12];
+        };
+      }
+    }
+
+    // Violin: under the chin on the left collarbone, scroll forward-left, top
+    // tipped to the bow side. One bow stroke every two beats.
+    {
+      const x = 0.45, z = SZ - 0.9, yaw = Math.PI + 0.12;
+      const p = musician(x, z, yaw, {
+        hip: [0.03, 0.05], knee: [-0.05, -0.08], spread: 0.08, ankle: 0.02, lean: 0.05,
+      });
+      const neckBone = p && boneOn(p.group, 'Neck');
+      if (p && neckBone) {
+        const frame = frameAt(x, z, yaw);
+        const neck = frame.worldToLocal(neckBone.getWorldPosition(new THREE.Vector3()));
+        const yAx = new THREE.Vector3(0.6, -0.04, 0.8).normalize();
+        const zAx = new THREE.Vector3(-0.4, 0.92, 0).projectOnPlane(yAx).normalize();
+        const xAx = new THREE.Vector3().crossVectors(yAx, zAx);
+        const violin = bandKit.violin();
+        violin.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAx, yAx, zAx));
+        violin.position.copy(neck).add(new THREE.Vector3(0.04, -0.01, 0.07));
+        frame.add(violin);
+        frame.updateMatrixWorld(true);
+        (boneOn(p.group, 'Spine2') || p.group).attach(violin);
+        const bow = bandKit.bow(false);
+        violin.add(bow);
+        // Stick along -X of the violin (frog on the player's right), hair
+        // down towards the strings.
+        bow.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(
+          new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0)));
+        const s = p.pose.state;
+        s.reach = twoArms();
+        const SHIFT = [0, 0.025, 0, 0.045];
+        // The bow crosses the strings between the bridge and the fingerboard.
+        const { bridgeTop, nut } = violin.userData;
+        const CY = 0.19, CZ = bridgeTop.z + (nut.z - bridgeTop.z) * (CY - bridgeTop.y) / (nut.y - bridgeTop.y);
+        p.play = t => {
+          const b = t / BEAT;
+          const along = 0.32 - 0.18 * Math.cos(Math.PI * b / 2);
+          bow.position.set(along - 0.34, CY, CZ + 0.0115);
+          const bar = Math.floor(b / 4);
+          const u = (b / 4) - bar;
+          const from = SHIFT[((bar - 1) % 4 + 4) % 4], to = SHIFT[bar % 4];
+          const pos = from + (to - from) * smooth(Math.min(1, u / 0.1)) + 0.003 * Math.sin(t * 34);
+          setReach(s.reach[0], violin, -0.03, 0.455 - pos, 0.04, frame, -0.3, -1, 0);
+          setReach(s.reach[1], violin, along + 0.07, CY, CZ + 0.04, frame, -1, -0.25, -0.1);
+          s.lean = 0.05 + 0.03 * Math.sin(Math.PI * b / 4);
+          s.head = [0.22, -0.3];
+        };
+      }
+    }
 
     // Stewards working the room, fore and aft down the port and starboard
     // aisles — the aisles are clear of the arcade at |x| = 12.
@@ -6507,19 +6702,7 @@ function tickPeople(dt, t = 0) {
     p.animationElapsed = (p.animationElapsed || 0) + dt;
     if (p.animationElapsed >= interval) {
       p.mixer.update(p.animationElapsed);
-      if (p.kind === 'play' && p.pose?.state && p.playRest) {
-        const s = p.pose.state;
-        const r = p.playRest;
-        const pluck = Math.sin(t * 1.55 + p.phase);
-        const finger = Math.sin(t * 0.85 + p.phase * 1.2);
-        s.arm[0] = r.arm[0] + finger * 0.04;
-        s.arm[1] = r.arm[1] + pluck * 0.05;
-        s.armOut[0] = r.armOut[0];
-        s.armOut[1] = r.armOut[1] + pluck * 0.03;
-        s.forearm[0] = r.forearm[0] + finger * 0.07;
-        s.forearm[1] = r.forearm[1] + pluck * 0.16;
-        s.lean = r.lean + pluck * 0.02;
-      }
+      if (p.kind === 'play') p.play?.(t);
       p.pose?.();
       p.animationElapsed = 0;
     }
