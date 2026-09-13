@@ -6766,6 +6766,18 @@ const BED_SPOT = {
 };
 
 let started = false, usedLock = false, paused = false;
+// Ballroom quartet — one listener on the camera, one PositionalAudio on the
+// stage. Isolated from the band meshes and their animation.
+const BALLROOM_AUDIO_URLS = [
+  './audio/cruise-ballroom-quartet.ogg?v=haydn-lark1',
+  './audio/cruise-ballroom-quartet.mp3?v=haydn-lark1',
+];
+const BALLROOM_AUDIO_VOLUME = 0.7;
+let ballroomListener = null;
+let ballroomMusic = null;
+let ballroomAudioFailed = false;
+let ballroomAudioWanted = false;
+let ballroomAudioEverStarted = false;
 let cabinAskOpen = false;
 let slotAskOpen = false;
 let slotGameOpen = false;
@@ -7006,6 +7018,7 @@ function updatePrompts(dt) {
 
 renderer.domElement.addEventListener('click', () => {
   if (started && !paused && !cabinAskOpen && !input.locked) requestGamePointerLock();
+  if (started && !paused) resumeBallroomAudio();
 });
 
 // ---------------------------------------------------------------------------
@@ -7142,6 +7155,7 @@ function animate() {
   updateAvatar(dt);
   rig.update(dt, input, ctrl);
   updateCasinoOcclusion();
+  updateBallroomAudio();
   // Keep the sea and the sky centred on the camera: both are finite, and the
   // player can walk 190 m along the ship. After the rig so the dome sits on
   // this frame's camera, not last frame's — a 3000 m sphere one tick behind
@@ -7156,9 +7170,123 @@ function animate() {
 }
 animate();
 
+function initBallroomAudio() {
+  if (ballroomListener) return;
+  ballroomListener = new THREE.AudioListener();
+  camera.add(ballroomListener);
+
+  ballroomMusic = new THREE.PositionalAudio(ballroomListener);
+  ballroomMusic.position.set(0, DECK_Y + 1.3, BALL_Z[0] + 36);
+  ballroomMusic.setLoop(true);
+  ballroomMusic.setVolume(0);
+  ballroomMusic.setRefDistance(12);
+  ballroomMusic.setRolloffFactor(1.6);
+  ballroomMusic.setDistanceModel('inverse');
+  ballroomMusic.setMaxDistance(10000);
+  ballroomMusic.panner.panningModel = 'equalpower';
+  scene.add(ballroomMusic);
+
+  const loader = new THREE.AudioLoader();
+  const tryUrl = i => {
+    if (i >= BALLROOM_AUDIO_URLS.length) {
+      ballroomAudioFailed = true;
+      console.warn('[cruise] ballroom audio failed to load');
+      return;
+    }
+    loader.load(
+      BALLROOM_AUDIO_URLS[i],
+      buffer => {
+        if (!ballroomMusic) return;
+        ballroomMusic.setBuffer(buffer);
+        console.log('[cruise] ballroom audio loaded', BALLROOM_AUDIO_URLS[i]);
+        if (ballroomAudioWanted) resumeBallroomAudio();
+      },
+      undefined,
+      () => tryUrl(i + 1),
+    );
+  };
+  tryUrl(0);
+  window.__cruiseBallroomAudio = () => ({
+    failed: ballroomAudioFailed,
+    wanted: ballroomAudioWanted,
+    loaded: !!(ballroomMusic && ballroomMusic.buffer),
+    playing: !!(ballroomMusic && ballroomMusic.isPlaying),
+    ctx: ballroomListener && ballroomListener.context.state,
+    duration: ballroomMusic && ballroomMusic.buffer && ballroomMusic.buffer.duration,
+    roomGain: ballroomAudioRoomGain(ctrl.pos),
+  });
+}
+
+function resumeBallroomAudio() {
+  ballroomAudioWanted = true;
+  if (ballroomAudioFailed || !ballroomListener || !ballroomMusic) return;
+  if (!ballroomMusic.buffer) return;
+  if (ballroomMusic.isPlaying) return;
+
+  const start = () => {
+    if (!ballroomMusic || ballroomMusic.isPlaying || !ballroomMusic.buffer) return;
+    try {
+      ballroomMusic.play();
+      updateBallroomAudio();
+      if (ballroomAudioEverStarted) console.log('[cruise] ballroom audio resumed');
+      else {
+        ballroomAudioEverStarted = true;
+        console.log('[cruise] ballroom audio started');
+      }
+    } catch (e) {
+      console.warn('[cruise] ballroom audio start refused', e);
+    }
+  };
+
+  ballroomListener.context.resume().then(start).catch(e => {
+    console.warn('[cruise] ballroom AudioContext resume refused', e);
+    start();
+  });
+}
+
+function pauseBallroomAudio() {
+  ballroomAudioWanted = false;
+  if (!ballroomMusic || !ballroomMusic.isPlaying) return;
+  ballroomMusic.pause();
+  console.log('[cruise] ballroom audio paused');
+}
+
+// Contain the quartet to the ballroom, with a fade across the Jules Verne
+// museum so the atrium door is already silent. Euclidean rolloff alone still
+// leaks onto the promenade and the pool roof, which sit a few metres away.
+function ballroomAudioRoomGain(pos) {
+  const y0 = DECK_Y - 0.35, y1 = DECK_Y + SUP_H - 0.25;
+  let yGain = 1;
+  if (pos.y < y0) yGain = 1 - Math.min(1, (y0 - pos.y) / 0.9);
+  else if (pos.y > y1) yGain = 1 - Math.min(1, (pos.y - y1) / 0.9);
+  if (yGain <= 0) return 0;
+
+  const xEdge = SUP_X2 - 0.15;
+  const xGain = 1 - Math.min(1, Math.max(0, Math.abs(pos.x) - xEdge) / 1.4);
+  if (xGain <= 0) return 0;
+
+  // z: full in the ballroom, smoothstep across Jules Verne (CABIN_Z), mute
+  // from the atrium threshold onward.
+  let zGain = 0;
+  if (pos.z >= BALL_Z[0]) zGain = 1;
+  else if (pos.z > CABIN_Z[0]) {
+    let t = (pos.z - CABIN_Z[0]) / (BALL_Z[0] - CABIN_Z[0]);
+    t = Math.min(1, Math.max(0, t));
+    zGain = t * t * (3 - 2 * t);
+  }
+  return yGain * xGain * zGain;
+}
+
+function updateBallroomAudio() {
+  if (!ballroomMusic) return;
+  const gain = ballroomAudioWanted ? ballroomAudioRoomGain(ctrl.pos) : 0;
+  ballroomMusic.setVolume(BALLROOM_AUDIO_VOLUME * gain);
+}
+
 function resumePlay() {
   overlay.style.display = 'none';
   paused = false;
+  resumeBallroomAudio();
   requestGamePointerLock();
 }
 
@@ -7184,6 +7312,7 @@ function startCruise() {
 
 window.__startCruise = startCruise;
 startBtn?.addEventListener('click', startCruise);
+initBallroomAudio();
 if (travelParams.get('arrival') || window.__startRequested) startCruise();
 
 document.addEventListener('pointerlockchange', () => {
@@ -7198,7 +7327,13 @@ document.addEventListener('pointerlockchange', () => {
   }
   if (!usedLock) return;
   paused = !input.locked;
-  if (paused) { setCabinAsk(false); setSlotAsk(false); }
+  if (paused) {
+    setCabinAsk(false);
+    setSlotAsk(false);
+    pauseBallroomAudio();
+  } else if (started) {
+    resumeBallroomAudio();
+  }
   overlay.style.display = paused ? 'flex' : 'none';
 });
 
