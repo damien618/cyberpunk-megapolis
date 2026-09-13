@@ -6,7 +6,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=10';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes, segmentAABB } from './cityBoxes.js?v=7';
-import { loadGuestRig, makeVisitor, rootBoneOf } from './crowd.js?v=62';
+import { loadGuestRig, makeVisitor, rootBoneOf, customRig } from './crowd.js?v=62';
 import { buildDesertedIsland, createMarineFauna, updateMarineLife } from './marineLife.js?v=2';
 
 console.log('[cruise] starting module evaluation');
@@ -6420,6 +6420,31 @@ try {
     // The band, on the stage. The stage deck is DECK_Y + 0.64.
     stand(npcIdx++, -3.6, DECK_Y + 0.64, B0 + 34.8, Math.PI, steward);   // at the piano
     stand(npcIdx++, 2.4, DECK_Y + 0.64, B0 + 36.4, Math.PI, steward);    // double bass
+    // Idle Mixamo kept running; customRig is the beach `kind: 'play'` overlay.
+    {
+      const bassist = people[people.length - 1];
+      const pose = bassist?.group ? customRig(bassist.group) : null;
+      if (pose) {
+        pose.state.hip = [0.08, 0.10];
+        pose.state.knee = [-0.12, -0.14];
+        pose.state.spread = -0.08;
+        pose.state.ankle = 0.04;
+        pose.state.arm = [1.12, 0.42];
+        pose.state.armOut = [0.20, 0.10];
+        pose.state.forearm = [0.82, 1.12];
+        pose.state.lean = 0.10;
+        bassist.mixer.update(0);
+        pose();
+        bassist.pose = pose;
+        bassist.kind = 'play';
+        bassist.playRest = {
+          arm: pose.state.arm.slice(),
+          armOut: pose.state.armOut.slice(),
+          forearm: pose.state.forearm.slice(),
+          lean: pose.state.lean,
+        };
+      }
+    }
     stand(npcIdx++, 0.6, DECK_Y + 0.64, B0 + 35.2, Math.PI, steward);    // violin, front
     stand(npcIdx++, 5.2, DECK_Y + 0.64, B0 + 37.4, Math.PI, steward);    // drums
 
@@ -6446,7 +6471,7 @@ console.log('[cruise] people placed, total:', people.length);
 const peopleFrustum = new THREE.Frustum();
 const peopleViewProjection = new THREE.Matrix4();
 const peopleBounds = new THREE.Sphere(new THREE.Vector3(), 1.5);
-function tickPeople(dt) {
+function tickPeople(dt, t = 0) {
   camera.updateMatrixWorld();
   peopleViewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   peopleFrustum.setFromProjectionMatrix(peopleViewProjection);
@@ -6482,6 +6507,19 @@ function tickPeople(dt) {
     p.animationElapsed = (p.animationElapsed || 0) + dt;
     if (p.animationElapsed >= interval) {
       p.mixer.update(p.animationElapsed);
+      if (p.kind === 'play' && p.pose?.state && p.playRest) {
+        const s = p.pose.state;
+        const r = p.playRest;
+        const pluck = Math.sin(t * 1.55 + p.phase);
+        const finger = Math.sin(t * 0.85 + p.phase * 1.2);
+        s.arm[0] = r.arm[0] + finger * 0.04;
+        s.arm[1] = r.arm[1] + pluck * 0.05;
+        s.armOut[0] = r.armOut[0];
+        s.armOut[1] = r.armOut[1] + pluck * 0.03;
+        s.forearm[0] = r.forearm[0] + finger * 0.07;
+        s.forearm[1] = r.forearm[1] + pluck * 0.16;
+        s.lean = r.lean + pluck * 0.02;
+      }
       p.pose?.();
       p.animationElapsed = 0;
     }
@@ -6915,7 +6953,7 @@ function animate() {
     updateMarineLife(dt, t, marineFauna, islandData);
   }
 
-  tickPeople(dt);
+  tickPeople(dt, t);
   updateLocalLights(ctrl.pos.x, ctrl.pos.y, ctrl.pos.z);
   updateSunShadow(ctrl.pos);
   updateAvatar(dt);
