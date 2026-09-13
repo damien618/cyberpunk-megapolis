@@ -1,0 +1,32 @@
+---
+description: Mixamo crowd animation — retarget clips, keep idle under arms, layer spectator motion. Do not Euler-hack or copy local quaternions across Mixamo skeletons.
+globs: crowd.js,main-CRUISE.js,main-BEACH.js,main-ZOO.js,main-AIRPORT.js
+alwaysApply: false
+---
+
+# Mixamo / guest crowds
+
+Same bone *names* (Hips, LeftArm…) do not mean the same rest frames. Xbot has identity rest rotations; ballroom Mixamo GLBs came through Blender with different local axes. Copying Xbot local quaternions (or `bindClipTo` alone) twists arms and crushes legs.
+
+## Retarget, do not rename-and-play
+
+- `loadGuestRig({ retarget: true })` when the clip file is a different skeleton than the mesh (`crowd.js` `retargetClip`).
+- Per frame: source world rotation relative to its T-pose, applied onto the target T-pose world rotation, then brought back to local.
+- Only hips keep a translation (rescaled to target hip height). Other bones keep their own rest offsets.
+- Do **not** stand a lying crowd with `group.rotation.x = -π/2` (YXZ Euler). That hides a bad clip bind. After a correct retarget, `rotation.y` yaw + a bbox floor snap is enough.
+
+## Standing people must keep moving
+
+Xbot idle is breathing. A room of that is a waxworks next to a playing quartet. On top of the clip, every frame (`p.kind = 'play'` so `tickPeople` calls `p.play`):
+
+- `turnBone(bone, worldAxis, angle)` — rotate about a **world** axis on top of the clip (`local' = parent⁻¹ · R · parent · local`).
+- Body faces the stage; couples get a quarter-turn toward each other.
+- Sway on the band clock, gaze that follows players / partner, occasional nod.
+- Hands via `armReach` (idle keeps legs/spine/head): `clasp` / `behind` / `glass` / `loose`, then clap pose slerped in at the music loop (`window.__cruiseClap()` to test).
+- Coupe parented to the palm in world space so the wrist does not tip it.
+
+`customRig` overwrites the whole stance (musicians). Spectators use `armReach` so the idle continues underneath.
+
+## Materials
+
+`recolor: 'keep'` for authored Mixamo outfits. Converted roughness/metalness maps read as wet latex — drop them and use matte factors. Do not atlas-dye a unique mesh or everyone becomes one shirt colour.
