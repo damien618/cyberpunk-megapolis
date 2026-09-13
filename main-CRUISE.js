@@ -6,7 +6,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=10';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes, segmentAABB } from './cityBoxes.js?v=7';
-import { loadGuestRig, makeVisitor, rootBoneOf, customRig } from './crowd.js?v=63';
+import { loadGuestRig, makeVisitor, rootBoneOf, customRig, armReach } from './crowd.js?v=66';
 import { buildDesertedIsland, createMarineFauna, updateMarineLife } from './marineLife.js?v=2';
 import { createBandInstruments, PIANO_HANDS, DRUM_HITS } from './cruiseBand.js?v=6';
 
@@ -6149,6 +6149,40 @@ try {
     } catch (e) { console.warn('[cruise] guest rig', model, e); }
   }
   console.log('[cruise] all guests loaded, count:', guests.length);
+  // Ballroom crowd: Mixamo characters with authored clothes and faces, not
+  // the two RPM rigs (those clones all wore the same white tee) and not the
+  // Unreal pack (that is the player's own face). The quartet stays on the
+  // RPM man via stand(1) below.
+  const BALLROOM_CAST = [
+    ['Joe.glb', 1.78],
+    ['Louise.glb', 1.68],
+    ['Leonard.glb', 1.76],
+    ['Elizabeth.glb', 1.70],
+    ['Lewis.glb', 1.78],
+    ['Martha.glb', 1.68],
+    ['Brian.glb', 1.80],
+    ['Sophie.glb', 1.66],
+  ];
+  const ballroomLoaded = new Array(BALLROOM_CAST.length);
+  await Promise.all(BALLROOM_CAST.map(async ([model, h], i) => {
+    try {
+      ballroomLoaded[i] = await loadGuestRig({
+        model: `./glb/visitors/ballroom/${model}`,
+        walk: './glb/visitors/ballroom/mixamo-clips.glb',
+        idle: './glb/visitors/ballroom/mixamo-clips.glb',
+        walkClipName: 'walk',
+        idleClipName: 'idle',
+        height: h,
+        recolor: 'keep',
+        // Xbot's clips on a skeleton with other bone frames: retarget, or
+        // the idle twists and crushes every limb.
+        retarget: true,
+      });
+      console.log('[cruise] loaded ballroom guest:', model);
+    } catch (e) { console.warn('[cruise] ballroom guest', model, e); }
+  }));
+  const ballCast = ballroomLoaded.filter(Boolean);
+  console.log('[cruise] ballroom guests loaded, count:', ballCast.length);
   const Gg = i => guests[i % guests.length];
   const visitor = (i, opts = {}) => makeVisitor(Gg(i).scene, Gg(i).walkClip, rnd, {
     guest: Gg(i), idleClip: Gg(i).idleClip, look: 'beach', ...opts,
@@ -6383,44 +6417,240 @@ try {
     patrol(npcIdx++, 2.2, DECK_Y, CASINO_Z[0] + 38, CASINO_Z[0] + 12, Math.PI, casinoGuest);
 
     // =========================================================================
-    // The ballroom, dressed for dinner. The room is Edwardian, so the crowd in
-    // it is too: white tie on the men, evening gowns on the women, and the
-    // band in the same black as the stewards. `uniform` with the same colour
-    // for shirt and trousers is how a floor-length gown is made out of a rig
-    // that only knows about a top and a bottom.
+    // The ballroom. Guests are eight Mixamo characters with their own faces
+    // and clothes — Joe in a suit, Louise and Martha in tailoring, and so on.
+    // Recolouring the two RPM rigs as "white tie" left a clone army in white
+    // t-shirts. The quartet is still `stand(1)` on the RPM man, untouched.
+    // Stewards stay on that black uniform so they read with the band.
     // =========================================================================
-    const tails = { look: null, uniform: { shirt: 0xf2ece0, pants: 0x14141a, shoes: 0x0a0a0c, hat: false } };
     const steward = { look: null, uniform: { shirt: 0x16161c, pants: 0x121216, shoes: 0x08080a, hat: false } };
-    const gown = c => ({ look: null, uniform: { shirt: c, pants: c, shoes: 0x2a1a1e, hat: false } });
-    const gownCrimson = gown(0x6d1626);
-    const gownIvory = gown(0xe6dcc2);
-    const gownEmerald = gown(0x1d4433);
-    const gownMidnight = gown(0x1e2a52);
+    const Bg = i => (ballCast.length ? ballCast : guests)[i % (ballCast.length || guests.length)];
+
+    // -------------------------------------------------------------------------
+    // Spectators. Xbot's idle is little more than breathing, so on its own the
+    // room stood like a waxworks while the quartet played. Layered on top of
+    // it, every frame: the body turned to the stage, a sway on the band's
+    // clock (112 bpm), a head that follows the players and now and then looks
+    // at a neighbour, a nod on the beat for some, and what the hands are
+    // doing — clasped, behind the back, round a coupe, or left to the idle.
+    // When the recording loops the piece has "ended", and the room applauds.
+    // -------------------------------------------------------------------------
+    const SPEC_BEAT = 60 / 112;                  // the band's clock, see below
+    const STAGE_LOOK = [-3.75, -1.4, 1.6, 5.55].map(x =>
+      new THREE.Vector3(x, band.stageY + 1.15, band.SZ + 1.0));
+    const STAGE_MID = new THREE.Vector3(0.9, band.stageY + 1.15, band.SZ + 1.0);
+    const UP = new THREE.Vector3(0, 1, 0);
+    const _sq = new THREE.Quaternion(), _sw = new THREE.Quaternion();
+    const _sa = new THREE.Vector3(), _sb = new THREE.Vector3(), _sc = new THREE.Vector3();
+    const _sh = new THREE.Vector3(), _sp = new THREE.Vector3(), _st = new THREE.Vector3();
+    // Rotate a bone about a WORLD axis, on top of whatever the clip left:
+    // local' = parent⁻¹ · R · parent · local.
+    function turnBone(bone, axis, angle) {
+      if (!bone || !angle) return;
+      bone.parent.getWorldQuaternion(_sq);
+      _sw.setFromAxisAngle(axis, angle);
+      bone.quaternion.premultiply(_sq).premultiply(_sw).premultiply(_sq.invert());
+    }
+    const wrapPI = a => Math.atan2(Math.sin(a), Math.cos(a));
+    // Where the recording is, so applause lands on its loop point. Falls back
+    // to a 90 s cycle while the music is not playing (not loaded, or muted).
+    function musicClock(t) {
+      const m = ballroomMusic;
+      const D = m?.buffer?.duration;
+      if (m?.isPlaying && D) {
+        const pos = m._progress + Math.max(0, m.context.currentTime - m._startedAt) * m.playbackRate;
+        return { pos: pos % D, D };
+      }
+      return { pos: t % 90, D: 90 };
+    }
+    // 0 → 1 → 0 over the applause, seconds relative to the loop point.
+    // `window.__cruiseClap()` starts one now, for checking it without
+    // waiting out a 3'46" recording.
+    let clapAt = -1e9, specT = 0;
+    window.__cruiseClap = () => { clapAt = specT; };
+    function applause(t, delay, len) {
+      specT = t;
+      const { pos, D } = musicClock(t);
+      let u = (pos > D - 1 ? pos - D : pos) - delay;
+      if (u < 0 || u > len) u = t - clapAt - delay;
+      if (u < 0 || u > len) return 0;
+      const s = x => x * x * (3 - 2 * x);
+      return Math.min(s(Math.min(1, u / 0.35)), s(Math.min(1, (len - u) / 0.6)));
+    }
+    const coupeFor = () => {
+      const hold = new THREE.Group();
+      const glass = new THREE.Mesh(G.coupeGlass, M.crystalCut);
+      glass.scale.set(0.078, 0.12, 0.078);
+      const liq = new THREE.Mesh(G.cylBase, M.liqChampagne);
+      liq.scale.set(0.046, 0.028, 0.046);
+      liq.position.y = 0.055;
+      hold.add(liq, glass);
+      scene.add(hold);
+      return hold;
+    };
+    const spectators = [];
+    function spectate(p, style) {
+      const g = p.group;
+      const arms = armReach(g);
+      const hips = boneOn(g, 'Hips'), chest = boneOn(g, 'Spine2');
+      const bones = {
+        spine: boneOn(g, 'Spine'), spine1: boneOn(g, 'Spine1'), chest,
+        neck: boneOn(g, 'Neck'), head: boneOn(g, 'Head'),
+        palm: [boneOn(g, 'LeftHandMiddle1'), boneOn(g, 'RightHandMiddle1')],
+      };
+      if (!arms || !hips || !chest) return;
+      const glassSide = rnd() < 0.5 ? 0 : 1;
+      const S = {
+        style, yaw: g.rotation.y,
+        sway: 0.012 + rnd() * 0.035, swayPh: rnd() * 6.28,
+        nod: rnd() < 0.4 ? 0.03 + rnd() * 0.035 : 0,
+        shift: 5 + rnd() * 5, shiftPh: rnd() * 6.28,
+        look: STAGE_LOOK[Math.floor(rnd() * STAGE_LOOK.length)].clone(),
+        nextGlance: rnd() * 6, headYaw: 0, headPitch: 0,
+        claps: style !== 'glass' && rnd() < 0.88,
+        clapDelay: rnd() * 0.9, clapLen: 3.6 + rnd() * 1.6,
+        clapHz: 2.6 + rnd() * 1.1, clapPh: rnd() * 6.28,
+        glass: style === 'glass' ? coupeFor() : null, glassSide,
+        last: null,
+      };
+      const restQ = [0, 1].map(() => [new THREE.Quaternion(), new THREE.Quaternion()]);
+      spectators.push({ p, S });
+      p.kind = 'play';
+      p.play = t => {
+        const dt = S.last == null ? 0.016 : Math.min(0.25, Math.max(0, t - S.last));
+        S.last = t;
+        const b = t / SPEC_BEAT;
+        const yaw = S.yaw;
+        const fwd = _sa.set(Math.sin(yaw), 0, Math.cos(yaw));
+        const left = _sb.set(Math.cos(yaw), 0, -Math.sin(yaw));
+        const w = S.claps ? applause(t, S.clapDelay, S.clapLen) : 0;
+
+        // Upper body: a sway every two beats, and a slow weight shift.
+        turnBone(bones.spine1, fwd, S.sway * Math.sin(Math.PI * b + S.swayPh) * (1 - 0.6 * w));
+        turnBone(bones.spine, fwd, 0.022 * Math.sin(t * 6.28 / S.shift + S.shiftPh));
+        turnBone(bones.spine, UP, 0.03 * Math.sin(t * 6.28 / (S.shift * 1.7) + S.swayPh));
+
+        // Gaze: mostly the players, sometimes a neighbour or the room.
+        if (t > S.nextGlance) {
+          const r = rnd();
+          if (r < 0.72 || w > 0) S.look.copy(STAGE_LOOK[Math.floor(rnd() * STAGE_LOOK.length)]);
+          else if (r < 0.9 && S.partner) S.partner.group.getWorldPosition(S.look).setY(g.position.y + 1.55);
+          else S.look.set(g.position.x + (rnd() - 0.5) * 16, g.position.y + 1.3 + rnd() * 1.5, g.position.z + (rnd() - 0.3) * 10);
+          S.nextGlance = t + 2.2 + rnd() * 4.5;
+        }
+        if (w > 0.2) S.look.lerp(STAGE_MID, 0.1);
+        const dx = S.look.x - g.position.x, dz = S.look.z - g.position.z;
+        const wantYaw = THREE.MathUtils.clamp(wrapPI(Math.atan2(dx, dz) - yaw), -1.1, 1.1);
+        const wantPitch = -Math.atan2(S.look.y - (g.position.y + 1.55), Math.hypot(dx, dz)) * 0.7;
+        const k = 1 - Math.exp(-dt * 3.2);
+        S.headYaw += (wantYaw - S.headYaw) * k;
+        S.headPitch += (wantPitch - S.headPitch) * k;
+        turnBone(bones.chest, UP, S.headYaw * 0.2);
+        turnBone(bones.neck, UP, S.headYaw * 0.35);
+        turnBone(bones.head, UP, S.headYaw * 0.45);
+        const gaze = yaw + S.headYaw;
+        _sc.set(Math.cos(gaze), 0, -Math.sin(gaze));  // the head's own left
+        const beatNod = S.nod * Math.pow(Math.max(0, Math.cos(Math.PI * 2 * b)), 3) * (1 - w);
+        turnBone(bones.head, _sc, S.headPitch + beatNod);
+
+        // Hands. Rest pose first (IK, or the idle's for 'loose'), then the
+        // clap pose, then blend the two per bone so nothing pops.
+        g.updateMatrixWorld(true);
+        const hipsP = hips.getWorldPosition(_sh);
+        for (let i = 0; i < 2; i++) {
+          const side = i === 0 ? 1 : -1;
+          const up = arms.upper[i], lo = arms.lower[i];
+          if (!up || !lo) continue;
+          let posed = true;
+          if (style === 'clasp') {
+            _st.copy(hipsP).addScaledVector(fwd, 0.21).addScaledVector(left, side * 0.05).y -= 0.03;
+            _sp.copy(left).multiplyScalar(side * 0.7).addScaledVector(fwd, -0.4).y -= 0.3;
+          } else if (style === 'behind') {
+            _st.copy(hipsP).addScaledVector(fwd, -0.15).addScaledVector(left, side * 0.05).y += 0.02;
+            _sp.copy(left).multiplyScalar(side).addScaledVector(fwd, -0.7);
+          } else if (style === 'glass' && i === S.glassSide) {
+            up.getWorldPosition(_st).addScaledVector(fwd, 0.3).addScaledVector(left, -side * 0.03).y -= 0.2;
+            _sp.copy(left).multiplyScalar(side * 0.35).addScaledVector(fwd, -0.3).y -= 1;
+          } else posed = false;
+          if (posed) arms.reach(i, _st, _sp);
+          restQ[i][0].copy(up.quaternion);
+          restQ[i][1].copy(lo.quaternion);
+          if (w > 0) {
+            const gap = 0.012 + 0.085 * Math.max(0, Math.sin(t * 6.28 * S.clapHz + S.clapPh));
+            chest.getWorldPosition(_st).addScaledVector(fwd, 0.29).addScaledVector(left, side * gap).y -= 0.03;
+            _sp.copy(left).multiplyScalar(side).y -= 0.9;
+            arms.reach(i, _st, _sp);
+            _sq.copy(up.quaternion);
+            up.quaternion.slerpQuaternions(restQ[i][0], _sq, w);
+            _sq.copy(lo.quaternion);
+            lo.quaternion.slerpQuaternions(restQ[i][1], _sq, w);
+          }
+        }
+        // The coupe stays upright in the palm, whatever the wrist is doing.
+        if (S.glass) {
+          g.updateMatrixWorld(true);
+          const palm = bones.palm[S.glassSide] ?? arms.hand[S.glassSide];
+          if (palm) {
+            palm.getWorldPosition(S.glass.position);
+            S.glass.position.addScaledVector(fwd, 0.015).y -= 0.05;
+          }
+        }
+      };
+    }
+
+    const ballStand = (i, x, y, z, yaw, style) => {
+      const g = Bg(i);
+      const v = makeVisitor(g.scene, g.walkClip, rnd, {
+        guest: g, idleClip: g.idleClip, look: null, playIdle: true,
+      });
+      // Everyone faces the stage; couples keep a quarter turn toward each
+      // other (the sign of their authored yaw says which way that is).
+      const stageYaw = Math.atan2(STAGE_MID.x - x, STAGE_MID.z - z);
+      const face = stageYaw + Math.sign(wrapPI(yaw - stageYaw)) * 0.32;
+      v.group.position.set(x, y, z);
+      v.group.rotation.y = face;
+      v.mixer.update(0);
+      v.group.updateMatrixWorld(true);
+      const floor = new THREE.Box3().setFromObject(v.group);
+      v.group.position.y += y - floor.min.y;
+      scene.add(v.group);
+      const p = { ...v, kind: 'idle', baseYaw: face, phase: rnd() * 6.28 };
+      people.push(p);
+      spectate(p, style ?? ['clasp', 'behind', 'glass', 'loose'][Math.floor(rnd() * 4)]);
+      return p;
+    };
+    // Couples: each one looks at the other when not watching the band.
+    const couple = (a, b) => {
+      const sa = spectators.find(s => s.p === a)?.S, sb = spectators.find(s => s.p === b)?.S;
+      if (sa) sa.partner = b;
+      if (sb) sb.partner = a;
+    };
 
     const B0 = BALL_Z[0];
+    let ballI = 0;
     // Two couples out on the parquet, under the dome.
-    stand(npcIdx++, -1.6, DECK_Y + 0.02, B0 + 18.4, 0.5, tails);
-    stand(npcIdx++, -0.5, DECK_Y + 0.02, B0 + 19.1, Math.PI + 0.5, gownCrimson);
-    stand(npcIdx++, 2.6, DECK_Y + 0.02, B0 + 21.4, -0.9, tails);
-    stand(npcIdx++, 3.5, DECK_Y + 0.02, B0 + 22.3, Math.PI - 0.9, gownIvory);
+    couple(ballStand(ballI++, -1.6, DECK_Y + 0.02, B0 + 18.4, 0.5, 'clasp'),
+      ballStand(ballI++, -0.5, DECK_Y + 0.02, B0 + 19.1, Math.PI + 0.5, 'glass'));
+    couple(ballStand(ballI++, 2.6, DECK_Y + 0.02, B0 + 21.4, -0.9, 'behind'),
+      ballStand(ballI++, 3.5, DECK_Y + 0.02, B0 + 22.3, Math.PI - 0.9, 'loose'));
     // A third couple further aft, and someone watching from the floor edge.
-    stand(npcIdx++, -3.4, DECK_Y + 0.02, B0 + 13.6, 2.4, tails);
-    stand(npcIdx++, -4.2, DECK_Y + 0.02, B0 + 14.4, 2.4 + Math.PI, gownEmerald);
-    stand(npcIdx++, 6.9, DECK_Y, B0 + 16.0, -Math.PI / 2, gownMidnight);
+    couple(ballStand(ballI++, -3.4, DECK_Y + 0.02, B0 + 13.6, 2.4, 'glass'),
+      ballStand(ballI++, -4.2, DECK_Y + 0.02, B0 + 14.4, 2.4 + Math.PI, 'clasp'));
+    ballStand(ballI++, 6.9, DECK_Y, B0 + 16.0, -Math.PI / 2, 'behind');
 
-    // At the tables, port and starboard.
-    stand(npcIdx++, -9.6, DECK_Y, B0 + 4.5, Math.PI / 2, tails);
-    stand(npcIdx++, -10.9, DECK_Y, B0 + 3.2, 0, gownIvory);
-    stand(npcIdx++, -9.6, DECK_Y, B0 + 11.5, Math.PI / 2, gownCrimson);
-    stand(npcIdx++, -12.1, DECK_Y, B0 + 18.5, -Math.PI / 2, tails);
-    stand(npcIdx++, 9.6, DECK_Y, B0 + 11.5, -Math.PI / 2, tails);
-    stand(npcIdx++, 10.9, DECK_Y, B0 + 10.2, Math.PI, gownEmerald);
-    stand(npcIdx++, 9.6, DECK_Y, B0 + 25.5, -Math.PI / 2, gownMidnight);
-    stand(npcIdx++, 12.1, DECK_Y, B0 + 4.5, Math.PI / 2, tails);
+    // At the tables, port and starboard — glass in hand, more often than not.
+    couple(ballStand(ballI++, -9.6, DECK_Y, B0 + 4.5, Math.PI / 2, 'glass'),
+      ballStand(ballI++, -10.9, DECK_Y, B0 + 3.2, 0, 'loose'));
+    ballStand(ballI++, -9.6, DECK_Y, B0 + 11.5, Math.PI / 2, 'glass');
+    ballStand(ballI++, -12.1, DECK_Y, B0 + 18.5, -Math.PI / 2, 'clasp');
+    couple(ballStand(ballI++, 9.6, DECK_Y, B0 + 11.5, -Math.PI / 2, 'loose'),
+      ballStand(ballI++, 10.9, DECK_Y, B0 + 10.2, Math.PI, 'glass'));
+    ballStand(ballI++, 9.6, DECK_Y, B0 + 25.5, -Math.PI / 2, 'behind');
+    ballStand(ballI++, 12.1, DECK_Y, B0 + 4.5, Math.PI / 2, 'glass');
 
     // Two people at the balustrade by the door, looking down the room.
-    stand(npcIdx++, -5.1, DECK_Y, B0 + 2.1, 0, gownIvory);
-    stand(npcIdx++, 5.1, DECK_Y, B0 + 2.1, 0.3, tails);
+    ballStand(ballI++, -5.1, DECK_Y, B0 + 2.1, 0, 'behind');
+    ballStand(ballI++, 5.1, DECK_Y, B0 + 2.1, 0.3, 'clasp');
 
     // The band, on the stage. Hands are reached to points ON the instrument
     // every frame (customRig's `reach`): joint angles on the Mixamo shoulder

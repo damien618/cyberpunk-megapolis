@@ -168,6 +168,79 @@ function bindClipTo(clip, root) {
   return out;
 }
 
+/**
+ * Replay a clip authored on one Mixamo skeleton onto another whose bones have
+ * different local frames. Xbot (the clip source) has identity rest rotations
+ * and centimetre offsets along world axes; the ballroom characters came through
+ * Blender with +Y down every bone. Copying Xbot's local quaternions — and its
+ * translation/scale track on every bone — twisted and crushed their limbs.
+ * Instead: per sampled frame, each source bone's world rotation relative to its
+ * T-pose is applied to the target's T-pose world rotation, then brought back to
+ * local. Only the hips keep a translation (rescaled to the target's hip
+ * height); every other bone keeps its own rest offsets, i.e. its proportions.
+ */
+function retargetClip(clip, srcRoot, dstRoot, fps = 30) {
+  const nodes = root => {
+    const map = new Map(), list = [];
+    root.traverse(o => { if (o.isBone) { map.set(boneShort(o.name), o); list.push(o); } });
+    return { map, list };
+  };
+  const src = nodes(srcRoot), dst = nodes(dstRoot);
+  const srcRest = src.list.map(b => [b.position.clone(), b.quaternion.clone(), b.scale.clone()]);
+  const restore = () => src.list.forEach((b, i) => {
+    b.position.copy(srcRest[i][0]); b.quaternion.copy(srcRest[i][1]); b.scale.copy(srcRest[i][2]);
+  });
+
+  srcRoot.updateMatrixWorld(true);
+  dstRoot.updateMatrixWorld(true);
+  const wq = o => o.getWorldQuaternion(new THREE.Quaternion());
+  const srcRestInv = new Map(src.list.map(b => [b, wq(b).invert()]));
+  const dstRestW = new Map(dst.list.map(b => [b, wq(b)]));
+  const srcHips = src.map.get('Hips'), dstHips = dst.map.get('Hips');
+  const srcHip0 = srcHips.getWorldPosition(new THREE.Vector3());
+  const dstHip0 = dstHips.getWorldPosition(new THREE.Vector3());
+  const hipRatio = dstHip0.y / Math.max(srcHip0.y, 1e-4);
+  const dstHipParentInv = dstHips.parent.matrixWorld.clone().invert();
+
+  const n = Math.max(2, Math.round(clip.duration * fps) + 1);
+  const times = new Float32Array(n);
+  const quats = new Map(dst.list.map(b => [b, new Float32Array(n * 4)]));
+  const hipPos = new Float32Array(n * 3);
+  const mixer = new THREE.AnimationMixer(srcRoot);
+  mixer.clipAction(clip).play();
+  const world = new Map();
+  const q = new THREE.Quaternion(), p = new THREE.Vector3();
+  for (let f = 0; f < n; f++) {
+    const t = Math.min(clip.duration, f / fps);
+    times[f] = t;
+    mixer.setTime(t);
+    srcRoot.updateMatrixWorld(true);
+    world.clear();
+    // `traverse` is depth-first, so a parent's animated world rotation is
+    // always known before its children are solved.
+    for (const b of dst.list) {
+      const parentW = world.get(b.parent) ?? wq(b.parent);
+      const s = src.map.get(boneShort(b.name));
+      let w;
+      if (s) w = wq(s).multiply(srcRestInv.get(s)).multiply(dstRestW.get(b));
+      else w = parentW.clone().multiply(b.quaternion);
+      world.set(b, w);
+      q.copy(parentW).invert().multiply(w).toArray(quats.get(b), f * 4);
+    }
+    srcHips.getWorldPosition(p).sub(srcHip0).multiplyScalar(hipRatio).add(dstHip0);
+    p.applyMatrix4(dstHipParentInv).toArray(hipPos, f * 3);
+  }
+  mixer.stopAllAction();
+  mixer.uncacheRoot(srcRoot);
+  restore();
+  srcRoot.updateMatrixWorld(true);
+
+  const tracks = dst.list.map(b =>
+    new THREE.QuaternionKeyframeTrack(`${b.name}.quaternion`, times, quats.get(b)));
+  tracks.push(new THREE.VectorKeyframeTrack(`${dstHips.name}.position`, times, hipPos));
+  return new THREE.AnimationClip(clip.name, clip.duration, tracks);
+}
+
 function skinnedExtents(root) {
   root.updateMatrixWorld(true);
   const v = new THREE.Vector3();
@@ -663,16 +736,23 @@ function attachBeachShades(group, rng) {
  * that is how the animation library ships them — same pattern as retargeting
  * a Mixamo walk onto a mesh that already has the matching bone names.
  */
+const clipCache = new Map();
 export async function loadGuestRig({
   model, walk, idle, height = 1.68, recolor = 'atlas',
-  walkClipName, idleClipName,
+  walkClipName, idleClipName, retarget = false,
 } = {}) {
   const loader = new GLTFLoader().setDRACOLoader(dracoLoader);
   const gltf = await loader.loadAsync(model);
-  const walkGltf = walk && walk !== model ? await loader.loadAsync(walk) : gltf;
+  // A shared clip file is only read (and posed then restored when
+  // retargeting), so every guest that names it can use one parse.
+  const clipFile = url => {
+    if (!clipCache.has(url)) clipCache.set(url, loader.loadAsync(url));
+    return clipCache.get(url);
+  };
+  const walkGltf = walk && walk !== model ? await clipFile(walk) : gltf;
   const idleGltf = !idle || idle === model || idle === walk
     ? (idle === walk && walkGltf !== gltf ? walkGltf : gltf)
-    : await loader.loadAsync(idle);
+    : await clipFile(idle);
   const scene = gltf.scene;
   scene.traverse(o => {
     if (!o.isMesh && !o.isSkinnedMesh) return;
@@ -697,8 +777,11 @@ export async function loadGuestRig({
   const rawWalk = pick(walkGltf, walkClipName, 0);
   const rawIdle = pick(idleGltf, idleClipName, 0);
   const stride = rootStride(rawWalk);
-  const walkClip = bindClipTo(pinRootXZ(rawWalk), scene);
-  const idleClip = bindClipTo(pinRootXZ(rawIdle), scene);
+  const fit = (clip, from) => retarget && from !== gltf
+    ? retargetClip(pinRootXZ(clip), from.scene, scene)
+    : bindClipTo(pinRootXZ(clip), scene);
+  const walkClip = fit(rawWalk, walkGltf);
+  const idleClip = fit(rawIdle, idleGltf);
   const { height: measured } = skinnedExtents(scene);
   const beachMask = buildBeachMask(scene);
   return { scene, walkClip, idleClip, kind: 'guest', recolor, measured, fitHeight: height, stride, beachMask };
@@ -1118,6 +1201,27 @@ export function groundSitRig(group, rng = Math.random) {
 
 // A free pose: whatever the caller wants to hold, in anatomical terms. Used for
 // the ball and paddle players, the skaters and the swimmers.
+/**
+ * Just the arms of `customRig`: the idle keeps the legs, spine and head, and
+ * the caller reaches either hand to a world point (null bone → no-op). For
+ * standing figures whose clip must keep running underneath — ballroom
+ * spectators clapping or holding a glass.
+ */
+export function armReach(group) {
+  const rig = rigOf(group);
+  if (!rig) return null;
+  const L = limbs(group, rig);
+  return {
+    upper: L.upperarm.map(j => j?.bone ?? null),
+    lower: L.lowerarm.map(j => j?.bone ?? null),
+    hand: L.hand.map(j => j?.bone ?? null),
+    reach(i, target, pole) {
+      const up = L.upperarm[i], lo = L.lowerarm[i], hd = L.hand[i];
+      if (up && lo && hd) reachArm(up, lo, hd.bone, target, pole);
+    },
+  };
+}
+
 export function customRig(group) {
   const rig = rigOf(group);
   if (!rig) return null;
@@ -1250,6 +1354,20 @@ export function makeVisitor(base, walkClip, rng,
           else if (legs && materialName === 'red_dark') c.color.setHex(chosen.shorts);
           else if (legs && materialName === 'white') c.color.setHex(0xf4ead7);
           else if (body && materialName !== 'skin') c.color.setHex(chosen.tshirt);
+          c.needsUpdate = true;
+          return c;
+        }
+        // Authored Mixamo outfits (ballroom guests): keep the baked clothes
+        // and faces. Atlas dyeing here would tint the whole body the shirt
+        // colour and turn eight distinct people back into a clone army.
+        // Their converted roughness maps are near-black, so every suit and
+        // sweater came out as wet latex; plain matte factors read as cloth.
+        if (guest?.recolor === 'keep') {
+          c.roughnessMap = null;
+          c.metalnessMap = null;
+          c.metalness = 0;
+          c.roughness = Math.max(c.roughness ?? 0.5, 0.82);
+          c.envMapIntensity = 0.55;
           c.needsUpdate = true;
           return c;
         }
