@@ -1,0 +1,67 @@
+{
+  "DateTime": {
+    "value": "2013-01-01 10:25:31",
+    "source": "mediawiki-metadata",
+    "hidden": ""
+  },
+  "ObjectName": {
+    "value": "Water-Lilies",
+    "source": "commons-desc-page"
+  },
+  "CommonsMetadataExtension": {
+    "value": 1.2,
+    "source": "extension",
+    "hidden": ""
+  },
+  "Categories": {
+    "value": "Water Lilies by Claude Monet|PD-Art (PD-old-auto-expired)|PD-Art (Yorck Project)|Artworks with Wikidata item|Artworks with known accession number|CC-PD-Mark|PD-old-95-expired|Artworks with Wikidata item missing genre|1910s paintings by Claude Monet|1920s paintings by Claude Monet|Artworks digital representation of 2D work|Paintings by Claude Monet in the National Gallery, London",
+    "source": "commons-categories",
+    "hidden": ""
+  },
+  "Assessments": {
+    "value": "",
+    "source": "commons-categories",
+    "hidden": ""
+  },
+  "Artist": {
+    "value": "<bdi><a href=\"https://en.wikipedia.org/wiki/en:Claude_Monet\" class=\"extiw\" title=\"w:en:Claude Monet\"><span title=\"French painter (1840–1926)\">Claude Monet</span></a></bdi>",
+    "source": "commons-desc-page"
+  },
+  "DateTimeOriginal": {
+    "value": "after 1916<div style=\"display: none;\">date QS:P571,+1916-00-00T00:00:00Z/7,P1319,+1916-00-00T00:00:00Z/9</div>",
+    "source": "commons-desc-page"
+  },
+  "Credit": {
+    "value": "<p>1. <cite class=\"book\" style=\"font-style:normal\">The Yorck Project (2002)      <i> 10.000 Meisterwerke der Malerei</i> (DVD-ROM), distributed by <a href=\"//commons.wikimedia.org/wiki/Commons:10,000_paintings_from_Directmedia\" title=\"Commons:10,000 paintings from Directmedia\">DIRECTMEDIA</a> Publishing GmbH.  <small><span lang=\"en\" dir=\"ltr\"><a href=\"https://en.wikipedia.org/wiki/ISBN\" class=\"extiw\" title=\"en:ISBN\"><span lang=\"en\" dir=\"ltr\">ISBN</span></a></span>:  <a href=\"//commons.wikimedia.org/wiki/Special:BookSources/3936122202\" title=\"Special:BookSources/3936122202\">3936122202</a>. </small></cite>\n</p>\n 2. <a rel=\"nofollow\" class=\"external autonumber\" href=\"http://www.nationalgallery.org.uk/paintings/claude-oscar-monet-water-lilies\">[1]</a>",
+    "source": "commons-desc-page"
+  },
+  "LicenseShortName": {
+    "value": "Public domain",
+    "source": "commons-desc-page",
+    "hidden": ""
+  },
+  "UsageTerms": {
+    "value": "Public domain",
+    "source": "commons-desc-page"
+  },
+  "AttributionRequired": {
+    "value": "false",
+    "source": "commons-desc-page",
+    "hidden": ""
+  },
+  "Copyrighted": {
+    "value": "False",
+    "source": "commons-desc-page",
+    "hidden": ""
+  },
+  "Restrictions": {
+    "value": "",
+    "source": "commons-desc-page",
+    "hidden": ""
+  },
+  "License": {
+    "value": "pd",
+    "source": "commons-templates",
+    "hidden": ""
+  }
+}

@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { buildMonetGallery } from './cruiseMonetGallery.js?v=20260916-garnier';
+import { buildCruiseOpera } from './cruiseOpera.js?v=20260916-garnier';
 import { buildVerneMuseum } from './cruiseMuseum.js?v=20260908-signs7';
 import { Player } from './player.js?v=20260906-seam-fix';
 import { harmoniseHair } from './hair.js?v=11';
@@ -2357,15 +2359,50 @@ const CABIN_STAIR = { x0: -7, x1: -3, z0: -4, z1: 6.5, steps: 24 };
 // the restored gallery floor, with clearance under its underside.
 const CABIN_OPENING = { ...CABIN_STAIR, z1: ATRIUM_Z[1] - WALL_T / 2 };
 
+// The ARTS STAIR, the atrium's second flight, is the cabin stair turned
+// through half a turn: starboard instead of port, and descending FORWARD
+// instead of aft. That second mirror is the one that matters. AFT of the
+// atrium the lower deck is cabin 214 and its coursive, and a well sunk that
+// way drops into somebody's suite. FORWARD there is nothing but hull, under
+// the casino, which is where this one goes.
+//
+// It is a working stair, not a grand one: 20 cm on 36 cm, 29°, one straight
+// flight of twelve. The whole drop is taken inside the well, so no tread ever
+// passes under the casino floor — that was the trap on this side. The deck is
+// only 2.4 m thick here, and a shallow cabin-stair pitch carried on under the
+// slab would have left 1.2 m of headroom over the bottom treads.
+// The arts are no longer a second copy of the map: they are ROOMS, cut out of
+// the solid hull aft of the atrium and under the casino, where the ship is a
+// block 34 m across and 6.7 m deep from the tank top to the promenade deck.
+// Everything below follows from that one measurement — see cruiseOpera.js for
+// what a 20 m Garnier had to give up to become a 5.5 m ship's theatre.
+const ARTS_Y = 1.9;                                    // the arts deck's floor
+const ARTS_C = 7.45;                                   // and its deckhead
+// One flight, 31 risers of 197 on 300, straight from the atrium down into the
+// Monet hall. It passes through the deck in its first three treads and then
+// simply hangs in the room: by the third step the gallery is in front of you.
+const ARTS_STAIR = { x0: 3, x1: 7, zTop: -7.5, zBot: -16.8, steps: 31 };
+// The well cut in the atrium's parquet. It is a proper well, not a hatch: you
+// can stand at the rail on the promenade deck and look down on the Nymphéas.
+const ARTS_OPENING = { x0: ARTS_STAIR.x0, x1: ARTS_STAIR.x1,
+  z0: ATRIUM_Z[0] + WALL_T / 2, z1: ARTS_STAIR.zTop };
+const ARTS_WALL_X0 = ARTS_STAIR.x0 - WALL_T / 2;
+const ARTS_WALL_X1 = ARTS_STAIR.x1 + WALL_T / 2;
+// The hold itself. Sixty-five metres of hull, hollowed from the tank top to
+// the underside of the teak: gallery, foyer and auditorium all stand in it.
+const ARTS_WELL = { x0: -16, x1: 16, z0: -72, z1: -7.0, y: ARTS_Y - 0.3 };
+
 // Cut the same stairwell out of the structural deck and its floor finishes.
 function stairwellSlab(mat, x0, x1, z0, z1, y0, y1) {
-  const s = CABIN_OPENING;
-  const a = Math.max(z0, s.z0), b = Math.min(z1, s.z1);
-  if (a >= b) return longSlab(mat, x0, x1, z0, z1, y0, y1);
-  if (z0 < a) longSlab(mat, x0, x1, z0, a, y0, y1);
-  if (b < z1) longSlab(mat, x0, x1, b, z1, y0, y1);
-  longSlab(mat, x0, s.x0, a, b, y0, y1);
-  longSlab(mat, s.x1, x1, a, b, y0, y1);
+  let tiles = [[x0,x1,z0,z1]];
+  for (const s of [CABIN_OPENING, ARTS_OPENING]) {
+    tiles = tiles.flatMap(([l,r,a,b]) => {
+      const L=Math.max(l,s.x0),R=Math.min(r,s.x1),A=Math.max(a,s.z0),B=Math.min(b,s.z1);
+      if(L>=R||A>=B)return [[l,r,a,b]];
+      return [[l,r,a,A],[l,r,B,b],[l,L,A,B],[R,r,A,B]].filter(([x0,x1,z0,z1])=>x1>x0&&z1>z0);
+    });
+  }
+  for(const [l,r,a,b] of tiles)longSlab(mat,l,r,a,b,y0,y1);
 }
 
 // Cabin 214 — the starboard suite, and the way off this ship.
@@ -2456,6 +2493,20 @@ const sheerAt = (z) => Math.max(0, z / SHIP_L2) ** 2 * 1.6;
 // thickness a slot of daylight opened between deck and bulwark at the bow.
 // It starts at the DECK, not at the sheered edge, for the same reason. This is
 // the thing that actually keeps the player aboard, so it is emitted, not a prop.
+// Sink the arts stair's pocket into a station of otherwise solid hull. The
+// hull is a filled block below the promenade deck — the accommodation deck is
+// the one place it is hollow, and that hollow is all aft of the atrium.
+function artsWellSlab(mat, x0, x1, z0, z1, y0, y1) {
+  const w = ARTS_WELL;
+  const a = Math.max(z0, w.z0), b = Math.min(z1, w.z1);
+  if (a >= b) return slab(mat, x0, x1, z0, z1, y0, y1);
+  if (z0 < a) slab(mat, x0, x1, z0, a, y0, y1);
+  if (b < z1) slab(mat, x0, x1, b, z1, y0, y1);
+  slab(mat, x0, w.x0, a, b, y0, y1);
+  slab(mat, w.x1, x1, a, b, y0, y1);
+  slab(mat, w.x0, w.x1, a, b, y0, w.y);    // the pocket stands on this
+}
+
 function bulwarkPanel(a, b) {
   const dx = b.hb - a.hb, dz = b.z - a.z;
   const L = Math.hypot(dx, dz);
@@ -2486,12 +2537,12 @@ for (let i = 0; i < EDGE.length - 1; i++) {
   // Hollow the accommodation volume; retain the hull sides and lower floor.
   const ca = Math.max(z, -5), cb = Math.min(z1, CABIN_EXTENSION_Z);
   if (ca < cb) {
-    if (z < ca) slab(M.hullNavy, -hb, hb, z, ca, 1.1, DECK_Y - 0.22);
+    if (z < ca) artsWellSlab(M.hullNavy, -hb, hb, z, ca, 1.1, DECK_Y - 0.22);
     if (cb < z1) slab(M.hullNavy, -hb, hb, cb, z1, 1.1, DECK_Y - 0.22);
     slab(M.hullNavy, -hb, hb, ca, cb, 1.1, CABIN_Y - 0.22);
     slab(M.hullNavy, -hb, -SUP_X2, ca, cb, CABIN_Y - 0.22, DECK_Y - 0.22);
     slab(M.hullNavy, SUP_X2, hb, ca, cb, CABIN_Y - 0.22, DECK_Y - 0.22);
-  } else slab(M.hullNavy, -hb, hb, z, z1, 1.1, DECK_Y - 0.22);
+  } else artsWellSlab(M.hullNavy, -hb, hb, z, z1, 1.1, DECK_Y - 0.22);
   // Boot-topping, the band at the waterline.
   slab(M.hullBoot, -hb - 0.02, hb + 0.02, z, z1, 0.2, 1.1);
   // Below the water: never seen from the deck, but seen from the pool deck
@@ -3416,7 +3467,8 @@ console.log('[cruise] casino room done');
   shape(G.cyl64, M.atriumRug, 0, F + 0.008, -5, 5.4, 0.016, 5.4);
 
   prop(() => {
-    // Reception desk, against the forward bulkhead.
+    // Reception desk, against the after bulkhead. It keeps its corner: the
+    // arts well is cut in the FORWARD starboard quadrant, 8 m ahead of it.
     box(M.darkWood, 6.5, DECK_Y + 0.55, 0.6, 5.4, 1.1, 0.9);
     shape(receptionTop, M.mahoganyGloss, 6.5, DECK_Y + 1.13, 0.6, 1, 1, 1);
     box(M.brass, 6.5, DECK_Y + 1.075, 0.07, 5.42, 0.024, 0.025);
@@ -3449,6 +3501,11 @@ console.log('[cruise] casino room done');
     for (const x of [3.95, 9.05])
       box(M.mahoganyGloss, x, DECK_Y + 2.2, 1.68, 0.10, 1.85, 0.18);
 
+    // The lobby's four quadrants, once the second stair is cut: cabin flight
+    // aft to port, reception aft to starboard, arts flight forward to
+    // starboard — and this seating group, mirrored across to port so it is not
+    // standing in the new well. The compass rose keeps the middle.
+    frame(-9, -3.2, 0, () => {
     for (const [sx, sz, ry] of [[4.5, -2.4, 0], [4.5, -7.6, Math.PI]])
       loungeChair(sx, sz, ry, 3);
     // Compact 1930s ocean-liner coffee table: an almost-black ebony top on a
@@ -3484,6 +3541,7 @@ console.log('[cruise] casino room done');
     box(M.linen, tableX + 0.25, DECK_Y + 0.556, tableZ,
       0.35, 0.025, 0.26, 0.15);
 
+    });
     // Potted palms, because every liner lobby has them.
     for (const [px, pz] of [[-11, -3], [-11, -9.5], [11, -3], [11, -9.5]]) {
       // Tapered ceramic planter, raised rim and visible soil.
@@ -5624,6 +5682,74 @@ prop(() => {
   });
 }
 
+// ---------------------------------------------------------------------------
+// The flight down to the arts, and there is only one of it.
+//
+// It leaves the atrium's forward starboard quarter, passes through 55 cm of
+// deck, and then descends in the open, inside the Monet hall, to the arts
+// floor 6.1 m below. Nothing fades and nothing is teleported: the room is
+// under your feet from the third tread. The treads are emitted groundOnly so
+// they carry the player without shoving her capsule, exactly as the cabin
+// flight's are, and the boom ignores them for the same reason.
+// ---------------------------------------------------------------------------
+const artsStairLights = [];
+{
+  const s = ARTS_STAIR;
+  const rise = (DECK_Y - ARTS_Y) / s.steps;
+  const tread = (s.zTop - s.zBot) / s.steps;        // measured AFT, so > 0
+  groundOnly(() => {
+    for (let i = 0; i < s.steps; i++) {
+      const z = s.zTop - i * tread;                 // leading edge of tread i
+      const top = DECK_Y - i * rise;
+      slab(M.parquet, s.x0, s.x1, z - tread - 0.015, z, ARTS_Y - 0.1, top);
+      slab(M.brass, s.x0, s.x1, z - tread, z - tread + 0.035, top, top + 0.012);
+    }
+  });
+  // The well's cheeks, through the deck only: below the teak the flight is in
+  // the gallery, and a shaft wall there would be a wall across the room.
+  for (const x of [ARTS_WALL_X0, ARTS_WALL_X1])
+    wallWithHoles(M.cream, 'z', x, WALL_T, ARTS_OPENING.z0, s.zTop + 0.5,
+      ARTS_C, DECK_Y - 0.22, []);
+  wallWithHoles(M.cream, 'x', ARTS_OPENING.z0, WALL_T, ARTS_WALL_X0, ARTS_WALL_X1,
+    ARTS_C, DECK_Y - 0.22, []);
+  const lit = (y, z, i, d) => {
+    const l = new THREE.PointLight(0xffe7c2, i, d, 1.5);
+    l.position.set((s.x0 + s.x1) / 2, y, z);
+    scene.add(l); artsStairLights.push(l);
+  };
+  lit(DECK_Y - 0.9, s.zTop - 1.2, 1.1, 9);
+  lit(ARTS_C - 0.6, s.zTop - 5.5, 1.6, 12);
+
+  // Balustrade: a raked pipe at 92 cm with a mid-rail, newels at both ends,
+  // stanchions every other tread, and a level guard round the well upstairs.
+  prop(() => {
+    const H = 0.92, Hmid = 0.50, RH = 0.07, RM = 0.05;
+    for (const x of [s.x0 + 0.12, s.x1 - 0.12]) {
+      rakedPipe(M.brassPolished, x, DECK_Y + H, s.zTop, ARTS_Y + H, s.zBot, RH);
+      rakedPipe(M.brass, x, DECK_Y + Hmid, s.zTop, ARTS_Y + Hmid, s.zBot, RM);
+      newelPost(M.brass, x, DECK_Y, s.zTop, H);
+      newelPost(M.brass, x, ARTS_Y, s.zBot, H);
+      for (let i = 2; i < s.steps; i += 2)
+        shape(G.cylBase, M.brass, x, DECK_Y - i * rise, s.zTop - i * tread,
+          0.07, H, 0.07);
+      levelPipeZ(M.brassPolished, x, DECK_Y + H, s.zTop, ARTS_OPENING.z0, RH);
+      levelPipeZ(M.brass, x, DECK_Y + Hmid, s.zTop, ARTS_OPENING.z0, RM);
+      newelPost(M.brass, x, DECK_Y, ARTS_OPENING.z0, H);
+    }
+    // The well's aft edge, on the atrium floor, is a drop of six metres.
+    levelPipeX(M.brassPolished, s.x0, s.x1, DECK_Y + H, ARTS_OPENING.z0, RH);
+    levelPipeX(M.brass, s.x0, s.x1, DECK_Y + Hmid, ARTS_OPENING.z0, RM);
+  });
+  const plaque = (label, x, y, z, ry, w = 3.8) => {
+    const mat = canvasMat(768, 128, (g, W, Hgt) => {
+      g.fillStyle = '#12314f'; g.fillRect(0, 0, W, Hgt);
+      paintText(g, label, W / 2, Hgt / 2, 40, '#e8c063');
+    }, { emissive: 0xffffff, emissiveIntensity: 0.35, side: THREE.FrontSide });
+    prop(() => shape(G.card, mat, x, y, z, w, w * 0.168, 1, { ry }));
+  };
+  plaque('↓ NYMPHÉAS · GRAND OPÉRA', (s.x0 + s.x1) / 2, DECK_Y + 2.8, s.zTop + 0.1, 0);
+}
+
 flushKits();
 world.matrixAutoUpdate = false;
 world.updateMatrixWorld(true);
@@ -5818,6 +5944,27 @@ const marineFauna = createMarineFauna(scene);
 // almost every AABB aboard; even 16 m still packed a furnished room into one
 // cell. Same idea as the airport terminal, one step tighter.
 const bw = buildCityBoxes(world, 10);
+// ---------------------------------------------------------------------------
+// The galleries. There is nothing to say about reaching them any more: they
+// are rooms in the ship. What used to live here — a second copy of the map at
+// x = 1000, a black veil, a teleport, a cooldown, a hemisphere light switched
+// on and off, and a render layer that hid the whole vessel — is gone, because
+// rooms that fit inside the hull do not need any of it.
+// ---------------------------------------------------------------------------
+const monetWorks = await fetch('./textures/cruise-monet/works.json').then(r => {
+  if (!r.ok) throw new Error('Catalogue Monet indisponible');
+  return r.json();
+});
+const artsGallery = buildMonetGallery(THREE, monetWorks);
+const artsOpera = buildCruiseOpera(THREE);
+const artsLightSources = [];
+for (const room of [artsGallery, artsOpera]) {
+  scene.add(room.group);
+  for (const c of room.colliders) bw.add(c);
+  // The light pool works in world space and never re-parents its sources.
+  for (const l of room.lights) { l.removeFromParent(); artsLightSources.push(l); }
+}
+
 
 // One hull per promenade bench. The slats themselves are skipCollide so they
 // cannot jitter the capsule; without a hull you would walk through them.
@@ -5876,6 +6023,20 @@ function castFn(origin, dir, far) {
   return hit;
 }
 
+// The boom's minimum length (1.7 m, cameraRig.js) overrules its own occlusion
+// test, so a hard look up parks the eye a hand's breadth UNDER the floor it
+// just clamped against. On deck that is harmless. Down in the hold the slab
+// is the last thing between you and the sea, and a box seen from inside is
+// back-facing, so the lower half of the frame fell through to open sky. She
+// is standing ON the floor, so the floor is her feet: no probe, nothing to
+// miss.
+function clampHoldCamera() {
+  const minY = ctrl.pos.y + 0.28;
+  if (camera.position.y >= minY) return;
+  camera.position.y = minY;
+  camera.lookAt(rig.smoothLook);
+}
+
 function groundFn(x, z, yFrom, feetY, prevY = feetY) {
   const cap = Math.max(feetY + 0.75, prevY + 0.3);
   const ids = bw.queryNearby(x, z, 1.8);
@@ -5915,7 +6076,11 @@ const camBw = {
     const out = [];
     for (let i = 0; i < ids.length; i++) {
       const b = bw.aabbs[ids[i]];
-      if (b.collide && !b.prop && !b.groundOnly) out.push(ids[i]);
+      // groundOnly keeps stair treads from yanking the boom in. A room's
+      // whole floor is groundOnly too, and dropping that let the boom sink
+      // straight through the opera's parterre the moment you looked up: black
+      // screen, a sliver of ceiling at the top and open sky under it.
+      if (b.collide && !b.prop && (!b.groundOnly || b.camBlock)) out.push(ids[i]);
     }
     return out;
   },
@@ -6089,6 +6254,8 @@ const hook = {
   setCruiseTime, TIME_STATES, seaUniforms,
   DECK_Y, POOL_Y, CEIL_Y, SHIP_L2, BEAM2, SUP_X2, SUP_Z0, SUP_Z1,
   CASINO_Z, ATRIUM_Z, CABIN_Z, BALL_Z, CABIN_Y, CABIN_STAIR,
+  artsGallery, artsOpera, groundFn, clampHoldCamera,
+  ARTS_STAIR, ARTS_Y, ARTS_C, ARTS_OPENING, ARTS_WELL,
   get BED_SPOT() { return typeof BED_SPOT !== 'undefined' ? BED_SPOT : null; },
   get BED_X() { return typeof BED_X !== 'undefined' ? BED_X : null; },
   get BED_Z() { return typeof BED_Z !== 'undefined' ? BED_Z : null; },
@@ -6942,7 +7109,8 @@ function tickPeople(dt, t = 0) {
 // Keep the shader light count constant while crossing room boundaries.
 // Source lights retain their day/night settings; eight reusable render lights
 // cover the nearest room without compiling new programs during a walk.
-const localLightSources = [...casinoLights, ...cabinLights, ...ballLights];
+const localLightSources = [...casinoLights, ...cabinLights, ...ballLights,
+  ...artsStairLights, ...artsLightSources];
 for (const light of localLightSources) scene.remove(light);
 const localLightPool = Array.from({ length: 8 }, () => {
   const light = new THREE.PointLight(0xffffff, 0);
@@ -7384,6 +7552,8 @@ function animate() {
   updateSunShadow(ctrl.pos);
   updateAvatar(dt);
   rig.update(dt, input, ctrl);
+  // Below the teak, aft of the atrium, the hold is the only thing there is.
+  if (ctrl.pos.y < DECK_Y - 0.5 && ctrl.pos.z < -5) clampHoldCamera();
   updateCasinoOcclusion();
   updateBallroomAudio();
   // Keep the sea and the sky centred on the camera: both are finite, and the
@@ -7392,6 +7562,15 @@ function animate() {
   // the third-person camera was clipping a black wedge out of the sky.
   sea.position.x = camera.position.x;
   sea.position.z = camera.position.z;
+  // ...and hide it outright once the camera is in the hold. The swell is real
+  // geometry — three sines, ±2.75 m about SEA_Y — while the arts deck is floored
+  // at 1.9, so a crest passes straight THROUGH the gallery and the stalls. Because
+  // the plane is re-centred on the camera every frame it does it as you walk: the
+  // room goes under a blue sheet for a few paces and comes back. Nothing down
+  // there has a window, so the sea has no business being drawn at all.
+  sea.visible = !(camera.position.y < DECK_Y - 0.4
+    && camera.position.x > ARTS_WELL.x0 - 1 && camera.position.x < ARTS_WELL.x1 + 1
+    && camera.position.z > ARTS_WELL.z0 - 1 && camera.position.z < ARTS_WELL.z1 + 1);
   skyDome.position.copy(camera.position);
   stars.position.copy(camera.position);
   updateHud();
@@ -7485,6 +7664,8 @@ function pauseBallroomAudio() {
 // museum so the atrium door is already silent. Euclidean rolloff alone still
 // leaks onto the promenade and the pool roof, which sit a few metres away.
 function ballroomAudioRoomGain(pos) {
+  // Six metres of steel and a whole deck between the ballroom and the hold.
+  if (pos.y < DECK_Y - 0.5 && pos.z < -5) return 0;
   const y0 = DECK_Y - 0.35, y1 = DECK_Y + SUP_H - 0.25;
   let yGain = 1;
   if (pos.y < y0) yGain = 1 - Math.min(1, (y0 - pos.y) / 0.9);

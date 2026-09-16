@@ -1,0 +1,67 @@
+{
+  "DateTime": {
+    "value": "2011-12-05 12:02:16",
+    "source": "mediawiki-metadata",
+    "hidden": ""
+  },
+  "ObjectName": {
+    "value": "Reflections of Clouds on the Water-Lily Pond",
+    "source": "commons-desc-page"
+  },
+  "CommonsMetadataExtension": {
+    "value": 1.2,
+    "source": "extension",
+    "hidden": ""
+  },
+  "Categories": {
+    "value": "Reflections of Clouds on the Water-Lily Pond|PD-Art (PD-old-auto-expired)|CC-PD-Mark|PD-old-95-expired|Paintings without Wikidata item|Paintings by completely indexed painters",
+    "source": "commons-categories",
+    "hidden": ""
+  },
+  "Assessments": {
+    "value": "",
+    "source": "commons-categories",
+    "hidden": ""
+  },
+  "Artist": {
+    "value": "<bdi><a href=\"https://en.wikipedia.org/wiki/en:Claude_Monet\" class=\"extiw\" title=\"w:en:Claude Monet\"><span title=\"French painter (1840–1926)\">Claude Monet</span></a></bdi>",
+    "source": "commons-desc-page"
+  },
+  "DateTimeOriginal": {
+    "value": "circa 1920<div style=\"display: none;\">date QS:P571,+1920-00-00T00:00:00Z/9,P1480,Q5727902</div>",
+    "source": "commons-desc-page"
+  },
+  "Credit": {
+    "value": "Digital image, The Museum of Modern Art, New York",
+    "source": "commons-desc-page"
+  },
+  "LicenseShortName": {
+    "value": "Public domain",
+    "source": "commons-desc-page",
+    "hidden": ""
+  },
+  "UsageTerms": {
+    "value": "Public domain",
+    "source": "commons-desc-page"
+  },
+  "AttributionRequired": {
+    "value": "false",
+    "source": "commons-desc-page",
+    "hidden": ""
+  },
+  "Copyrighted": {
+    "value": "False",
+    "source": "commons-desc-page",
+    "hidden": ""
+  },
+  "Restrictions": {
+    "value": "",
+    "source": "commons-desc-page",
+    "hidden": ""
+  },
+  "License": {
+    "value": "pd",
+    "source": "commons-templates",
+    "hidden": ""
+  }
+}

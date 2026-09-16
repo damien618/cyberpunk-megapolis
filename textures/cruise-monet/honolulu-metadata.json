@@ -1,0 +1,67 @@
+{
+  "DateTime": {
+    "value": "2019-07-14 21:08:43",
+    "source": "mediawiki-metadata",
+    "hidden": ""
+  },
+  "ObjectName": {
+    "value": "<i>Water Lilies</i>",
+    "source": "commons-desc-page"
+  },
+  "CommonsMetadataExtension": {
+    "value": 1.2,
+    "source": "extension",
+    "hidden": ""
+  },
+  "Categories": {
+    "value": "PD-Art (PD-old-auto-expired)|Artworks with Wikidata item|CC-PD-Mark|PD-old-95-expired|Le Bassin aux nymphéas (Wildenstein 1895)|Artworks digital representation of 2D work",
+    "source": "commons-categories",
+    "hidden": ""
+  },
+  "Assessments": {
+    "value": "",
+    "source": "commons-categories",
+    "hidden": ""
+  },
+  "Artist": {
+    "value": "<bdi><a href=\"https://en.wikipedia.org/wiki/en:Claude_Monet\" class=\"extiw\" title=\"w:en:Claude Monet\"><span title=\"French painter (1840–1926)\">Claude Monet</span></a></bdi>",
+    "source": "commons-desc-page"
+  },
+  "DateTimeOriginal": {
+    "value": "between 1917 and 1919<div style=\"display: none;\">date QS:P571,+1917-00-00T00:00:00Z/8,P1319,+1917-00-00T00:00:00Z/9,P1326,+1919-00-00T00:00:00Z/9</div>",
+    "source": "commons-desc-page"
+  },
+  "Credit": {
+    "value": "<span class=\"int-own-work\" lang=\"en\">Own work</span>",
+    "source": "commons-desc-page"
+  },
+  "LicenseShortName": {
+    "value": "Public domain",
+    "source": "commons-desc-page",
+    "hidden": ""
+  },
+  "UsageTerms": {
+    "value": "Public domain",
+    "source": "commons-desc-page"
+  },
+  "AttributionRequired": {
+    "value": "false",
+    "source": "commons-desc-page",
+    "hidden": ""
+  },
+  "Copyrighted": {
+    "value": "False",
+    "source": "commons-desc-page",
+    "hidden": ""
+  },
+  "Restrictions": {
+    "value": "",
+    "source": "commons-desc-page",
+    "hidden": ""
+  },
+  "License": {
+    "value": "pd",
+    "source": "commons-templates",
+    "hidden": ""
+  }
+}
