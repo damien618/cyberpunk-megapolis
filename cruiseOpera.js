@@ -29,7 +29,21 @@ export function buildCruiseOpera(THREE) {
   const F = 1.9, C = 7.45;                  // parterre floor, ceiling
   const Z0 = -48, Z1 = -70, HW = 15;        // entrance, aft wall, half width
   const MID = (Z0 + Z1) / 2, LEN = Z0 - Z1;
-  const BY = 4.5, BD = 2.8;                 // balcony floor, its depth
+  const BY = 4.5, BD = 2.8;                 // balcony floor, the arms' width
+  // The fore end is DEEPER than the arms. At the arms' 2.8 m it held a rail,
+  // two rows of fauteuils and nothing else: the front row's knees were inside
+  // the balustrade and the cross aisle between the rows was 54 cm of capsule
+  // travel, which is a gap you shuffle through rather than a passage.
+  //
+  // 4.4 m fixed the cross aisle and left 33 cm at the balustrade, which is
+  // knee room and not a passage — and the walk along the front of a balcony,
+  // over the house, is the one people actually want. This is set out for TWO
+  // passages of a full metre of capsule travel: the promenade at the rail and
+  // the cross aisle between the rows, with the rows and their clearances
+  // between them. 1.84 + 0.70 + 1.84 + 0.70 + 0.30 = 5.38, plus the rail's own
+  // house-side face. The 5.6 m of overhang falls over the three REAR rows of
+  // the stalls under a 2.27 m soffit, which is where a balcony belongs.
+  const BF = 5.6;                           // ...the fore end's own depth
   const PZ = -62.6, SY = 2.7;               // proscenium, stage floor
   const OW = 5.5, OT = 6.0;                 // opening half width, head
   const FOCUS = PZ - 1.2;                   // downstage centre: what a chair looks at
@@ -253,7 +267,7 @@ export function buildCruiseOpera(THREE) {
   };
   runner(0, Z0 - 1.8, 2 * HW - 1.6, 3.0);
   runner(0, Z0 - 8.5, 1.24, 10.6);
-  for (const side of [-1, 1]) runner(side * 12.9, Z0 - 8.0, 2.4, 11.6);
+  for (const side of [-1, 1]) runner(side * 11.25, Z0 - 8.0, 2.4, 11.6);
 
   // ---- Wall treatment -----------------------------------------------------
   // Marble pilasters on a dado, damask between them, a gilt cornice over the
@@ -293,17 +307,25 @@ export function buildCruiseOpera(THREE) {
 
   // ---- Balcony: a horseshoe on the fore end and the two sides -------------
   const bz0 = Z0 - 0.2, bz1 = Z0 - 9.4;     // how far aft the side arms reach
+  // Keep the wall-side edge at x = ±14.8 and open the flights generously
+  // toward the room. The original 1.5 m stair only worked when a test placed
+  // the capsule exactly on its centre line; a real approach from the side
+  // aisle caught the row of newels.
+  const STAIR_INNER = HW - 2.45, STAIR_OUTER = HW - 0.2;
+  const STAIR_W = STAIR_OUTER - STAIR_INNER;
+  const STAIR_X = (STAIR_INNER + STAIR_OUTER) / 2;
+  const STAIR_RAIL_X = STAIR_INNER - 0.02;
   const soffit = (x, z, w, d) => {
     box(M.parquet, x, BY - 0.15, z, w, 0.3, d, 'floor');
     box(m.soffit, x, BY - 0.33, z, w, 0.05, d);
   };
-  soffit(0, bz0 - BD / 2, 2 * HW, BD);                             // the fore end
+  soffit(0, bz0 - BF / 2, 2 * HW, BF);                             // the fore end
   for (const side of [-1, 1])
     soffit(side * (HW - BD / 2), (bz0 + bz1) / 2, BD, bz0 - bz1);  // the two arms
   // Gilt coffers on the underside, so the soffit is not a blank cream board.
   for (let z = bz0 - 0.5; z > bz1; z -= 1.15) {
     box(M.frame, 0, BY - 0.37, z, 2 * HW, 0.06, 0.09);
-    if (z < bz0 - BD) continue;
+    if (z < bz0 - BF) continue;
     for (let x = -13.8; x <= 13.8; x += 1.38) box(M.frame, x, BY - 0.37, z, 0.09, 0.06, 1.1);
   }
 
@@ -326,9 +348,31 @@ export function buildCruiseOpera(THREE) {
       item(b.sphere, M.gilt, mx, BY + 0.44, mz, 0.075, 0.115, 0.075);
     }
   };
-  rail(0, bz0 - BD, 2 * (HW - BD), 0.22, 0, -1);
+  rail(0, bz0 - BF, 2 * (HW - BD), 0.22, 0, -1);
+  // The side guards begin at the actual front edge of the void, not at the
+  // fore wall. Continuing them over the solid horseshoe floor partitioned the
+  // balcony and made the seats unreachable from either stair.
+  const balconyFrontZ = bz0 - BF;
   for (const side of [-1, 1])
-    rail(side * (HW - BD), (bz0 + bz1) / 2, 0.22, bz0 - bz1, -side, 0);
+    rail(side * (HW - BD), (balconyFrontZ + bz1) / 2,
+      0.22, balconyFrontZ - bz1, -side, 0);
+
+  // Close the short back edge beside each stair with an OPEN guard. Using the
+  // balcony's opaque panel here made the landing look closed from below. The
+  // top bar is the collider; the slim lower bar and balusters show the guard
+  // without visually sealing the stair mouth.
+  const landingGuardInner = HW - BD;
+  const landingGuardOuter = STAIR_INNER - 0.08;
+  for (const side of [-1, 1]) {
+    const gx = side * (landingGuardInner + landingGuardOuter) / 2;
+    const gw = landingGuardOuter - landingGuardInner;
+    box(M.gilt, gx, BY + 0.88, bz1, gw, 0.1, 0.12, true);
+    box(M.frame, gx, BY + 0.43, bz1, gw, 0.07, 0.09);
+    for (let i = 0; i <= 2; i++) {
+      const x = landingGuardInner + gw * i / 2;
+      box(M.frame, side * x, BY + 0.46, bz1, 0.07, 0.88, 0.08);
+    }
+  }
 
   // Boxes along the arms, the one piece of Garnier that survives the cut:
   // gilt columns, a draped front, and a crowned canopy over each.
@@ -355,20 +399,39 @@ export function buildCruiseOpera(THREE) {
   // They climb FORWARD, from the back of the stalls up to the aft end of each
   // arm. Built the other way round the head of the flight landed four metres
   // aft of the balcony and you arrived nowhere.
+  //
+  // The head is pinned to the arm's aft edge and the flight is set out
+  // BACKWARDS from it, 30 cm to the tread. At the old 34 cm going the bottom
+  // step finished 17 cm from the proscenium's flank wall: there was no floor
+  // at the foot to stand on and turn, so you mounted the flight by scuffing
+  // sideways onto whichever tread you happened to be beside. 30 cm leaves a
+  // metre of parquet across the full width of the stair — a foot landing you
+  // arrive at, turn in, and climb.
+  const TREAD = 0.3, RISERS = 13;
+  const treadZ = i => bz1 - 0.185 - (RISERS - 1 - i) * TREAD;  // head meets the arm
+  const treadY = i => F + (i + 1) * (BY - F) / RISERS;
   for (const side of [-1, 1]) {
-    const x = side * (HW - 0.95);
-    for (let i = 0; i < 13; i++) {
-      const top = F + (i + 1) * (BY - F) / 13, z = bz1 - 4.6 + i * 0.34;
-      box(M.wood, x, top - 0.12, z, 1.5, 0.24, 0.37, 'step');
-      box(M.carpet, x, top + 0.012, z, 1.16, 0.03, 0.33);
-      box(m.gold, side * (HW - 1.72), top + 0.5, z, 0.09, 1.0, 0.1, true);
-      if (i % 2 === 0)                                   // turned balusters
-        item(rod, M.gilt, side * (HW - 1.72), top + 0.22, z, 0.05, 0.56, 0.05);
+    const x = side * STAIR_X;
+    for (let i = 0; i < RISERS; i++) {
+      const top = treadY(i), z = treadZ(i);
+      box(M.wood, x, top - 0.12, z, STAIR_W, 0.24, 0.37, 'step');
+      box(M.carpet, x, top + 0.012, z, STAIR_W - 0.34, 0.03, 0.33);
+      // Leave the first and last tread visually open. These balusters are
+      // intentionally decorative: the former solid metre-high box on EVERY
+      // tread was the invisible wall that stopped a non-centred approach.
+      if (i > 0 && i < RISERS - 1 && i % 2 === 0)
+        item(rod, M.gilt, side * STAIR_RAIL_X, top + 0.38, z, 0.055, 0.76, 0.055);
     }
-    box(M.parquet, x, BY - 0.15, bz1 - 0.25, 1.5, 0.3, 0.55, 'floor');   // joins the arm
-    box(m.soffit, x, BY - 0.33, bz1 - 0.25, 1.5, 0.05, 0.55);
-    item(rod, M.frame, side * (HW - 1.72), F + 0.55, bz1 - 5.0, 0.1, 1.3, 0.1);
-    item(b.sphere, m.light, side * (HW - 1.72), F + 1.32, bz1 - 5.0, 0.13, 0.17, 0.13);
+    // One continuous raked handrail, inset from both ends so neither the foot
+    // nor the balcony landing reads as closed. A cylinder is visual trim only;
+    // the wide stair and its treads define the playable route.
+    const railI0 = 1, railI1 = RISERS - 2;
+    const railY0 = treadY(railI0) + 0.78, railY1 = treadY(railI1) + 0.78;
+    const railZ0 = treadZ(railI0), railZ1 = treadZ(railI1);
+    const railLen = Math.hypot(railY1 - railY0, railZ1 - railZ0);
+    item(rod, M.gilt, side * STAIR_RAIL_X, (railY0 + railY1) / 2,
+      (railZ0 + railZ1) / 2, 0.075, railLen, 0.075,
+      0, Math.atan2(railZ1 - railZ0, railY1 - railY0));
   }
 
   // ---- The chairs ---------------------------------------------------------
@@ -400,25 +463,34 @@ export function buildCruiseOpera(THREE) {
     }
   };
 
-  // Parterre: nine dished rows of thirty-two, a centre aisle, side aisles
+  // Parterre: nine dished rows of twenty-eight, a centre aisle, side aisles
   // under the arms. The dish (R = 60 m) is gentle — a 30 m row on a true
   // 15 m radius would put its ends inside the proscenium wall.
+  //
+  // The rows stop at x = ±9.6, not ±11.4. The stair's balustrade stands at
+  // ±12.53, so the old row left 1.28 m of parquet between the last armrest
+  // and it — you went up that aisle sideways, and the only way onto the
+  // flight was to squeeze past the newels. Four seats a row buys a 2.6 m
+  // promenade, which is what a side aisle feeding a staircase has to be.
   for (let r = 0; r < 9; r++) {
     const zr = Z0 - 3.4 - r * 1.0;
     for (let i = -17; i <= 17; i++) {
       if (i === 0) continue;
       const x = i * 0.66 + (i > 0 ? 0.33 : -0.33);
-      if (Math.abs(x) > 11.4) continue;
+      if (Math.abs(x) > 9.6) continue;
       chair(x, zr - x * x / 120, F);
     }
   }
-  // Balcony: two rows across the fore end. The arms stay clear — they are the
-  // promenade behind the boxes, and the walk along them has to stay walkable.
-  for (const zr of [bz0 - 1.05, bz0 - 2.2]) {
+  // Balcony: two rows across the fore end. Set out from the PASSAGES rather
+  // than from the balcony's front edge — a metre of capsule travel along the
+  // balustrade, a metre between the rows, 0.30 m behind the back row. The
+  // outer chairs are omitted at each end so the two arm promenades open
+  // straight into both of them.
+  for (const zr of [bz0 - 3.15, bz0 - 0.65]) {
     for (let i = -16; i <= 16; i++) {
       if (i === 0) continue;
       const x = i * 0.66 + (i > 0 ? 0.33 : -0.33);
-      if (Math.abs(x) > 11.0) continue;
+      if (Math.abs(x) > 10.0) continue;
       chair(x, zr, BY);
     }
   }

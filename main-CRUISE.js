@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildMonetGallery } from './cruiseMonetGallery.js?v=20260916-garnier';
-import { buildCruiseOpera } from './cruiseOpera.js?v=20260916-garnier';
+import { buildCruiseOpera } from './cruiseOpera.js?v=20260916-opera-promenade';
 import { buildVerneMuseum } from './cruiseMuseum.js?v=20260908-signs7';
 import { Player } from './player.js?v=20260906-seam-fix';
 import { harmoniseHair } from './hair.js?v=11';
@@ -2391,6 +2391,11 @@ const ARTS_WALL_X1 = ARTS_STAIR.x1 + WALL_T / 2;
 // The hold itself. Sixty-five metres of hull, hollowed from the tank top to
 // the underside of the teak: gallery, foyer and auditorium all stand in it.
 const ARTS_WELL = { x0: -16, x1: 16, z0: -72, z1: -7.0, y: ARTS_Y - 0.3 };
+// Is a point down in that hollow? Used for the sea, which has no business
+// being drawn while anyone is inside it.
+const inArtsHold = (x, y, z) => y < DECK_Y - 0.4
+  && x > ARTS_WELL.x0 - 1 && x < ARTS_WELL.x1 + 1
+  && z > ARTS_WELL.z0 - 1 && z < ARTS_WELL.z1 + 1;
 
 // Cut the same stairwell out of the structural deck and its floor finishes.
 function stairwellSlab(mat, x0, x1, z0, z1, y0, y1) {
@@ -7562,15 +7567,20 @@ function animate() {
   // the third-person camera was clipping a black wedge out of the sky.
   sea.position.x = camera.position.x;
   sea.position.z = camera.position.z;
-  // ...and hide it outright once the camera is in the hold. The swell is real
+  // ...and hide it outright once we are in the hold. The swell is real
   // geometry — three sines, ±2.75 m about SEA_Y — while the arts deck is floored
   // at 1.9, so a crest passes straight THROUGH the gallery and the stalls. Because
   // the plane is re-centred on the camera every frame it does it as you walk: the
   // room goes under a blue sheet for a few paces and comes back. Nothing down
   // there has a window, so the sea has no business being drawn at all.
-  sea.visible = !(camera.position.y < DECK_Y - 0.4
-    && camera.position.x > ARTS_WELL.x0 - 1 && camera.position.x < ARTS_WELL.x1 + 1
-    && camera.position.z > ARTS_WELL.z0 - 1 && camera.position.z < ARTS_WELL.z1 + 1);
+  //
+  // The test has to include the PLAYER, not just the camera. Only a 'floor'
+  // collider stops the boom, and the gallery's deckhead is an ordinary solid,
+  // so pitching down in the Monet hall swings the camera up through the
+  // ceiling and past DECK_Y: the camera left the hold while she was still
+  // standing in the middle of it, and the swell came back over the floor.
+  sea.visible = !(inArtsHold(camera.position.x, camera.position.y, camera.position.z)
+    || inArtsHold(ctrl.pos.x, ctrl.pos.y, ctrl.pos.z));
   skyDome.position.copy(camera.position);
   stars.position.copy(camera.position);
   updateHud();
