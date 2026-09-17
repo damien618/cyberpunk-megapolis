@@ -1,4 +1,5 @@
 import { artsBuilder } from './cruiseArtsGeometry.js?v=20260916-garnier';
+import { createArtsTextures } from './cruiseArtsTextures.js?v=20260917-opera-lux';
 
 // The ship's theatre, inside the hull, aft of the gallery's foyer.
 //
@@ -26,6 +27,7 @@ import { artsBuilder } from './cruiseArtsGeometry.js?v=20260916-garnier';
 //   * the ceiling carries a painted medallion, and the lustre hangs in it.
 export function buildCruiseOpera(THREE) {
   const b = artsBuilder(THREE, 0), { m, box, item, label, light, group } = b;
+  const artTex = createArtsTextures(THREE);
   const F = 1.9, C = 7.45;                  // parterre floor, ceiling
   const Z0 = -48, Z1 = -70, HW = 15;        // entrance, aft wall, half width
   const MID = (Z0 + Z1) / 2, LEN = Z0 - Z1;
@@ -233,7 +235,8 @@ export function buildCruiseOpera(THREE) {
     parquet: surface(tex(woodDraw, 7), { roughness: 0.62 }),
     stageBoards: surface(tex(woodDraw, 5), { roughness: 0.7, color: 0x9a8f80 }),
     velvet: new THREE.MeshStandardMaterial({ color: 0x6d1122, roughness: 0.95 }),
-    carpet: new THREE.MeshStandardMaterial({ color: 0x5a1020, roughness: 1 }),
+    carpet: artTex.getCarpetMaterial(1.2, 1.2),
+    carpetBorder: artTex.getBorderMaterial(1, 4),
     marble: new THREE.MeshStandardMaterial({ color: 0xe6dcc6, roughness: 0.42 }),
     frame: m.gold, gilt: m.goldLight, wood: m.wood,
   };
@@ -257,13 +260,31 @@ export function buildCruiseOpera(THREE) {
     box(M.damaskEnd, sx * (HW + 6) / 2, (F + C) / 2, Z0, HW - 6, C - F, 0.4, true);
 
   // Carpet: the cross aisle at the back, the centre aisle, and the two side
-  // aisles under the balcony arms. Crimson, with a gilt key either side.
+  // aisles under the balcony arms. Authentic Garnier luxury Axminster carpet
+  // with woven gold braid edging and normal relief.
   const runner = (x, z, w, d) => {
-    box(M.carpet, x, F + 0.012, z, w, 0.024, d);
-    if (w < d) for (const sx of [-1, 1])
-      box(M.gilt, x + sx * (w / 2 - 0.06), F + 0.02, z, 0.05, 0.026, d);
-    else for (const sz of [-1, 1])
-      box(M.gilt, x, F + 0.02, z + sz * (d / 2 - 0.06), w, 0.026, 0.05);
+    const isAlongZ = w < d;
+    const uRep = Math.max(1, Math.round(w / 1.15));
+    const vRep = Math.max(1, Math.round(d / 1.15));
+    const cMat = artTex.getCarpetMaterial(uRep, vRep);
+    box(cMat, x, F + 0.012, z, w, 0.024, d);
+    if (isAlongZ) {
+      for (const sx of [-1, 1]) {
+        const bx = x + sx * (w / 2 - 0.06);
+        box(M.carpetBorder, bx, F + 0.019, z, 0.11, 0.025, d);
+        box(M.gilt, x + sx * (w / 2 - 0.008), F + 0.022, z, 0.02, 0.026, d);
+      }
+    } else {
+      for (const sz of [-1, 1]) {
+        const bz = z + sz * (d / 2 - 0.06);
+        // The quarter turn is there to run the braid ALONG the strip, and
+        // box() turns the geometry, not the map: give it the dimensions it
+        // has before the turn, or a 28 m band becomes a 28 m spear down the
+        // centre line that skewers the foyer and the gallery beyond it.
+        box(M.carpetBorder, x, F + 0.019, bz, 0.11, 0.025, w, false, Math.PI / 2);
+        box(M.gilt, x, F + 0.022, z + sz * (d / 2 - 0.008), w, 0.026, 0.02);
+      }
+    }
   };
   runner(0, Z0 - 1.8, 2 * HW - 1.6, 3.0);
   runner(0, Z0 - 8.5, 1.24, 10.6);
@@ -323,11 +344,44 @@ export function buildCruiseOpera(THREE) {
   for (const side of [-1, 1])
     soffit(side * (HW - BD / 2), (bz0 + bz1) / 2, BD, bz0 - bz1);  // the two arms
   // Gilt coffers on the underside, so the soffit is not a blank cream board.
+  // A rib may only run where there is a soffit to carry it: the full width
+  // over the fore end, and nothing but the two arms aft of it — a full-width
+  // rib down there hangs across the open house at 4.13 m with no board above.
   for (let z = bz0 - 0.5; z > bz1; z -= 1.15) {
-    box(M.frame, 0, BY - 0.37, z, 2 * HW, 0.06, 0.09);
-    if (z < bz0 - BF) continue;
-    for (let x = -13.8; x <= 13.8; x += 1.38) box(M.frame, x, BY - 0.37, z, 0.09, 0.06, 1.1);
+    if (z >= bz0 - BF) {
+      box(M.frame, 0, BY - 0.37, z, 2 * HW, 0.06, 0.09);
+      for (let x = -13.8; x <= 13.8; x += 1.38) box(M.frame, x, BY - 0.37, z, 0.09, 0.06, 1.1);
+    } else {
+      for (const side of [-1, 1])
+        box(M.frame, side * (HW - BD / 2), BY - 0.37, z, BD, 0.06, 0.09);
+    }
   }
+
+  // Balcony runners: authentic velvet runner along the promenade, cross-aisle and arms
+  const balconyRunner = (x, z, w, d) => {
+    const isAlongZ = w < d;
+    const uRep = Math.max(1, Math.round(w / 1.15));
+    const vRep = Math.max(1, Math.round(d / 1.15));
+    const cMat = artTex.getCarpetMaterial(uRep, vRep);
+    box(cMat, x, BY + 0.012, z, w, 0.024, d);
+    if (isAlongZ) {
+      for (const sx of [-1, 1]) {
+        const bx = x + sx * (w / 2 - 0.06);
+        box(M.carpetBorder, bx, BY + 0.019, z, 0.11, 0.025, d);
+        box(M.gilt, x + sx * (w / 2 - 0.008), BY + 0.022, z, 0.02, 0.026, d);
+      }
+    } else {
+      for (const sz of [-1, 1]) {
+        const bz = z + sz * (d / 2 - 0.06);
+        // Pre-turn dimensions, as in runner() above.
+        box(M.carpetBorder, x, BY + 0.019, bz, 0.11, 0.025, w, false, Math.PI / 2);
+        box(M.gilt, x, BY + 0.022, z + sz * (d / 2 - 0.008), w, 0.026, 0.02);
+      }
+    }
+  };
+  balconyRunner(0, bz0 - BF + 0.85, 2 * (HW - BD) - 0.8, 1.15);
+  balconyRunner(0, bz0 - 1.95, 2 * (HW - BD) - 0.8, 1.05);
+  for (const side of [-1, 1]) balconyRunner(side * (HW - BD / 2), (bz0 + bz1) / 2, 1.25, bz0 - bz1);
 
   // Its front. The structural rail is one solid box — the capsule and the
   // camera boom both need a straight edge to work against — and everything
@@ -416,6 +470,10 @@ export function buildCruiseOpera(THREE) {
       const top = treadY(i), z = treadZ(i);
       box(M.wood, x, top - 0.12, z, STAIR_W, 0.24, 0.37, 'step');
       box(M.carpet, x, top + 0.012, z, STAIR_W - 0.34, 0.03, 0.33);
+      // Polished brass stair carpet rod securing the runner on each step
+      item(rod, M.gilt, x, top + 0.026, z - 0.12, 0.022, STAIR_W - 0.30, 0.022, 0, 0, Math.PI / 2);
+      for (const sf of [-1, 1])
+        item(b.sphere, M.frame, x + sf * (STAIR_W - 0.30) / 2, top + 0.026, z - 0.12, 0.042, 0.042, 0.042);
       // Leave the first and last tread visually open. These balusters are
       // intentionally decorative: the former solid metre-high box on EVERY
       // tread was the invisible wall that stopped a non-centred approach.

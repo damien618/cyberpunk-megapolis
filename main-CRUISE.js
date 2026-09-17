@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { buildMonetGallery } from './cruiseMonetGallery.js?v=20260916-garnier';
-import { buildCruiseOpera } from './cruiseOpera.js?v=20260916-opera-promenade';
+import { buildMonetGallery } from './cruiseMonetGallery.js?v=20260917-gallery-bars-fix';
+import { buildCruiseOpera } from './cruiseOpera.js?v=20260917-opera-carpet-bars';
 import { buildVerneMuseum } from './cruiseMuseum.js?v=20260908-signs7';
 import { Player } from './player.js?v=20260906-seam-fix';
 import { harmoniseHair } from './hair.js?v=11';
