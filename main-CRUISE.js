@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildMonetGallery } from './cruiseMonetGallery.js?v=20260918-foyer-zfight1';
-import { buildCruiseOpera } from './cruiseOpera.js?v=20260918-opera-columns2';
+import { buildCruiseOpera } from './cruiseOpera.js?v=20260918-opera-stage-stairs';
 import { createKabukiShow, CUES as KABUKI_CUES } from './cruiseKabuki.js?v=20260917-kabuki';
 import { buildVerneMuseum } from './cruiseMuseum.js?v=20260908-signs7';
 import { Player } from './player.js?v=20260906-seam-fix';

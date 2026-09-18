@@ -145,6 +145,54 @@ export function buildCruiseOpera(THREE) {
     }
   };
 
+  // Stage-stair joinery: warm, quarter-sawn theatre oak rather than the flat
+  // brown used for small furniture. The grain runs across the width of each
+  // tread and the fine dark seams separate the boards along its depth.
+  const stairWoodDraw = (g, S) => {
+    const base = g.createLinearGradient(0, 0, 0, S);
+    base.addColorStop(0, '#9a6238');
+    base.addColorStop(0.48, '#6f4024');
+    base.addColorStop(1, '#4b2918');
+    g.fillStyle = base; g.fillRect(0, 0, S, S);
+    const boards = 4, bh = S / boards;
+    for (let board = 0; board < boards; board++) {
+      const y0 = board * bh;
+      g.fillStyle = board % 2 ? 'rgba(255,188,112,0.055)' : 'rgba(40,15,6,0.09)';
+      g.fillRect(0, y0, S, bh);
+      for (let line = 0; line < 13; line++) {
+        const y = y0 + (line + 0.7) * bh / 14;
+        g.strokeStyle = `rgba(48,20,9,${0.10 + Math.random() * 0.16})`;
+        g.lineWidth = 0.7 + Math.random() * 1.1;
+        g.beginPath(); g.moveTo(-8, y);
+        for (let x = 0; x <= S + 16; x += S / 8)
+          g.lineTo(x, y + Math.sin(x * 0.055 + board * 1.7 + line) * (1.2 + line % 3));
+        g.stroke();
+      }
+      // A few elongated cathedral-grain loops keep the timber legible at the
+      // close camera distance without turning the tread into a painted motif.
+      for (let knot = 0; knot < 2; knot++) {
+        const x = (0.23 + knot * 0.49 + board * 0.11) % 1 * S;
+        const y = y0 + bh * (0.36 + knot * 0.22);
+        g.strokeStyle = 'rgba(43,17,7,0.28)'; g.lineWidth = 1.2;
+        for (let ring = 0; ring < 3; ring++) {
+          g.beginPath();
+          g.ellipse(x, y, 8 + ring * 7, 2.5 + ring * 2.2, 0, 0, Math.PI * 2);
+          g.stroke();
+        }
+      }
+      g.strokeStyle = 'rgba(35,14,6,0.72)'; g.lineWidth = 2.2;
+      g.beginPath(); g.moveTo(0, y0 + 1); g.lineTo(S, y0 + 1); g.stroke();
+      g.strokeStyle = 'rgba(236,166,94,0.20)'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(0, y0 + 3.5); g.lineTo(S, y0 + 3.5); g.stroke();
+    }
+    // Subtle varnish worn brighter through the centre of the traffic line.
+    const wear = g.createLinearGradient(0, 0, S, 0);
+    wear.addColorStop(0, 'rgba(255,210,145,0)');
+    wear.addColorStop(0.5, 'rgba(255,210,145,0.13)');
+    wear.addColorStop(1, 'rgba(255,210,145,0)');
+    g.fillStyle = wear; g.fillRect(0, 0, S, S);
+  };
+
   // The ceiling medallion. Not a fresco of anybody in particular — a painted
   // sky opening on the gods, which is what every one of them is: a lit centre,
   // a ring of figures suggested in rose and azure, and gilt ribbons between.
@@ -215,6 +263,7 @@ export function buildCruiseOpera(THREE) {
   };
 
   const tuftTex = tex(tuftDraw), damaskTex = tex(damaskDraw);
+  const stairWoodTex = tex(stairWoodDraw, 1, 512);
   // A box's UVs run 0..1 over every face whatever the face measures, so ONE
   // damask material stretches a 40 cm motif to five metres on a wall and
   // squashes it to nothing on a rail. Each surface gets its own tiling: the
@@ -234,6 +283,8 @@ export function buildCruiseOpera(THREE) {
     damaskWide: tiled(damaskTex, 0.45, 0.45, { roughness: 0.88 }),  // shape-cut
     parquet: surface(tex(woodDraw, 7), { roughness: 0.62 }),
     stageBoards: surface(tex(woodDraw, 5), { roughness: 0.7, color: 0x9a8f80 }),
+    stairWood: surface(stairWoodTex, { roughness: 0.48 }),
+    stairRiser: tiled(stairWoodTex, 1, 1, { roughness: 0.62, color: 0x9a765e }),
     velvet: new THREE.MeshStandardMaterial({ color: 0x6d1122, roughness: 0.95 }),
     carpet: artTex.getCarpetMaterial(1.2, 1.2),
     carpetBorder: artTex.getBorderMaterial(1, 4),
@@ -286,9 +337,20 @@ export function buildCruiseOpera(THREE) {
       }
     }
   };
-  runner(0, Z0 - 1.8, 2 * HW - 1.6, 3.0);
-  runner(0, Z0 - 8.5, 1.24, 10.6);
-  for (const side of [-1, 1]) runner(side * 11.25, Z0 - 8.0, 2.4, 11.6);
+  const CROSS_Z = Z0 - 1.8, CROSS_D = 3.0;
+  runner(0, CROSS_Z, 2 * HW - 1.6, CROSS_D);
+  // The centre and side aisles run from here aft to the same -61.8 they always
+  // did. Both used to start a metre or so short of the cross aisle's own aft
+  // edge (the side aisles by a full 1.1 m) and stop somewhere inside it
+  // instead of at it, so their carpet, border and gilt sat exactly coplanar
+  // with the cross aisle's over that stretch and z-fought — a patch of floor
+  // that visibly crawled right where a player standing at the entrance was
+  // looking. Pinned to the cross aisle's aft edge, they meet it instead of
+  // overlapping it.
+  const AISLE_AFT = -61.8, CROSS_BACK = CROSS_Z - CROSS_D / 2;
+  const AISLE_D = CROSS_BACK - AISLE_AFT, AISLE_Z = (CROSS_BACK + AISLE_AFT) / 2;
+  runner(0, AISLE_Z, 1.24, AISLE_D);
+  for (const side of [-1, 1]) runner(side * 11.25, AISLE_Z, 2.4, AISLE_D);
 
   // ---- Wall treatment -----------------------------------------------------
   // Marble pilasters on a dado, damask between them, a gilt cornice over the
@@ -647,10 +709,27 @@ export function buildCruiseOpera(THREE) {
     item(rod, M.gilt, sx * (OW + 0.62), F + 0.16, AZ + 0.06, 0.34, 0.32, 0.34);
     item(rod, M.gilt, sx * (OW + 0.62), OT - 0.15, AZ + 0.06, 0.34, 0.3, 0.34);
     pilaster(sx * (OW + 1.9), PZ + 0.32, F, C - 0.5, 0.5, 0.36, 0);
-    // Inside the opening: at x = 8 they climbed straight into the proscenium
-    // wall, which runs from 5.5 out to the ship's side.
-    for (let i = 0; i < 4; i++)
-      box(M.wood, sx * 3.8, SY - 0.1 - i * 0.2, PZ + 0.5 + i * 0.42, 2.2, 0.2, 0.46, 'step');
+    // Four solid 20 cm rises, centred inside the opening. Their old 46 cm
+    // slabs began 27 cm in front of the stage and left a real collision hole
+    // between the last tread and the stage floor. The top tread is now pinned
+    // exactly to PZ; the deeper carcasses overlap each other while retaining
+    // a comfortable 42 cm going, so there is no crack to fall through.
+    const STEP_COUNT = 4, STEP_W = 2.2, STEP_RISE = (SY - F) / STEP_COUNT;
+    const STEP_GOING = 0.42, STEP_D = 0.64;
+    for (let i = 0; i < STEP_COUNT; i++) {
+      const top = SY - i * STEP_RISE;
+      const z = PZ + STEP_D / 2 + i * STEP_GOING;
+      box(M.stairWood, sx * 3.8, top - STEP_RISE / 2, z,
+        STEP_W, STEP_RISE, STEP_D, 'step');
+
+      // Recessed, darker vertical boards and a rounded hardwood nosing make
+      // each rise read as theatre joinery instead of a stack of plain boxes.
+      box(M.stairRiser, sx * 3.8, top - STEP_RISE * 0.56,
+        z + STEP_D / 2 + 0.008, STEP_W - 0.14, STEP_RISE * 0.62, 0.025);
+      item(rod, M.stairWood, sx * 3.8, top - 0.052,
+        z + STEP_D / 2 + 0.022, 0.052, STEP_W + 0.08, 0.052,
+        0, 0, Math.PI / 2);
+    }
   }
   box(m.gold, 0, OT + 0.2, AZ - 0.06, 2 * OW + 0.8, 0.4, 0.4);
   box(M.damaskFlank, 0, (OT + C) / 2 + 0.2, PZ, 2 * OW + 0.8, C - OT - 0.4, 0.5, true);
