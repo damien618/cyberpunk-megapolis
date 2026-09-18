@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { buildMonetGallery } from './cruiseMonetGallery.js?v=20260917-gallery-bars-fix';
-import { buildCruiseOpera } from './cruiseOpera.js?v=20260917-opera-carpet-bars';
+import { buildCruiseOpera } from './cruiseOpera.js?v=20260917-kabuki';
+import { createKabukiShow, CUES as KABUKI_CUES } from './cruiseKabuki.js?v=20260917-kabuki';
 import { buildVerneMuseum } from './cruiseMuseum.js?v=20260908-signs7';
 import { Player } from './player.js?v=20260906-seam-fix';
 import { harmoniseHair } from './hair.js?v=11';
@@ -58,6 +59,9 @@ const cabinPromptGroup = document.getElementById('cabinPromptGroup');
 const cabinBeachPrompt = document.getElementById('cabinBeachPrompt');
 const cabinDayPrompt = document.getElementById('cabinDayPrompt');
 const cabinNightPrompt = document.getElementById('cabinNightPrompt');
+const operaPromptGroup = document.getElementById('operaPromptGroup');
+const operaYesPrompt = document.getElementById('operaYesPrompt');
+const operaNoPrompt = document.getElementById('operaNoPrompt');
 const slotPromptGroup = document.getElementById('slotPromptGroup');
 const slotYesPrompt = document.getElementById('slotYesPrompt');
 const slotNoPrompt = document.getElementById('slotNoPrompt');
@@ -5970,6 +5974,49 @@ for (const room of [artsGallery, artsOpera]) {
   for (const l of room.lights) { l.removeFromParent(); artsLightSources.push(l); }
 }
 
+// ---------------------------------------------------------------------------
+// The kabuki. Built with the room rather than on demand: the set is a few
+// hundred triangles and a handful of canvases, and putting it together while
+// the player is already sitting down would drop a frame on the one beat of
+// the whole thing that has to land cleanly. It stays hidden until the house
+// is dark. See cruiseKabuki.js.
+// ---------------------------------------------------------------------------
+const kabuki = createKabukiShow({ stage: artsOpera.stage, rnd });
+scene.add(kabuki.group);
+for (const l of kabuki.lights) artsLightSources.push(l);
+// What the house looks like with the lamps on, so it can be put back.
+const houseBase = artsOpera.houseLights.map(l => l.intensity);
+const glowBase = artsOpera.houseGlow.map(m => m.emissiveIntensity);
+const FOOTLIGHT_BASE = artsOpera.footlightMat.emissiveIntensity;
+// 0 = the kabuki is on and the house is out; 1 = the lamps are up.
+function setHouseLevel(u) {
+  for (let i = 0; i < artsOpera.houseLights.length; i++)
+    artsOpera.houseLights[i].intensity = houseBase[i] * u;
+  // The ship's own daylight reaches down here too — sun, hemisphere and the
+  // environment map all light the hold, and putting out the four lamps in
+  // the ceiling left a fully lit auditorium with a dark lustre hanging in
+  // it. There are no windows in the hold and the sea is not drawn while the
+  // player is inside it, so trimming the global three costs nothing and is
+  // the only way the room actually goes dark.
+  const s = TIME_STATES[cruiseTime];
+  const k = 0.1 + 0.9 * u;
+  sun.intensity = s.sun.intensity * k;
+  moon.intensity = s.moon * k;
+  hemi.intensity = s.hemi.intensity * k;
+  scene.environmentIntensity = s.env * (0.16 + 0.84 * u);
+  // A Garnier is lit by its gilt and its painted ceiling as much as by the
+  // lustre: dimming the four lamps alone left the room glowing over a dark
+  // house, which read as a bug rather than as a blackout.
+  for (let i = 0; i < artsOpera.houseGlow.length; i++)
+    artsOpera.houseGlow[i].emissiveIntensity = glowBase[i] * (0.12 + 0.88 * u);
+  // The float goes the other way: out with the house up, up with it down.
+  artsOpera.footlightMat.emissiveIntensity =
+    FOOTLIGHT_BASE * (0.25 + 1.5 * (1 - u));
+}
+// Not called here: the room is built with its lamps on, and TIME_STATES —
+// which this reads the day's own sun and hemisphere out of — is declared
+// further down the file.
+
 
 // One hull per promenade bench. The slats themselves are skipCollide so they
 // cannot jitter the capsule; without a hull you would walk through them.
@@ -6253,6 +6300,276 @@ const band = (() => {
   return { stageY, SZ, piano, drums };
 })();
 
+
+// ---------------------------------------------------------------------------
+// « S'asseoir et assister au spectacle kabuki »
+//
+// Walk up to any of the three hundred chairs in the theatre and it offers you
+// the seat. Take it and the house goes out, the striped curtain is walked
+// open, and the Renjishi is danced on the stage with a nagauta ensemble
+// playing it — and the stalls around you fill up, because a performance to an
+// empty house is not a performance.
+//
+// The contract is the zoo's bench, not the casino's slot machine: the prompt
+// does NOT freeze the player. There is a chair every 66 cm in here and a
+// prompt that stopped you dead until you answered it would make the aisles
+// unwalkable. It drops pointer lock so the button can be clicked, and takes
+// it back the moment you walk away.
+// ---------------------------------------------------------------------------
+const OPERA_AUDIO_URLS = [
+  './audio/cruise-opera-kabuki.ogg?v=renjishi1',
+  './audio/cruise-opera-kabuki.mp3?v=renjishi1',
+];
+const OPERA_AUDIO_VOLUME = 0.95;
+const operaHouse = { audience: [] };
+let operaMusic = null, operaAudioFailed = false;
+let operaRunning = false, operaT = 0, operaFade = 0;
+let operaSeatState = null, operaSeatCooldown = 0;
+let operaAskOpen = false, promptedSeat = null, operaAskRequested = false;
+let operaReleasedSeat = null;
+
+// Is a point inside the auditorium? The show runs while the player is in the
+// room, seated or not: standing up to watch from the back of the stalls is a
+// thing people do, and it must not bring the house lights up on the dancers.
+const inOperaHouse = (pos) => pos.y > ARTS_Y - 1 && pos.y < ARTS_C
+  && Math.abs(pos.x) < 15.2 && pos.z < artsOpera.stage.houseZ0 + 0.4
+  && pos.z > artsOpera.stage.back - 0.4;
+
+// Where the recording is. The dance is cued to it, so this is the clock;
+// without a recording it free-runs, and the piece still plays.
+function operaShowClock(dt) {
+  const a = operaMusic;
+  if (a && a.isPlaying && a.buffer) {
+    const pos = a._progress
+      + Math.max(0, a.context.currentTime - a._startedAt) * a.playbackRate;
+    return pos % a.buffer.duration;
+  }
+  return (operaT + dt) % KABUKI_CUES.end;
+}
+
+// Three rounds of applause: after each mie, and over the last of the coda.
+// `delay` staggers each pair of hands so the house does not start as one.
+const OPERA_CLAPS = [
+  [KABUKI_CUES.mie1 + 0.35, 3.2],
+  [KABUKI_CUES.mie2 + 0.45, 4.8],
+  [KABUKI_CUES.end - 9.5, 8.2],
+];
+function operaApplause(delay) {
+  const smooth = x => x * x * (3 - 2 * x);
+  for (const [at, len] of OPERA_CLAPS) {
+    const u = operaT - at - delay;
+    if (u < 0 || u > len) continue;
+    return Math.min(smooth(Math.min(1, u / 0.3)),
+      smooth(Math.min(1, (len - u) / 0.7)));
+  }
+  return 0;
+}
+
+function initOperaAudio() {
+  if (operaMusic || !ballroomListener) return;
+  operaMusic = new THREE.PositionalAudio(ballroomListener);
+  // On the stage, so it comes from where the ensemble is sitting.
+  operaMusic.position.set(0, artsOpera.stage.y + 1.2,
+    artsOpera.stage.back + 1.6);
+  operaMusic.setLoop(true);
+  operaMusic.setVolume(0);
+  operaMusic.setRefDistance(14);
+  operaMusic.setRolloffFactor(1.1);
+  operaMusic.setDistanceModel('inverse');
+  operaMusic.setMaxDistance(10000);
+  operaMusic.panner.panningModel = 'equalpower';
+  scene.add(operaMusic);
+  const loader = new THREE.AudioLoader();
+  const tryUrl = i => {
+    if (i >= OPERA_AUDIO_URLS.length) {
+      operaAudioFailed = true;
+      console.warn('[cruise] kabuki audio failed to load');
+      return;
+    }
+    loader.load(OPERA_AUDIO_URLS[i], buffer => {
+      if (!operaMusic) return;
+      operaMusic.setBuffer(buffer);
+      console.log('[cruise] kabuki audio loaded', OPERA_AUDIO_URLS[i]);
+      if (operaRunning) playOperaAudio();
+    }, undefined, () => tryUrl(i + 1));
+  };
+  tryUrl(0);
+}
+
+function playOperaAudio() {
+  if (operaAudioFailed || !operaMusic || !operaMusic.buffer) return;
+  if (operaMusic.isPlaying) return;
+  const start = () => {
+    try { operaMusic.play(); } catch (e) {
+      console.warn('[cruise] kabuki audio refused', e);
+    }
+  };
+  ballroomListener?.context.resume().then(start).catch(start);
+}
+
+function startKabuki() {
+  if (operaRunning) return;
+  operaRunning = true;
+  operaT = 0;
+  kabuki.start();
+  initOperaAudio();
+  if (operaMusic && operaMusic.buffer) {
+    operaMusic.stop();
+    playOperaAudio();
+  }
+  for (const p of operaHouse.audience) {
+    if (p === operaHouse.taken) continue;
+    p.hidden = false;
+  }
+  console.log('[cruise] kabuki: curtain up');
+}
+
+function stopKabuki() {
+  if (!operaRunning) return;
+  operaRunning = false;
+  kabuki.stop();
+  if (operaMusic && operaMusic.isPlaying) operaMusic.stop();
+  for (const p of operaHouse.audience) p.hidden = true;
+  console.log('[cruise] kabuki: curtain down');
+}
+
+// The player's chair, and whoever was already in it.
+function claimSeat(seat) {
+  if (operaHouse.taken) {
+    operaHouse.taken.hidden = !operaRunning;
+    operaHouse.taken = null;
+  }
+  if (!seat) return;
+  for (const p of operaHouse.audience) {
+    if (Math.hypot(p.seat.x - seat.x, p.seat.z - seat.z) > 0.2) continue;
+    if (Math.abs(p.seat.y - seat.y) > 0.5) continue;
+    p.hidden = true;
+    operaHouse.taken = p;
+    break;
+  }
+}
+
+function nearOperaSeat() {
+  if (operaSeatState || operaSeatCooldown > 0 || ctrl.mode !== 'ground') return null;
+  if (!inOperaHouse(ctrl.pos)) return null;
+  let best = null, bestD = 0.62;
+  for (const seat of artsOpera.seats) {
+    if (seat === operaReleasedSeat) continue;
+    if (Math.abs(ctrl.pos.y - seat.floorY) > 0.8) continue;
+    // Distance to the cushion, not to its centre: a chair is 54 cm across
+    // and the aisle is a metre from the nearest one.
+    const dx = ctrl.pos.x - seat.x, dz = ctrl.pos.z - seat.z;
+    const c = Math.cos(seat.yaw), sn = Math.sin(seat.yaw);
+    const lx = Math.max(0, Math.abs(dx * c - dz * sn) - 0.30);
+    const lz = Math.max(0, Math.abs(dx * sn + dz * c) - 0.26);
+    const d = Math.hypot(lx, lz);
+    if (d < bestD) { bestD = d; best = seat; }
+  }
+  return best;
+}
+
+function setOperaAsk(seat) {
+  if (promptedSeat === seat) return;
+  promptedSeat = seat;
+  operaAskRequested = false;
+  const show = Boolean(seat);
+  operaAskOpen = show;
+  operaPromptGroup?.classList.toggle('show', show);
+  operaPromptGroup?.setAttribute('aria-hidden', show ? 'false' : 'true');
+  if (show) {
+    if (document.pointerLockElement === renderer.domElement)
+      document.exitPointerLock?.();
+  } else if (started && !paused && !slotGameOpen && !leavingShip) {
+    requestGamePointerLock();
+  }
+}
+
+function sitInOpera(seat) {
+  setOperaAsk(null);
+  operaSeatState = { seat, returnPos: ctrl.pos.clone(), readyToExit: false };
+  claimSeat(seat);
+  ctrl.pos.set(seat.x, seat.y, seat.z);
+  ctrl.prevY = seat.y;
+  ctrl.vel.set(0, 0, 0);
+  ctrl.mode = 'sit';
+  ctrl.webOn = false;
+  startKabuki();
+}
+
+function leaveOperaSeat() {
+  if (!operaSeatState) return;
+  operaReleasedSeat = operaSeatState.seat;
+  // Stand up in the aisle-side of the row, not inside the next chair.
+  ctrl.pos.copy(operaSeatState.returnPos);
+  ctrl.prevY = ctrl.pos.y;
+  ctrl.vel.set(0, 0, 0);
+  ctrl.mode = 'ground';
+  operaSeatState = null;
+  operaSeatCooldown = 0.5;
+  claimSeat(null);
+}
+
+const OPERA_EXIT_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyE'];
+function updateOperaSeat(dt) {
+  operaSeatCooldown = Math.max(0, operaSeatCooldown - dt);
+  if (operaSeatState) {
+    const held = OPERA_EXIT_KEYS.some(code => input.down(code));
+    if (!held) operaSeatState.readyToExit = true;
+    else if (operaSeatState.readyToExit) leaveOperaSeat();
+    return operaSeatState !== null;
+  }
+  if (operaReleasedSeat
+    && Math.hypot(ctrl.pos.x - operaReleasedSeat.x, ctrl.pos.z - operaReleasedSeat.z) > 1.1)
+    operaReleasedSeat = null;
+  const seat = nearOperaSeat();
+  setOperaAsk(seat);
+  if (seat && (operaAskRequested || input.pressed('LMB'))) {
+    operaAskRequested = false;
+    sitInOpera(seat);
+    return true;
+  }
+  return false;
+}
+
+// The show itself, once a frame.
+function updateOpera(dt, t) {
+  if (!operaRunning) {
+    if (operaFade > 0) {
+      operaFade = Math.max(0, operaFade - dt / 1.6);
+      setHouseLevel(1 - operaFade);
+    }
+    return;
+  }
+  // Walking out of the auditorium ends it — the ship's theatre does not
+  // play to an empty room, and forty skinned rigs and a mane simulation
+  // have no business running while the player is up on the pool deck.
+  if (!inOperaHouse(ctrl.pos) && !operaSeatState) {
+    stopKabuki();
+    return;
+  }
+  operaT = operaShowClock(dt);
+  operaFade = Math.min(1, operaFade + dt / 2.4);
+  setHouseLevel(1 - operaFade);
+  kabuki.update(dt, t, operaT);
+  if (operaMusic) {
+    operaMusic.setVolume(OPERA_AUDIO_VOLUME
+      * (inOperaHouse(ctrl.pos) ? 1 : 0.25) * (paused ? 0 : 1));
+  }
+}
+
+operaYesPrompt?.addEventListener('click', e => {
+  e.stopPropagation();
+  if (!promptedSeat) return;
+  operaAskRequested = true;
+  requestGamePointerLock();
+});
+operaNoPrompt?.addEventListener('click', e => {
+  e.stopPropagation();
+  operaReleasedSeat = promptedSeat;
+  setOperaAsk(null);
+  operaSeatCooldown = 0.6;
+});
+
 const people = [];
 const hook = {
   THREE, scene, camera, renderer, world, ctrl, rig, input, spawnPoint, bw,
@@ -6260,6 +6577,21 @@ const hook = {
   DECK_Y, POOL_Y, CEIL_Y, SHIP_L2, BEAM2, SUP_X2, SUP_Z0, SUP_Z1,
   CASINO_Z, ATRIUM_Z, CABIN_Z, BALL_Z, CABIN_Y, CABIN_STAIR,
   artsGallery, artsOpera, groundFn, clampHoldCamera,
+  kabuki, operaHouse,
+  startKabuki: () => startKabuki(),
+  stopKabuki: () => stopKabuki(),
+  operaSeats: () => artsOpera.seats,
+  // Jump the piece to a cue, for looking at a mie without waiting for one.
+  // The recording is the clock, so it has to be stopped first: left playing
+  // it put the dance straight back where it was on the next frame.
+  operaSeek: (sec) => {
+    if (!operaRunning) startKabuki();
+    if (operaMusic && operaMusic.isPlaying) operaMusic.stop();
+    operaT = sec;
+    kabuki.update(1 / 60, performance.now() / 1000, sec);
+  },
+  get operaShowTime() { return operaT; },
+  get operaRunning() { return operaRunning; },
   ARTS_STAIR, ARTS_Y, ARTS_C, ARTS_OPENING, ARTS_WELL,
   get BED_SPOT() { return typeof BED_SPOT !== 'undefined' ? BED_SPOT : null; },
   get BED_X() { return typeof BED_X !== 'undefined' ? BED_X : null; },
@@ -6355,6 +6687,34 @@ try {
   }));
   const ballCast = ballroomLoaded.filter(Boolean);
   console.log('[cruise] ballroom guests loaded, count:', ballCast.length);
+
+  // Eight more faces, for the theatre. The ballroom seats twenty people and
+  // eight models carry that; a full house is forty-odd, and at eight models
+  // the stalls read as one man cloned down the row. Same mirror, same clips,
+  // same 1024-texture treatment — see glb/visitors/opera/CREDITS.md.
+  // Photoscanned people, the same family the ballroom's eight came from.
+  // The first pass took the SMALL files off the mirror instead, and small
+  // means stylised: the stalls filled up with pink wigs and heads twice the
+  // size of a head, sitting next to a Mixamo businessman.
+  const OPERA_CAST = [
+    ['Megan.glb', 1.69], ['Kate.glb', 1.67], ['Jody.glb', 1.66],
+    ['James.glb', 1.80], ['Shannon.glb', 1.70], ['Josh.glb', 1.79],
+    ['Olivia.glb', 1.68], ['Jones.glb', 1.82],
+  ];
+  const operaLoaded = new Array(OPERA_CAST.length);
+  await Promise.all(OPERA_CAST.map(async ([model, h], i) => {
+    try {
+      operaLoaded[i] = await loadGuestRig({
+        model: `./glb/visitors/opera/${model}`,
+        walk: './glb/visitors/ballroom/mixamo-clips.glb',
+        idle: './glb/visitors/ballroom/mixamo-clips.glb',
+        walkClipName: 'walk', idleClipName: 'idle',
+        height: h, recolor: 'keep', retarget: true,
+      });
+    } catch (e) { console.warn('[cruise] opera guest', model, e); }
+  }));
+  const operaCast = [...operaLoaded.filter(Boolean), ...ballCast];
+  console.log('[cruise] opera guests loaded, distinct models:', operaCast.length);
   const Gg = i => guests[i % guests.length];
   const visitor = (i, opts = {}) => makeVisitor(Gg(i).scene, Gg(i).walkClip, rnd, {
     guest: Gg(i), idleClip: Gg(i).idleClip, look: 'beach', ...opts,
@@ -7059,6 +7419,173 @@ try {
     stand(npcIdx++, -3.0, POOL_Y, 16.0, Math.PI);
     stand(npcIdx++, 7.2, POOL_Y, -1.0, -Math.PI / 2);
     patrol(npcIdx++, 11.5, POOL_Y, -20, 30, 0);
+
+    // =========================================================================
+    // The theatre's house. Built now, with everybody else, and kept hidden
+    // until the kabuki starts — forty rigs is three seconds of cloning and
+    // skinning, and doing it at the moment the player sits down would spend
+    // that on the one beat of the evening that has to be clean.
+    //
+    // Seats come from cruiseOpera.js. Nothing here knows where a chair is:
+    // the room files its own seating plan, so a chair cannot be moved without
+    // whoever is sitting on it moving too.
+    // =========================================================================
+    const operaAudience = [];
+    if (operaCast.length) {
+      const _hip = new THREE.Vector3();
+      const FOCUS = kabuki.focus;
+      // Who sits where. A theatre fills from the middle of the stalls: the
+      // front rows and the centre before the corners, and the balcony's front
+      // row before anything behind it. Taken as "every seat within so many
+      // metres" the room filled as a solid block and looked like a diagram.
+      const chosen = [];
+      const stalls = artsOpera.seats.filter(s => s.tier === 'parterre');
+      const balcony = artsOpera.seats.filter(s => s.tier === 'balcony');
+      // Rows come out of the builder in order, so bucket on z.
+      const rowsOf = list => {
+        const rows = new Map();
+        for (const seat of list) {
+          const key = seat.z.toFixed(1);
+          if (!rows.has(key)) rows.set(key, []);
+          rows.get(key).push(seat);
+        }
+        return [...rows.values()].map(r => r.sort((a, b) => a.x - b.x));
+      };
+      rowsOf(stalls).forEach((row, r) => {
+        // Nearer the stage is fuller, and each row is offset against the one
+        // in front so nobody sits directly behind anybody.
+        const take = r < 3 ? 2 : r < 6 ? 3 : 4;
+        row.forEach((seat, i) => {
+          if (Math.abs(seat.x) > 6.4) return;
+          if ((i + r) % take) return;
+          chosen.push(seat);
+        });
+      });
+      rowsOf(balcony).forEach((row, r) => row.forEach((seat, i) => {
+        if (r > 0 || Math.abs(seat.x) > 4.6 || (i + r) % 3) return;
+        chosen.push(seat);
+      }));
+
+      // Head, hands and the gaze, per spectator.
+      const _fwd = new THREE.Vector3(), _left = new THREE.Vector3();
+      const _look = new THREE.Vector3(), _hand = new THREE.Vector3();
+      const _pole = new THREE.Vector3(), _chest = new THREE.Vector3();
+      const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
+      let ci = 0;
+      for (const seat of chosen) {
+        const rig = operaCast[ci % operaCast.length];
+        ci++;
+        const v = makeVisitor(rig.scene, rig.walkClip, rnd, {
+          guest: rig, idleClip: rig.idleClip, look: null,
+          playIdle: true, seated: true,
+        });
+        // The chair is turned toward downstage centre, so its sitter is too.
+        const yaw = Math.PI + seat.yaw;
+        v.group.position.set(seat.x, seat.floorY, seat.z);
+        v.group.rotation.y = yaw;
+        v.mixer.update(0);
+        v.pose?.();
+        v.group.updateMatrixWorld(true);
+        const hips = rootBoneOf(v.group);
+        if (hips) {
+          hips.getWorldPosition(_hip);
+          v.group.position.y += (seat.y + 0.11) - _hip.y;
+        }
+        v.group.visible = false;
+        scene.add(v.group);
+        const arms = armReach(v.group);
+        const bones = {
+          chest: boneOn(v.group, 'Spine2'), spine: boneOn(v.group, 'Spine1'),
+          neck: boneOn(v.group, 'Neck'), head: boneOn(v.group, 'Head'),
+        };
+        const S = {
+          yaw, headYaw: 0, headPitch: 0,
+          sway: 0.010 + rnd() * 0.022, swayPh: rnd() * 6.28,
+          shift: 6 + rnd() * 6,
+          claps: rnd() < 0.93, clapDelay: rnd() * 0.7,
+          clapHz: 2.7 + rnd() * 1.2, clapPh: rnd() * 6.28,
+          glance: rnd() * 5, target: FOCUS.clone(), last: null,
+        };
+        const rest = [[new THREE.Quaternion(), new THREE.Quaternion()],
+          [new THREE.Quaternion(), new THREE.Quaternion()]];
+        const seatedPose = v.pose;
+        const p = {
+          ...v, kind: 'play', baseYaw: yaw, seat, hidden: true,
+          // The seated pose is applied INSIDE play(), not left on `pose` for
+          // tickPeople to run afterwards: it runs after play() there, and it
+          // put the legs, the spine and both arms back where it found them —
+          // which wiped out every head turn and every clap in the house.
+          pose: null,
+          // A seated audience does not need sixty poses a second: the whole
+          // room is inside the player's twenty-four metres and would
+          // otherwise run at frame rate, forty skeletons at once.
+          minInterval: 1 / 24,
+        };
+        p.play = t => {
+          seatedPose?.();
+          const dt = S.last == null ? 0.04 : Math.min(0.25, Math.max(0, t - S.last));
+          S.last = t;
+          const g = p.group;
+          const w = S.claps ? operaApplause(S.clapDelay) : 0;
+          _fwd.set(Math.sin(S.yaw), 0, Math.cos(S.yaw));
+          _left.set(Math.cos(S.yaw), 0, -Math.sin(S.yaw));
+          // The body: a breath and a slow shift of weight in the seat.
+          turnBone(bones.spine, _fwd, S.sway * Math.sin(t * 0.9 + S.swayPh) * (1 - 0.7 * w));
+          turnBone(bones.spine, UP, 0.02 * Math.sin(t / S.shift * 6.28 + S.swayPh));
+          // The gaze. Mostly the stage; now and then a neighbour or the box.
+          if (t > S.glance) {
+            S.target.copy(FOCUS);
+            if (w < 0.1 && rnd() < 0.3)
+              S.target.set(g.position.x + (rnd() - 0.5) * 7,
+                g.position.y + 0.9 + rnd() * 1.2, g.position.z - 2 - rnd() * 5);
+            S.glance = t + 2.5 + rnd() * 5;
+          }
+          if (w > 0.2) S.target.copy(FOCUS);
+          _look.copy(S.target);
+          const dx = _look.x - g.position.x, dz = _look.z - g.position.z;
+          const want = THREE.MathUtils.clamp(
+            wrapPI(Math.atan2(dx, dz) - S.yaw), -1.0, 1.0);
+          const pitch = -Math.atan2(_look.y - (g.position.y + 1.15),
+            Math.hypot(dx, dz)) * 0.75;
+          const k = 1 - Math.exp(-dt * 3);
+          S.headYaw += (want - S.headYaw) * k;
+          S.headPitch += (pitch - S.headPitch) * k;
+          turnBone(bones.chest, UP, S.headYaw * 0.2);
+          turnBone(bones.neck, UP, S.headYaw * 0.35);
+          turnBone(bones.head, UP, S.headYaw * 0.45);
+          const gaze = S.yaw + S.headYaw;
+          _chest.set(Math.cos(gaze), 0, -Math.sin(gaze));
+          turnBone(bones.head, _chest, S.headPitch);
+          if (!arms || w <= 0) return;
+          // Applause. Both hands to the middle of the chest, a gap that
+          // opens and shuts, blended in over the idle so nothing pops.
+          g.updateMatrixWorld(true);
+          bones.chest?.getWorldPosition(_chest);
+          const gap = 0.012 + 0.08 * Math.max(0, Math.sin(t * 6.28 * S.clapHz + S.clapPh));
+          for (let i = 0; i < 2; i++) {
+            const up = arms.upper[i], lo = arms.lower[i];
+            if (!up || !lo) continue;
+            rest[i][0].copy(up.quaternion);
+            rest[i][1].copy(lo.quaternion);
+            const side = i === 0 ? 1 : -1;
+            _hand.copy(_chest).addScaledVector(_fwd, 0.27)
+              .addScaledVector(_left, side * gap);
+            _hand.y -= 0.02;
+            _pole.copy(_left).multiplyScalar(side);
+            _pole.y -= 0.9;
+            arms.reach(i, _hand, _pole);
+            _qa.copy(up.quaternion);
+            up.quaternion.slerpQuaternions(rest[i][0], _qa, w);
+            _qb.copy(lo.quaternion);
+            lo.quaternion.slerpQuaternions(rest[i][1], _qb, w);
+          }
+        };
+        people.push(p);
+        operaAudience.push(p);
+      }
+      console.log('[cruise] opera audience seated:', operaAudience.length);
+    }
+    operaHouse.audience = operaAudience;
   }
 } catch (e) {
   console.warn('[cruise] people', e);
@@ -7074,6 +7601,11 @@ function tickPeople(dt, t = 0) {
   peopleFrustum.setFromProjectionMatrix(peopleViewProjection);
   const pPos = ctrl?.pos;
   for (const p of people) {
+    // The theatre's audience only exists while the kabuki is on.
+    if (p.hidden) {
+      if (p.group.visible) p.group.visible = false;
+      continue;
+    }
     let distanceSq = 0;
     if (pPos) {
       const dx = p.group.position.x - pPos.x;
@@ -7100,7 +7632,11 @@ function tickPeople(dt, t = 0) {
     peopleBounds.center.copy(p.group.position);
     peopleBounds.center.y += 0.9;
     const inView = peopleFrustum.intersectsSphere(peopleBounds);
-    const interval = !inView ? 1 / 10 : distanceSq > 24 * 24 ? 1 / 20 : 0;
+    let interval = !inView ? 1 / 10 : distanceSq > 24 * 24 ? 1 / 20 : 0;
+    // A full house sits inside twenty-four metres of the player and would
+    // otherwise all run at frame rate: forty skeletons, every one of them
+    // doing nothing but breathing. `minInterval` is their own floor.
+    if (p.minInterval) interval = Math.max(interval, p.minInterval);
     p.animationElapsed = (p.animationElapsed || 0) + dt;
     if (p.animationElapsed >= interval) {
       p.mixer.update(p.animationElapsed);
@@ -7125,7 +7661,13 @@ const localLightPool = Array.from({ length: 8 }, () => {
 function updateLocalLights(px, py, pz) {
   for (const light of localLightSources) {
     const dx = light.position.x - px, dy = light.position.y - py, dz = light.position.z - pz;
-    light.userData.viewDistanceSq = dx * dx + dy * dy + dz * dz;
+    // A source that is switched off must not hold a slot. The theatre is the
+    // case that made this matter: with the house down and the stage up there
+    // are nine sources in one room and only eight slots, and sorting on
+    // distance alone spent four of them on dead lamps hanging over a dark
+    // auditorium while the stage went unlit.
+    light.userData.viewDistanceSq = light.intensity > 0.01
+      ? dx * dx + dy * dy + dz * dz : Infinity;
   }
   localLightSources.sort((a, b) => a.userData.viewDistanceSq - b.userData.viewDistanceSq);
   for (let i = 0; i < localLightPool.length; i++) {
@@ -7420,14 +7962,16 @@ function updatePrompts(dt) {
 }
 
 renderer.domElement.addEventListener('click', () => {
-  if (started && !paused && !cabinAskOpen && !input.locked) requestGamePointerLock();
-  if (started && !paused) resumeBallroomAudio();
+  if (started && !paused && !cabinAskOpen && !operaAskOpen && !input.locked)
+    requestGamePointerLock();
+  if (started && !paused) { resumeBallroomAudio(); if (operaRunning) playOperaAudio(); }
 });
 
 // ---------------------------------------------------------------------------
 function updateAvatar(dt) {
   if (!player) return;
   const lying = ctrl.mode === 'lie';
+  const sitting = ctrl.mode === 'sit' && operaSeatState;
   // Black one-piece swimsuit on the upper deck (pool deck & pool), chic dress in casino, cruise attire elsewhere.
   const onUpperDeck = ctrl.pos.y >= POOL_Y - 1.5;
   const inCasino = !onUpperDeck && ctrl.pos.z >= CASINO_Z[0] - 0.5 && ctrl.pos.z <= CASINO_Z[1] + 0.5
@@ -7447,8 +7991,13 @@ function updateAvatar(dt) {
     webHand: ctrl.webHand,
     anchor: ctrl.anchor,
     ropeSlack: 0,
-    posture: lying ? 'lie' : undefined,
-    facingYaw: lying ? BED_SPOT.yaw : undefined,
+    posture: lying ? 'lie' : sitting ? 'sit' : undefined,
+    // The chair is turned toward downstage centre, so she is too; `floorY`
+    // is the parquet in front of the seat, which is what the seated pose
+    // solves the legs against.
+    facingYaw: lying ? BED_SPOT.yaw
+      : sitting ? Math.PI + operaSeatState.seat.yaw : undefined,
+    floorY: sitting ? operaSeatState.seat.floorY : undefined,
   });
 }
 
@@ -7493,7 +8042,10 @@ function animate() {
     forward.set(-Math.sin(input.yaw) * cp, Math.sin(input.pitch), -Math.cos(input.yaw) * cp)
       .normalize();
     const lying = updateLie(dt);
-    if (!lying) {
+    // The chair takes the controller over the same way the bed does, but it
+    // also answers the prompt, so it runs whether or not anyone is sitting.
+    const seated = !lying && updateOperaSeat(dt);
+    if (!lying && !seated) {
       ctrl.update(dt, input, input.yaw, forward);
       // Over the side. The rails are what keep you aboard; this is the
       // backstop for anyone who gets past them.
@@ -7501,6 +8053,7 @@ function animate() {
       updatePrompts(dt);
     }
   }
+  updateOpera(dt, t);
 
   // Open air: side promenades, pool roof, and the bow/stern outside the house.
   // The old |x| / pool-height test missed the teak at the foot of the aft
@@ -7741,7 +8294,8 @@ document.addEventListener('pointerlockchange', () => {
   // Dropping the lock so a prompt button can be clicked is intentional, and so
   // is dropping it while lying down: a failed lock must not freeze the player
   // in the bed with the overlay up and no way to answer.
-  if ((cabinAskOpen || slotAskOpen || slotGameOpen || ctrl.mode === 'lie') && document.pointerLockElement === null) {
+  if ((cabinAskOpen || slotAskOpen || slotGameOpen || operaAskOpen
+    || ctrl.mode === 'lie') && document.pointerLockElement === null) {
     paused = false;
     overlay.style.display = 'none';
     return;
@@ -7754,6 +8308,7 @@ document.addEventListener('pointerlockchange', () => {
     pauseBallroomAudio();
   } else if (started) {
     resumeBallroomAudio();
+    if (operaRunning) playOperaAudio();
   }
   overlay.style.display = paused ? 'flex' : 'none';
 });

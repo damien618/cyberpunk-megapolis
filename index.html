@@ -629,6 +629,17 @@
     font-family: var(--mono); font-size: 14px; font-weight: 600; letter-spacing: .02em;
     box-shadow: 0 3px 0 rgba(0, 0, 0, 0.28);
   }
+  /* The theatre's chairs. Same group as the slot machine's, sat a little
+     lower so it clears the crosshair when you are facing the stage. */
+  #operaPromptGroup {
+    position: fixed; left: 50%; top: calc(50% + 54px); z-index: 12;
+    transform: translate(-50%, 8px); display: flex; flex-direction: column; gap: 9px;
+    width: min(500px, calc(100vw - 32px)); opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .14s ease, transform .14s ease, visibility .14s;
+  }
+  #operaPromptGroup.show {
+    transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto;
+  }
   #slotPromptGroup {
     position: fixed; left: 50%; top: calc(50% + 42px); z-index: 12;
     transform: translate(-50%, 8px); display: flex; flex-direction: column; gap: 9px;
@@ -682,6 +693,7 @@
   html:not([data-engine="world"]) #cruisePromptGroup,
   html:not([data-engine="world"]) #cabinPromptGroup,
   html:not([data-engine="world"]) #slotPromptGroup,
+  html:not([data-engine="world"]) #operaPromptGroup,
   html:not([data-engine="world"]) #slotGameOverlay,
   html:not([data-engine="world"]) #hud { display: none !important; }
 
@@ -1022,6 +1034,11 @@
   <button id="cabinDayPrompt" class="lie-prompt" type="button">S'allonger et se lever dans le bateau de croisière de jour</button>
   <button id="cabinNightPrompt" class="lie-prompt" type="button">S'allonger et se lever dans le bateau de croisière de nuit</button>
 </div>
+<div id="operaPromptGroup" role="dialog" aria-label="S'asseoir au théâtre" aria-hidden="true">
+  <div class="prompt-ask">« Voulez-vous vous asseoir&nbsp;? »</div>
+  <button id="operaYesPrompt" class="lie-prompt" type="button">S'asseoir et assister au spectacle kabuki</button>
+  <button id="operaNoPrompt" class="lie-prompt" type="button">Non — rester debout</button>
+</div>
 <div id="slotPromptGroup" role="dialog" aria-label="Jouer à la machine à sous" aria-hidden="true">
   <div class="prompt-ask">Voulez-vous jouer à la machine à sous&nbsp;?</div>
   <button id="slotYesPrompt" class="lie-prompt" type="button">Oui</button>
@@ -1345,7 +1362,7 @@
     airport: './main-AIRPORT.js?v=20260911-seat-prompt-cursor',
     shinto: './main-SHINTO.js?v=20260912-bridge-zfight3',
     beach: './main-BEACH.js?v=20260906-seam-fix',
-    cruise: './main-CRUISE.js?v=20260917-opera-bars-fix',
+    cruise: './main-CRUISE.js?v=20260918-kabuki',
   };
   const mode = document.documentElement.dataset.mode;
   import(ENGINES[mode] ?? './main.js?v=20260906-seam-fix').catch(error => {

@@ -502,8 +502,17 @@ export function buildCruiseOpera(THREE) {
   // The turn is damped to 55 %: this house is 30 m wide and 15 deep, and the
   // true bearing to downstage centre from the end of the back row is 43°,
   // which reads as a chair that has been knocked over sideways.
-  const chair = (x, z, y) => {
+  // Every chair also files where a body goes on it: the middle of the
+  // cushion, its top, and which way the chair was turned. That list is the
+  // whole of the seating plan — the player's prompt and the audience that
+  // fills the house for the kabuki both read it and neither one re-derives
+  // the geometry, so a chair cannot move without its sitter moving with it.
+  const seats = [];
+  const chair = (x, z, y, tier = 'parterre') => {
     const a = Math.atan2(x, z - FOCUS) * 0.55;
+    // Plinth top is y+0.30, the sprung cushion over it is 18 cm centred at
+    // y+0.45, so the surface a body rests on is y+0.54.
+    seats.push({ x, y: y + 0.54, z, yaw: a, floorY: y, tier });
     const s = Math.sin(a), c = Math.cos(a);
     const px = (ox, oz) => x + ox * c + oz * s;
     const pz = (ox, oz) => z - ox * s + oz * c;
@@ -549,7 +558,7 @@ export function buildCruiseOpera(THREE) {
       if (i === 0) continue;
       const x = i * 0.66 + (i > 0 ? 0.33 : -0.33);
       if (Math.abs(x) > 10.0) continue;
-      chair(x, zr, BY);
+      chair(x, zr, BY, 'balcony');
     }
   }
 
@@ -642,8 +651,14 @@ export function buildCruiseOpera(THREE) {
   for (const sx of [-1, 1]) for (let k = 0; k < 3; k++)
     box(m.black, sx * (7.2 - k * 0.5), (SY + OT) / 2, PZ - 2.4 - k * 2.0, 2.6, OT - SY, 0.18);
   box(M.frame, 0, SY + 0.1, PZ - 1.35, 2 * OW - 0.6, 0.2, 0.34);
+  // Their own material, not the house's: when the kabuki starts the lustre
+  // goes out and the float has to come UP, and one shared emissive cannot do
+  // both at once.
+  const footlightMat = new THREE.MeshStandardMaterial({
+    color: 0xffebbc, emissive: 0xffcf85, emissiveIntensity: 1.5, roughness: 0.7,
+  });
   for (let i = 0; i < 11; i++)
-    item(b.sphere, m.light, -4.7 + i * 0.94, SY + 0.18, PZ - 1.35, 0.11, 0.1, 0.09);
+    item(b.sphere, footlightMat, -4.7 + i * 0.94, SY + 0.18, PZ - 1.35, 0.11, 0.1, 0.09);
 
   // ---- Ceiling and the lustre ---------------------------------------------
   const CZ = Z0 - 7.4;
@@ -695,5 +710,22 @@ export function buildCruiseOpera(THREE) {
 
   label('GRAND OPÉRA · LE THÉÂTRE DU BORD', 0, BY + 1.6, Z0 - 0.24, 6, 0.6, Math.PI, true);
   label('← GALERIE DES NYMPHÉAS', 0, F + 2.6, Z0 - 0.24, 4.6, 0.5, Math.PI, true);
-  return b.finish();
+
+  // What the kabuki needs to take the room over: the seating plan, the four
+  // house lamps, and every surface that carries its own emissive — a Garnier
+  // is lit as much by gilt and painted sky as by its lustre, and blacking
+  // out the lamps alone left the ceiling glowing over a dark house.
+  const built = b.finish();
+  return {
+    ...built,
+    seats,
+    houseLights: built.lights.slice(),
+    houseGlow: [m.light, m.soffit, fresco.material],
+    footlightMat,
+    // The stage, in world coordinates, for whatever is performing on it.
+    stage: {
+      y: SY, front: PZ, back: Z1, halfWidth: OW, top: OT,
+      centre: FOCUS, clothZ: Z1 + 0.22, archZ: AZ, floorY: F, houseZ0: Z0,
+    },
+  };
 }
