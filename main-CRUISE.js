@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { buildMonetGallery } from './cruiseMonetGallery.js?v=20260917-gallery-bars-fix';
-import { buildCruiseOpera } from './cruiseOpera.js?v=20260917-kabuki';
+import { buildMonetGallery } from './cruiseMonetGallery.js?v=20260918-foyer-zfight1';
+import { buildCruiseOpera } from './cruiseOpera.js?v=20260918-opera-columns2';
 import { createKabukiShow, CUES as KABUKI_CUES } from './cruiseKabuki.js?v=20260917-kabuki';
 import { buildVerneMuseum } from './cruiseMuseum.js?v=20260908-signs7';
 import { Player } from './player.js?v=20260906-seam-fix';
@@ -9,7 +9,7 @@ import { Input } from './input.js';
 import { Controller } from './controller.js?v=10';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes, segmentAABB } from './cityBoxes.js?v=7';
-import { loadGuestRig, makeVisitor, rootBoneOf, customRig, armReach } from './crowd.js?v=66';
+import { loadGuestRig, makeVisitor, rootBoneOf, customRig, armReach } from './crowd.js?v=67';
 import { buildDesertedIsland, createMarineFauna, updateMarineLife } from './marineLife.js?v=2';
 import { createBandInstruments, PIANO_HANDS, DRUM_HITS } from './cruiseBand.js?v=6';
 
@@ -3515,13 +3515,17 @@ console.log('[cruise] casino room done');
     // starboard — and this seating group, mirrored across to port so it is not
     // standing in the new well. The compass rose keeps the middle.
     frame(-9, -3.2, 0, () => {
-    for (const [sx, sz, ry] of [[4.5, -2.4, 0], [4.5, -7.6, Math.PI]])
+    // Keep the cabin stair landing clear: both sofas now sit side by side
+    // against the casino bulkhead instead of facing each other across the
+    // route to the cabins.
+    for (const [sx, sz, ry] of [[1.3, -7.6, Math.PI], [4.5, -7.6, Math.PI]])
       loungeChair(sx, sz, ry, 3);
     // Compact 1930s ocean-liner coffee table: an almost-black ebony top on a
     // broad stepped pedestal. The old four thin brass legs vanished into the
     // parquet; this dark central silhouette stays legible without crowding the
     // narrow passage between the two sofas.
-    const tableX = 4.5, tableZ = -5;
+    // Centre the coffee table on the new two-sofa seating group.
+    const tableX = 2.9, tableZ = -5;
     shape(G.cylBase, M.artDecoEbony, tableX, DECK_Y + 0.015, tableZ,
       0.70, 0.075, 0.50);
     shape(G.cylBase, M.mahoganyGloss, tableX, DECK_Y + 0.09, tableZ,
@@ -6842,7 +6846,7 @@ try {
     // Casino Royale: Staff (croupiers, dealers, barmen) & Players / Guests
     // =========================================================================
     const casinoStaff = { look: null, uniform: { shirt: 0x16161c, pants: 0x121216, shoes: 0x08080a, hat: false } };
-    const casinoGuest = { look: null };
+    const casinoGuest = { look: 'modern' };
     let npcIdx = 6;
 
     // 1. Port Roulette Table (cx = -6.4, cz = z0 + 14.5)

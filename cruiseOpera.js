@@ -317,7 +317,13 @@ export function buildCruiseOpera(THREE) {
   for (const side of [-1, 1]) {
     const xw = side * (HW - 0.22), ry = -side * Math.PI / 2;
     for (let z = Z0 - 1.3; z > PZ + 0.6; z -= 2.6) {
-      pilaster(xw, z, F, C - 0.5, 0.34, 0.5, 0);
+      // Along the balcony arms the boxes' own gilt columns take over above
+      // the floor: a full-height pilaster there ran behind their back panels
+      // and showed as a white marble stub under each one. It stops under the
+      // soffit, where its capital is buried in the slab — 2 cm short of the
+      // floor's top face, which it z-fought as a grey sliver when flush.
+      const underArm = z > Z0 - 9.7 && z < Z0 - 0.2;   // bz1 - 0.3 … bz0, set out below
+      pilaster(xw, z, F, underArm ? BY - 0.02 : C - 0.5, 0.34, 0.5, 0);
       box(M.gilt, xw - side * 0.06, F + 1.05, z - 1.3, 0.12, 0.09, 2.0);   // dado rail
       box(M.wood, xw - side * 0.02, F + 0.5, z - 1.3, 0.1, 1.0, 2.0);      // dado panel
       if (z < Z0 - 9.8 && z > PZ + 2) sconce(xw - side * 0.2, F + 2.1, z - 1.3, ry);
@@ -428,14 +434,77 @@ export function buildCruiseOpera(THREE) {
     }
   }
 
+  // Guard across the void above the foyer's double doors, between the two
+  // central fauteuils of the balcony's back row. Without it the 1.38 m gap
+  // between the seats opens straight down to the foyer parquet at y = 1.9.
+  // An open gilded balustrade with turned brass spindles, corner newel posts,
+  // medallions and a velvet crest: it prevents the fall while keeping the
+  // grand view through into the house from the entrance hall below.
+  const egW = 1.38;                                // gap between inner armrests
+  const egZ = bz0 - 0.02;                          // flush with balcony floor edge at -48.22
+  const egSideD = (bz0 - 0.65 + 0.21) - egZ;       // meets the chair backrests at -48.64
+  const egSideZ = egZ + egSideD / 2;               // center of the side returns
+
+  // Front balustrade across the gap
+  // Molded walnut plinth and gilded base rail
+  box(M.wood, 0, BY + 0.05, egZ, egW, 0.10, 0.14, true);
+  box(M.gilt, 0, BY + 0.11, egZ, egW + 0.02, 0.03, 0.15);
+  box(M.frame, 0, BY + 0.14, egZ, egW, 0.03, 0.12);
+
+  // Top handrail with padded crimson velvet armrest
+  box(M.frame, 0, BY + 0.65, egZ, egW, 0.03, 0.12);
+  box(M.gilt, 0, BY + 0.69, egZ, egW + 0.04, 0.05, 0.15, true);
+  item(rod, M.velvet, 0, BY + 0.74, egZ, 0.038, egW + 0.02, 0.038, 0, 0, Math.PI / 2);
+
+  // Corner newel posts anchoring the balustrade on each flank
+  for (const sx of [-1, 1]) {
+    const nx = sx * egW / 2;
+    box(M.frame, nx, BY + 0.38, egZ, 0.09, 0.72, 0.14);
+    box(M.gilt, nx, BY + 0.11, egZ, 0.11, 0.05, 0.16);
+    box(M.gilt, nx, BY + 0.68, egZ, 0.11, 0.05, 0.16);
+    item(b.sphere, M.gilt, nx, BY + 0.75, egZ, 0.045, 0.045, 0.045);
+  }
+
+  // Classical turned gilded balusters (spindles)
+  const egNumBalusters = 7;
+  for (let i = 0; i < egNumBalusters; i++) {
+    const bx = -egW / 2 + (i + 1) * egW / (egNumBalusters + 1);
+    item(rod, M.gilt, bx, BY + 0.40, egZ, 0.022, 0.48, 0.022);
+    item(b.sphere, M.frame, bx, BY + 0.25, egZ, 0.040, 0.05, 0.040);
+    item(b.sphere, M.frame, bx, BY + 0.55, egZ, 0.040, 0.05, 0.040);
+    item(b.sphere, M.gilt, bx, BY + 0.40, egZ, 0.034, 0.04, 0.034);
+  }
+
+  // Central decorative cartouche medallion (relief on both sides)
+  for (const faceZ of [-1, 1]) {
+    item(b.sphere, M.frame, 0, BY + 0.40, egZ + faceZ * 0.04, 0.11, 0.14, 0.05);
+    item(b.sphere, M.gilt, 0, BY + 0.40, egZ + faceZ * 0.06, 0.06, 0.08, 0.03);
+  }
+
+  // Side return guards connecting the balustrade to each adjacent chair
+  for (const side of [-1, 1]) {
+    const rx = side * egW / 2;
+    const rLen = Math.abs(egSideD);
+    box(M.wood, rx, BY + 0.05, egSideZ, 0.09, 0.10, rLen, true);
+    box(M.gilt, rx, BY + 0.11, egSideZ, 0.07, 0.03, rLen);
+    box(M.gilt, rx, BY + 0.69, egSideZ, 0.07, 0.05, rLen, true);
+    item(rod, M.velvet, rx, BY + 0.74, egSideZ, 0.038, rLen, 0.038, 0, Math.PI / 2, 0);
+    // Intermediate turned baluster on each side return
+    item(rod, M.gilt, rx, BY + 0.40, egSideZ, 0.022, 0.48, 0.022);
+    item(b.sphere, M.frame, rx, BY + 0.40, egSideZ, 0.040, 0.05, 0.040);
+  }
+
+
   // Boxes along the arms, the one piece of Garnier that survives the cut:
   // gilt columns, a draped front, and a crowned canopy over each.
   for (const side of [-1, 1]) for (let i = 0; i < 4; i++) {
     const z = bz0 - 1.4 - i * 2.1, x = side * (HW - 0.55);
+    // Floor to ceiling, standing on a gilt base: the shaft used to start at
+    // BY + 0.45 and its collar floated a hand's breadth over the parquet.
     for (const dz of [-0.95, 0.95]) {
-      item(rod, M.frame, x, (BY + C) / 2 + 0.2, z + dz, 0.11, C - BY - 0.5, 0.11);
+      item(rod, M.frame, x, (BY + C) / 2, z + dz, 0.11, C - BY, 0.11);
       item(rod, M.gilt, x, C - 0.62, z + dz, 0.17, 0.16, 0.17);
-      item(rod, M.gilt, x, BY + 0.34, z + dz, 0.17, 0.16, 0.17);
+      item(rod, M.gilt, x, BY + 0.1, z + dz, 0.17, 0.2, 0.17);
     }
     box(M.damaskPanel, side * (HW - 0.28), BY + 1.5, z, 0.14, 2.1, 1.7);
     box(M.tuft, side * (HW - 0.42), BY + 1.2, z, 0.1, 1.4, 1.5);
@@ -571,10 +640,12 @@ export function buildCruiseOpera(THREE) {
     box(M.damaskFlank, sx * (HW + OW) / 2, (F + C) / 2, PZ, HW - OW, C - F, 0.5, true);
     // The jambs: a fluted marble column on a gilt base, under a gilt capital.
     box(M.frame, sx * (OW + 0.2), (F + OT) / 2, AZ - 0.06, 0.4, OT - F, 0.4);
-    item(rod, M.marble, sx * (OW + 0.62), (F + OT) / 2 - 0.1, AZ + 0.06,
-      0.26, OT - F - 0.5, 0.26);
+    // The shaft runs from its base up to the gilt lintel at OT; it used to
+    // stop 35 cm short, with the capital hanging in the air below the lintel.
+    item(rod, M.marble, sx * (OW + 0.62), (F + OT) / 2, AZ + 0.06,
+      0.26, OT - F, 0.26);
     item(rod, M.gilt, sx * (OW + 0.62), F + 0.16, AZ + 0.06, 0.34, 0.32, 0.34);
-    item(rod, M.gilt, sx * (OW + 0.62), OT - 0.62, AZ + 0.06, 0.34, 0.3, 0.34);
+    item(rod, M.gilt, sx * (OW + 0.62), OT - 0.15, AZ + 0.06, 0.34, 0.3, 0.34);
     pilaster(sx * (OW + 1.9), PZ + 0.32, F, C - 0.5, 0.5, 0.36, 0);
     // Inside the opening: at x = 8 they climbed straight into the proscenium
     // wall, which runs from 5.5 out to the ship's side.

@@ -1,5 +1,5 @@
 import { artsBuilder } from './cruiseArtsGeometry.js?v=20260916-garnier';
-import { createArtsTextures } from './cruiseArtsTextures.js?v=20260917-opera-lux';
+import { createArtsTextures } from './cruiseArtsTextures.js?v=20260918-foyer-photo-pbr';
 
 // The Monet gallery, built INSIDE the hull.
 //
@@ -292,7 +292,8 @@ export function buildMonetGallery(THREE, works) {
   // 1. Flooring: Polished Botticino marble slabs with dark Griotte marble perimeter
   const foyerMarble = artTex.getFoyerMarbleMaterial(3, 2);
   box(foyerMarble, 0, F - 0.15, FMID_Z, 2 * FHW, 0.3, FLEN, 'floor');
-  box(m.ivory, 0, C + 0.15, FMID_Z, 2 * FHW, 0.3, FLEN, true); // ceiling slab
+  const foyerPlaster = artTex.getFoyerPlasterMaterial(3, 1);
+  box(foyerPlaster, 0, C + 0.15, FMID_Z, 2 * FHW, 0.3, FLEN, true); // ceiling slab
 
   // Dark marble perimeter border band against side walls
   for (const sx of [-1, 1]) {
@@ -320,15 +321,18 @@ export function buildMonetGallery(THREE, works) {
   // 2. Side Walls & Classical Architecture
   // Dark French mahogany wainscoting (soubassement), crimson damask tapestry above,
   // and fluted marble pilasters with Corinthian gilded capitals.
-  const wainscotMat = m.wood;
-  const damaskWallMat = m.red;
+  const wainscotMat = artTex.getFoyerMahoganyMaterial(1, 3);
+  const damaskWallMat = artTex.getFoyerDamaskMaterial(1, 2);
   for (const side of [-1, 1]) {
     const xw = side * FHW;
     // Structural outer wall collider
     box(m.stone, xw, (F + C) / 2, FMID_Z, 0.4, C - F, FLEN, true);
 
-    // Mahogany soubassement up to y = F + 1.25
-    box(wainscotMat, side * (FHW - 0.16), F + 0.625, FMID_Z, 0.08, 1.25, FLEN);
+    // Mahogany soubassement up to y = F + 1.25. Its visible face used to be
+    // exactly coplanar with the structural wall (x = +/-5.80), which made the
+    // dark/mauve streaks below both photographs flicker. Every decorative
+    // layer now advances a clear 25 mm toward the room.
+    box(wainscotMat, side * (FHW - 0.185), F + 0.625, FMID_Z, 0.08, 1.25, FLEN);
     // Skirting plinth
     box(wainscotMat, side * (FHW - 0.18), F + 0.14, FMID_Z, 0.12, 0.28, FLEN);
     // Molded dado rail with gilt fillet
@@ -337,13 +341,13 @@ export function buildMonetGallery(THREE, works) {
     // Recessed molded wainscot panels (caissons de boiserie)
     for (let k = -1; k <= 1; k++) {
       const pz = FMID_Z + k * 1.2;
-      box(m.stone, side * (FHW - 0.18), F + 0.72, pz, 0.06, 0.78, 0.95);
-      box(m.gold, side * (FHW - 0.19), F + 0.72, pz, 0.03, 0.74, 0.91);
-      box(wainscotMat, side * (FHW - 0.17), F + 0.72, pz, 0.04, 0.68, 0.85);
+      box(m.stone, side * (FHW - 0.22), F + 0.72, pz, 0.06, 0.78, 0.95);
+      box(m.gold, side * (FHW - 0.26), F + 0.72, pz, 0.03, 0.74, 0.91);
+      box(wainscotMat, side * (FHW - 0.28), F + 0.72, pz, 0.04, 0.68, 0.85);
     }
 
     // Upper wall in crimson damask tapestry
-    box(damaskWallMat, side * (FHW - 0.16), F + 1.25 + (C - F - 1.25) / 2, FMID_Z,
+    box(damaskWallMat, side * (FHW - 0.22), F + 1.25 + (C - F - 1.25) / 2, FMID_Z,
       0.06, C - F - 1.25, FLEN);
 
     // Gilded modillion cornice along ceiling
@@ -423,7 +427,8 @@ export function buildMonetGallery(THREE, works) {
       }
     }
 
-    // Grand Gilded Framed Vintage Opera Posters on wall above each console
+    // Large destination photographs replace the former yellow opera bills:
+    // palm on the gallery's left, shell on its right.
     const posterY = F + 2.85;
     const posterW = 1.45, posterH = 2.15;
     const posterZ = cz;
@@ -434,16 +439,25 @@ export function buildMonetGallery(THREE, works) {
     box(m.goldLight, posterX + side * 0.01, posterY, posterZ, 0.08, posterH + 0.14, posterW + 0.14);
     box(m.wood, posterX + side * 0.02, posterY, posterZ, 0.07, posterH, posterW);
 
-    const posterTex = side < 0
-      ? artTex.getOperaPosterTexture('FAUST', 'Charles Gounod', 'Grand Opéra en 5 Actes', 'Saison Lyrique 1875')
-      : artTex.getOperaPosterTexture('AÏDA', 'Giuseppe Verdi', 'Opéra en 4 Actes', 'Représentation Extraordinaire');
+    const photoFile = side < 0 ? 'foyer-palm-photo.webp' : 'foyer-shell-photo.webp';
+    let posterTex;
+    loading.push(new Promise(resolve => { posterTex = floorLoader.load(
+      `./textures/cruise-monet/${photoFile}`,
+      () => resolve(photoFile), undefined,
+      () => { console.error('[cruise arts] missing foyer photograph', photoFile); resolve(null); }); }));
+    posterTex.colorSpace = THREE.SRGBColorSpace;
+    posterTex.anisotropy = 16;
     const posterMat = new THREE.MeshStandardMaterial({
       map: posterTex,
-      roughness: 0.68,
-      metalness: 0.02,
+      roughness: 0.38,
+      metalness: 0,
+      envMapIntensity: 0.7,
     });
     const posterMesh = new THREE.Mesh(new THREE.PlaneGeometry(posterW - 0.04, posterH - 0.04), posterMat);
-    posterMesh.position.set(posterX - side * 0.03, posterY, posterZ);
+    // Pull the print toward the room.  The decorative backing is made from
+    // shallow boxes, whose inward face otherwise sits in front of (or fights
+    // with) a nearly coplanar photograph and appears as a solid yellow panel.
+    posterMesh.position.set(posterX - side * 0.12, posterY, posterZ);
     posterMesh.rotation.y = posterRy;
     group.add(posterMesh);
 

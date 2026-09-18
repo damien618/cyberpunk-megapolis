@@ -190,7 +190,7 @@ with sync_playwright() as p:
     (OUT / 'arts-report.json').write_text(json.dumps(report, indent=2))
     print(json.dumps(report, indent=2), flush=True)
     browser.close()
-    assert not errors and len(images) == 8 and all(images) and not ground \
+    assert not errors and len(images) == 10 and all(images) and not ground \
         and not fit and all(w['ok'] for w in walks) \
         and all(a['width'] > 1.0 for a in aisle) \
         and all(a['width'] > 1.9 for a in sideAisle) \

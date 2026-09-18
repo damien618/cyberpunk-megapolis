@@ -452,6 +452,68 @@ export function createArtsTextures(THREE) {
     });
   }
 
+  // Rich, close-range architectural finishes for the small foyer.  These
+  // replace flat colour swatches with material-scale grain and relief while
+  // remaining cheap canvas textures (no additional downloaded PBR set).
+  function makeFoyerFinish(kind, uRepeat = 1, vRepeat = 1) {
+    const size = 512;
+    const height = document.createElement('canvas');
+    height.width = height.height = size;
+    const hg = height.getContext('2d');
+    hg.fillStyle = '#808080'; hg.fillRect(0, 0, size, size);
+    let seed = kind === 'mahogany' ? 27191 : kind === 'damask' ? 91873 : 41357;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const { tex: map } = createCanvasTexture(size, size, (g, W, H) => {
+      if (kind === 'mahogany') {
+        const grad = g.createLinearGradient(0, 0, W, 0);
+        grad.addColorStop(0, '#25140d'); grad.addColorStop(.45, '#5a2d1b');
+        grad.addColorStop(.62, '#32180f'); grad.addColorStop(1, '#6a3822');
+        g.fillStyle = grad; g.fillRect(0, 0, W, H);
+        for (let i = 0; i < 150; i++) {
+          const x = rnd() * W, wobble = 5 + rnd() * 18;
+          g.strokeStyle = `rgba(${rnd() > .5 ? '219,139,83' : '18,7,4'},${.05 + rnd() * .13})`;
+          g.lineWidth = .5 + rnd() * 2.2; g.beginPath(); g.moveTo(x, 0);
+          for (let y = 0; y <= H; y += 24) g.lineTo(x + Math.sin(y / wobble + i) * (2 + rnd() * 3), y);
+          g.stroke();
+          hg.strokeStyle = `rgba(${rnd() > .5 ? '210,210,210' : '55,55,55'},.18)`;
+          hg.lineWidth = g.lineWidth; hg.beginPath(); hg.moveTo(x, 0);
+          for (let y = 0; y <= H; y += 24) hg.lineTo(x + Math.sin(y / wobble + i) * 3, y);
+          hg.stroke();
+        }
+      } else if (kind === 'damask') {
+        g.fillStyle = '#4b0917'; g.fillRect(0, 0, W, H);
+        for (let y = 0; y < H; y += 128) for (let x = 0; x < W; x += 128) {
+          const cx = x + 64, cy = y + 64;
+          g.fillStyle = 'rgba(148,35,59,.30)'; g.strokeStyle = 'rgba(213,88,106,.24)'; g.lineWidth = 3;
+          g.beginPath(); g.moveTo(cx, cy - 48);
+          g.bezierCurveTo(cx + 50, cy - 22, cx + 38, cy + 25, cx, cy + 48);
+          g.bezierCurveTo(cx - 38, cy + 25, cx - 50, cy - 22, cx, cy - 48); g.fill(); g.stroke();
+          for (const sx of [-1, 1]) { g.beginPath(); g.arc(cx + sx * 28, cy, 21, -.9, .9); g.stroke(); }
+          hg.fillStyle = '#a8a8a8'; hg.beginPath(); hg.arc(cx, cy, 18, 0, Math.PI * 2); hg.fill();
+        }
+        for (let i = 0; i < 3500; i++) { g.fillStyle = `rgba(255,185,190,${rnd() * .035})`; g.fillRect(rnd()*W,rnd()*H,1,2); }
+      } else {
+        const grad = g.createRadialGradient(W*.35,H*.28,10,W*.5,H*.5,W*.72);
+        grad.addColorStop(0,'#fbf6e9'); grad.addColorStop(1,'#d7cbb8');
+        g.fillStyle=grad; g.fillRect(0,0,W,H);
+        for (let i=0;i<4200;i++) { const c=180+Math.floor(rnd()*55); g.fillStyle=`rgba(${c},${c-5},${c-12},${.025+rnd()*.06})`; g.fillRect(rnd()*W,rnd()*H,1+rnd()*2,1+rnd()*2); }
+      }
+    });
+    const normalMap = createNormalMapFromHeight(height, kind === 'damask' ? 2.5 : 1.4);
+    for (const t of [map, normalMap]) { t.repeat.set(uRepeat, vRepeat); t.needsUpdate = true; }
+    return new THREE.MeshStandardMaterial({
+      map, normalMap,
+      normalScale: new THREE.Vector2(kind === 'damask' ? .55 : .32, kind === 'damask' ? .55 : .32),
+      roughness: kind === 'mahogany' ? .34 : kind === 'damask' ? .82 : .68,
+      metalness: 0,
+      envMapIntensity: kind === 'mahogany' ? .72 : .38,
+    });
+  }
+
+  const getFoyerMahoganyMaterial = (u = 1, v = 1) => makeFoyerFinish('mahogany', u, v);
+  const getFoyerDamaskMaterial = (u = 1, v = 1) => makeFoyerFinish('damask', u, v);
+  const getFoyerPlasterMaterial = (u = 1, v = 1) => makeFoyerFinish('plaster', u, v);
+
   // ---------------------------------------------------------------------------
   // 4. Vintage Opera Bill / Poster Artworks (Palais Garnier & Grand Opéra)
   // Authentic Belle Époque typography and engravings in gilded molded frames.
@@ -554,6 +616,9 @@ export function createArtsTextures(THREE) {
     getCarpetMaterial,
     getBorderMaterial,
     getFoyerMarbleMaterial,
+    getFoyerMahoganyMaterial,
+    getFoyerDamaskMaterial,
+    getFoyerPlasterMaterial,
     getOperaPosterTexture,
   };
 }

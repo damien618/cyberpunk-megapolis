@@ -265,7 +265,61 @@ function skinnedExtents(root) {
  * "READY PLAYER ME" print that has no business in the park. Lift the ink to
  * fabric, then dye the shirt so two clones are not wearing the same top.
  */
-function dressGuestAtlas(map, shirtHex) {
+function drawModernTee(ctx, w, h, style, accentHex) {
+  if (!style || style === 'plain') return;
+  const accent = new THREE.Color(accentHex).getStyle();
+  // Both RPM guests use the same atlas layout: the front of the top occupies
+  // the lower-left island. Keep the artwork inside its chest so it never
+  // spills onto skin, trousers or the back panel.
+  const cx = w * 0.184, cy = h * 0.735;
+  const u = Math.min(w, h) / 1024;
+  ctx.save();
+  ctx.strokeStyle = accent;
+  ctx.fillStyle = accent;
+  ctx.lineWidth = 5 * u;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  if (style === 'orbit') {
+    ctx.beginPath();
+    ctx.arc(cx, cy, 31 * u, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx + 27 * u, cy - 19 * u, 8 * u, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (style === 'wave') {
+    for (let row = -1; row <= 1; row++) {
+      ctx.beginPath();
+      ctx.moveTo(cx - 43 * u, cy + row * 17 * u);
+      ctx.bezierCurveTo(cx - 20 * u, cy - 18 * u + row * 17 * u,
+        cx + 18 * u, cy + 18 * u + row * 17 * u, cx + 43 * u, cy + row * 17 * u);
+      ctx.stroke();
+    }
+  } else if (style === 'blocks') {
+    ctx.fillRect(cx - 43 * u, cy - 30 * u, 31 * u, 61 * u);
+    ctx.fillRect(cx - 6 * u, cy - 17 * u, 24 * u, 48 * u);
+    ctx.fillRect(cx + 24 * u, cy - 39 * u, 20 * u, 70 * u);
+  } else if (style === 'chevron') {
+    ctx.beginPath();
+    ctx.moveTo(cx - 43 * u, cy - 24 * u);
+    ctx.lineTo(cx, cy + 20 * u);
+    ctx.lineTo(cx + 43 * u, cy - 24 * u);
+    ctx.moveTo(cx - 30 * u, cy + 3 * u);
+    ctx.lineTo(cx, cy + 34 * u);
+    ctx.lineTo(cx + 30 * u, cy + 3 * u);
+    ctx.stroke();
+  } else if (style === 'badge') {
+    ctx.beginPath();
+    ctx.roundRect(cx - 40 * u, cy - 24 * u, 80 * u, 48 * u, 14 * u);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - 20 * u, cy);
+    ctx.lineTo(cx + 20 * u, cy);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function dressGuestAtlas(map, shirtHex, style = 'plain', accentHex = 0xffffff) {
   const img = map?.image;
   if (!img) return map;
   const w = img.width || img.videoWidth, h = img.height || img.videoHeight;
@@ -294,6 +348,7 @@ function dressGuestAtlas(map, shirtHex) {
     }
   }
   ctx.putImageData(data, 0, 0);
+  drawModernTee(ctx, w, h, style, accentHex);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.flipY = map.flipY;
@@ -310,7 +365,7 @@ function dressGuestAtlas(map, shirtHex) {
  * one tone. Dye it instead — keep each pixel's own luminance as the shading
  * and remap the hue, so the folds and the seams survive the recolour.
  */
-export function dressGuestAtlasDark(map, shirtHex) {
+export function dressGuestAtlasDark(map, shirtHex, style = 'plain', accentHex = 0xffffff) {
   const img = map?.image;
   if (!img) return map;
   const w = img.width || img.videoWidth, h = img.height || img.videoHeight;
@@ -344,6 +399,7 @@ export function dressGuestAtlasDark(map, shirtHex) {
     }
   }
   ctx.putImageData(data, 0, 0);
+  drawModernTee(ctx, w, h, style, accentHex);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.flipY = map.flipY;
@@ -817,6 +873,23 @@ const PALETTE = {
   hat: [0xe4d9bd, 0xd0574a, 0x3f7fbe, 0x59a06a],
   backpack: [0x4a4f78, 0x8a5f3d, 0x59a06a, 0xd0574a],
 };
+// Contemporary city/cruise tops. Pink is deliberately absent: the general
+// daytime palette already uses it, and a seeded indoor crowd could otherwise
+// roll the same bright top several times in one sightline.
+const MODERN_TEES = [
+  0x18212f, // ink navy
+  0x214e5c, // petrol
+  0x315c48, // forest
+  0x496b88, // slate blue
+  0x72483f, // muted rust
+  0x6b6580, // smoky violet
+  0xc4b070, // ochre
+  0xd8d2c5, // warm stone
+  0x222326, // charcoal
+  0xe7e3da, // off-white
+];
+const MODERN_ACCENTS = [0xf2d06b, 0x74d2c6, 0xf1eee8, 0xe98255, 0x8eb5e0, 0xb7d46a];
+const MODERN_TEE_STYLES = ['orbit', 'wave', 'blocks', 'chevron', 'badge', 'plain'];
 // Hair is tinted rather than recoloured: the pack's texture carries the strand
 // detail and the parting, and dropping it for a flat colour turns the head into
 // a helmet. Multiplied over the map instead, which is what a hair dye does.
@@ -1295,6 +1368,10 @@ export function makeVisitor(base, walkClip, rng,
   const pick = list => list[Math.floor(rng() * list.length)];
   const chosen = Object.fromEntries(
     Object.entries(PALETTE).map(([part, list]) => [part, pick(list)]));
+  const modernLook = look === 'modern';
+  const shirtStyle = modernLook ? pick(MODERN_TEE_STYLES) : 'plain';
+  const shirtAccent = modernLook ? pick(MODERN_ACCENTS) : 0xffffff;
+  if (modernLook) chosen.tshirt = pick(MODERN_TEES);
   const hairColour = pick(HAIR);
   const skinTone = pick(SKIN);
   const eyeColour = pick(EYES);
@@ -1387,9 +1464,9 @@ export function makeVisitor(base, walkClip, rng,
             barefoot,
           });
         } else if (guest?.recolor === 'atlas-dark' && c.map) {
-          c.map = dressGuestAtlasDark(c.map, chosen.tshirt);
+          c.map = dressGuestAtlasDark(c.map, chosen.tshirt, shirtStyle, shirtAccent);
         } else if (guest?.recolor !== 'tint' && c.map) {
-          c.map = dressGuestAtlas(c.map, chosen.tshirt);
+          c.map = dressGuestAtlas(c.map, chosen.tshirt, shirtStyle, shirtAccent);
         } else {
           c.color.lerp(new THREE.Color(chosen.tshirt), 0.42);
         }
