@@ -3,13 +3,13 @@ import { buildMonetGallery } from './cruiseMonetGallery.js?v=20260918-foyer-zfig
 import { buildCruiseOpera } from './cruiseOpera.js?v=20260918-opera-stage-stairs';
 import { createKabukiShow, CUES as KABUKI_CUES } from './cruiseKabuki.js?v=20260917-kabuki';
 import { buildVerneMuseum } from './cruiseMuseum.js?v=20260908-signs7';
-import { Player } from './player.js?v=20260906-seam-fix';
+import { Player } from './player.js?v=20260919-priority-animations';
 import { harmoniseHair } from './hair.js?v=11';
 import { Input } from './input.js';
 import { Controller } from './controller.js?v=10';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes, segmentAABB } from './cityBoxes.js?v=7';
-import { loadGuestRig, makeVisitor, rootBoneOf, customRig, armReach } from './crowd.js?v=67';
+import { loadGuestRig, makeVisitor, rootBoneOf, customRig, armReach } from './crowd.js?v=68';
 import { buildDesertedIsland, createMarineFauna, updateMarineLife } from './marineLife.js?v=2';
 import { createBandInstruments, PIANO_HANDS, DRUM_HITS } from './cruiseBand.js?v=6';
 
@@ -450,6 +450,44 @@ const weaveTex = canvasTex(256, 256, (g, W, H) => {
   g.putImageData(pixels, 0, 0);
 });
 weaveTex.colorSpace = THREE.NoColorSpace;
+
+// Pool-deck upholstery. The old loungers were flat teal/white blocks; this
+// close woven canvas keeps its colour in the sun while still showing threads
+// and slight salt-faded variation at walking distance.
+const poolCanvasTex = canvasTex(512, 512, (g, W, H) => {
+  g.fillStyle = '#176776';
+  g.fillRect(0, 0, W, H);
+  for (let y = 0; y < H; y += 4) {
+    g.fillStyle = y % 8 ? 'rgba(191,232,231,0.075)' : 'rgba(4,49,61,0.11)';
+    g.fillRect(0, y, W, 1);
+  }
+  for (let x = 0; x < W; x += 4) {
+    g.fillStyle = x % 8 ? 'rgba(210,241,237,0.045)' : 'rgba(2,40,50,0.08)';
+    g.fillRect(x, 0, 1, H);
+  }
+  // Broad, barely visible bands stop a large cushion reading as a flat fill.
+  for (let x = 0; x < W; x += 128) {
+    const band = g.createLinearGradient(x, 0, x + 128, 0);
+    band.addColorStop(0, 'rgba(255,255,255,0.00)');
+    band.addColorStop(0.5, 'rgba(214,239,232,0.055)');
+    band.addColorStop(1, 'rgba(0,30,42,0.035)');
+    g.fillStyle = band;
+    g.fillRect(x, 0, 128, H);
+  }
+}, 2, 5);
+
+const poolTowelTex = canvasTex(512, 512, (g, W, H) => {
+  g.fillStyle = '#eee9dc';
+  g.fillRect(0, 0, W, H);
+  for (let y = 0; y < H; y += 3) {
+    g.fillStyle = y % 6 ? 'rgba(255,255,255,0.20)' : 'rgba(130,118,96,0.10)';
+    g.fillRect(0, y, W, 1);
+  }
+  for (let x = 1; x < W; x += 6) {
+    g.fillStyle = 'rgba(255,255,255,0.13)';
+    g.fillRect(x, 0, 2, H);
+  }
+}, 3, 3);
 
 // Atrium centrepiece. This is a single, non-repeating composition rather than
 // a floor pattern: the Circle/Cylinder cap UVs map the full compass rose once.
@@ -1606,6 +1644,64 @@ const M = {
   bedRunner: new THREE.MeshStandardMaterial({ color: 0x1d3d5c, roughness: 0.82 }),
   towel: new THREE.MeshStandardMaterial({ color: 0xf4f0e6, roughness: 0.95 }),
   cushionTeal: new THREE.MeshStandardMaterial({ color: 0x2c6b78, roughness: 0.88 }),
+  poolCushion: new THREE.MeshPhysicalMaterial({
+    map: poolCanvasTex, bumpMap: weaveTex, bumpScale: 0.009,
+    color: 0xffffff, roughness: 0.86, metalness: 0,
+    sheen: 0.34, sheenColor: new THREE.Color(0x85c4c5), sheenRoughness: 0.82,
+  }),
+  poolTowel: new THREE.MeshPhysicalMaterial({
+    map: poolTowelTex, bumpMap: weaveTex, bumpScale: 0.014,
+    color: 0xffffff, roughness: 0.97, metalness: 0,
+    sheen: 0.18, sheenColor: new THREE.Color(0xffffff), sheenRoughness: 0.95,
+  }),
+  poolFrame: new THREE.MeshStandardMaterial({
+    color: 0xe2e8e9, roughness: 0.28, metalness: 0.68,
+  }),
+  // The lido bar is a small night-time landmark rather than a pale beach
+  // umbrella. A dark enamelled roof holds its silhouette against the sky;
+  // the ivory soffit and brass edge stay readable from beneath it.
+  lidoRoof: new THREE.MeshPhysicalMaterial({
+    color: 0x24495c, roughness: 0.42, metalness: 0.26,
+    clearcoat: 0.34, clearcoatRoughness: 0.38,
+  }),
+  lidoSoffit: new THREE.MeshStandardMaterial({
+    color: 0xd8c9ad, roughness: 0.82, metalness: 0.02,
+  }),
+  lidoFascia: new THREE.MeshStandardMaterial({
+    color: 0x102d3e, roughness: 0.48, metalness: 0.20,
+  }),
+  lidoShade: new THREE.MeshStandardMaterial({
+    color: 0x19394a, roughness: 0.34, metalness: 0.38,
+  }),
+  lidoBulb: new THREE.MeshStandardMaterial({
+    color: 0xfff4dc, emissive: 0xffb45b, emissiveIntensity: 0.18,
+    roughness: 0.18,
+  }),
+  garlandWire: new THREE.MeshStandardMaterial({
+    color: 0x17191c, roughness: 0.82, metalness: 0.08,
+  }),
+  garlandRed: new THREE.MeshStandardMaterial({
+    color: 0xff4b45, emissive: 0xff261c, emissiveIntensity: 0.22, roughness: 0.22,
+  }),
+  garlandGold: new THREE.MeshStandardMaterial({
+    color: 0xffc857, emissive: 0xff8a22, emissiveIntensity: 0.22, roughness: 0.22,
+  }),
+  garlandGreen: new THREE.MeshStandardMaterial({
+    color: 0x65e08a, emissive: 0x24b657, emissiveIntensity: 0.22, roughness: 0.22,
+  }),
+  garlandBlue: new THREE.MeshStandardMaterial({
+    color: 0x55cfff, emissive: 0x1f86ff, emissiveIntensity: 0.22, roughness: 0.22,
+  }),
+  garlandPink: new THREE.MeshStandardMaterial({
+    color: 0xff77cf, emissive: 0xff38a8, emissiveIntensity: 0.22, roughness: 0.22,
+  }),
+  // A deliberately narrow additive streak. At bottle scale the environment
+  // reflection alone disappears; this catches the pendant line as a crisp
+  // curved glint without making the whole bottle self-luminous.
+  bottleGlint: new THREE.MeshBasicMaterial({
+    color: 0xeaf8ff, transparent: true, opacity: 0.50,
+    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+  }),
   leatherBurgundy: new THREE.MeshStandardMaterial({ color: 0x4a121c, roughness: 0.48, metalness: 0.06 }),
   leatherBlack: new THREE.MeshStandardMaterial({ color: 0x18181c, roughness: 0.45, metalness: 0.05 }),
 
@@ -2125,6 +2221,10 @@ const loungeSeat = benchTimber(0.86, 0.20, 0.82, 0.065);
 const loungeBack = benchTimber(0.86, 0.62, 0.24, 0.075);
 const loungeArm = benchTimber(0.23, 0.43, 1.02, 0.085);
 const loungePillow = benchTimber(0.40, 0.39, 0.16, 0.06);
+const poolLoungerMattress = benchTimber(0.68, 0.075, 1.18, 0.03);
+const poolLoungerBackPad = benchTimber(0.68, 0.075, 0.66, 0.03);
+const poolLoungerPillow = benchTimber(0.46, 0.08, 0.26, 0.035);
+const poolLoungerTowel = benchTimber(0.56, 0.03, 0.34, 0.012);
 const receptionTop = benchTimber(5.6, 0.10, 1.12, 0.035);
 const atriumTableTop = benchTimber(1.65, 0.12, 0.88, 0.055);
 const atriumTableUnderTop = benchTimber(1.38, 0.07, 0.68, 0.04);
@@ -3660,7 +3760,10 @@ const cabinLights = [];
   // corridor; 219–223 sit on the HULL side of the alley so the two sets
   // of doors do not share a wall.
   const PORT_WALL = -7;               // 6 m inboard of the hull, matches 214–218
-  const LANDING = [6.4, 8.7, 3.0];
+  // Carry the public runner all the way to 215's aft bulkhead at z = 9.4.
+  // Stopping it at 8.7 left a shallow recess of the underlying mauve cabin
+  // carpet exposed directly in front of that white wall.
+  const LANDING = [6.4, 9.4];
 
   longSlab(M.corridorCarpet, -COR, COR, hallZ0, hallZ1, DECK_Y, F);
 
@@ -5336,6 +5439,52 @@ const STAIR_W = 4.4;
 const POOL_X0 = -6, POOL_X1 = 6, POOL_Z_A = -8, POOL_Z_B = 10;
 const POOL_FLOOR = POOL_Y - 1.25;      // ≈ 1 m of water — a lido pool, not a tank
 const POOL_WATER = POOL_Y - 0.28;
+const poolBarLights = [];
+let poolBarSignMaterial = null;
+const poolBarGarlandMaterials = [
+  M.garlandRed, M.garlandGold, M.garlandGreen, M.garlandBlue, M.garlandPink,
+];
+// Outdoor RPM materials are prepared for a sunny beach and carry considerably
+// more environment response than the player. Keep a separate registry for the
+// four pool-deck visitors so night can trim them without dimming the indoor
+// casino, ballroom or theatre crowds.
+const poolDeckVisitorGroups = [];
+function applyPoolDeckVisitorLighting(group, night) {
+  for (const material of group.userData.poolDeckMaterials ?? []) {
+    const base = material.userData.poolDeckBase;
+    if (!base) continue;
+    if (typeof material.envMapIntensity === 'number')
+      material.envMapIntensity = base.envMapIntensity * (night ? 0.22 : 1);
+    if (material.emissive && base.emissive)
+      material.emissive.copy(base.emissive).multiplyScalar(night ? 0.10 : 1);
+    if (typeof material.emissiveIntensity === 'number')
+      material.emissiveIntensity = base.emissiveIntensity * (night ? 0.18 : 1);
+  }
+}
+function registerPoolDeckVisitor(group) {
+  const materials = new Set();
+  group.traverse(object => {
+    if (!object.isMesh && !object.isSkinnedMesh) return;
+    const list = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of list) {
+      if (!material || materials.has(material)) continue;
+      materials.add(material);
+      material.userData.poolDeckBase = {
+        color: material.color?.clone() ?? null,
+        emissive: material.emissive?.clone() ?? null,
+        envMapIntensity: material.envMapIntensity ?? 1,
+        emissiveIntensity: material.emissiveIntensity ?? 1,
+      };
+    }
+  });
+  group.userData.poolDeckMaterials = [...materials];
+  poolDeckVisitorGroups.push(group);
+  applyPoolDeckVisitorLighting(group, cruiseTime === 'night');
+}
+function syncPoolDeckVisitorLighting(night) {
+  for (const group of poolDeckVisitorGroups)
+    applyPoolDeckVisitorLighting(group, night);
+}
 {
   // The deck itself, laid AROUND the pool basin: four slabs, because a slab
   // with a hole in it is four slabs, and a single slab under the basin would
@@ -5414,17 +5563,48 @@ const POOL_WATER = POOL_Y - 0.28;
   // rank of them at deck level would carpet the pool deck in false floor.
   function lounger(cx, cz, ry, hasTowel) {
     atY(0, cx, cz, ry, () => prop(() => {
-      const pad = hasTowel ? M.towel : M.cushionTeal;
-      const head = hasTowel ? M.cushionTeal : M.pillow;
+      // An anodised-aluminium perimeter frame with cross rails and four feet.
+      // Using M.white here used to put the hull's concrete normal map on it.
+      // Head end at -z.
+      const RAIL = POOL_Y + 0.3975;              // top of the side rails
       for (const dx of [-0.32, 0.32]) {
-        shape(G.cylBase, M.steel, dx, POOL_Y, -0.7, 0.05, 0.34, 0.05);
-        shape(G.cylBase, M.steel, dx, POOL_Y, 0.7, 0.05, 0.34, 0.05);
+        for (const z of [-0.70, 0.70]) {
+          shape(G.cylBase, M.poolFrame, dx, POOL_Y, z, 0.045, 0.34, 0.045);
+          shape(G.cyl, M.poolFrame, dx, POOL_Y + 0.025, z, 0.085, 0.035, 0.085);
+        }
+        box(M.poolFrame, dx, POOL_Y + 0.36, 0, 0.055, 0.075, 1.92);
       }
-      box(M.white, 0, POOL_Y + 0.36, 0, 0.78, 0.06, 1.9);
-      box(pad, 0, POOL_Y + 0.43, 0.05, 0.72, 0.08, 1.7);
-      // Head pillow on the pad. box() has no rx, so a raised back here
-      // was a second slab floating 35 cm up.
-      box(head, 0, POOL_Y + 0.51, -0.62, 0.56, 0.10, 0.36);
+      for (const z of [-0.82, 0, 0.82])
+        box(M.poolFrame, 0, POOL_Y + 0.36, z, 0.72, 0.06, 0.055);
+
+      // One thin mattress for seat and legs, and a backrest raised 40° from
+      // a hinge at z = -0.25. Three 22 cm blocks laid flat read as a sofa.
+      shape(poolLoungerMattress, M.poolCushion, 0, RAIL + 0.0375, 0.34, 1, 1, 1);
+      const TILT = 0.70, HINGE = -0.25;
+      const up = Math.sin(TILT), back = Math.cos(TILT);
+      // A point `along` the backrest from the hinge, `off` above its face.
+      const onBack = (along, off) => [
+        RAIL + along * up + off * back, HINGE - along * back + off * up];
+      const [by, bz] = onBack(0.33, 0.0375);
+      shape(poolLoungerBackPad, M.poolCushion, 0, by, bz, 1, 1, 1, { rx: TILT });
+      // Two struts from the rails up to the underside of the backrest.
+      const strutZ = -0.70;
+      const strutTop = RAIL + (HINGE - strutZ) * Math.tan(TILT);
+      for (const dx of [-0.26, 0.26])
+        box(M.poolFrame, dx, (RAIL + strutTop) / 2, strutZ, 0.03, strutTop - RAIL, 0.03);
+
+      // Ivory terry pillow at the top of the backrest.
+      const [py, pz] = onBack(0.50, 0.075 + 0.04);
+      shape(poolLoungerPillow, M.poolTowel, 0, py, pz, 1, 1, 1, { rx: TILT });
+
+      // Some loungers are prepared with a folded towel at the foot. Twin teal
+      // bands give it a ship-lido identity.
+      if (hasTowel) {
+        const top = RAIL + 0.075;
+        shape(poolLoungerTowel, M.poolTowel, 0, top + 0.015, 0.62, 1, 1, 1);
+        for (const z of [0.55, 0.59])
+          box(M.poolCushion, 0, top + 0.031, z, 0.54, 0.004, 0.018);
+      }
     }));
   }
   for (let i = 0; i < 7; i++) {
@@ -5445,34 +5625,184 @@ const POOL_WATER = POOL_Y - 0.28;
     }
   });
 
-  // Pool bar, forward of the pool, under a canopy.
+  // Pool bar, forward of the pool, under a proper little lido pavilion. The
+  // old single cream cone caught the night fill as one bright, featureless
+  // halo. This roof has a shallow enamelled cap, a separate matte soffit,
+  // visible beams and a dark fascia, so its construction still reads at night.
   {
     const bz = 20;
+    // Proper glass bottles for the small lido back bar. They use the same
+    // profiled geometry, liquid, printed labels and neck foils as the grand
+    // casino bar, but are scaled up slightly so their details survive outdoors.
+    const LIDO_BOTTLES = [
+      { geo: G.bottleWhisky, glass: M.glassAmberDark, liq: M.liqWhisky,
+        label: M.labelScotch, foil: M.foilBlack, d: 0.135, h: 0.40, fill: 0.62, neckD: 0.37 },
+      { geo: G.bottleWhisky, glass: M.glassFlint, liq: M.liqRum,
+        label: M.labelBourbon, foil: M.foilGold, d: 0.132, h: 0.39, fill: 0.58, neckD: 0.37 },
+      { geo: G.bottleDecanter, glass: M.glassFlint, liq: M.liqCognac,
+        label: M.labelCognac, foil: M.cork, d: 0.150, h: 0.36, fill: 0.52, neckD: 0.40 },
+      { geo: G.bottleVodka, glass: M.glassFlint, liq: M.liqClear,
+        label: M.labelVodka, foil: M.foilSilver, d: 0.120, h: 0.43, fill: 0.66, neckD: 0.44 },
+      { geo: G.bottleVodka, glass: M.glassBottleGreen, liq: M.liqGin,
+        label: M.labelGin, foil: M.foilGold, d: 0.125, h: 0.42, fill: 0.64, neckD: 0.44 },
+      { geo: G.bottleWine, glass: M.glassBottleGreen, liq: M.liqRedWine,
+        label: M.labelWine, foil: M.foilBurgundy, d: 0.118, h: 0.44, fill: 0.60, neckD: 0.39 },
+      { geo: G.bottleChampagne, glass: M.glassDeadLeaf, liq: M.liqChampagne,
+        label: M.labelChampagne, foil: M.foilGold, d: 0.138, h: 0.45, fill: 0.56, neckD: 0.48 },
+      { geo: G.bottleLiqueur, glass: M.glassCobalt, liq: M.liqCuracao,
+        label: M.labelLiqueur, foil: M.foilSilver, d: 0.130, h: 0.37, fill: 0.62, neckD: 0.38 },
+    ];
+    function lidoBottle(b, x, y, z, ry) {
+      const { d, h } = b;
+      shape(G.cylBase, b.liq, x, y + h * 0.02, z, d * 0.86, h * b.fill, d * 0.86);
+      shape(b.geo, b.glass, x, y, z, d, h, d, { ry });
+      shape(G.labelBand, b.label, x, y + h * 0.15, z,
+        d * 1.035, h * 0.29, d * 1.035, { ry });
+      shape(G.capBand, b.foil, x, y + h * 0.84, z,
+        d * b.neckD, h * 0.18, d * b.neckD, { ry });
+
+      // Two soft, offset highlights imitate the long reflection of the four
+      // pendant lamps: a body streak plus a shorter shoulder catch.
+      shape(G.sphere, M.bottleGlint, x - d * 0.22, y + h * 0.50, z - d * 0.48,
+        d * 0.12, h * 0.50, d * 0.045);
+      shape(G.sphere, M.bottleGlint, x - d * 0.15, y + h * 0.78, z - d * 0.42,
+        d * 0.16, h * 0.16, d * 0.04);
+    }
+
+    // A quadratic cable gives the garland a real catenary-like sag. Its
+    // midpoint falls over the bottle shelf while the ends climb to the frame.
+    const garlandCurve = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(-2.28, 0, 0),
+      new THREE.Vector3(0, -1.12, 0),
+      new THREE.Vector3(2.28, 0, 0),
+    );
+    const garlandCable = withUV2(new THREE.TubeGeometry(garlandCurve, 40, 0.018, 6, false));
+
     prop(() => {
-      shape(G.cyl, M.midWood, 0, POOL_Y + 0.56, bz, 8.0, 1.12, 5.0);
-      shape(G.cyl, M.teak, 0, POOL_Y + 1.16, bz, 8.4, 0.1, 5.3);
-      box(M.midWood, 0, POOL_Y + 1.2, bz + 2.0, 5.0, 2.4, 0.4);
-      for (let i = 0; i < 18; i++)
-        shape(G.cyl, i % 3 === 0 ? M.velvetGold : i % 3 === 1 ? M.poolTile : M.hullBoot,
-          -2.2 + i * 0.26, POOL_Y + 1.7, bz + 1.8, 0.12, 0.4, 0.12);
-      for (let i = 0; i < 7; i++) {
-        const a = -1.0 + i * 0.33;
-        shape(G.cylBase, M.steel, Math.sin(a) * 4.6, POOL_Y, bz - Math.cos(a) * 3.0,
-          0.1, 0.76, 0.1);
-        shape(G.cyl, M.towel, Math.sin(a) * 4.6, POOL_Y + 0.8, bz - Math.cos(a) * 3.0,
-          0.46, 0.14, 0.46);
+      // Open serving counter. The former full ellipse was a solid 8 x 5 m
+      // table: its collision box filled the bartender's workspace and its ends
+      // nearly touched the roof posts. Three shallow sections retain a gently
+      // faceted bow while leaving both sides open for a real route behind it.
+      const counterZ = bz - 2.20;
+      box(M.midWood, 0, POOL_Y + 0.55, counterZ, 4.60, 1.10, 0.72);
+      box(M.teak, 0, POOL_Y + 1.15, counterZ, 4.82, 0.10, 0.92);
+      for (const side of [-1, 1]) {
+        const wingX = side * 2.84;
+        const wingZ = bz - 2.05;
+        const wingRy = -side * 0.18;
+        box(M.midWood, wingX, POOL_Y + 0.55, wingZ, 1.34, 1.10, 0.72, wingRy);
+        box(M.teak, wingX, POOL_Y + 1.15, wingZ, 1.50, 0.10, 0.92, wingRy);
       }
-      // Thatch canopy on four posts.
-      for (const [px, pz] of [[-4.4, bz - 3.4], [4.4, bz - 3.4], [-4.4, bz + 2.6], [4.4, bz + 2.6]])
-        shape(G.cylBase, M.midWood, px, POOL_Y, pz, 0.14, 3.2, 0.14);
-      shape(G.canopy, M.cream, 0, POOL_Y + 2.7, bz - 0.4, 12.5, 1.5, 9.0);
+
+      // A brass rail and dark inset make the new front read as one counter,
+      // without adding another collision volume across either entrance.
+      box(M.brass, 0, POOL_Y + 0.93, counterZ - 0.375, 4.35, 0.035, 0.035);
+      box(M.lidoFascia, 0, POOL_Y + 0.50, counterZ - 0.37, 4.05, 0.50, 0.035);
+      box(M.midWood, 0, POOL_Y + 1.2, bz + 2.0, 5.0, 2.4, 0.4);
+
+      // Recessed bottle niche, glass shelf and brass nosing. The old bottles
+      // floated as coloured cylinders against bare timber; this reads as a
+      // built buffet even before its decorative lighting comes on.
+      box(M.artDecoEbony, 0, POOL_Y + 1.72, bz + 1.785, 4.76, 0.96, 0.035);
+      box(M.crystalGlass, 0, POOL_Y + 1.43, bz + 1.66, 4.72, 0.045, 0.42);
+      box(M.brass, 0, POOL_Y + 1.455, bz + 1.45, 4.82, 0.045, 0.055);
+      for (const x of [-2.39, 2.39])
+        box(M.brass, x, POOL_Y + 1.72, bz + 1.755, 0.045, 1.00, 0.055);
+
+      for (let i = 0; i < 18; i++) {
+        const x = -2.18 + i * (4.36 / 17);
+        const wobble = Math.sin((i + 1) * 17.43) * 0.16;
+        lidoBottle(LIDO_BOTTLES[i % LIDO_BOTTLES.length], x,
+          POOL_Y + 1.46, bz + 1.65 + Math.cos(i * 2.17) * 0.018, wobble);
+      }
+
+      // Multicolour bulbs follow the same descending arc as the black cable.
+      // Each hangs from a brass socket so the garland still has form by day.
+      const garlandY = POOL_Y + 2.25;
+      const garlandZ = bz + 1.46;
+      shape(garlandCable, M.garlandWire, 0, garlandY, garlandZ, 1, 1, 1);
+      for (let i = 0; i < 15; i++) {
+        const t = i / 14;
+        const x = -2.28 + 4.56 * t;
+        const y = garlandY - 2.24 * t * (1 - t);
+        const bulbMat = poolBarGarlandMaterials[i % poolBarGarlandMaterials.length];
+        shape(G.cyl, M.brass, x, y - 0.035, garlandZ - 0.008, 0.065, 0.075, 0.065);
+        shape(G.sphere, bulbMat, x, y - 0.105, garlandZ - 0.015, 0.115, 0.145, 0.105);
+      }
+
+      // Five stools along the guest side. Keeping the end bays empty makes
+      // the two ~1.5 m access passages immediately legible and comfortably
+      // wider than the player's 84 cm capsule.
+      for (const x of [-2.8, -1.4, 0, 1.4, 2.8]) {
+        const z = bz - 2.98 + Math.abs(x) * 0.075;
+        shape(G.cylBase, M.steel, x, POOL_Y, z, 0.10, 0.76, 0.10);
+        shape(G.cyl, M.towel, x, POOL_Y + 0.8, z, 0.46, 0.14, 0.46);
+      }
+
+      // Four varnished posts with proper feet and brass capitals. Their dark
+      // finish frames the bar instead of disappearing into the orange wash.
+      for (const [px, pz] of [[-5.15, bz - 3.4], [5.15, bz - 3.4], [-5.15, bz + 2.6], [5.15, bz + 2.6]]) {
+        shape(G.cyl, M.brass, px, POOL_Y + 0.035, pz, 0.34, 0.07, 0.34);
+        shape(G.cylBase, M.artDecoEbony, px, POOL_Y + 0.05, pz, 0.18, 2.95, 0.18);
+        shape(G.cyl, M.brass, px, POOL_Y + 2.94, pz, 0.28, 0.10, 0.28);
+      }
+
+      const roofZ = bz - 0.4;
+      // A flat under-deck masks the closed base of the cone and gives the
+      // pendant fittings a believable ceiling to hang from.
+      box(M.lidoSoffit, 0, POOL_Y + 3.07, roofZ, 11.45, 0.16, 7.20);
+      for (const x of [-4.3, -2.15, 0, 2.15, 4.3])
+        box(M.midWood, x, POOL_Y + 2.965, roofZ, 0.085, 0.06, 6.88);
+
+      // Low hipped roof, navy fascia and a narrow brass drip edge. Layering
+      // these parts removes the paper-thin silhouette of the former canopy.
+      shape(G.canopy, M.lidoRoof, 0, POOL_Y + 3.15, roofZ, 12.20, 0.92, 8.05);
+      for (const z of [roofZ - 3.98, roofZ + 3.98]) {
+        box(M.lidoFascia, 0, POOL_Y + 3.07, z, 12.28, 0.25, 0.18);
+        box(M.brass, 0, POOL_Y + 2.93, z, 12.34, 0.035, 0.06);
+      }
+      for (const x of [-6.05, 6.05]) {
+        box(M.lidoFascia, x, POOL_Y + 3.07, roofZ, 0.18, 0.25, 8.00);
+        box(M.brass, x, POOL_Y + 2.93, roofZ, 0.06, 0.035, 8.04);
+      }
+      // A small finial gives the otherwise shallow roof a crisp centre point.
+      shape(G.cylBase, M.brass, 0, POOL_Y + 4.04, roofZ, 0.09, 0.28, 0.09);
+      shape(G.sphere, M.brass, 0, POOL_Y + 4.34, roofZ, 0.18, 0.18, 0.18);
+
+      // Four real pendant fixtures across the serving face: ceiling rose,
+      // brass stem, enamel shade, bright bulb and lower rim. The bulb is the
+      // visible source, while a narrow spotlight below it paints separate
+      // pools on the counter instead of relighting the entire roof.
+      for (const x of [-3.3, -1.1, 1.1, 3.3]) {
+        const lz = bz - 1.82;
+        shape(G.cyl, M.brass, x, POOL_Y + 2.96, lz, 0.24, 0.08, 0.24);
+        shape(G.cyl, M.brass, x, POOL_Y + 2.76, lz, 0.055, 0.36, 0.055);
+        shape(G.canopy, M.lidoShade, x, POOL_Y + 2.46, lz, 0.76, 0.27, 0.76);
+        shape(G.torus, M.brass, x, POOL_Y + 2.47, lz, 0.79, 0.79, 0.79);
+        shape(G.sphere, M.lidoBulb, x, POOL_Y + 2.39, lz, 0.24, 0.28, 0.24);
+      }
     });
-    const sign = canvasMat(512, 128, (g, W, H) => {
+
+    poolBarSignMaterial = canvasMat(512, 128, (g, W, H) => {
       g.fillStyle = '#0d3550';
       g.fillRect(0, 0, W, H);
       paintText(g, 'LIDO BAR', W / 2, H / 2, 64, '#ffd98a');
-    }, { emissive: 0xffffff, emissiveIntensity: 0.5 });
-    prop(() => shape(G.card, sign, 0, POOL_Y + 2.9, bz + 1.78, 4.6, 1.15, 1));
+    }, { emissive: 0xffffff, emissiveIntensity: 0.18 });
+    prop(() => {
+      box(M.brass, 0, POOL_Y + 2.67, bz + 1.765, 5.02, 0.98, 0.09);
+      box(M.lidoFascia, 0, POOL_Y + 2.67, bz + 1.82, 4.86, 0.82, 0.035);
+      shape(G.card, poolBarSignMaterial, 0, POOL_Y + 2.67, bz + 1.845, 4.62, 0.64, 1);
+    });
+
+    for (const x of [-3.3, -1.1, 1.1, 3.3]) {
+      const spot = new THREE.SpotLight(0xffbf72, 0, 6.2, 0.52, 0.72, 1.8);
+      spot.position.set(x, POOL_Y + 2.38, bz - 1.82);
+      spot.target.position.set(x, POOL_Y + 1.08, bz - 2.08);
+      spot.userData.base = 20;
+      spot.castShadow = false;
+      scene.add(spot, spot.target);
+      poolBarLights.push(spot);
+    }
   }
 
   // The funnel, aft of the pool: navy with the line's gold band and a black
@@ -5803,7 +6133,8 @@ seaMat.onBeforeCompile = shader => {
   shader.uniforms.uTime = seaUniforms.uTime;
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', `#include <common>
-      uniform float uTime;`)
+      uniform float uTime;
+      varying vec2 vSeaWorldXZ;`)
     .replace('#include <begin_vertex>', `#include <begin_vertex>
       // A long swell crossed by a shorter one. Geometry, not a normal map:
       // from the pool deck the horizon has to actually undulate, and a flat
@@ -5811,8 +6142,22 @@ seaMat.onBeforeCompile = shader => {
       float sw = sin( position.x * 0.014 + uTime * 0.55 ) * 1.5
                + sin( position.y * 0.021 - uTime * 0.78 ) * 0.9
                + sin( ( position.x + position.y ) * 0.037 + uTime * 1.1 ) * 0.35;
-      transformed.z += sw;`);
+      transformed.z += sw;
+      vSeaWorldXZ = ( modelMatrix * vec4( transformed, 1.0 ) ).xz;`);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `#include <common>
+      varying vec2 vSeaWorldXZ;`)
+    .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+      // The arts hold is below mean sea level and its floor sits inside the
+      // swell's vertical range. Cut water out of the hold in world space so a
+      // crest cannot cross the Monet parquet while it is still visible from
+      // the top of the stairs (before the camera/player visibility gate trips).
+      if (vSeaWorldXZ.x > ${ARTS_WELL.x0.toFixed(1)}
+          && vSeaWorldXZ.x < ${ARTS_WELL.x1.toFixed(1)}
+          && vSeaWorldXZ.y > ${ARTS_WELL.z0.toFixed(1)}
+          && vSeaWorldXZ.y < ${ARTS_WELL.z1.toFixed(1)}) discard;`);
 };
+seaMat.customProgramCacheKey = () => 'cruise-sea-arts-hold-clip-v1';
 // The plane follows the camera, and day fog eats the horizon at 1.7 km, so
 // 3.6 km covers the fade. Segment density matches the old 6000 / 240 = 25 m
 // quads (the swell wavelengths are 170–450 m), at about a third of the vertices.
@@ -6240,6 +6585,18 @@ function setCruiseTime(name) {
   M.neonCyan.emissiveIntensity = s.neon;
   M.glass.emissiveIntensity = s.glow;
   M.glass.opacity = cruiseTime === 'night' ? 0.55 : 0.30;
+  // The lido fixtures are deliberately localized spotlights. During the day
+  // their bulbs remain just visible; at night the four pools of light reveal
+  // the counter, stools and bottles without turning the soffit into a halo.
+  const lidoNight = cruiseTime === 'night';
+  M.lidoBulb.emissiveIntensity = lidoNight ? 3.2 : 0.18;
+  for (const m of poolBarGarlandMaterials)
+    m.emissiveIntensity = lidoNight ? 2.8 : 0.22;
+  syncPoolDeckVisitorLighting(lidoNight);
+  if (poolBarSignMaterial)
+    poolBarSignMaterial.emissiveIntensity = lidoNight ? 0.82 : 0.18;
+  for (const l of poolBarLights)
+    l.intensity = l.userData.base * (lidoNight ? 1 : 0.055);
   for (const m of casinoNeon) m.emissiveIntensity = s.neon * 0.85;
   // The ballroom is feutrée at every hour, so its lamps are TRIMMED, never
   // switched: the candles and the dome are fixed emissives that ignore the
@@ -6622,23 +6979,35 @@ console.log('[cruise] hook set on window early');
 
 // ---------------------------------------------------------------------------
 console.log('[cruise] loading player...');
-try {
-  player = new Player(scene);
-  await player.load('girl', girlMatFor);
-  player.addWardrobePart('hairCrown', harmoniseHair(player, {
-    scalp: await charImage(CHAR_MATS?.MAT_SurvGirl_Head?.tex || 'survgirl_head_diff.webp'),
-    strands: await charImage(CHAR_MATS?.MAT_SurvGirl_Hair?.tex || 'survgirl_hair_diff.webp'),
-    strandsAO: await charImage(CHAR_MATS?.MAT_SurvGirl_Hair?.aoTex || 'survgirl_hair_ao.webp'),
-  }));
-  console.log('[cruise] player loaded successfully');
-} catch (err) {
-  console.error('[cruise] player load error:', err);
-}
+const loadingPlayer = new Player(scene);
+hook.playerReady = loadingPlayer.load('girl', girlMatFor, undefined, { deferAnimations: true })
+  .then(() => {
+    // The ship is already playable. Attach the avatar as soon as its base model
+    // is ready; hair textures and traversal clips can finish independently.
+    player = loadingPlayer;
+    console.log('[cruise] player loaded successfully');
+    Promise.all([
+      charImage(CHAR_MATS?.MAT_SurvGirl_Head?.tex || 'survgirl_head_diff.webp'),
+      charImage(CHAR_MATS?.MAT_SurvGirl_Hair?.tex || 'survgirl_hair_diff.webp'),
+      charImage(CHAR_MATS?.MAT_SurvGirl_Hair?.aoTex || 'survgirl_hair_ao.webp'),
+    ]).then(([scalp, strands, strandsAO]) => {
+      player.addWardrobePart('hairCrown', harmoniseHair(player, { scalp, strands, strandsAO }));
+    }).catch(err => console.warn('[cruise] player hair load error:', err));
+    return player;
+  })
+  .catch(err => {
+    console.error('[cruise] player load error:', err);
+    return null;
+  });
+// Only the base avatar is on the critical path. It decodes much faster before
+// the render loop begins; all of its clips are already deferred by Player.
+await hook.playerReady;
 
 // ---------------------------------------------------------------------------
 // Passengers. Ready Player Me guests, never the pack rig — a crowd built from
 // the player's own base is a crowd wearing the player's face.
 // ---------------------------------------------------------------------------
+async function loadCruisePeople() {
 try {
   const guests = [];
   for (const [model, walk, idle, h, rc] of [
@@ -6651,7 +7020,7 @@ try {
         model: `./glb/visitors/${model}?v=1`,
         walk: `./glb/visitors/${walk}?v=1`,
         idle: `./glb/visitors/${idle}?v=1`,
-        height: h, recolor: rc,
+        height: h, recolor: rc, lit: true,
       }));
       console.log('[cruise] loaded guest rig:', model);
     } catch (e) { console.warn('[cruise] guest rig', model, e); }
@@ -6730,6 +7099,7 @@ try {
       const v = visitor(i, { playIdle: true, ...opts });
       v.group.position.set(x, y, z);
       v.group.rotation.y = yaw;
+      if (y >= POOL_Y - 0.25) registerPoolDeckVisitor(v.group);
       scene.add(v.group);
       people.push({ ...v, kind: 'idle', baseYaw: yaw, phase: rnd() * 6.28 });
       return v;
@@ -6819,6 +7189,7 @@ try {
       const v = visitor(i, opts);
       v.group.position.set(x, y, z0);
       v.group.rotation.y = yaw;
+      if (y >= POOL_Y - 0.25) registerPoolDeckVisitor(v.group);
       scene.add(v.group);
       people.push({
         ...v, kind: 'patrol', x, z0, z1, dir: 1,
@@ -7595,6 +7966,14 @@ try {
   console.warn('[cruise] people', e);
 }
 console.log('[cruise] people placed, total:', people.length);
+}
+// The crowd is decorative and expensive to decode. Do not hold the whole
+// module (and therefore the Embark button) until every passenger is ready.
+// It also starts only after the player's base model: two large GLBs decoding
+// together made the important avatar lose the CPU to a decorative guest.
+hook.peopleReady = hook.playerReady
+  .then(() => loadingPlayer.animationsReady)
+  .then(() => loadCruisePeople());
 
 const peopleFrustum = new THREE.Frustum();
 const peopleViewProjection = new THREE.Matrix4();
@@ -7674,14 +8053,21 @@ function updateLocalLights(px, py, pz) {
       ? dx * dx + dy * dy + dz * dz : Infinity;
   }
   localLightSources.sort((a, b) => a.userData.viewDistanceSq - b.userData.viewDistanceSq);
+  // Every source is an indoor lamp, and none of them casts shadows — so from
+  // the pool deck the nearest eight were the casino's and the ballroom's,
+  // 18 m reach, shining up through the house roof onto the passengers' legs
+  // and faces while the teak they stood on (facing away) stayed moonlit.
+  // Above the rooms' ceiling there is no room to light: fade them out over
+  // the last metre of the aft stair.
+  const indoor = THREE.MathUtils.clamp(CEIL_Y + 0.5 - py, 0, 1);
   for (let i = 0; i < localLightPool.length; i++) {
     const target = localLightPool[i], source = localLightSources[i];
-    if (!source) { target.intensity = 0; continue; }
+    if (!source || indoor === 0) { target.intensity = 0; continue; }
     target.position.copy(source.position);
     target.color.copy(source.color);
     target.distance = source.distance;
     target.decay = source.decay;
-    target.intensity = source.intensity;
+    target.intensity = source.intensity * indoor;
   }
 }
 
@@ -8144,7 +8530,10 @@ function animate() {
   renderer.render(scene, camera);
   input.endFrame();
 }
-animate();
+// Publishing the start handler must not wait for shader compilation in the
+// first render. On a cold/software WebGL context that synchronous frame can
+// take seconds; schedule it after the module has finished evaluating instead.
+requestAnimationFrame(animate);
 
 function initBallroomAudio() {
   if (ballroomListener) return;
@@ -8269,6 +8658,14 @@ function resumePlay() {
 }
 
 function startCruise() {
+  // A click made while this large module is still loading is queued by
+  // index.html. Restore the normal button before hiding the briefing so it is
+  // usable again if pointer lock is later released and the overlay returns.
+  if (startBtn) {
+    startBtn.disabled = false;
+    const label = startBtn.querySelector('.brief-cruise');
+    if (label) label.textContent = 'Embarquer';
+  }
   if (started) {
     resumePlay();
     return;

@@ -795,7 +795,7 @@ function attachBeachShades(group, rng) {
 const clipCache = new Map();
 export async function loadGuestRig({
   model, walk, idle, height = 1.68, recolor = 'atlas',
-  walkClipName, idleClipName, retarget = false,
+  walkClipName, idleClipName, retarget = false, lit = false,
 } = {}) {
   const loader = new GLTFLoader().setDRACOLoader(dracoLoader);
   const gltf = await loader.loadAsync(model);
@@ -812,6 +812,19 @@ export async function loadGuestRig({
   const scene = gltf.scene;
   scene.traverse(o => {
     if (!o.isMesh && !o.isSkinnedMesh) return;
+    // The RPM visitor rigs ship with KHR_materials_unlit, so the loader hands
+    // back MeshBasicMaterial: full-bright texture whatever the lighting. Under
+    // a flat sun that passes; on a moonlit deck they were the brightest thing
+    // in the frame. `lit` swaps in a standard material with the same map.
+    if (lit && o.material?.isMeshBasicMaterial) {
+      const b = o.material;
+      o.material = new THREE.MeshStandardMaterial({
+        name: b.name, map: b.map, color: b.color, transparent: b.transparent,
+        opacity: b.opacity, alphaTest: b.alphaTest, side: b.side,
+        roughness: 0.82, metalness: 0,
+      });
+      b.dispose();
+    }
     const list = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
     for (const m of list) {
       if (m.map) m.map.colorSpace = THREE.SRGBColorSpace;

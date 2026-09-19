@@ -640,7 +640,7 @@ export class Player {
     }
   }
 
-  async load(gender, matFactory, manager) {
+  async load(gender, matFactory, manager, { deferAnimations = false } = {}) {
     const loader = new GLTFLoader(manager || undefined).setDRACOLoader(dracoLoader);
     const gltf = await loader.loadAsync(`./chars/glb/${gender}.glb`);
     this.model = gltf.scene;
@@ -736,32 +736,45 @@ export class Player {
     this.seatHipRise = this.measureSeatHipRise();
     this.mixer = new THREE.AnimationMixer(this.model);
 
-    const clips = {};
-    for (const [key, file] of Object.entries(TRAVERSAL_CLIPS)) {
-      const g = await loader.loadAsync(`./chars/anims/${file}.glb`);
-      const clip = g.animations[0];
-      if (!clip) { console.warn('no anim in', file); continue; }
-      cleanClip(clip);
-      if (STRIP_PELVIS_POS.has(key))
-        clip.tracks = clip.tracks.filter(t => t.name !== 'pelvis.position');
-      clips[key] = clip;
+    const loadAnimations = async () => {
+      // These files are independent. Loading them one after another made a
+      // cold start pay ten network/decode round trips before showing a map.
+      const loaded = await Promise.all(Object.entries(TRAVERSAL_CLIPS).map(async ([key, file]) => {
+        const g = await loader.loadAsync(`./chars/anims/${file}.glb`);
+        const clip = g.animations[0];
+        if (!clip) { console.warn('no anim in', file); return [key, null]; }
+        cleanClip(clip);
+        if (STRIP_PELVIS_POS.has(key))
+          clip.tracks = clip.tracks.filter(t => t.name !== 'pelvis.position');
+        return [key, clip];
+      }));
+      const clips = Object.fromEntries(loaded.filter(([, clip]) => clip));
+      // sprint = the run clip at a higher tempo. The pack has no UE4-native
+      // sprint; the MovementAnimsetPro one is on a Mixamo rig whose joint
+      // frames don't match this skeleton — a name-only track remap tilts and
+      // deforms the body (true retargeting needs bind-pose deltas).
+      if (clips.run) {
+        const c = clips.run.clone();
+        c.name = 'SprintFromRun';
+        clips.sprint = c;
+      }
+      for (const [key, clip] of Object.entries(clips)) {
+        const a = this.mixer.clipAction(clip);
+        a.clampWhenFinished = true;
+        if (key === 'sprint') a.timeScale = 1.3;   // 11 m/s stride cadence -> ~14 m/s
+        this.actions[key] = a;
+      }
+      this.play('idle', 0);
+    };
+    if (deferAnimations) {
+      // Start the independent requests now, but do not keep the importing map
+      // waiting for their decode before it can publish its start function.
+      this.animationsReady = loadAnimations();
+      this.animationsReady.catch(error => console.warn('[player] animations', error));
+    } else {
+      this.animationsReady = loadAnimations();
+      await this.animationsReady;
     }
-    // sprint = the run clip at a higher tempo. The pack has no UE4-native
-    // sprint; the MovementAnimsetPro one is on a Mixamo rig whose joint
-    // frames don't match this skeleton — a name-only track remap tilts and
-    // deforms the body (true retargeting needs bind-pose deltas).
-    if (clips.run) {
-      const c = clips.run.clone();
-      c.name = 'SprintFromRun';
-      clips.sprint = c;
-    }
-    for (const [key, clip] of Object.entries(clips)) {
-      const a = this.mixer.clipAction(clip);
-      a.clampWhenFinished = true;
-      if (key === 'sprint') a.timeScale = 1.3;   // 11 m/s stride cadence -> ~14 m/s
-      this.actions[key] = a;
-    }
-    this.play('idle', 0);
   }
 
   createSkinnedClone(source, geometry, material, name) {
