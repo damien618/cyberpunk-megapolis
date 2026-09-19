@@ -775,20 +775,23 @@ export function updateMarineLife(dt, t, fauna, islandData) {
 
     d.mesh.position.set(x, y, z);
 
+    // The model's nose points along local +Z. Follow the complete horizontal
+    // path tangent so the dolphin turns around with its trajectory.
+    const vx = 3.5 * 0.25 * Math.cos(t * 0.25 + cfg.phase);
+    const vz = cfg.rangeZ * 0.35 * Math.cos(t * 0.35 + cfg.phase);
+    const yaw = Math.atan2(vx, vz);
+
     // Pitch follows velocity tangent (nose up exiting, horizontal at apex, nose down entering)
     const pitch = THREE.MathUtils.clamp(-vy * 0.48, -0.65, 0.65);
-    d.mesh.rotation.x = pitch;
-
-    // Heading slightly angled forward (+Z) with wave sway
-    const yaw = Math.sin(t * 0.4 + cfg.phase) * 0.12;
-    d.mesh.rotation.y = yaw;
 
     // Roll / banking during turn or twist
+    let roll;
     if (cfg.twist && cycleT < jumpFrac) {
-      d.mesh.rotation.z = Math.sin((cycleT / jumpFrac) * Math.PI * 2) * 0.6;
+      roll = Math.sin((cycleT / jumpFrac) * Math.PI * 2) * 0.6;
     } else {
-      d.mesh.rotation.z = Math.sin(t * 0.8 + cfg.phase) * 0.15;
+      roll = Math.sin(t * 0.8 + cfg.phase) * 0.15;
     }
+    d.mesh.rotation.set(pitch, yaw, roll, 'YXZ');
 
     // Tail flex animation
     if (d.mesh.userData.tail) {
@@ -834,17 +837,24 @@ export function updateMarineLife(dt, t, fauna, islandData) {
 
     o.mesh.position.set(x, y, z);
 
-    // Tangent pitch
+    // The model's nose points along local +Z. Follow the horizontal path
+    // tangent, including its return leg, instead of always facing world +Z.
+    const vx = 4.5 * 0.18 * Math.cos(t * 0.18 + cfg.phase);
+    const vz = cfg.rangeZ * 0.22 * Math.cos(t * 0.22 + cfg.phase);
+    const yaw = Math.atan2(vx, vz);
     const pitch = THREE.MathUtils.clamp(-vy * 0.42, -0.55, 0.55);
-    o.mesh.rotation.x = pitch;
 
     // Body roll: Bull orca tilts to 35° during high breach displaying its white belly!
+    let roll;
     if (cfg.isMale && cycleT < surfaceFrac) {
       const rollFrac = Math.sin((cycleT / surfaceFrac) * Math.PI);
-      o.mesh.rotation.z = rollFrac * 0.52;
+      roll = rollFrac * 0.52;
     } else {
-      o.mesh.rotation.z = Math.sin(t * 0.5 + cfg.phase) * 0.12;
+      roll = Math.sin(t * 0.5 + cfg.phase) * 0.12;
     }
+    // Heading about world up, then pitch and roll about the animal's local
+    // axes. Default XYZ would reverse the pitch when heading back along -Z.
+    o.mesh.rotation.set(pitch, yaw, roll, 'YXZ');
 
     // Tail motion
     if (o.mesh.userData.tail) {

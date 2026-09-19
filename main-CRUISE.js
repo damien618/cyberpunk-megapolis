@@ -10,7 +10,7 @@ import { Controller } from './controller.js?v=10';
 import { CameraRig } from './cameraRig.js?v=7';
 import { buildCityBoxes, segmentAABB } from './cityBoxes.js?v=7';
 import { loadGuestRig, makeVisitor, rootBoneOf, customRig, armReach } from './crowd.js?v=68';
-import { buildDesertedIsland, createMarineFauna, updateMarineLife } from './marineLife.js?v=2';
+import { buildDesertedIsland, createMarineFauna, updateMarineLife } from './marineLife.js?v=4-cetacean-heading';
 import { createBandInstruments, PIANO_HANDS, DRUM_HITS } from './cruiseBand.js?v=6';
 
 console.log('[cruise] starting module evaluation');
