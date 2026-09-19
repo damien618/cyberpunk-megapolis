@@ -489,6 +489,73 @@ const poolTowelTex = canvasTex(512, 512, (g, W, H) => {
   }
 }, 3, 3);
 
+// Pool parasol canvas. The matching canopy geometry unwraps its circumference
+// across U and runs from the crown at V=0 to the valance at V=1, so eight
+// painted panels line up with its eight physical facets. The soft shading,
+// stitched ribs and bound lower edge remain visible from across the pool while
+// the separate high-frequency bump map supplies the close-up woven grain.
+function parasolCanvasTex(base, light, dark, seam) {
+  return canvasTex(1024, 512, (g, W, H) => {
+    g.fillStyle = base;
+    g.fillRect(0, 0, W, H);
+    const panelW = W / 8;
+    for (let panel = 0; panel < 8; panel++) {
+      const x = panel * panelW;
+      const shade = g.createLinearGradient(x, 0, x + panelW, 0);
+      shade.addColorStop(0, dark);
+      shade.addColorStop(0.18, 'rgba(0,0,0,0)');
+      shade.addColorStop(0.52, panel % 2 ? light : 'rgba(255,255,255,0.025)');
+      shade.addColorStop(0.84, 'rgba(0,0,0,0)');
+      shade.addColorStop(1, dark);
+      g.fillStyle = shade;
+      g.fillRect(x, 0, panelW, H);
+
+      // Warp and weft are intentionally subtle: enough to break the smooth
+      // plastic highlight without turning the canopy into a striped graphic.
+      for (let xx = x + 3; xx < x + panelW; xx += 5) {
+        g.fillStyle = 'rgba(255,255,255,0.035)';
+        g.fillRect(xx, 0, 1, H);
+      }
+    }
+    for (let y = 2; y < H; y += 4) {
+      g.fillStyle = y % 8 ? 'rgba(255,255,255,0.022)' : 'rgba(0,0,0,0.028)';
+      g.fillRect(0, y, W, 1);
+    }
+
+    // Piped seams sit on each geometric rib. A dark stitch channel next to a
+    // hairline highlight gives them depth under both the day and night rigs.
+    for (let panel = 0; panel <= 8; panel++) {
+      const x = panel * panelW;
+      g.fillStyle = 'rgba(0,0,0,0.30)';
+      g.fillRect(x - 3, 0, 6, H);
+      g.fillStyle = seam;
+      g.fillRect(x - 1, 0, 2, H);
+      g.fillStyle = 'rgba(255,255,255,0.18)';
+      g.fillRect(x + 1, 0, 1, H);
+    }
+
+    // Reinforced crown patch and the heavier binding around the exposed rim.
+    const crown = g.createLinearGradient(0, 0, 0, 34);
+    crown.addColorStop(0, 'rgba(0,0,0,0.34)');
+    crown.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = crown;
+    g.fillRect(0, 0, W, 34);
+    g.fillStyle = 'rgba(0,0,0,0.38)';
+    g.fillRect(0, H - 18, W, 18);
+    g.fillStyle = seam;
+    g.fillRect(0, H - 18, W, 4);
+    g.fillStyle = 'rgba(255,255,255,0.16)';
+    g.fillRect(0, H - 14, W, 2);
+  });
+}
+const parasolNavyTex = parasolCanvasTex(
+  '#24577e', 'rgba(132,175,207,0.16)', 'rgba(4,24,43,0.16)', '#6f96b2');
+const parasolRedTex = parasolCanvasTex(
+  '#a93b34', 'rgba(244,151,137,0.14)', 'rgba(60,7,5,0.15)', '#d68678');
+const parasolWeaveTex = weaveTex.clone();
+parasolWeaveTex.repeat.set(28, 12);
+parasolWeaveTex.needsUpdate = true;
+
 // Atrium centrepiece. This is a single, non-repeating composition rather than
 // a floor pattern: the Circle/Cylinder cap UVs map the full compass rose once.
 // Clamp the edge so the dark navy binding remains clean at grazing angles.
@@ -1657,6 +1724,18 @@ const M = {
   poolFrame: new THREE.MeshStandardMaterial({
     color: 0xe2e8e9, roughness: 0.28, metalness: 0.68,
   }),
+  parasolNavy: new THREE.MeshPhysicalMaterial({
+    map: parasolNavyTex, bumpMap: parasolWeaveTex, bumpScale: 0.010,
+    color: 0xffffff, roughness: 0.88, metalness: 0,
+    sheen: 0.38, sheenColor: new THREE.Color(0x8fb6d0), sheenRoughness: 0.82,
+    side: THREE.DoubleSide,
+  }),
+  parasolRed: new THREE.MeshPhysicalMaterial({
+    map: parasolRedTex, bumpMap: parasolWeaveTex, bumpScale: 0.010,
+    color: 0xffffff, roughness: 0.89, metalness: 0,
+    sheen: 0.34, sheenColor: new THREE.Color(0xe6a095), sheenRoughness: 0.84,
+    side: THREE.DoubleSide,
+  }),
   // The lido bar is a small night-time landmark rather than a pale beach
   // umbrella. A dark enamelled roof holds its silhouette against the sky;
   // the ivory soffit and brass edge stay readable from beneath it.
@@ -1982,6 +2061,46 @@ function latheGeo(points, segments = 20) {
   return withUV2(new THREE.LatheGeometry(
     points.map(([r, y]) => new THREE.Vector2(r, y)), segments));
 }
+
+// A parasol is not a shallow pyramid. Each of its eight cloth panels follows
+// a curved rib: fairly taut near the crown, then dropping more decisively into
+// the outer binding. Panel vertices are deliberately duplicated at the seams,
+// keeping the ribs readable while the twelve radial rings make the underside
+// visibly bowed instead of one flat triangular board.
+function parasolCanopyGeometry(radialSteps = 12) {
+  const positions = [];
+  const uvs = [];
+  const indices = [];
+  const panels = 8;
+  for (let panel = 0; panel < panels; panel++) {
+    const first = positions.length / 3;
+    for (let ring = 0; ring <= radialSteps; ring++) {
+      const t = ring / radialSteps;
+      const radius = 0.5 * t;
+      const y = Math.pow(1 - t, 0.68);
+      for (let side = 0; side < 2; side++) {
+        const u = (panel + side) / panels;
+        const a = u * Math.PI * 2;
+        positions.push(Math.sin(a) * radius, y, Math.cos(a) * radius);
+        uvs.push(u, t);
+      }
+    }
+    for (let ring = 0; ring < radialSteps; ring++) {
+      const a = first + ring * 2;
+      const b = a + 1;
+      const c = a + 2;
+      const d = a + 3;
+      if (ring === 0) indices.push(a, c, d);
+      else indices.push(a, c, d, a, d, b);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return withUV2(geometry);
+}
 const BOTTLE_PROFILES = {
   // Bourbon and scotch: broad body, a shoulder that turns in fast, short neck.
   whisky: [[0, 0], [0.44, 0], [0.5, 0.04], [0.5, 0.47], [0.49, 0.55], [0.40, 0.63],
@@ -2031,6 +2150,7 @@ const G = {
   card: withUV2(new THREE.PlaneGeometry(1, 1)),
   cone: withUV2(new THREE.ConeGeometry(0.5, 1, 16).translate(0, 0.5, 0)),
   canopy: withUV2(new THREE.ConeGeometry(0.5, 1, 8).translate(0, 0.5, 0)),
+  parasolCanopy: parasolCanopyGeometry(),
   torus: withUV2(new THREE.TorusGeometry(0.5, 0.08, 8, 24).rotateX(Math.PI / 2)),
   // Half a capsule on its side: the lifeboats, and the model in the office.
   hull: withUV2(new THREE.SphereGeometry(0.5, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2)
@@ -5617,10 +5737,9 @@ function syncPoolDeckVisitorLighting(night) {
       const z = -6 + i * 4.4;
       shape(G.cyl, M.steel, sx, POOL_Y + 0.06, z, 0.5, 0.12, 0.5);
       shape(G.cylBase, M.steel, sx, POOL_Y, z, 0.07, 2.5, 0.07);
-      // G.canopy grows UP from its base, so a parasol is a positive cone
-      // standing on its rim. A negative Y scale flips the winding and renders
-      // the canopy inside out — from underneath, which is where you stand.
-      shape(G.canopy, i % 2 ? M.hullBoot : M.hullNavy, sx, POOL_Y + 1.92, z,
+      // The curved canopy grows up from its bound rim. Its radial rings bend
+      // the underside continuously from the crown down to the outer edge.
+      shape(G.parasolCanopy, i % 2 ? M.parasolRed : M.parasolNavy, sx, POOL_Y + 1.92, z,
         3.2, 0.66, 3.2);
     }
   });
