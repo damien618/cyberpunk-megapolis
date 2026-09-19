@@ -5083,7 +5083,11 @@ const ballLights = [];
       // this started as, the two carved figures came out 70 % too wide and the
       // clock face was an ellipse.
       box(M.oakDark, 0, DECK_Y + 4.15, wz + 0.02, 4.35, 2.95, 0.22);
-      box(M.gilt, 0, DECK_Y + 4.15, wz + 0.10, 4.10, 2.76, 0.06);
+      // Keep the gilt face clear of the oak face behind it. With a 6 cm-deep
+      // box centred at +0.10, both front faces landed exactly at +0.13 and
+      // z-fought whenever the camera moved. The thinner inset still overlaps
+      // the oak structurally, but leaves distinct depth planes on both sides.
+      box(M.gilt, 0, DECK_Y + 4.15, wz + 0.12, 4.10, 2.76, 0.04);
       shape(G.card, clockPanel, 0, DECK_Y + 4.15, wz + 0.16, 3.75, 2.5, 1);
       // Panelling either side of the board, carrying the oak across the wall.
       // It starts ABOVE the dado's top rail: run down to the same height as
