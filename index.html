@@ -1370,7 +1370,8 @@
     cruise: './main-CRUISE.js?v=20260919-cetacean-heading',
   };
   const mode = document.documentElement.dataset.mode;
-  import(ENGINES[mode] ?? './main.js?v=20260906-seam-fix').catch(error => {
+  const cityEntrypoint = `./main.js?v=20260919-bedroom-v2-${Date.now()}`;
+  import(ENGINES[mode] ?? cityEntrypoint).catch(error => {
     console.error('[Map loading failed]', error);
     if (mode !== 'shinto' && mode !== 'cruise') return;
     const button = document.getElementById('startBtn');

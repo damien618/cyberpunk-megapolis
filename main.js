@@ -11,11 +11,12 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Player } from './player.js?v=20260906-seam-fix';
 import { buildCar, carBounds } from './cars.js?v=8-optics';
+import { buildLevel7Interior } from './level7Apartment.js?v=20260919-library-v3';
 
 // build stamp: shown in the HUD + console so a stale-cache session is
 // recognizable at a glance (a mixed old/new module graph once reproduced the
 // "restart from the sky every few seconds" loop with zero errors)
-const BUILD = '2026-08-12a1';
+const BUILD = '2026-09-19-library';
 console.log(`[build] ${BUILD}`);
 
 // ---------- coordinate convention (verified: case A — Blender FBX->glTF export_yup) ----------
@@ -658,6 +659,9 @@ const fixSign = pl => {   // snap authored-floating billboards onto the nearest 
   return pl;
 };
 for (const pl of SCENE.placements) {
+  if (pl.p === 'CP_Garbage_03' && Math.hypot(convPos(pl.t).x - (-47.2), convPos(pl.t).z - 6.8) < 1.5) {
+    continue;
+  }
   const k = pl.p + '|' + pl.t.map(v => v.toFixed(2)).join(',');
   const prev = dupSeen.get(k);
   if (prev) {
@@ -678,6 +682,60 @@ const _m = new THREE.Matrix4();
 let skipped = 0, drawMeshes = 0;
 const cloudPlacements = [];
 const towerAnchors = [];   // skyscraper tops — web-swing aim-assist anchors
+function cutHolesFromGeometry(srcGeo, instanceMatrix, holeBoxes) {
+  const geo = srcGeo.clone();
+  const posAttr = geo.attributes.position;
+  const isIndexed = !!geo.index;
+  const indexArray = isIndexed ? geo.index.array : null;
+  const triCount = isIndexed ? (indexArray.length / 3) : (posAttr.count / 3);
+
+  const keptIndices = [];
+  const _v = new THREE.Vector3();
+
+  for (let t = 0; t < triCount; t++) {
+    const i0 = isIndexed ? indexArray[t * 3] : t * 3;
+    const i1 = isIndexed ? indexArray[t * 3 + 1] : t * 3 + 1;
+    const i2 = isIndexed ? indexArray[t * 3 + 2] : t * 3 + 2;
+
+    let inHole = false;
+    let cx = 0, cy = 0, cz = 0;
+
+    for (const vi of [i0, i1, i2]) {
+      _v.set(posAttr.getX(vi), posAttr.getY(vi), posAttr.getZ(vi)).applyMatrix4(instanceMatrix);
+      cx += _v.x / 3; cy += _v.y / 3; cz += _v.z / 3;
+      for (const box of holeBoxes) {
+        if (_v.x >= box.x0 && _v.x <= box.x1 &&
+            _v.y >= box.y0 && _v.y <= box.y1 &&
+            _v.z >= box.z0 && _v.z <= box.z1) {
+          inHole = true;
+          break;
+        }
+      }
+      if (inHole) break;
+    }
+
+    if (!inHole) {
+      for (const box of holeBoxes) {
+        if (cx >= box.x0 && cx <= box.x1 &&
+            cy >= box.y0 && cy <= box.y1 &&
+            cz >= box.z0 && cz <= box.z1) {
+          inHole = true;
+          break;
+        }
+      }
+    }
+
+    if (!inHole) {
+      keptIndices.push(i0, i1, i2);
+    }
+  }
+
+  const outGeo = geo.clone();
+  outGeo.setIndex(keptIndices);
+  outGeo.computeVertexNormals();
+  return outGeo;
+}
+
 for (const [prefabName, list] of byPrefab) {
   const baked = bakePrefab(prefabName);
   if (!baked) {                                // pure-FX prefab (smoke/dust/clouds/air lanes)
@@ -705,6 +763,51 @@ for (const [prefabName, list] of byPrefab) {
     for (const [group, flip] of [[pos, false], [neg, true]]) {
       if (!group.length) continue;
       const material = flip ? Object.assign(mat.clone(), { side: THREE.DoubleSide }) : mat;
+
+      if (prefabName === 'CP_Combined_Building_07') {
+        const isL7 = pl => Math.hypot(convPos(pl.t).x - (-60), convPos(pl.t).z - 7) < 5;
+        const stdList = group.filter(pl => !isL7(pl));
+        const l7List = group.filter(isL7);
+
+        if (stdList.length) {
+          const im = new THREE.InstancedMesh(geo, material, stdList.length);
+          im.userData.prefab = prefabName;
+          stdList.forEach((pl, i) => {
+            _m.compose(convPos(pl.t), convQuat(pl.r), _s.set(pl.s[0], pl.s[1], pl.s[2]));
+            im.setMatrixAt(i, _m);
+          });
+          im.instanceMatrix.needsUpdate = true;
+          im.computeBoundingSphere();
+          if (mat.transparent) im.renderOrder = 2;
+          world.add(im);
+          drawMeshes++;
+        }
+
+        if (l7List.length) {
+          l7List.forEach(pl => {
+            const m = new THREE.Matrix4().compose(convPos(pl.t), convQuat(pl.r), _s.set(pl.s[0], pl.s[1], pl.s[2]));
+            const cutGeo = cutHolesFromGeometry(geo, m, [
+              // Entrance doorway opening:
+              { x0: -49.6, x1: -46.4, y0: -0.2, y1: 2.85, z0: 6.5, z1: 7.6 },
+              // 1st floor window opening:
+              { x0: -58.8, x1: -52.0, y0: 4.4, y1: 7.1, z0: 6.5, z1: 7.6 },
+              // Hollow out interior volume so original building geometry does not clip into rooms:
+              { x0: -59.5, x1: -46.2, y0: -0.1, y1: 7.2, z0: 7.1, z1: 15.95 },
+            ]);
+            const im7 = new THREE.InstancedMesh(cutGeo, material, 1);
+            im7.userData.prefab = 'CP_Combined_Building_07_Level7';
+            im7.userData.skipCollide = [true];
+            im7.setMatrixAt(0, m);
+            im7.instanceMatrix.needsUpdate = true;
+            im7.computeBoundingSphere();
+            if (mat.transparent) im7.renderOrder = 2;
+            world.add(im7);
+            drawMeshes++;
+          });
+        }
+        continue;
+      }
+
       const im = new THREE.InstancedMesh(geo, material, group.length);
       im.userData.prefab = prefabName;
       group.forEach((pl, i) => {
@@ -1312,7 +1415,15 @@ function castRay(origin, dir, far) {
   for (const im of world.children) {
     if (!im.isInstancedMesh) continue;
     const hits = _castRC.intersectObject(im, false);
-    if (hits.length && (!best || hits[0].distance < best.distance)) best = hits[0];
+    for (const h of hits) {
+      if (h.point.x > -49.6 && h.point.x < -46.4 &&
+          h.point.y >= 0.0 && h.point.y <= 2.85 &&
+          h.point.z > 6.5 && h.point.z < 7.6) {
+        continue;
+      }
+      if (!best || h.distance < best.distance) best = h;
+      break;
+    }
   }
   if (!best) return null;
   let normal = null;
@@ -1359,6 +1470,8 @@ let chosen = null;
 let selGender = 'girl';
 const travelParams = new URLSearchParams(location.search);
 const arrivedFromVilla = travelParams.get('arrival') === 'la';
+const arrivedAtApartment = travelParams.get('arrival') === 'apartment';
+const apartmentArrivalPoint = new THREE.Vector3(-54.5, 4.25, 11.2);
 const travelPrompt = $('furniturePrompt');
 let travelPromptShown = false;
 let travelActionRequested = false;
@@ -1368,6 +1481,13 @@ const megapolisArrivalPoint = new THREE.Vector3(
   MEGAPOLIS_TRAVEL_CAR.ground + 0.2,
   MEGAPOLIS_TRAVEL_CAR.z + megapolisTravelBounds.width / 2 + 1.1,
 );
+
+const level7 = buildLevel7Interior({
+  THREE, scene, world, bw, MAXANISO, ctrl, input,
+});
+
+let activeFurnitureInteraction = null;
+let furnitureInteractionCooldown = 0;
 
 function distanceToMegapolisTravelCar(position) {
   const dx = position.x - MEGAPOLIS_TRAVEL_CAR.x;
@@ -1380,11 +1500,11 @@ function distanceToMegapolisTravelCar(position) {
   return Math.hypot(edgeX, edgeZ);
 }
 
-function setTravelPrompt(show) {
-  if (travelPromptShown === show) return;
+function setTravelPrompt(show, text = 'Voyager à L.A.') {
+  if (travelPromptShown === show && travelPrompt.textContent === text) return;
   travelPromptShown = show;
   if (!show) travelActionRequested = false;
-  travelPrompt.textContent = show ? 'Voyager à L.A.' : '';
+  travelPrompt.textContent = show ? text : '';
   travelPrompt.classList.toggle('show', show);
   travelPrompt.setAttribute('aria-hidden', show ? 'false' : 'true');
 }
@@ -1394,16 +1514,79 @@ travelPrompt.addEventListener('click', event => {
   if (travelPromptShown) travelActionRequested = true;
 });
 
-function updateTravelInteraction() {
-  const closeEnough = phase === 'play' && ctrl.mode === 'ground' &&
-    Math.abs(ctrl.pos.y - (MEGAPOLIS_TRAVEL_CAR.ground + 0.5)) < 1.25 &&
+function enterApartmentFurniture(spot) {
+  setTravelPrompt(false);
+  activeFurnitureInteraction = {
+    ...spot,
+    returnPosition: ctrl.pos.clone(),
+    readyToExit: false,
+  };
+  ctrl.pos.set(spot.x, spot.y, spot.z);
+  ctrl.prevY = spot.y;
+  ctrl.vel.set(0, 0, 0);
+  ctrl.mode = spot.type;
+  ctrl.webOn = false;
+}
+
+function leaveApartmentFurniture() {
+  if (!activeFurnitureInteraction) return;
+  ctrl.pos.copy(activeFurnitureInteraction.returnPosition);
+  ctrl.prevY = ctrl.pos.y;
+  ctrl.vel.set(0, 0, 0);
+  ctrl.mode = 'ground';
+  activeFurnitureInteraction = null;
+  furnitureInteractionCooldown = 0.5;
+}
+
+function updateTravelInteraction(dt = 0.016) {
+  furnitureInteractionCooldown = Math.max(0, furnitureInteractionCooldown - dt);
+
+  if (activeFurnitureInteraction) {
+    setTravelPrompt(false);
+    const moved = input.pressed('KeyW') || input.pressed('KeyS') || input.pressed('KeyA') ||
+      input.pressed('KeyD') || input.pressed('Space') || input.pressed('Enter') || travelActionRequested;
+    if (moved) {
+      travelActionRequested = false;
+      leaveApartmentFurniture();
+      return false;
+    }
+    return true;
+  }
+
+  if (furnitureInteractionCooldown > 0 || phase !== 'play' || ctrl.mode !== 'ground') {
+    setTravelPrompt(false);
+    return false;
+  }
+
+  // Check apartment furniture interactions first
+  if (level7?.apartmentFurniture) {
+    for (const spot of level7.apartmentFurniture) {
+      if (Math.abs(ctrl.pos.y - spot.approachY) < 0.8) {
+        const dist = Math.hypot(ctrl.pos.x - spot.x, ctrl.pos.z - spot.z);
+        if (dist < spot.triggerDistance) {
+          setTravelPrompt(true, spot.label);
+          if (travelActionRequested || input.pressed('LMB') || input.pressed('Enter')) {
+            travelActionRequested = false;
+            enterApartmentFurniture(spot);
+          }
+          return false;
+        }
+      }
+    }
+  }
+
+  // Check travel car interaction
+  const closeToCar = Math.abs(ctrl.pos.y - (MEGAPOLIS_TRAVEL_CAR.ground + 0.5)) < 1.25 &&
     distanceToMegapolisTravelCar(ctrl.pos) < 1.25;
-  setTravelPrompt(closeEnough && !travelInProgress);
-  if (!closeEnough || travelInProgress || !(travelActionRequested || input.pressed('LMB'))) return;
+  setTravelPrompt(closeToCar && !travelInProgress, 'Voyager à L.A.');
+  if (!closeToCar || travelInProgress || !(travelActionRequested || input.pressed('LMB') || input.pressed('Enter'))) {
+    return false;
+  }
   travelInProgress = true;
   setTravelPrompt(false);
   const preservedNight = travelParams.get('laNight') === '1' ? '1' : '0';
   location.href = `index.html?map=la&arrival=megapolis&night=${preservedNight}`;
+  return false;
 }
 
 // ---------- menu ----------
@@ -1451,7 +1634,12 @@ function startGame() {
   const other = players[selGender === 'man' ? 'girl' : 'man'];
   scene.remove(other.group);
   window.__player = chosen;
-  if (arrivedFromVilla) {
+  if (arrivedAtApartment) {
+    input.yaw = -Math.PI / 2;
+    input.pitch = -0.05;
+    ctrl.rescueTo(apartmentArrivalPoint);
+    rig.initialized = false;
+  } else if (arrivedFromVilla) {
     input.yaw = Math.PI;
     input.pitch = -0.08;
     ctrl.rescueTo(megapolisArrivalPoint);
@@ -1560,8 +1748,8 @@ function animate() {
   } else {
     if (phase === 'play') input.updateLook(dt);
     rig.forward(camDir, input);
-    if (phase === 'play') ctrl.update(dt, input, input.yaw, camDir);
-    updateTravelInteraction();
+    const interactionLocked = updateTravelInteraction(dt);
+    if (!interactionLocked && phase === 'play') ctrl.update(dt, input, input.yaw, camDir);
     if (chosen) {
       chosen.update({
         dt,
@@ -1574,6 +1762,9 @@ function animate() {
         ropeSlack: ctrl.webOn
           ? Math.max(0, (ctrl.ropeLen - ctrl.pos.distanceTo(ctrl.anchor)) / Math.max(ctrl.ropeLen, 1))
           : 0,
+        posture: activeFurnitureInteraction?.type,
+        facingYaw: activeFurnitureInteraction?.yaw,
+        floorY: activeFurnitureInteraction?.approachY,
       });
     }
     rig.update(dt, input, ctrl);
