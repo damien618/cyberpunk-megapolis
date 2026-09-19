@@ -5717,8 +5717,9 @@ function syncPoolDeckVisitorLighting(night) {
       }
 
       // Multicolour bulbs follow the same descending arc as the black cable.
-      // Each hangs from a brass socket so the garland still has form by day.
-      const garlandY = POOL_Y + 2.25;
+      // Keep the lowest bulbs just above the bottle tops so the garland stays
+      // visible without obscuring or intercepting attempts to pick them up.
+      const garlandY = POOL_Y + 2.82;
       const garlandZ = bz + 1.46;
       shape(garlandCable, M.garlandWire, 0, garlandY, garlandZ, 1, 1, 1);
       for (let i = 0; i < 15; i++) {
