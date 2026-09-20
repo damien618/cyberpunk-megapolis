@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { buildBareLegs, buildFlipFlops, buildSleeves } from './limbs.js?v=44';
+import { buildBareLegs, buildFlipFlops, buildSleeves } from './limbs.js?v=45';
 import { buildKimono } from './kimono.js?v=27';
 
 const dracoLoader = new DRACOLoader().setDecoderPath('./vendor/draco/');
@@ -86,6 +86,17 @@ const SWIM_SHORTS_HEM = 0.68;
 // the thigh. Anything higher and the crop runs into the crotch geometry, where
 // the trousers stop being two tubes and there is no hem line left to sew.
 const DENIM_SHORTS_HEM = 0.83;
+// Pyjama bottoms stop at the ankle bone, not on the foot. The pack's trousers
+// run down to y = 0.113, a couple of centimetres above the sole, and their hem
+// then sits across the ankle: the cloth's own dark underside shows in the gap,
+// the foot reads as a pale block hung under a dark band, and from the front —
+// where a splayed foot is foreshortened to almost nothing — that block looks
+// like a heel pointing at the camera. Cropping to the ankle bone puts the whole
+// foot in clear view and the leg fills the hem.
+const PYJAMA_ANKLE_HEM = 0.175;
+// Slippers: the pack's shoe last, pushed out a few millimetres and dressed in
+// the pyjama's own fleece.
+const PYJAMA_SLIPPER_LOFT = 0.005;
 // The sleeveless cut, as a fraction of the shirt's own half-width. The pack's
 // tee reaches its widest at the cuff, so a little under three quarters of that
 // lands the cut on the shoulder seam where an armhole belongs.
@@ -301,6 +312,377 @@ function inflatedGeometry(geometry, amount) {
       position.getZ(i) + normal.getZ(i) * amount);
   }
   position.needsUpdate = true;
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+// ---------------------------------------------------------------------------
+// Knitted fabric: one height field, three maps
+// ---------------------------------------------------------------------------
+// The first pyjama was flat colour on smooth shells and read as white tubing.
+// What a soft garment needs is relief: the loops of the knit have to catch the
+// light. So the pattern is authored once as a height field and then expressed
+// three ways — as shading, as a tangent-space normal map, and as a roughness
+// variation — which is what makes the same geometry read as cloth.
+const KNIT_TILE = 256;
+// Loops across one tile. With the tile pinned to 5.8 cm below, 14 of them puts
+// a loop at about 4 mm — the gauge of a brushed jersey. The first pass ran at
+// 9 mm and read as hand crochet on a character this size.
+const KNIT_LOOPS = 14;
+// Physical size of one tile. Everything else is derived from it.
+const KNIT_TILE_M = 0.058;
+
+/**
+ * Replaces a garment shell's UVs with a body-axis cylindrical projection: the
+ * coordinate wraps around the torso (or around each leg), runs up it, and is
+ * expressed in metres, so one repeat setting fits every piece.
+ *
+ * The pack's own unwrap is right for the photographic camo it was made for,
+ * but its islands are rotated and unevenly scaled — measured against the
+ * model's vertical, the trousers' u axis still carries 0.48 of it against
+ * 0.81 for v — so a stripe drawn on it runs diagonally down the legs and at a
+ * different gauge on every panel. A projection built from the positions
+ * themselves puts every stripe truly vertical and every loop at one size.
+ *
+ * `splitLegs` projects each leg around its own axis rather than the body's,
+ * which is what keeps a stripe running down a trouser instead of wrapping
+ * across the crotch; the axis is measured off the calves rather than tabulated,
+ * so it survives a re-rig. The wrap is mirrored (|angle| / π), so the texture
+ * closes at the front seam and at the back without a visible join — and a
+ * mirrored stripe is what a garment cut symmetrically looks like anyway.
+ */
+// Mean |x| over the bottom quarter of a pair of trousers: down there the two
+// legs are well separated, so each one's own axis is unambiguous. Measured
+// rather than tabulated, so it survives a re-rig.
+function legAxisX(geometry) {
+  const position = geometry.attributes.position;
+  geometry.computeBoundingBox();
+  const { min, max } = geometry.boundingBox;
+  const cut = min.y + (max.y - min.y) * 0.25;
+  let sum = 0, n = 0;
+  for (let i = 0; i < position.count; i++) {
+    if (position.getY(i) > cut) continue;
+    sum += Math.abs(position.getX(i));
+    n++;
+  }
+  return n ? sum / n : 0;
+}
+
+/**
+ * Draws a pair of trousers in towards each leg's own axis, the pull growing
+ * towards the hem. The pack's trousers are cut with a combat silhouette and
+ * read as baggy on a sleep set, where the line should taper. Nothing moves
+ * above `from`, so the seat and the waistband keep their shape, and the pull
+ * is capped at a fraction of the distance to the axis so a narrow ankle can
+ * never be turned inside out.
+ */
+function taperedLegs(geometry, { from = 0.58, to = 0.0, amount = 0.02 } = {}) {
+  const axisX = legAxisX(geometry);
+  const position = geometry.attributes.position;
+  const { min, max } = geometry.boundingBox;
+  const span = (max.y - min.y) || 1;
+  for (let i = 0; i < position.count; i++) {
+    const y = position.getY(i);
+    const k = THREE.MathUtils.clamp((from - (y - min.y) / span) / (from - to), 0, 1);
+    if (k <= 0) continue;
+    const x = position.getX(i), z = position.getZ(i);
+    const dx = x - Math.sign(x || 1) * axisX;
+    const d = Math.hypot(dx, z);
+    if (d < 1e-4) continue;
+    const pull = Math.min(amount * k, d * 0.4);
+    position.setXYZ(i, x - (dx / d) * pull, y, z - (z / d) * pull);
+  }
+  position.needsUpdate = true;
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+/**
+ * Takes the combat cut out of the back of the pack trousers. Its seat is
+ * deliberately very loose in the bind pose; once both thighs turn through a
+ * right angle that spare cloth fans out behind the pelvis like a separate
+ * body. Keep the waistband and the legs untouched and draw only the rear half
+ * of the upper seat towards the body. This is a bind-space tailoring change,
+ * so it follows the same skinning as the original cloth in every pose.
+ */
+function tailoredTrouserSeat(geometry, amount = 0.065) {
+  geometry.computeBoundingBox();
+  const position = geometry.attributes.position;
+  const { min, max } = geometry.boundingBox;
+  const span = (max.y - min.y) || 1;
+  for (let i = 0; i < position.count; i++) {
+    const y = position.getY(i), z = position.getZ(i);
+    const h = (y - min.y) / span;
+    if (h < 0.55 || z >= -0.035) continue;
+    // Full correction around the seat, feathered to zero at the waistband and
+    // above the thighs so neither seam changes shape.
+    const lower = THREE.MathUtils.smoothstep(h, 0.55, 0.72);
+    const upper = 1 - THREE.MathUtils.smoothstep(h, 0.91, 1.0);
+    const rear = THREE.MathUtils.smoothstep(-z, 0.035, 0.20);
+    position.setZ(i, z + amount * lower * upper * rear);
+  }
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+/**
+ * Tucks the top of a lofted sleeve in towards its own arm's axis.
+ *
+ * The loft starts inside the torso by design, but its cap ring is cut to clear
+ * the pack's tee, and the pyjama top is that tee's shell — so the two surfaces
+ * cross right on top of the shoulder and leave a visible step there. Pulling
+ * the cap in buries the crossing under the body of the top instead. Only the
+ * cap moves, so the shoulder line and the whole of the arm below it are
+ * untouched. Each arm is pulled towards its own centre, measured off the cap
+ * itself, because the two are one geometry.
+ */
+function tuckedSleeveCap(geometry, { above = 0.84, amount = 0.011 } = {}) {
+  const position = geometry.attributes.position;
+  geometry.computeBoundingBox();
+  const { min, max } = geometry.boundingBox;
+  const span = (max.y - min.y) || 1;
+  const sums = { '-1': { x: 0, z: 0, n: 0 }, 1: { x: 0, z: 0, n: 0 } };
+  for (let i = 0; i < position.count; i++) {
+    if ((position.getY(i) - min.y) / span < above) continue;
+    const side = Math.sign(position.getX(i) || 1);
+    sums[side].x += position.getX(i);
+    sums[side].z += position.getZ(i);
+    sums[side].n++;
+  }
+  for (let i = 0; i < position.count; i++) {
+    const y = position.getY(i);
+    const k = THREE.MathUtils.clamp(((y - min.y) / span - above) / (1 - above), 0, 1);
+    if (k <= 0) continue;
+    const side = Math.sign(position.getX(i) || 1);
+    const centre = sums[side];
+    if (!centre.n) continue;
+    const dx = position.getX(i) - centre.x / centre.n;
+    const dz = position.getZ(i) - centre.z / centre.n;
+    const d = Math.hypot(dx, dz);
+    if (d < 1e-4) continue;
+    const pull = Math.min(amount * k, d * 0.4);
+    position.setXYZ(i, position.getX(i) - (dx / d) * pull, y, position.getZ(i) - (dz / d) * pull);
+  }
+  position.needsUpdate = true;
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+/**
+ * The button placket: the strip of doubled cloth down the centre front of a
+ * pyjama top, in the piping colour. Painted from each vertex's own angle
+ * around the body and blended into whatever bandedGeometry already laid down,
+ * because the weave tiles seventeen times across the garment — a strip drawn
+ * into the texture would repeat all the way round it.
+ */
+function plackedGeometry(geometry, colour, { halfWidth = 0.026, radius = 0.155, upTo = 0.93 } = {}) {
+  const position = geometry.attributes.position;
+  const colours = geometry.attributes.color;
+  if (!colours) return geometry;
+  geometry.computeBoundingBox();
+  const { min, max } = geometry.boundingBox;
+  const span = (max.y - min.y) || 1;
+  const trim = new THREE.Color(colour);
+  const tmp = new THREE.Color();
+  for (let i = 0; i < position.count; i++) {
+    const f = (position.getY(i) - min.y) / span;
+    if (f > upTo) continue;                       // stop under the collar band
+    // Arc length from the centre front, so the strip keeps one width whatever
+    // the body does underneath it.
+    const arc = Math.abs(Math.atan2(position.getX(i), position.getZ(i))) * radius;
+    const k = (1 - THREE.MathUtils.smoothstep(arc, halfWidth, halfWidth + 0.012))
+      * (1 - THREE.MathUtils.smoothstep(f, upTo - 0.05, upTo));
+    if (k <= 0.001) continue;
+    tmp.fromBufferAttribute(colours, i).lerp(trim, k);
+    colours.setXYZ(i, tmp.r, tmp.g, tmp.b);
+  }
+  colours.needsUpdate = true;
+  return geometry;
+}
+
+function cylindricalGarmentUv(geometry, { radius = 0.15, splitLegs = false } = {}) {
+  const position = geometry.attributes.position;
+  const axisX = splitLegs ? legAxisX(geometry) : 0;
+  const uv = new Float32Array(position.count * 2);
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i), y = position.getY(i), z = position.getZ(i);
+    const centre = axisX ? Math.sign(x || 1) * axisX : 0;
+    uv[i * 2] = Math.abs(Math.atan2(x - centre, z)) * radius;   // metres around
+    uv[i * 2 + 1] = y;                                          // metres up
+  }
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  return geometry;
+}
+
+function knitHeightField(size, seed) {
+  let state = seed >>> 0;
+  const rnd = () => (state = (state * 1664525 + 1013904223) >>> 0) / 4294967296;
+  // Fibre haze under the loops: a coarse value-noise lattice, sampled with
+  // wrap-around so the tile stays seamless.
+  const coarse = 16;
+  const lattice = new Float32Array(coarse * coarse);
+  for (let i = 0; i < lattice.length; i++) lattice[i] = rnd();
+  const haze = (fx, fy) => {
+    const x0 = Math.floor(fx), y0 = Math.floor(fy);
+    const tx = fx - x0, ty = fy - y0;
+    const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    const at = (x, y) => lattice[((y % coarse) + coarse) % coarse * coarse
+      + ((x % coarse) + coarse) % coarse];
+    return (at(x0, y0) * (1 - sx) + at(x0 + 1, y0) * sx) * (1 - sy)
+      + (at(x0, y0 + 1) * (1 - sx) + at(x0 + 1, y0 + 1) * sx) * sy;
+  };
+
+  const field = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size, v = y / size;
+      // Staggered courses, the way a jersey is actually knitted: every other
+      // row is offset by half a loop.
+      const row = Math.floor(v * KNIT_LOOPS);
+      const cx = (u * KNIT_LOOPS + (row % 2) * 0.5) % 1 - 0.5;
+      const cy = (v * KNIT_LOOPS) % 1 - 0.5;
+      const loop = Math.exp(-(cx * cx * 17 + cy * cy * 27));
+      // Brushed nap: on flannel the fibre is combed along the grain, so this
+      // noise varies four times faster across the cloth than along it. Both
+      // multipliers stay whole numbers or the lattice stops wrapping and the
+      // tile grows a seam. It is what separates a napped pyjama from a flat
+      // jersey, and it is most of the trousers' surface.
+      const nap = haze(u * coarse * 3, v * coarse);
+      // The nap is deliberately faint. At a quarter of this weight it already
+      // reads as brushing; at the weight the first pass gave it, the combed
+      // fibre lined up into ribs and the whole set came out as corduroy with
+      // the stripes lost inside it.
+      field[y * size + x] = loop * 0.5 + haze(u * coarse, v * coarse) * 0.3
+        + nap * 0.09 + (rnd() - 0.5) * 0.06;
+    }
+  }
+  return field;
+}
+
+function fieldTexture(size, field, paint, { srgb = true } = {}) {
+  const canvas = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = canvas.getContext('2d');
+  const image = ctx.createImageData(size, size);
+  paint(image.data, field, size);
+  ctx.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  // A normal or roughness map is data, not colour, and must stay linear.
+  if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
+/**
+ * The three maps of one knit, built from a single height field.
+ *
+ * Returns neutral-toned maps: the garment's colour comes from the vertex
+ * colours painted by bandedGeometry, so one weave can serve a cream pyjama and
+ * its darker ribbed cuffs without a second texture.
+ */
+function knitMaps(seed) {
+  const size = KNIT_TILE;
+  const field = knitHeightField(size, seed);
+  const at = (x, y) => field[((y % size) + size) % size * size + ((x % size) + size) % size];
+
+  // Plain brushed flannel. A woven stripe lived here and had to go: drawn on
+  // the cylindrical projection it converged wherever the projection did — down
+  // the inside of each leg, around the seat — and the set read as a web. The
+  // cues that actually say "pyjama" are the contrast piping and the front
+  // placket, and those are geometry, so they do not distort.
+  const map = fieldTexture(size, field, (data, f, n) => {
+    for (let i = 0; i < n * n; i++) {
+      // Near-white ground: the weave only modulates, it does not tint. A map
+      // carrying the cloth colour as well would multiply with the vertex
+      // colour and sink the garment two stops.
+      const l = 0.84 + f[i] * 0.18;
+      data[i * 4] = Math.min(255, l * 255);
+      data[i * 4 + 1] = Math.min(255, l * 250);   // a touch warm in the valleys
+      data[i * 4 + 2] = Math.min(255, l * 244);
+      data[i * 4 + 3] = 255;
+    }
+  });
+
+  const normalMap = fieldTexture(size, field, (data, f, n) => {
+    const strength = 5.5;
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
+        const dy = (at(x, y - 1) - at(x, y + 1)) * strength;   // +Y up, canvas y down
+        const len = Math.hypot(dx, dy, 1);
+        const i = (y * n + x) * 4;
+        data[i] = (-dx / len * 0.5 + 0.5) * 255;
+        data[i + 1] = (-dy / len * 0.5 + 0.5) * 255;
+        data[i + 2] = (1 / len * 0.5 + 0.5) * 255;
+        data[i + 3] = 255;
+      }
+    }
+  }, { srgb: false });
+
+  // Roughness rides in the green channel. The crowns of the loops are polished
+  // by wear and the valleys between them stay fuzzy, which is the difference
+  // between knitwear and a matte plastic shell.
+  const roughnessMap = fieldTexture(size, field, (data, f, n) => {
+    for (let i = 0; i < n * n; i++) {
+      const r = Math.min(255, (0.99 - f[i] * 0.22) * 255);
+      data[i * 4] = r; data[i * 4 + 1] = r; data[i * 4 + 2] = r; data[i * 4 + 3] = 255;
+    }
+  }, { srgb: false });
+
+  return { map, normalMap, roughnessMap };
+}
+
+// Inflates only the bottom of a garment, the standoff ramping to nothing by
+// `toFrac` of the shell's own height. A top worn over trousers has to clear
+// the trousers' standoff at the waist — the same reason the zoo vest is pushed
+// out further than they are — but inflating a whole t-shirt shell also pushes
+// its short sleeve out through the lofted long sleeve that is meant to hide it.
+function hemInflatedGeometry(geometry, amount, fromFrac = 0.18, toFrac = 0.52) {
+  const position = geometry.attributes.position;
+  const normal = geometry.attributes.normal;
+  if (!normal) return geometry;
+  geometry.computeBoundingBox();
+  const { min, max } = geometry.boundingBox;
+  const span = Math.max(max.y - min.y, 1e-6);
+  for (let i = 0; i < position.count; i++) {
+    const t = (position.getY(i) - min.y) / span;
+    const k = THREE.MathUtils.clamp((toFrac - t) / (toFrac - fromFrac), 0, 1);
+    if (k <= 0) continue;
+    position.setXYZ(i,
+      position.getX(i) + normal.getX(i) * amount * k,
+      position.getY(i) + normal.getY(i) * amount * k,
+      position.getZ(i) + normal.getZ(i) * amount * k);
+  }
+  position.needsUpdate = true;
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+// The girl's source tee has a long, loose rear hem. Bent at the hips it does
+// not drape; its pelvis weights rotate the whole lower panel into a rigid fan
+// behind the chair. Fit only that rear-lower quadrant and lift its very bottom
+// edge under the trouser waistband. The front placket and side silhouette stay
+// unchanged, as do all vertices above the waist.
+function fittedShirtRear(geometry, depth = 0.055, lift = 0.025) {
+  geometry.computeBoundingBox();
+  const position = geometry.attributes.position;
+  const { min, max } = geometry.boundingBox;
+  const span = Math.max(max.y - min.y, 1e-6);
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i), y = position.getY(i), z = position.getZ(i);
+    const h = (y - min.y) / span;
+    if (h > 0.55 || z >= -0.025) continue;
+    const hem = 1 - THREE.MathUtils.smoothstep(h, 0.16, 0.55);
+    const rear = THREE.MathUtils.smoothstep(-z, 0.025, 0.18);
+    const k = hem * rear;
+    position.setXYZ(i, x, y + lift * k, z + depth * k);
+  }
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return geometry;
 }
@@ -942,6 +1324,168 @@ export class Player {
       )
       : null;
 
+    // --- Level 07 bedroom sleep set: brushed-jersey pyjamas -----------------
+    // Warm ivory with a breath of pink in it. Not the tee's near-white: the
+    // apartment's cove lighting is pink, paper white clips under it, and a
+    // white top would read as the street t-shirt recoloured rather than as a
+    // change of clothes.
+    const PYJAMA_CLOTH = 0xe6c6c4;
+    // The trousers a shade deeper than the top. A matching set really is one
+    // colour, but on a model the separation comes from the hem shadow, and a
+    // single tone fused the two pieces into one bodysuit from across the room.
+    const PYJAMA_CLOTH_LOWER = 0xdbb8b7;
+    // Ivory contrast piping at the collar, the placket, the cuffs, the waist
+    // and the ankles — the finish every cosy flannel set in the reference
+    // shares, and the thing that reads as "pyjama" at any distance. It runs
+    // lighter than the cloth, not darker: a darker band reads as wear.
+    const PYJAMA_PIPING = 0xfffaf2;
+    const pyjamaKnit = knitMaps(20913);
+    /**
+     * One knit material per piece. They cannot share a material because the
+     * repeat lives on the texture, and the sleeves' loft hands back a 0..1
+     * wrap while the two shells are projected in metres. `metresU`/`metresV`
+     * is how much fabric that piece's 0..1 UV square covers — 1 for anything
+     * already projected in metres.
+     */
+    const pyjamaKnitMaterial = (metresU, metresV = metresU) => {
+      const maps = {};
+      for (const [slot, source] of Object.entries(pyjamaKnit)) {
+        const texture = source.clone();
+        texture.needsUpdate = true;
+        texture.repeat.set(metresU / KNIT_TILE_M, metresV / KNIT_TILE_M);
+        maps[slot] = texture;
+      }
+      return new THREE.MeshStandardMaterial({
+        ...maps,
+        color: 0xffffff,          // the cloth colour rides in the vertex colours
+        vertexColors: true,
+        // Brushed jersey: matte, but the normal map needs somewhere to show, so
+        // this sits under the 0.97 a flat fleece wanted and lets the roughness
+        // map carve the rest.
+        roughness: 0.88,
+        metalness: 0.0,
+        normalScale: new THREE.Vector2(0.85, 0.85),
+        side: THREE.DoubleSide,
+      });
+    };
+
+    // Long sleeves and full-length trousers, which is exactly what separates a
+    // pyjama from the silk sleep set above. The top is the tee shell pushed out
+    // at the hem only, by more than the trousers' own standoff below: left flush
+    // it sank under the inflated waistband and showed a bright wedge of its
+    // inside face at the hip. The ramp is back to zero well under the armpit,
+    // because a shell inflated all over puts the tee's short sleeve out through
+    // the lofted long sleeve that covers it.
+    const pyjamaTop = tshirt
+      ? this.createSkinnedClone(
+        tshirt,
+        bandedGeometry(
+          cylindricalGarmentUv(
+            fittedShirtRear(
+              hemInflatedGeometry(tshirt.geometry.clone(), VEST_STANDOFF),
+            ),
+            { radius: 0.155 },
+          ),
+          PYJAMA_CLOTH,
+          [
+            { t0: 0.938, t1: 1.0, color: PYJAMA_PIPING, feather: 0.016 },  // collar
+            { t0: 0.0, t1: 0.05, color: PYJAMA_PIPING, feather: 0.018 },   // hem
+          ],
+        ),
+        pyjamaKnitMaterial(1),
+        'Wardrobe_PyjamaTop'
+      )
+      : null;
+    if (pyjamaTop) plackedGeometry(pyjamaTop.geometry, PYJAMA_PIPING, { radius: 0.155, halfWidth: 0.033 });
+
+    const pyjamaSleeves = buildSleeves(this.model, pyjamaKnitMaterial(0.13, 0.55));
+    if (pyjamaSleeves) {
+      // buildSleeves names every pair it makes 'Wardrobe_Sleeves'; this one has
+      // to be tellable from the tee's pair when reading the scene graph.
+      pyjamaSleeves.name = 'Wardrobe_PyjamaSleeves';
+      tuckedSleeveCap(pyjamaSleeves.geometry);
+      // The loft runs shoulder-down in the bind pose, so the wrist really is
+      // the bottom of its bounding box and the cuff can be banded by height
+      // like the rest of the set. Both arms are one geometry and share that
+      // extent, so one band does the pair.
+      bandedGeometry(pyjamaSleeves.geometry, PYJAMA_CLOTH,
+        [{ t0: 0.0, t1: 0.07, color: PYJAMA_PIPING, feather: 0.025 }]);
+    }
+
+    // Plush slippers, worn with the set.
+    //
+    // They also settle the bare foot: the rig is driven from the pelvis, so the
+    // idle's knee bend pushes the feet DOWN rather than lowering the hips, and
+    // the lofted foot ends up two to three centimetres under the floor. The
+    // floor then cuts the toes off and what is left reads as a stump — which is
+    // what made the bare foot look like it was on backwards from the front.
+    // A slipper puts a plush upper over the whole of that, so what meets the
+    // floor is a sole, which is what a sole is for.
+    //
+    // Built on the pack's own shoe. Cutting the bare foot off below the ankle
+    // and inflating it was the obvious route and it failed: the foot carries
+    // five separately lofted toes, and pushing them out along their normals
+    // makes neighbours cross, which showed as a thin blade of geometry sticking
+    // out of each toe box. The shoe is a single closed last — no toes to
+    // intersect — already skinned to the same bones and already fitted.
+    const packShoes = this.clothing.shoes.mesh;
+    const pyjamaSlippers = packShoes
+      ? this.createSkinnedClone(
+        packShoes,
+        bandedGeometry(
+          // A few millimetres out, so the lofted bare foot inside — graded to a
+          // real circumference, unlike the pack's own — stays under it.
+          inflatedGeometry(packShoes.geometry.clone(), PYJAMA_SLIPPER_LOFT),
+          PYJAMA_CLOTH_LOWER,
+          [
+            { t0: 0.78, t1: 1.0, color: PYJAMA_PIPING, feather: 0.07 },  // fleece collar
+            { t0: 0.0, t1: 0.14, color: 0xc9a59d, feather: 0.05 },       // sole
+          ],
+        ),
+        pyjamaKnitMaterial(0.9),
+        'Wardrobe_PyjamaSlippers'
+      )
+      : null;
+
+    // The trousers take the zoo's standoff for the zoo's reason: the lofted
+    // bare legs are underneath — they are what puts bare feet under the hem —
+    // and the pack's trousers only clear the knee by a couple of millimetres.
+    const pyjamaPants = pants
+      ? this.createSkinnedClone(
+        pants,
+        bandedGeometry(
+          cylindricalGarmentUv(
+            // Tapered first, then projected, so the coordinates describe the
+            // surface the cloth ends up on. The taper starts BELOW the knee and
+            // the standoff stays at its full value: the kneecap and the
+            // condyles stand about 4 mm proud of the lofted leg's profile on
+            // their own, and a first pass that slimmed from mid-thigh with a
+            // 10 mm standoff put bare skin through both knees. Everything a
+            // baggy trouser shows is in the calf and the ankle anyway.
+            taperedLegs(
+              tailoredTrouserSeat(inflatedGeometry(
+                croppedGeometry(pants.geometry, PYJAMA_ANKLE_HEM),
+                TROUSER_STANDOFF,
+              )),
+              // Fractions are of the shell's own height, and cropping the hem
+              // at the ankle raised its floor — 0.4 used to land below the knee
+              // and now lands on it, which pulled the cloth inside the lofted
+              // leg and put a patch of bare skin through the trouser.
+              { from: 0.30, amount: 0.028 },
+            ),
+            { radius: 0.105, splitLegs: true },
+          ),
+          PYJAMA_CLOTH_LOWER,
+          [
+            { t0: 0.928, t1: 1.0, color: PYJAMA_PIPING, feather: 0.014 },  // waistband
+            { t0: 0.0, t1: 0.055, color: PYJAMA_PIPING, feather: 0.016 },  // ankle hems
+          ],
+        ),
+        pyjamaKnitMaterial(1),
+        'Wardrobe_PyjamaPants'
+      )
+      : null;
+
     // --- Black One-Piece Swimsuit (Maillot de bain une pièce noir) ----------
     const blackSwimMaterial = new THREE.MeshStandardMaterial({
       color: 0x0f0f12,
@@ -1424,6 +1968,7 @@ export class Player {
 
     this.wardrobe = {
       sleeves, swimLegs, swimShorts, nightTop, nightShorts,
+      pyjamaTop, pyjamaSleeves, pyjamaPants, pyjamaSlippers,
       denimShorts, flipFlops, vest, zooTrousers, hairCrown: null,
       swimsuitTop, swimsuitBottom, swimsuitBack, swimsuitArms,
       kimonoParts,
@@ -1461,6 +2006,7 @@ export class Player {
       swim: options.swim === true,
       swimsuit: options.swimsuit === true,
       night: options.night === true,
+      pyjama: options.pyjama === true,
       zoo: options.zoo === true,
       kimono: options.kimono === true,
       casino: options.casino === true,
@@ -1474,20 +2020,21 @@ export class Player {
     // replaces the whole outfit, silk top and all, because nobody sleeps in a
     // backpack — and the zoo's, which keeps the trousers and only needs the legs
     // for the bare feet coming out from under them.
-    const legs = outfit.swim || outfit.night || outfit.zoo || outfit.swimsuit;
+    const legs = outfit.swim || outfit.night || outfit.zoo || outfit.swimsuit || outfit.pyjama;
     const noTrousers = outfit.swim || outfit.night || outfit.swimsuit;
-    const isSpecial = outfit.night || outfit.zoo || outfit.kimono || outfit.casino || outfit.swimsuit;
+    const isSpecial = outfit.night || outfit.zoo || outfit.kimono || outfit.casino
+      || outfit.swimsuit || outfit.pyjama;
     const dressed = !isSpecial;
     const hat = outfit.hat && dressed;
     this.setPartVisible('hat', hat);
     this.setPartVisible('backpack', outfit.backpack && dressed);
     // The kimono supplies its own robe and collar. The crew-neck tee protrudes
     // above that neckline at the nape and shoulders, so hide it with this outfit.
-    this.setPartVisible('tshirt', outfit.tshirt && !outfit.night && !outfit.casino && !outfit.swimsuit && !outfit.kimono);
-    this.setPartVisible('pants', (outfit.pants && !noTrousers && !outfit.zoo && !outfit.casino) || outfit.kimono);
+    this.setPartVisible('tshirt', outfit.tshirt && !outfit.night && !outfit.casino && !outfit.swimsuit && !outfit.kimono && !outfit.pyjama);
+    this.setPartVisible('pants', (outfit.pants && !noTrousers && !outfit.zoo && !outfit.casino && !outfit.pyjama) || outfit.kimono);
     this.setPartVisible('shoes', outfit.shoes && !legs && !outfit.casino);
     if (this.wardrobe.sleeves) this.wardrobe.sleeves.visible = outfit.longSleeves && dressed;
-    if (this.armsMesh) this.armsMesh.visible = !((outfit.longSleeves && dressed) || outfit.kimono || (outfit.casino && this.wardrobe.casinoSleeves));
+    if (this.armsMesh) this.armsMesh.visible = !((outfit.longSleeves && dressed) || outfit.kimono || outfit.pyjama || (outfit.casino && this.wardrobe.casinoSleeves));
     if (this.wardrobe.swimLegs) this.wardrobe.swimLegs.visible = legs;
     if (this.wardrobe.swimShorts) this.wardrobe.swimShorts.visible = outfit.swim && !outfit.swimsuit && dressed;
     if (this.wardrobe.swimsuitTop) this.wardrobe.swimsuitTop.visible = outfit.swimsuit;
@@ -1496,6 +2043,10 @@ export class Player {
     if (this.wardrobe.swimsuitArms) this.wardrobe.swimsuitArms.visible = outfit.swimsuit;
     if (this.wardrobe.nightTop) this.wardrobe.nightTop.visible = outfit.night;
     if (this.wardrobe.nightShorts) this.wardrobe.nightShorts.visible = outfit.night;
+    if (this.wardrobe.pyjamaTop) this.wardrobe.pyjamaTop.visible = outfit.pyjama;
+    if (this.wardrobe.pyjamaSleeves) this.wardrobe.pyjamaSleeves.visible = outfit.pyjama;
+    if (this.wardrobe.pyjamaPants) this.wardrobe.pyjamaPants.visible = outfit.pyjama;
+    if (this.wardrobe.pyjamaSlippers) this.wardrobe.pyjamaSlippers.visible = outfit.pyjama;
     if (this.wardrobe.denimShorts) this.wardrobe.denimShorts.visible = false;
     if (this.wardrobe.zooTrousers) this.wardrobe.zooTrousers.visible = outfit.zoo;
     if (this.wardrobe.vest) this.wardrobe.vest.visible = outfit.zoo;
@@ -1616,34 +2167,67 @@ export class Player {
     }
   }
 
-  applySeatedPose(floorY) {
+  applySeatedPose(floorY, pose = null) {
     // How high the seat stands over the floor in front of it. The body is hung
     // off the seat — the pose root drops until the hip is seatHipRise above
     // it, because the group is already parked ON the seat — and the leg then
     // has to span from there down to the floor.
     const seat = Number.isFinite(floorY)
       ? this.group.position.y - floorY : SEAT_FALLBACK_HEIGHT;
-    this.placeSeated(seat);
-    if (!this._seatCalibrated) {
+    this.placeSeated(seat, pose);
+    // A seat that states its own hip rise has nothing left to calibrate: the
+    // measure-then-lift pass below only exists for the ones that don't.
+    if (!this._seatCalibrated && !(pose?.hipRise > 0)) {
       this.poseRoot.updateMatrixWorld(true);
       const extra = this.seatContactLift();
       if (extra > 0.004) {
         this.seatHipRise += extra;
         this._seatFlex = null;
-        this.placeSeated(seat);
+        this.placeSeated(seat, pose);
       }
       this._seatCalibrated = true;
     }
   }
 
-  placeSeated(seat) {
-    const flex = this.seatFlex(seat);
+  // `pose` is the seat's own idea of how it is sat on, and every field is
+  // optional — a dining chair hands over nothing and gets the default lounge
+  // pose. A desk is not a lounge seat in any of these respects, and every one
+  // of them is a property of the FURNITURE, not of the avatar:
+  //   hipRise  how far the hip joint clears the cushion, when the seat would
+  //            rather say so than have the pose measure it off the flesh
+  //   back     how far the hips sit back from the anchor (default SEAT_BACK)
+  //   lean     trunk pitch about the spine's own Z, whose sign is the OPPOSITE
+  //            of the thigh's: negative carries the shoulders forward
+  //   hands    wrist targets in WORLD space — a keyboard is a point in the
+  //            room, not on the body, so it cannot be a body-local offset
+  //   shinLean where the feet go relative to the knees. Its sign is the same
+  //            trap as the lean's: SEAT_SHIN_LEAN is -12 deg and tucks the
+  //            feet BEHIND the knees, which over a caster base parks a heel on
+  //            a wheel. Positive carries them forward, under the desk
+  //   elbowPole where the elbows swing to; mirrored in x for the right arm
+  //   handKey  cache slot for the arm solve, one per distinct pair of targets
+  placeSeated(seat, pose = null) {
+    const rise = pose?.hipRise > 0 ? pose.hipRise : this.seatHipRise;
+    const shinLean = pose?.shinLean ?? SEAT_SHIN_LEAN;
+    const flex = this.seatFlex(seat, rise, shinLean);
     this.resetHeldPose();
-    this.poseSeatedLegs(flex);
-    this.bones.spine_01?.rotateZ(SEAT_LEAN);
-    this.applyHeldArmPose('seated', SEATED_HAND_TARGETS);
-    this.poseRoot.position.y = this.seatHipRise - this.restHipY;
-    this.poseRoot.position.z = SEAT_BACK;
+    this.poseSeatedLegs(flex, shinLean);
+    this.bones.spine_01?.rotateZ(pose?.lean ?? SEAT_LEAN);
+    // The body is parked BEFORE the arms are solved. With hands on the thighs
+    // that ordering is free — the targets ride along — but a keyboard target
+    // stays where it is while the body moves, so the reach has to be worked
+    // out from where the body finally sits.
+    this.poseRoot.position.y = rise - this.restHipY;
+    this.poseRoot.position.z = pose?.back ?? SEAT_BACK;
+    if (pose?.hands) {
+      this.poseRoot.updateMatrixWorld(true);
+      this.applyHeldArmPose(pose.handKey ?? 'seatedReach', {
+        l: this.poseRoot.worldToLocal(pose.hands.l.clone()),
+        r: this.poseRoot.worldToLocal(pose.hands.r.clone()),
+      }, pose.elbowPole);
+    } else {
+      this.applyHeldArmPose('seated', SEATED_HAND_TARGETS);
+    }
   }
 
   // Standing bind: how far below the hip joint the sitting contact patch hangs.
@@ -1696,14 +2280,14 @@ export class Player {
   // zeroes mid-stance reach so both legs hang in the body's plane — and on a
   // chair it left one shin twisted out (the foot pointing sideways). The
   // authored rest stance already carries a natural knee gap; do not add to it.
-  poseSeatedLegs(flex) {
+  poseSeatedLegs(flex, shinLean = SEAT_SHIN_LEAN) {
     for (const side of ['l', 'r']) {
       this.bones[`thigh_${side}`]?.rotateZ(flex);
       // The knee takes the thigh back off again and leaves the shin on its lean;
       // the ankle then takes the lean off too, so the sole finishes flat on the
       // floor instead of at whatever angle the clip underneath left it.
-      this.bones[`calf_${side}`]?.rotateZ(SEAT_SHIN_LEAN - flex);
-      this.bones[`foot_${side}`]?.rotateZ(-SEAT_SHIN_LEAN);
+      this.bones[`calf_${side}`]?.rotateZ(shinLean - flex);
+      this.bones[`foot_${side}`]?.rotateZ(-shinLean);
     }
   }
 
@@ -1715,11 +2299,11 @@ export class Player {
   // already a little outboard of the hip — and taken on its own it left the feet
   // a good 2 cm over the floor. Two corrections off the ankle the pose actually
   // produces take that out. Cached per seat height; the villa has two.
-  seatFlex(seat) {
-    const rise = this.seatHipRise;
-    if (this._seatFlex?.seat === seat && this._seatFlex.rise === rise) return this._seatFlex.flex;
+  seatFlex(seat, rise = this.seatHipRise, shinLean = SEAT_SHIN_LEAN) {
+    if (this._seatFlex?.seat === seat && this._seatFlex.rise === rise
+      && this._seatFlex.shinLean === shinLean) return this._seatFlex.flex;
     let flex = Math.acos(THREE.MathUtils.clamp(
-      (seat + rise - this.shinDrop * Math.cos(SEAT_SHIN_LEAN) - this.restAnkleY)
+      (seat + rise - this.shinDrop * Math.cos(shinLean) - this.restAnkleY)
       / this.thighDrop, -1, 1));
     const ankle = this.bones.foot_l;
     if (ankle) {
@@ -1729,7 +2313,7 @@ export class Player {
       const scratch = new THREE.Vector3();
       const dropAt = f => {
         this.resetHeldPose();
-        this.poseSeatedLegs(f);
+        this.poseSeatedLegs(f, shinLean);
         this.poseRoot.updateMatrixWorld(true);
         return this.restHipY - this.poseRoot.worldToLocal(ankle.getWorldPosition(scratch)).y;
       };
@@ -1740,7 +2324,7 @@ export class Player {
         flex += SEAT_FLEX_PROBE * (want - now) / (nudged - now);
       }
     }
-    this._seatFlex = { seat, rise, flex };
+    this._seatFlex = { seat, rise, shinLean, flex };
     return flex;
   }
 
@@ -1841,14 +2425,20 @@ export class Player {
   // hand targets once, keep the answer, and re-apply it over whatever the clip
   // underneath is doing. `key` is only there so the supine and the seated
   // answers do not share a cache.
-  applyHeldArmPose(key, targets) {
+  applyHeldArmPose(key, targets, pole = null) {
     this.heldArmPose ??= {};
     if (!this.heldArmPose[key]) {
       for (const joint of this.armJoints) {
         this.bones[joint].quaternion.copy(this.restRotation.get(joint));
       }
       this.poseRoot.updateMatrixWorld(true);
-      for (const side of ['l', 'r']) this.solveRestingArm(side, targets[side]);
+      // One pole for the pair, mirrored for the right arm — same convention as
+      // the default, which sends each elbow out its own side.
+      for (const side of ['l', 'r']) {
+        this.solveRestingArm(side, targets[side], pole
+          ? new THREE.Vector3(side === 'l' ? pole.x : -pole.x, pole.y, pole.z)
+          : null);
+      }
       this.heldArmPose[key] = new Map(
         this.armJoints.map(joint => [joint, this.bones[joint].quaternion.clone()])
       );
@@ -2106,7 +2696,7 @@ export class Player {
     }
     this.setEyesClosed(posture === 'lie' || posture === 'kneel');
     if (posture === 'sit') {
-      this.applySeatedPose(ctx.floorY);
+      this.applySeatedPose(ctx.floorY, ctx.seatPose);
     } else if (posture === 'lie') {
       this.applyLyingPose();
     } else if (posture === 'kneel') {

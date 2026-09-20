@@ -9,14 +9,14 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { Player } from './player.js?v=20260906-seam-fix';
+import { Player } from './player.js?v=20260920-seatlock-a';
 import { buildCar, carBounds } from './cars.js?v=8-optics';
-import { buildLevel7Interior } from './level7Apartment.js?v=20260919-library-v3';
+import { buildLevel7Interior } from './level7Apartment.js?v=20260920-seatlock-a';
 
 // build stamp: shown in the HUD + console so a stale-cache session is
 // recognizable at a glance (a mixed old/new module graph once reproduced the
 // "restart from the sky every few seconds" loop with zero errors)
-const BUILD = '2026-09-19-library';
+const BUILD = '2026-09-20-SEATLOCK-A';
 console.log(`[build] ${BUILD}`);
 
 // ---------- coordinate convention (verified: case A — Blender FBX->glTF export_yup) ----------
@@ -1100,8 +1100,8 @@ function charMatFor(name) {
 
 // ---------- game layer (architecture adapted from the web-slinger reference) ----------
 import { buildCityBoxes } from './cityBoxes.js?v=3';
-import { Controller } from './controller.js?v=4';
-import { CameraRig } from './cameraRig.js?v=4';
+import { Controller } from './controller.js?v=5';
+import { CameraRig } from './cameraRig.js?v=20260920-gamer-framing';
 import { Input } from './input.js?v=3';
 
 // ---------- floating-decal cull ----------
@@ -1407,7 +1407,8 @@ function groundAt(x, z, yFrom, feetY = yFrom - 3, prevY = feetY) {
 const _castRC = new THREE.Raycaster();
 const _instMat = new THREE.Matrix4();
 const _normMat = new THREE.Matrix3();
-function castRay(origin, dir, far) {
+const interiorCollisionMeshes = [];
+function castRay(origin, dir, far, verifyBox = null) {
   _castRC.set(origin, dir);
   _castRC.near = 0;
   _castRC.far = far;
@@ -1425,14 +1426,24 @@ function castRay(origin, dir, far) {
       break;
     }
   }
+  // Interior walls are ordinary meshes outside world, not city instances.
+  // Include them in swept collision rays so a sprint/long frame cannot cross
+  // a thin landing wall before the endpoint AABB test gets a chance to react.
+  // These exact interior solids have their own prop AABBs. They must not
+  // validate a hollow/oversized city AABB during the controller's face check.
+  const interiorHit = !verifyBox && _castRC.intersectObjects(interiorCollisionMeshes, false)[0];
+  if (interiorHit && (!best || interiorHit.distance < best.distance)) best = interiorHit;
   if (!best) return null;
   let normal = null;
   if (best.face) {
     normal = best.face.normal.clone();
     if (best.instanceId !== undefined) {
       best.object.getMatrixAt(best.instanceId, _instMat);
-      normal.applyMatrix3(_normMat.getNormalMatrix(_instMat)).normalize();
+      _instMat.premultiply(best.object.matrixWorld);
+    } else {
+      _instMat.copy(best.object.matrixWorld);
     }
+    normal.applyMatrix3(_normMat.getNormalMatrix(_instMat)).normalize();
   }
   return { point: best.point, normal, distance: best.distance };
 }
@@ -1476,6 +1487,7 @@ const travelPrompt = $('furniturePrompt');
 let travelPromptShown = false;
 let travelActionRequested = false;
 let travelInProgress = false;
+let interactionPointerReleased = false;
 const megapolisArrivalPoint = new THREE.Vector3(
   MEGAPOLIS_TRAVEL_CAR.x,
   MEGAPOLIS_TRAVEL_CAR.ground + 0.2,
@@ -1485,6 +1497,8 @@ const megapolisArrivalPoint = new THREE.Vector3(
 const level7 = buildLevel7Interior({
   THREE, scene, world, bw, MAXANISO, ctrl, input,
 });
+interiorCollisionMeshes.push(...level7.collisionMeshes);
+level7.interiorGroup.updateMatrixWorld(true);
 
 let activeFurnitureInteraction = null;
 let furnitureInteractionCooldown = 0;
@@ -1507,11 +1521,32 @@ function setTravelPrompt(show, text = 'Voyager à L.A.') {
   travelPrompt.textContent = show ? text : '';
   travelPrompt.classList.toggle('show', show);
   travelPrompt.setAttribute('aria-hidden', show ? 'false' : 'true');
+  if (show) {
+    // Pointer lock sends every click to the canvas, even when a button is
+    // visibly drawn over it. Release it for this prompt without pausing.
+    travelPrompt.focus({ preventScroll: true });
+    if (document.pointerLockElement === renderer.domElement) {
+      interactionPointerReleased = true;
+      document.exitPointerLock?.();
+    }
+  } else if (document.activeElement === travelPrompt) {
+    travelPrompt.blur();
+  }
 }
 
 travelPrompt.addEventListener('click', event => {
   event.stopPropagation();
-  if (travelPromptShown) travelActionRequested = true;
+  if (!travelPromptShown) return;
+  travelActionRequested = true;
+  // The click is a user gesture, so it can reliably restore pointer lock.
+  interactionPointerReleased = false;
+  requestGamePointerLock();
+});
+
+renderer.domElement.addEventListener('click', () => {
+  if (phase !== 'play' || travelPromptShown || document.pointerLockElement) return;
+  interactionPointerReleased = false;
+  requestGamePointerLock();
 });
 
 function enterApartmentFurniture(spot) {
@@ -1519,6 +1554,8 @@ function enterApartmentFurniture(spot) {
   activeFurnitureInteraction = {
     ...spot,
     returnPosition: ctrl.pos.clone(),
+    returnYaw: input.yaw,
+    returnPitch: input.pitch,
     readyToExit: false,
   };
   ctrl.pos.set(spot.x, spot.y, spot.z);
@@ -1526,14 +1563,33 @@ function enterApartmentFurniture(spot) {
   ctrl.vel.set(0, 0, 0);
   ctrl.mode = spot.type;
   ctrl.webOn = false;
+  ctrl.furnitureCamera = spot.camera ?? null;
+  if (spot.camera) {
+    input.yaw = spot.camera.yaw;
+    input.pitch = spot.camera.pitch;
+    // Do not carry the standing camera's close wall-dodge or look target into
+    // the seated shot. Both made the first seconds look like a tiny avatar
+    // crushed between the chair and the monitors.
+    rig.dist = spot.camera.distance;
+    rig.collT = 1;
+    rig.occlusionAngle = 0;
+    rig.prevYaw = null;
+    rig.initialized = false;
+  }
 }
 
 function leaveApartmentFurniture() {
   if (!activeFurnitureInteraction) return;
+  const { returnYaw, returnPitch } = activeFurnitureInteraction;
   ctrl.pos.copy(activeFurnitureInteraction.returnPosition);
   ctrl.prevY = ctrl.pos.y;
   ctrl.vel.set(0, 0, 0);
   ctrl.mode = 'ground';
+  ctrl.furnitureCamera = null;
+  if (Number.isFinite(returnYaw)) input.yaw = returnYaw;
+  if (Number.isFinite(returnPitch)) input.pitch = returnPitch;
+  rig.prevYaw = null;
+  rig.initialized = false;
   activeFurnitureInteraction = null;
   furnitureInteractionCooldown = 0.5;
 }
@@ -1568,6 +1624,14 @@ function updateTravelInteraction(dt = 0.016) {
           if (travelActionRequested || input.pressed('LMB') || input.pressed('Enter')) {
             travelActionRequested = false;
             enterApartmentFurniture(spot);
+            // Locked from THIS frame, not the next one. Returning false here
+            // let the controller integrate one more step over an avatar that
+            // had just been parked on the seat — and a seat pulled up to a
+            // desk is inside the desk's collision volume, so the solver shoved
+            // her 26 cm backwards, into the backrest, where she then stayed:
+            // from the following frame the lock held and nothing pushed her
+            // back. That one frame is the whole "she sinks through the chair".
+            return true;
           }
           return false;
         }
@@ -1681,8 +1745,21 @@ document.addEventListener('pointerlockchange', () => {
   usedLock = usedLock || document.pointerLockElement !== null;
   if (phase === 'menu' || !usedLock) return;
   if (document.pointerLockElement === renderer.domElement) {
+    // A lock request can complete just after the prompt appeared. Release it
+    // again unless this lock comes from the prompt's own confirmed click.
+    if (travelPromptShown && !travelActionRequested) {
+      interactionPointerReleased = true;
+      document.exitPointerLock?.();
+      return;
+    }
+    interactionPointerReleased = false;
     phase = 'play';
     $('pause').classList.remove('show');
+  } else if (interactionPointerReleased) {
+    // Expected unlock while a clickable furniture/travel prompt is visible.
+    phase = 'play';
+    $('pause').classList.remove('show');
+    if (travelPromptShown) travelPrompt.focus({ preventScroll: true });
   } else if (phase === 'play') {
     phase = 'pause';
     setTravelPrompt(false);
@@ -1731,6 +1808,24 @@ const camDir = new THREE.Vector3();
 let frames = 0, fpsT = performance.now(), fps = 0;
 let menuT = 0;
 const clock = new THREE.Clock();
+// Level 07 bedroom wardrobe: she changes into the pyjama set on the way in
+// and back into street clothes on the way out. The two thresholds are not the
+// same box — you have to be 15 cm inside to change, and 35 cm out to change
+// back — so standing in the doorway does not strobe the outfit every frame.
+let inApartment = false;
+function updateApartmentWardrobe() {
+  const bounds = level7?.apartmentBounds;
+  if (!chosen || !bounds) return;
+  const margin = inApartment ? 0.35 : -0.15;
+  const pos = ctrl.pos;
+  const inside = pos.x > bounds.x0 - margin && pos.x < bounds.x1 + margin
+    && pos.z > bounds.z0 - margin && pos.z < bounds.z1 + margin
+    && pos.y > bounds.y0 - 0.6 && pos.y < bounds.y1;
+  if (inside === inApartment) return;
+  inApartment = inside;
+  chosen.setOutfit(inside ? { pyjama: true } : {});
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
@@ -1750,6 +1845,7 @@ function animate() {
     rig.forward(camDir, input);
     const interactionLocked = updateTravelInteraction(dt);
     if (!interactionLocked && phase === 'play') ctrl.update(dt, input, input.yaw, camDir);
+    updateApartmentWardrobe();
     if (chosen) {
       chosen.update({
         dt,
@@ -1765,6 +1861,7 @@ function animate() {
         posture: activeFurnitureInteraction?.type,
         facingYaw: activeFurnitureInteraction?.yaw,
         floorY: activeFurnitureInteraction?.approachY,
+        seatPose: activeFurnitureInteraction?.pose,
       });
     }
     rig.update(dt, input, ctrl);

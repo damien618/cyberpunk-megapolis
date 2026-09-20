@@ -29,7 +29,7 @@ export class Controller {
   constructor(boxWorld, groundFn, castFn, events = {}) {
     this.bw = boxWorld;              // {aabbs, queryNearby}
     this.groundFn = groundFn;        // (x, z, yFrom, feetY, prevY) => groundY|null (raycast on real geometry)
-    this.castFn = castFn;            // (origin, dir, far) => {point, normal, distance}|null
+    this.castFn = castFn;            // (origin, dir, far, verifyBox?) => {point, normal, distance}|null
     this.events = events;
     this.pos = new THREE.Vector3();
     this.prevY = 0;
@@ -553,6 +553,14 @@ export class Controller {
       const inZ = this.pos.z > b.z0 - R && this.pos.z < b.z1 + R;
       if (!inX || !inZ) continue;
 
+      // Authored interior ceilings stop the head vertically. Treating a wide
+      // ceiling as a wall pushed jumping players out through the nearest facade.
+      if (b.ceiling && this.pos.y < b.y0) {
+        this.pos.y = b.y0 - BODY_H;
+        this.vel.y = Math.min(0, this.vel.y);
+        continue;
+      }
+
       const px0 = this.pos.x - (b.x0 - R);
       const px1 = (b.x1 + R) - this.pos.x;
       const pz0 = this.pos.z - (b.z0 - R);
@@ -576,7 +584,9 @@ export class Controller {
           const ry = THREE.MathUtils.clamp(this.pos.y + dy, b.y0 + 0.05, Math.max(b.y0 + 0.05, b.y1 - 0.05));
           _o.set(this.pos.x, ry, this.pos.z);
           _rdir.set(-nx, 0, -nz);
-          if (this.castFn(_o, _rdir, R + 0.8)) { real = true; break; }
+          // Let a map restrict verification to its coarse city geometry;
+          // an unrelated interior wall must not validate a hollow city box.
+          if (this.castFn(_o, _rdir, R + 0.8, b)) { real = true; break; }
         }
         if (!real) continue;
       }

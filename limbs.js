@@ -269,6 +269,8 @@ function loft({ points, pathU, profile, scale, rings, weights, lateral, floorY, 
   };
 
   const base = out.pos.length / 3;
+  out.uv ??= [];
+  const vSpan = (rings[rings.length - 1] - rings[0]) || 1;
   const prof = new Array(7);
   // Seed for the parallel transport below. It only has to be non-parallel to
   // the first tangent: a limb starts vertical so +Z serves, but the sandal sole
@@ -291,6 +293,7 @@ function loft({ points, pathU, profile, scale, rings, weights, lateral, floorY, 
 
     const [lat, med, ant, post, ex, enA, enP] = sampleProfile(profile, u, prof);
     const w = weights(u);
+    const v = (u - rings[0]) / vSpan;
     for (let j = 0; j < radial; j++) {
       const th = (j / radial) * Math.PI * 2;
       const cs = Math.cos(th), sn = Math.sin(th);
@@ -308,6 +311,13 @@ function loft({ points, pathU, profile, scale, rings, weights, lateral, floorY, 
       }
       if (warp) warp(u, cs, sn, p, scale, side3, anterior, c);
       pushVertex(out, p, w);
+      // Mirrored cylindrical wrap: the coordinate runs 1 → 0 → 1 around the
+      // tube, so the column where the ring closes carries the same value on
+      // both sides and a tiling weave crosses it without a seam. The mirror
+      // costs a texture flipped on the two halves of the limb, which no fabric
+      // grain can show. The tube is closed, so a duplicated seam column — the
+      // usual answer — would mean touching the triangulation below.
+      out.uv.push(Math.abs(1 - 2 * j / radial), v);
     }
   }
 
@@ -315,8 +325,10 @@ function loft({ points, pathU, profile, scale, rings, weights, lateral, floorY, 
   // inside the toe tip or the hand.
   const capA = out.pos.length / 3;
   pushVertex(out, firstCentre, weights(rings[0]));
+  out.uv.push(0.5, 0);
   const capB = out.pos.length / 3;
   pushVertex(out, lastCentre, weights(rings[rings.length - 1]));
+  out.uv.push(0.5, 1);
 
   const tri = lateral > 0
     ? (a, b, c) => out.tri.push(a, b, c)
@@ -344,6 +356,7 @@ function finish(out, rig, material, name, opts = {}) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(out.pos, 3));
   g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(out.idx, 4));
+  if (out.uv?.length) g.setAttribute('uv', new THREE.Float32BufferAttribute(out.uv, 2));
   g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(out.wgt, 4));
   g.setIndex(out.tri);
   g.computeVertexNormals();

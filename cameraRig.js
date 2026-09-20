@@ -6,8 +6,13 @@ import { segmentAABB } from './cityBoxes.js?v=3';
 
 const _look = new THREE.Vector3();
 const _dir = new THREE.Vector3();
+const _camDir = new THREE.Vector3();
 const _desired = new THREE.Vector3();
 const _lat = new THREE.Vector3();
+
+// When a wall leaves no room behind the player, keep a readable third-person
+// view by sliding the camera around them. The smallest useful yaw change wins.
+const CAMERA_YAW_OFFSETS = [0, 0.45, -0.45, 0.9, -0.9, 1.35, -1.35, Math.PI];
 
 export class CameraRig {
   constructor(camera, boxWorld) {
@@ -18,6 +23,8 @@ export class CameraRig {
     this.collT = 1;
     this.fov = camera.fov;
     this.roll = 0;
+    this.occlusionAngle = 0;
+    this.prevYaw = null;
     this.initialized = false;
 
     // cinematic hand-off: blend from an external camera pose (the aerial menu
@@ -59,7 +66,8 @@ export class CameraRig {
 
     _look.copy(ctrl.pos);
     _look.y += ctrl.mode === 'lie' ? 0.35
-      : (ctrl.mode === 'sit' || ctrl.mode === 'kneel') ? 1.05
+      : ctrl.mode === 'sit' ? (ctrl.furnitureCamera?.lookHeight ?? 1.05)
+      : ctrl.mode === 'kneel' ? 1.05
       : ctrl.mode === 'ride' ? 1.18
       : 1.35;
     _lat.copy(ctrl.vel).multiplyScalar(0.16);
@@ -74,32 +82,107 @@ export class CameraRig {
     this.forward(_dir, input);
 
     let targetDist = 4.2 + speedN * 3.6 + (ctrl.mode === 'swing' ? 1.1 : 0);
-    if (ctrl.mode === 'sit') targetDist = 1.72;
+    if (ctrl.mode === 'sit') targetDist = ctrl.furnitureCamera?.distance ?? 1.72;
     else if (ctrl.mode === 'ride') targetDist = 5.2;
     else if (ctrl.mode === 'kneel') targetDist = 2.4;
     else if (ctrl.mode === 'lie') targetDist = 2.35;
     this.dist += (targetDist - this.dist) * (1 - Math.exp(-4 * dt));
 
-    _desired.copy(this.smoothLook).addScaledVector(_dir, -this.dist);
-
     // occlusion: snap in, ease back out. The Ferris ride looks at the bay
     // through the wheel; pulling in against the terrace would bury the
     // camera in the cabin.
-    let t = 1;
-    if (ctrl.mode !== 'ride') {
+    const collisionT = direction => {
+      if (ctrl.mode === 'ride') return 1;
+      _desired.copy(this.smoothLook).addScaledVector(direction, -this.dist);
+      let result = 1;
       const ids = this.bw.queryNearby(this.smoothLook.x, this.smoothLook.z, this.dist + 12);
       for (const idx of ids) {
         const b = this.bw.aabbs[idx];
-        if (!b.collide) continue;
+        if (!b.collide || b.camBlock === false) continue;
+        // Some imported building materials have one coarse box around a
+        // hollow interior. If the player is already inside that box it cannot
+        // describe a wall between the player and camera; exact interior boxes
+        // added by the apartment still stop the boom normally.
+        const startsInside = this.smoothLook.x > b.x0 && this.smoothLook.x < b.x1 &&
+          this.smoothLook.y > b.y0 && this.smoothLook.y < b.y1 &&
+          this.smoothLook.z > b.z0 && this.smoothLook.z < b.z1;
+        if (startsInside && !b.prop) continue;
         const hit = segmentAABB(this.smoothLook, _desired, b, 0.28);
-        if (hit < t) t = hit;
+        if (hit < result) result = hit;
+      }
+      return result;
+    };
+    const rotatedDirection = (angle, out) => {
+      const c = Math.cos(angle), s = Math.sin(angle);
+      return out.set(_dir.x * c + _dir.z * s, _dir.y, -_dir.x * s + _dir.z * c).normalize();
+    };
+
+    // How fast the player is turning the view this frame. Manual rotation has
+    // to move the camera, so the wall-dodge below is never allowed to run
+    // against it.
+    let yawRate = 0;
+    if (this.prevYaw !== null && dt > 1e-5) {
+      let dy = input.yaw - this.prevYaw;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      yawRate = Math.abs(dy) / dt;
+    }
+    this.prevYaw = input.yaw;
+    const turning = yawRate > 0.2;
+
+    const previousAngle = this.occlusionAngle;
+    const readableBoom = Math.min(1.75, this.dist * 0.72);
+    rotatedDirection(this.occlusionAngle, _camDir);
+    const currentBoom = this.dist * collisionT(_camDir) * 0.97;
+
+    if (ctrl.mode === 'ride') {
+      this.occlusionAngle = 0;
+    } else if (turning) {
+      // While the player turns, the dodge is a fixed offset carried along with
+      // them. Re-picking the roomiest side here cancelled their input out: in
+      // a corridor every degree of yaw was answered by an equal and opposite
+      // dodge, so the view only moved once the offsets ran out — the arrow key
+      // felt like it needed several presses. Ease the offset back to centre
+      // instead, capped well under their own turn rate so the camera always
+      // follows the key.
+      const ease = Math.min(Math.abs(this.occlusionAngle), yawRate * 0.3 * dt);
+      this.occlusionAngle -= Math.sign(this.occlusionAngle) * ease;
+    } else if (currentBoom < readableBoom) {
+      // Standing still against a wall: slide around the player. Angles are only
+      // searched here, and the current one is kept while it stays readable, so
+      // the camera cannot swap sides on every small step.
+      let bestAngle = 0;
+      let bestBoom = -1;
+      for (const angle of CAMERA_YAW_OFFSETS) {
+        rotatedDirection(angle, _camDir);
+        const available = this.dist * collisionT(_camDir) * 0.97;
+        if (available > bestBoom) { bestBoom = available; bestAngle = angle; }
+        if (available >= readableBoom) { bestAngle = angle; break; }
+      }
+      // Except when the current direction puts the lens inside the avatar:
+      // escape that invalid pose immediately.
+      if (currentBoom < 0.9) this.occlusionAngle = bestAngle;
+      else {
+        let da = bestAngle - this.occlusionAngle;
+        while (da > Math.PI) da -= Math.PI * 2;
+        while (da < -Math.PI) da += Math.PI * 2;
+        this.occlusionAngle += da * (1 - Math.exp(-7 * dt));
       }
     }
-    if (ctrl.mode === 'ride') this.collT = 1;
+
+    rotatedDirection(this.occlusionAngle, _camDir);
+    const t = collisionT(_camDir);
+    if (ctrl.mode === 'ride') { this.collT = 1; this.occlusionAngle = 0; }
+    // A collision fraction belongs to one ray only. Carrying the old fraction
+    // onto a newly clear side angle would keep the lens trapped in the avatar.
+    else if (Math.abs(this.occlusionAngle - previousAngle) > 0.001) this.collT = t;
     else if (t < this.collT) this.collT = t;
     else this.collT += (t - this.collT) * (1 - Math.exp(-3.5 * dt));
-    const boom = Math.max(1.7, this.dist * this.collT * 0.97);
-    _desired.copy(this.smoothLook).addScaledVector(_dir, -boom);
+
+    // Respect the exact space available. The angle search above normally keeps
+    // enough distance to see the full player instead of entering their mesh.
+    const boom = Math.max(0.05, this.dist * this.collT * 0.97);
+    _desired.copy(this.smoothLook).addScaledVector(_camDir, -boom);
     if (_desired.y < 0.6) _desired.y = 0.6;
     cam.position.copy(_desired);
 
