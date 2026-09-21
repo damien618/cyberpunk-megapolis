@@ -1109,10 +1109,20 @@ export function buildLevel7Interior({ THREE, scene, world, bw, MAXANISO = 8, ctr
   matMesh.rotation.x = -Math.PI / 2;
   interiorGroup.add(matMesh);
 
-  // Entrance Ceiling Light
-  const entLight = new THREE.PointLight(0x00e5ff, 1.4, 6);
-  entLight.position.set(ENT_X, 2.3, ENT_Z + 1.0);
+  // Warm fill in the lobby. Amber with a little of the apartment pink, so the
+  // hall separates from the cyan door frame instead of repeating it.
+  const entLight = new THREE.PointLight(0xff8a55, 3.5, 8, 2);
+  entLight.position.set(ENT_X, 2.2, ENT_Z + 1.15);
   interiorGroup.add(entLight);
+
+  // The same warmth, thrown out of the doorway onto the sidewalk. The lamp
+  // sits up in the soffit, aimed down the street side of the facade (the
+  // sign faces -Z), so the pool reads on the pavement and the opening stays clear.
+  const doorSpill = new THREE.SpotLight(0xff7344, 42, 11, 0.62, 0.8, 2);
+  doorSpill.position.set(ENT_X, 2.48, ENT_Z + 0.55);
+  doorSpill.target.position.set(ENT_X, 0.02, ENT_Z - 2.6);
+  interiorGroup.add(doorSpill);
+  interiorGroup.add(doorSpill.target);
 
   // ---------------------------------------------------------------------------
   // 2. Cyberpunk Stairwell (Ascending y: 0.02 -> 4.22)
@@ -1145,12 +1155,23 @@ export function buildLevel7Interior({ THREE, scene, world, bw, MAXANISO = 8, ctr
       collide: true, prop: false, groundOnly: true, isGround: true,
     });
 
-    // Neon edge strip along step nosing
+    // Neon edge strip along step nosing. The first three are the line seen
+    // from the street: amber, so they don't repeat the cyan frame, and a
+    // little thicker so the recession still reads at sidewalk distance.
+    const leadsFromDoor = i < 3;
     const isAmber = (i % 5 === 0);
-    const stripMat = isAmber ? M.neonAmber : M.neonCyan;
-    createBox(STAIR_X0 + 0.05, STAIR_X1 - 0.05, sy1 - 0.02, sy1 + 0.005, sz0 - 0.01, sz0 + 0.02, stripMat, {
-      collide: false,
-    });
+    const stripMat = (leadsFromDoor || isAmber) ? M.neonAmber : M.neonCyan;
+    const nosingDrop = leadsFromDoor ? 0.032 : 0.02;
+    const nosingLift = leadsFromDoor ? 0.01 : 0.005;
+    const nosingFront = leadsFromDoor ? 0.016 : 0.01;
+    const nosingBack = leadsFromDoor ? 0.045 : 0.02;
+    createBox(
+      STAIR_X0 + 0.05, STAIR_X1 - 0.05,
+      sy1 - nosingDrop, sy1 + nosingLift,
+      sz0 - nosingFront, sz0 + nosingBack,
+      stripMat,
+      { collide: false },
+    );
   }
 
   // Staircase Industrial Railing
@@ -1166,6 +1187,12 @@ export function buildLevel7Interior({ THREE, scene, world, bw, MAXANISO = 8, ctr
     const py = 0.02 + p * STAIR_RISE;
     createBox(STAIR_X0 + 0.09, STAIR_X0 + 0.15, py, py + 0.95, pz - 0.03, pz + 0.03, M.darkMetal);
   }
+
+  // Warm light on the first treads, from the lobby side, so the three nosings
+  // read as steps going back rather than as stickers on a dark wall.
+  const stairMouthLight = new THREE.PointLight(0xff8a55, 2.2, 4.5, 2);
+  stairMouthLight.position.set(ENT_X, 1.05, STAIR_Z_START - 0.55);
+  interiorGroup.add(stairMouthLight);
 
   // Atmospheric Stair Lights
   const stairLight1 = new THREE.PointLight(0x00ffff, 1.2, 7);
@@ -1272,9 +1299,10 @@ export function buildLevel7Interior({ THREE, scene, world, bw, MAXANISO = 8, ctr
   // ---------------------------------------------------------------------------
   // 4. Door 704: Player's Apartment Entrance (Open Door!)
   // ---------------------------------------------------------------------------
-  // Doorway opening spans X: [-54.6, -53.2] (width 1.4 m, height 2.4 m)
-  const DOOR_X0 = -54.6;
-  const DOOR_X1 = -53.2;
+  // Wider than the capsule (0.84 m) with room to turn in from the narrow
+  // hall. The old 1.4 m slot left 0.56 m of clearance and caught the jambs.
+  const DOOR_X0 = -55.15;
+  const DOOR_X1 = -52.95;
 
   // Wall segment west of Door 704
   createBox(CORR_X_END, DOOR_X0, 4.22, 7.02, CORR_Z0 - 0.25, CORR_Z0, M.wallPanels);

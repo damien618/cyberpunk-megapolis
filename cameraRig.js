@@ -10,9 +10,11 @@ const _camDir = new THREE.Vector3();
 const _desired = new THREE.Vector3();
 const _lat = new THREE.Vector3();
 
-// When a wall leaves no room behind the player, keep a readable third-person
-// view by sliding the camera around them. The smallest useful yaw change wins.
-const CAMERA_YAW_OFFSETS = [0, 0.45, -0.45, 0.9, -0.9, 1.35, -1.35, Math.PI];
+// When a wall leaves no room behind the player, slide the camera around them
+// but stay in the rear quarter. An offset near PI parks the lens in front of
+// the character: W then walks toward the camera while the corridor on screen
+// runs the other way, so the keys feel backwards. Pull in close instead.
+const CAMERA_YAW_OFFSETS = [0, 0.4, -0.4, 0.85, -0.85];
 
 export class CameraRig {
   constructor(camera, boxWorld) {

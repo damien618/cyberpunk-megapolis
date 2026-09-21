@@ -11,12 +11,12 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Player } from './player.js?v=20260920-seatlock-a';
 import { buildCar, carBounds } from './cars.js?v=8-optics';
-import { buildLevel7Interior } from './level7Apartment.js?v=20260920-seatlock-a';
+import { buildLevel7Interior } from './level7Apartment.js?v=20260921-corridor';
 
 // build stamp: shown in the HUD + console so a stale-cache session is
 // recognizable at a glance (a mixed old/new module graph once reproduced the
 // "restart from the sky every few seconds" loop with zero errors)
-const BUILD = '2026-09-20-SEATLOCK-A';
+const BUILD = '2026-09-21-CORRIDOR';
 console.log(`[build] ${BUILD}`);
 
 // ---------- coordinate convention (verified: case A — Blender FBX->glTF export_yup) ----------
@@ -1101,7 +1101,7 @@ function charMatFor(name) {
 // ---------- game layer (architecture adapted from the web-slinger reference) ----------
 import { buildCityBoxes } from './cityBoxes.js?v=3';
 import { Controller } from './controller.js?v=5';
-import { CameraRig } from './cameraRig.js?v=20260920-gamer-framing';
+import { CameraRig } from './cameraRig.js?v=20260921-corridor-cam';
 import { Input } from './input.js?v=3';
 
 // ---------- floating-decal cull ----------
@@ -1244,8 +1244,42 @@ import { Input } from './input.js?v=3';
       if (vehBoxes.some(vb => vb.max.x > x0 && vb.min.x < x1 &&
                               vb.max.z > z0 && vb.min.z < z1 &&
                               vb.min.y < y0)) continue;
-      pods.push({ cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, sx: Math.max(fx * 0.96, 0.4),
-                  sz: Math.max(fz * 0.96, 0.4), top: y0 + 0.08, depth });
+      const sx = Math.max(fx * 0.96, 0.4);
+      const sz = Math.max(fz * 0.96, 0.4);
+      const top = y0 + 0.08;
+      const cx = (x0 + x1) / 2;
+      const cz = (z0 + z1) / 2;
+      const bx0 = cx - sx / 2, bx1 = cx + sx / 2;
+      const by0 = top - depth, by1 = top;
+      const bz0 = cz - sz / 2, bz1 = cz + sz / 2;
+      // Level 07: the plinth is one solid box, and its street face sits in the
+      // doorway cut out of the facade. Open that face at street level only.
+      // The upper floor stays one piece — a vertical cut there puts a wall
+      // between the landing and suite 704.
+      const door = { x0: -49.55, x1: -46.45, y0: 0, y1: 2.85 };
+      const coversDoor = sx > 8 && bx0 < door.x0 && bx1 > door.x1
+        && by0 < door.y1 && by1 > door.y1
+        && bz0 > 5 && bz0 < 9;
+      if (!coversDoor) {
+        pods.push({ cx, cz, sx, sz, top, depth });
+      } else {
+        const push = (ax0, ax1, ay0, ay1, az0, az1) => {
+          if (ax1 - ax0 < 0.04 || ay1 - ay0 < 0.04 || az1 - az0 < 0.04) return;
+          pods.push({
+            cx: (ax0 + ax1) / 2, cz: (az0 + az1) / 2,
+            sx: ax1 - ax0, sz: az1 - az0,
+            top: ay1, depth: ay1 - ay0,
+          });
+        };
+        push(bx0, door.x0, by0, door.y1, bz0, bz1);
+        push(door.x1, bx1, by0, door.y1, bz0, bz1);
+        push(door.x0, door.x1, by0, door.y0, bz0, bz1);
+        // The building base is at ~6.43 m, below the apartment ceiling (7.02)
+        // and below the shelf over the bed (6.74). A downward look lifts the
+        // camera above that face, so the plinth reads as a ceiling cutting
+        // the shelf. Carry it up into the ceiling slab, above the lens.
+        push(bx0, bx1, door.y1, Math.max(by1, 7.28), bz0, bz1);
+      }
     }
   }
   if (pods.length) {
