@@ -9,14 +9,14 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { Player } from './player.js?v=20260920-seatlock-a';
+import { Player } from './player.js?v=20260922-plush-hug6';
 import { buildCar, carBounds } from './cars.js?v=8-optics';
 import { buildLevel7Interior } from './level7Apartment.js?v=20260921-corridor';
 
 // build stamp: shown in the HUD + console so a stale-cache session is
 // recognizable at a glance (a mixed old/new module graph once reproduced the
 // "restart from the sky every few seconds" loop with zero errors)
-const BUILD = '2026-09-21-CORRIDOR';
+const BUILD = '2026-09-22-PLUSH-HUG';
 console.log(`[build] ${BUILD}`);
 
 // ---------- coordinate convention (verified: case A — Blender FBX->glTF export_yup) ----------
@@ -1592,7 +1592,7 @@ function enterApartmentFurniture(spot) {
     returnPitch: input.pitch,
     readyToExit: false,
   };
-  ctrl.pos.set(spot.x, spot.y, spot.z);
+  ctrl.pos.set(spot.x, spot.y, spot.restZ ?? spot.z);
   ctrl.prevY = spot.y;
   ctrl.vel.set(0, 0, 0);
   ctrl.mode = spot.type;
@@ -1652,7 +1652,9 @@ function updateTravelInteraction(dt = 0.016) {
   if (level7?.apartmentFurniture) {
     for (const spot of level7.apartmentFurniture) {
       if (Math.abs(ctrl.pos.y - spot.approachY) < 0.8) {
-        const dist = Math.hypot(ctrl.pos.x - spot.x, ctrl.pos.z - spot.z);
+        const dx = Math.max(0, Math.abs(ctrl.pos.x - spot.x) - (spot.footprintHalfX ?? 0));
+        const dz = Math.max(0, Math.abs(ctrl.pos.z - spot.z) - (spot.footprintHalfZ ?? 0));
+        const dist = Math.hypot(dx, dz);
         if (dist < spot.triggerDistance) {
           setTravelPrompt(true, spot.label);
           if (travelActionRequested || input.pressed('LMB') || input.pressed('Enter')) {
@@ -1893,6 +1895,7 @@ function animate() {
           ? Math.max(0, (ctrl.ropeLen - ctrl.pos.distanceTo(ctrl.anchor)) / Math.max(ctrl.ropeLen, 1))
           : 0,
         posture: activeFurnitureInteraction?.type,
+        sleepPlush: activeFurnitureInteraction?.sleepPlush === true,
         facingYaw: activeFurnitureInteraction?.yaw,
         floorY: activeFurnitureInteraction?.approachY,
         seatPose: activeFurnitureInteraction?.pose,

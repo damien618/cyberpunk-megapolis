@@ -2513,13 +2513,21 @@ export function buildLevel7Interior({ THREE, scene, world, bw, MAXANISO = 8, ctr
     },
     {
       type: 'lie',
-      label: "S'allonger sur le lit",
+      label: 'Se reposer ?',
+      sleepPlush: true,
       approachY: APT_FLOOR_Y,
-      triggerDistance: 1.35,
+      // Reach is measured from the mattress edge, not its centre. Standing at
+      // the foot of this 2.3 m bed should already reveal the prompt.
+      triggerDistance: 0.9,
+      footprintHalfX: BED_W / 2,
+      footprintHalfZ: BED_L / 2,
       x: BED_X,
       y: APT_FLOOR_Y + BED_BASE_H + MATT_H + 0.05,
       z: BED_Z,
-      yaw: 0,
+      // The pose root tips local +Y toward the foot of the bed. Turn it so
+      // her head reaches the pillows at +Z, then move the foot anchor back.
+      restZ: BED_Z - 0.90,
+      yaw: Math.PI,
     },
   ];
 

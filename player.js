@@ -52,6 +52,81 @@ const LYING_HAND_TARGETS = {
   l: new THREE.Vector3(0.025, 1.22, 0.14),
   r: new THREE.Vector3(-0.035, 1.14, 0.15),
 };
+// Hugging the toy to her chest: the forearms cross in a loose X over its front
+// (one over its chest, one over its belly), each hand cupping the far side.
+// Hands sit just above the toy's front: any lower and the forearms pass under
+// it. And they stay high: reach much further down the torso and the arm runs
+// out of bend, the elbow collapses onto the shoulder-hand line and the sleeves
+// vanish inside her belly.
+const PLUSH_HAND_TARGETS = {
+  l: new THREE.Vector3(-0.05, 1.22, 0.245),
+  r: new THREE.Vector3(0.05, 1.13, 0.235),
+};
+// Left alone, each hand carries straight on along its forearm and stands up
+// off the toy like a paw raised to wave. Lay the fingers across the plush
+// instead, curving down over its far side, palms resting on it.
+PLUSH_HAND_TARGETS.aim = {
+  l: new THREE.Vector3(-0.9, 0.05, -0.2),
+  r: new THREE.Vector3(0.9, 0.05, -0.3),
+};
+PLUSH_HAND_TARGETS.palm = new THREE.Vector3(0, 0, -1);
+const PLUSH_HEAD_TURN = 0.35;
+const HAND_CURL = 0.35;
+// Elbows out to the sides, not back: a backward pole sinks them into the torso.
+const PLUSH_ARM_POLE = new THREE.Vector3(1, -0.25, -0.1);
+// Where the toy rests in pose-root space: on her sternum, head under her chin.
+const PLUSH_REST = new THREE.Vector3(0, 1.25, 0.15);
+
+// Small soft Pikachu, built from inexpensive rounded meshes so the toy stays
+// attached to the character and follows the whole reclining pose.
+function makeSleepPlush() {
+  const toy = new THREE.Group();
+  toy.scale.setScalar(0.6);
+  // Lying on her chest, head nestled toward her chin, face tipped toward the
+  // foot of the bed so it peeks over her crossed arms from the camera there.
+  toy.position.copy(PLUSH_REST);
+  toy.rotation.set(0.45, 0, 0.12);
+  const yellow = new THREE.MeshStandardMaterial({ color: 0xffda32, roughness: 0.96 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x26222b, roughness: 0.96 });
+  const red = new THREE.MeshStandardMaterial({ color: 0xf45455, roughness: 0.96 });
+  const brown = new THREE.MeshStandardMaterial({ color: 0x955328, roughness: 0.96 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.96 });
+  const ball = (material, x, y, z, sx, sy, sz) => {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 10), material);
+    mesh.position.set(x, y, z);
+    mesh.scale.set(sx, sy, sz);
+    toy.add(mesh);
+    return mesh;
+  };
+  ball(yellow, 0, -0.035, 0, 0.115, 0.14, 0.075);
+  ball(yellow, 0, 0.115, 0.005, 0.13, 0.12, 0.09);
+  for (const side of [-1, 1]) {
+    const ear = ball(yellow, side * 0.087, 0.305, 0, 0.037, 0.13, 0.028);
+    ear.rotation.z = -side * 0.28;
+    const tip = ball(black, side * 0.119, 0.408, 0, 0.036, 0.047, 0.029);
+    tip.rotation.z = -side * 0.28;
+    ball(yellow, side * 0.115, -0.025, 0.055, 0.041, 0.075, 0.042);
+    ball(yellow, side * 0.065, -0.165, 0.02, 0.051, 0.04, 0.055);
+    ball(black, side * 0.055, 0.145, 0.087, 0.013, 0.018, 0.01);
+    ball(white, side * 0.052, 0.152, 0.096, 0.004, 0.005, 0.003);
+    ball(red, side * 0.096, 0.073, 0.075, 0.034, 0.027, 0.009);
+  }
+  ball(black, 0, 0.097, 0.099, 0.012, 0.008, 0.007);
+  // A short stepped lightning-bolt tail remains legible from the bed camera.
+  const tail = new THREE.Group();
+  const segment = (x, y, length, width, angle, material) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, length, 0.025), material);
+    mesh.position.set(x, y, -0.055);
+    mesh.rotation.z = angle;
+    tail.add(mesh);
+  };
+  segment(-0.14, -0.09, 0.14, 0.038, -0.55, brown);
+  segment(-0.22, -0.03, 0.17, 0.061, 0.7, yellow);
+  segment(-0.27, 0.06, 0.16, 0.077, -0.5, yellow);
+  toy.add(tail);
+  toy.visible = false;
+  return toy;
+}
 const EYE_BLINK_TARGET = 26;
 // Three small offsets off the rest pose then take the legs off attention and
 // into how a body actually settles on its back: ankles relaxed into plantar
@@ -984,6 +1059,8 @@ export class Player {
     scene.add(this.group);
     this.poseRoot = new THREE.Group();
     this.group.add(this.poseRoot);
+    this.sleepPlush = makeSleepPlush();
+    this.poseRoot.add(this.sleepPlush);
     this.mixer = null;
     this.actions = {};
     this.cur = null;
@@ -2421,6 +2498,44 @@ export class Player {
     this.poseRoot.updateMatrixWorld(true);
   }
 
+  // Turn the hand about the wrist so the fingers run along `aimLocal` and the
+  // palm faces `palmLocal` (both pose-root directions).
+  aimRestingHand(side, aimLocal, palmLocal) {
+    const hand = this.bones[`hand_${side}`];
+    const middle = this.bones[`middle_01_${side}`];
+    const index = this.bones[`index_01_${side}`];
+    const pinky = this.bones[`pinky_01_${side}`];
+    if (!hand || !middle || !index || !pinky) return;
+    const toWorld = v => v.clone().transformDirection(this.poseRoot.matrixWorld);
+    const at = bone => bone.getWorldPosition(new THREE.Vector3());
+    const handWorld = new THREE.Quaternion();
+
+    const aim = toWorld(aimLocal);
+    const fingers = at(middle).sub(at(hand)).normalize();
+    hand.getWorldQuaternion(handWorld);
+    this.setBoneWorldQuaternion(hand,
+      new THREE.Quaternion().setFromUnitVectors(fingers, aim).multiply(handWorld));
+    this.poseRoot.updateMatrixWorld(true);
+
+    // Palm normal from the knuckle line; mirrored between the two hands.
+    const across = at(index).sub(at(pinky));
+    const palm = new THREE.Vector3().crossVectors(aim, across)
+      .multiplyScalar(side === 'l' ? 1 : -1);
+    const want = toWorld(palmLocal);
+    palm.addScaledVector(aim, -palm.dot(aim)).normalize();
+    want.addScaledVector(aim, -want.dot(aim)).normalize();
+    hand.getWorldQuaternion(handWorld);
+    this.setBoneWorldQuaternion(hand,
+      new THREE.Quaternion().setFromUnitVectors(palm, want).multiply(handWorld));
+    // Fingers loosely curled round the toy rather than splayed flat.
+    for (const finger of ['index', 'middle', 'ring', 'pinky']) {
+      for (const joint of ['01', '02', '03']) {
+        this.bones[`${finger}_${joint}_${side}`]?.rotateZ(HAND_CURL);
+      }
+    }
+    this.poseRoot.updateMatrixWorld(true);
+  }
+
   // Both held poses want the same thing from the arms: solve them onto a pair of
   // hand targets once, keep the answer, and re-apply it over whatever the clip
   // underneath is doing. `key` is only there so the supine and the seated
@@ -2438,6 +2553,7 @@ export class Player {
         this.solveRestingArm(side, targets[side], pole
           ? new THREE.Vector3(side === 'l' ? pole.x : -pole.x, pole.y, pole.z)
           : null);
+        if (targets.aim) this.aimRestingHand(side, targets.aim[side], targets.palm);
       }
       this.heldArmPose[key] = new Map(
         this.armJoints.map(joint => [joint, this.bones[joint].quaternion.clone()])
@@ -2594,7 +2710,7 @@ export class Player {
     return this._heelDrop;
   }
 
-  applyLyingPose() {
+  applyLyingPose(withPlush = false) {
     this.poseRoot.rotation.x = -Math.PI / 2;
     this.poseRoot.position.y = this.backReach();
     // The clip underneath is a STANDING idle: weight on one leg, the other knee
@@ -2615,7 +2731,14 @@ export class Player {
     // the hips until the heels are on the bedding instead of over it.
     const heel = this.heelDrop();
     for (const side of ['l', 'r']) this.bones[`thigh_${side}`]?.rotateZ(heel[side]);
-    this.applyHeldArmPose('lying', LYING_HAND_TARGETS);
+    this.applyHeldArmPose(withPlush ? 'lyingPlush' : 'lying',
+      withPlush ? PLUSH_HAND_TARGETS : LYING_HAND_TARGETS,
+      withPlush ? PLUSH_ARM_POLE : null);
+    if (withPlush) {
+      // Asleep, the face rolls a little to one side, cheek toward the toy.
+      this.bones.neck_01?.rotateX(PLUSH_HEAD_TURN * 0.4);
+      this.bones.head?.rotateX(PLUSH_HEAD_TURN * 0.6);
+    }
   }
 
   applyKneelingPose(floorY) {
@@ -2695,10 +2818,13 @@ export class Player {
       this.dampKimonoStride();
     }
     this.setEyesClosed(posture === 'lie' || posture === 'kneel');
+    if (this.wardrobe?.pyjamaSlippers)
+      this.wardrobe.pyjamaSlippers.visible = this.outfit?.pyjama === true && posture !== 'lie';
+    this.sleepPlush.visible = posture === 'lie' && ctx.sleepPlush === true;
     if (posture === 'sit') {
       this.applySeatedPose(ctx.floorY, ctx.seatPose);
     } else if (posture === 'lie') {
-      this.applyLyingPose();
+      this.applyLyingPose(this.sleepPlush.visible);
     } else if (posture === 'kneel') {
       this.applyKneelingPose(ctx.floorY);
     }
