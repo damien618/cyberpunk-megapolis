@@ -11,12 +11,13 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Player } from './player.js?v=20260922-plush-hug6';
 import { buildCar, carBounds } from './cars.js?v=8-optics';
-import { buildLevel7Interior } from './level7Apartment.js?v=20260921-corridor';
+import { buildLevel7Interior } from './level7Apartment.js?v=20260923-noxmit';
+import { buildNeonMarket } from './neonMarket.js?v=20260923-glass2';
 
 // build stamp: shown in the HUD + console so a stale-cache session is
 // recognizable at a glance (a mixed old/new module graph once reproduced the
 // "restart from the sky every few seconds" loop with zero errors)
-const BUILD = '2026-09-22-PLUSH-HUG';
+const BUILD = '2026-09-23-PERF-5';
 console.log(`[build] ${BUILD}`);
 
 // ---------- coordinate convention (verified: case A — Blender FBX->glTF export_yup) ----------
@@ -63,11 +64,16 @@ window.addEventListener('unhandledrejection', e => {
 const J = u => { loadMgr.itemStart(u); return fetch(u).then(r => r.json()).finally(() => loadMgr.itemEnd(u)); };
 
 // ---------- renderer / scene ----------
+// perf bisect switches: ?logdepth  ?nopost  ?msaa=0|2|4  ?pr=0.75
+const PERF = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({
-  antialias: true, powerPreference: 'high-performance',
-  logarithmicDepthBuffer: true,   // 5.8km city + near 0.3m: kills z-fighting flicker
+  antialias: false, powerPreference: 'high-performance',
+  // log depth writes gl_FragDepth in every shader, which disables early-Z:
+  // measured 37 -> 60 fps (M3) with no visible z-fighting at 0.3..9000 m.
+  // ?logdepth brings it back if distant flicker reappears.
+  logarithmicDepthBuffer: PERF.has('logdepth'),
 });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));   // 2.0 retina cost ~2x GPU for little gain at motion
+renderer.setPixelRatio(Math.min(devicePixelRatio, +(PERF.get('pr') || 1.5)));   // 2.0 retina cost ~2x GPU for little gain at motion
 renderer.setSize(innerWidth, innerHeight);
 // production: skip per-program shader-log checks — some drivers return null
 // info logs, and the check costs a GL roundtrip per program on first use
@@ -93,7 +99,7 @@ if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) {
   t.textContent = '请使用键盘和鼠标 · PLEASE USE A KEYBOARD AND MOUSE';
   document.body.appendChild(t);
 }
-const MAXANISO = renderer.capabilities.getMaxAnisotropy();
+const MAXANISO = Math.min(renderer.capabilities.getMaxAnisotropy(), 4);
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x454c56, 0.00085);
@@ -808,6 +814,46 @@ for (const [prefabName, list] of byPrefab) {
         continue;
       }
 
+      // The broad parking-side ground floor of this exact building is the market.
+      // Split it from the other Building_11 instances so its original opaque
+      // facade and interior geometry can be removed without altering the city.
+      if (prefabName === 'CP_Combined_Building_11') {
+        const isMarket = pl => Math.hypot(convPos(pl.t).x + 4.5, pl.t[2] + 33.36) < 1;
+        const ordinary = group.filter(pl => !isMarket(pl));
+        const market = group.filter(isMarket);
+        if (ordinary.length) {
+          const im = new THREE.InstancedMesh(geo, material, ordinary.length);
+          im.userData.prefab = prefabName;
+          ordinary.forEach((pl, i) => {
+            _m.compose(convPos(pl.t), convQuat(pl.r), _s.set(pl.s[0], pl.s[1], pl.s[2]));
+            im.setMatrixAt(i, _m);
+          });
+          im.instanceMatrix.needsUpdate = true;
+          im.computeBoundingSphere();
+          if (mat.transparent) im.renderOrder = 2;
+          world.add(im);
+          drawMeshes++;
+        }
+        for (const pl of market) {
+          const m = new THREE.Matrix4().compose(convPos(pl.t), convQuat(pl.r),
+            _s.set(pl.s[0], pl.s[1], pl.s[2]));
+          const cutGeo = cutHolesFromGeometry(geo, m, [
+            { x0: -32.5, x1: -18.7, y0: -0.4, y1: 4.15, z0: -45.5, z1: -31.5 },
+          ]);
+          const im = new THREE.InstancedMesh(cutGeo, material, 1);
+          im.userData.prefab = 'CP_Combined_Building_11_Market';
+          // Its old whole-building AABB would block all five new aisles.
+          im.userData.skipCollide = [true];
+          im.setMatrixAt(0, m);
+          im.instanceMatrix.needsUpdate = true;
+          im.computeBoundingSphere();
+          if (mat.transparent) im.renderOrder = 2;
+          world.add(im);
+          drawMeshes++;
+        }
+        continue;
+      }
+
       const im = new THREE.InstancedMesh(geo, material, group.length);
       im.userData.prefab = prefabName;
       group.forEach((pl, i) => {
@@ -1282,7 +1328,38 @@ import { Input } from './input.js?v=3';
       }
     }
   }
-  if (pods.length) {
+  // Foundation podiums are separate from the tower geometry. They currently
+  // cross the market doorway and the first few metres of the room even after
+  // the facade cut, so subtract the whole shop volume from each intersecting
+  // podium before the collision world is built.
+  const marketVoid = { x0: -32.5, x1: -18.7, y0: -0.35, y1: 3.85,
+    z0: -45.5, z1: -31.35 };
+  const cutPod = p => {
+    const a = { x0: p.cx - p.sx / 2, x1: p.cx + p.sx / 2,
+      y0: p.top - p.depth, y1: p.top,
+      z0: p.cz - p.sz / 2, z1: p.cz + p.sz / 2 };
+    const h = marketVoid;
+    if (a.x1 <= h.x0 || a.x0 >= h.x1 || a.y1 <= h.y0 || a.y0 >= h.y1 ||
+        a.z1 <= h.z0 || a.z0 >= h.z1) return [p];
+    const x0 = Math.max(a.x0, h.x0), x1 = Math.min(a.x1, h.x1);
+    const z0 = Math.max(a.z0, h.z0), z1 = Math.min(a.z1, h.z1);
+    const y0 = Math.max(a.y0, h.y0), y1 = Math.min(a.y1, h.y1);
+    const pieces = [];
+    const add = (ax0, ax1, ay0, ay1, az0, az1) => {
+      if (ax1 - ax0 < 0.04 || ay1 - ay0 < 0.04 || az1 - az0 < 0.04) return;
+      pieces.push({ cx: (ax0 + ax1) / 2, cz: (az0 + az1) / 2,
+        sx: ax1 - ax0, sz: az1 - az0, top: ay1, depth: ay1 - ay0 });
+    };
+    add(a.x0, x0, a.y0, a.y1, a.z0, a.z1);
+    add(x1, a.x1, a.y0, a.y1, a.z0, a.z1);
+    add(x0, x1, a.y0, a.y1, a.z0, z0);
+    add(x0, x1, a.y0, a.y1, z1, a.z1);
+    add(x0, x1, a.y0, y0, z0, z1);
+    add(x0, x1, y1, a.y1, z0, z1);
+    return pieces;
+  };
+  const openPods = pods.flatMap(cutPod);
+  if (openPods.length) {
     // dress plinths in the pack's own concrete so they read as foundations,
     // not gray boxes (box UVs are 0..1 per face; repeat 2×2 keeps grain)
     const pt = texture('CP_Concrete_03_A.tga').clone();
@@ -1293,10 +1370,10 @@ import { Input } from './input.js?v=3';
     pn.repeat.set(2, 2);
     const mat = new THREE.MeshStandardMaterial({
       map: pt, normalMap: pn, color: 0x8f959c, roughness: 0.92, metalness: 0.03 });
-    const pim = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat, pods.length);
+    const pim = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat, openPods.length);
     pim.userData.prefab = '__podium';
     const q = new THREE.Quaternion();
-    pods.forEach((p, i) => {
+    openPods.forEach((p, i) => {
       _bm.compose(_bc.set(p.cx, p.top - p.depth / 2, p.cz), q,
                   new THREE.Vector3(p.sx, p.depth, p.sz));
       pim.setMatrixAt(i, _bm);
@@ -1305,7 +1382,7 @@ import { Input } from './input.js?v=3';
     pim.computeBoundingSphere();
     world.add(pim);
   }
-  console.log(`foundation podiums: ${pods.length}`);
+  console.log(`foundation podiums: ${openPods.length}`);
 }
 
 // The same silver SUV links this world to the villa. Its transparent instanced
@@ -1516,7 +1593,9 @@ let selGender = 'girl';
 const travelParams = new URLSearchParams(location.search);
 const arrivedFromVilla = travelParams.get('arrival') === 'la';
 const arrivedAtApartment = travelParams.get('arrival') === 'apartment';
+const arrivedAtMarket = travelParams.get('arrival') === 'market';
 const apartmentArrivalPoint = new THREE.Vector3(-54.5, 4.25, 11.2);
+const marketArrivalPoint = new THREE.Vector3(-25.7, 0.12, -29.5);
 const travelPrompt = $('furniturePrompt');
 let travelPromptShown = false;
 let travelActionRequested = false;
@@ -1533,6 +1612,56 @@ const level7 = buildLevel7Interior({
 });
 interiorCollisionMeshes.push(...level7.collisionMeshes);
 level7.interiorGroup.updateMatrixWorld(true);
+const neonMarket = await buildNeonMarket({ THREE, scene, world, bw, MAXANISO });
+interiorCollisionMeshes.push(...neonMarket.collisionMeshes);
+neonMarket.group.updateMatrixWorld(true);
+
+// Interior light zones. Forward rendering loops over EVERY visible light for
+// every lit pixel of the city, so the 17 Level 07 + 5 market lights made the
+// whole 5.8 km map pay for rooms you are nowhere near. Each room's lights now
+// only exist while the camera is close; the light-count variants are compiled
+// up front (warmLightZones) so crossing a boundary does not hitch.
+const lightZones = [];
+{
+  const marketLights = new Set(neonMarket.lights);
+  const level7Lights = [];
+  scene.traverse(o => {
+    if ((o.isPointLight || o.isSpotLight) && !marketLights.has(o)) level7Lights.push(o);
+  });
+  for (const lights of [level7Lights, neonMarket.lights]) {
+    if (!lights.length) continue;
+    const box = new THREE.Box3();
+    for (const l of lights) box.expandByPoint(l.getWorldPosition(new THREE.Vector3()));
+    lightZones.push({
+      lights, on: true,
+      center: box.getCenter(new THREE.Vector3()),
+      radius: box.getSize(new THREE.Vector3()).length() / 2 + 40,
+    });
+  }
+}
+let lightZonesWarm = false;
+function setLightZone(z, on) {
+  z.on = on;
+  for (const l of z.lights) l.visible = on;
+}
+function updateLightZones() {
+  if (!lightZonesWarm) return;
+  for (const z of lightZones) {
+    const d = camera.position.distanceTo(z.center);
+    const on = z.on ? d < z.radius + 10 : d < z.radius;   // 10 m hysteresis
+    if (on !== z.on) setLightZone(z, on);
+  }
+}
+async function warmLightZones() {
+  for (let mask = 0; mask < 1 << lightZones.length; mask++) {
+    lightZones.forEach((z, i) => setLightZone(z, (mask >> i & 1) === 1));
+    try { await renderer.compileAsync(scene, camera); } catch (e) { console.warn('[lights] warm-up', e); }
+  }
+  lightZonesWarm = true;
+  lightZones.forEach(z => setLightZone(z, false));
+  updateLightZones();
+}
+window.__lightZones = lightZones;
 
 let activeFurnitureInteraction = null;
 let furnitureInteractionCooldown = 0;
@@ -1734,7 +1863,12 @@ function startGame() {
   const other = players[selGender === 'man' ? 'girl' : 'man'];
   scene.remove(other.group);
   window.__player = chosen;
-  if (arrivedAtApartment) {
+  if (arrivedAtMarket) {
+    input.yaw = 0;
+    input.pitch = -0.05;
+    ctrl.rescueTo(marketArrivalPoint);
+    rig.initialized = false;
+  } else if (arrivedAtApartment) {
     input.yaw = -Math.PI / 2;
     input.pitch = -0.05;
     ctrl.rescueTo(apartmentArrivalPoint);
@@ -1831,7 +1965,7 @@ window.__castRay = (ox, oy, oz, dx, dy, dz, far) =>
 
 // ---------- post: TAA + bloom ----------
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
-  innerWidth, innerHeight, { samples: 4, type: THREE.HalfFloatType }));
+  innerWidth, innerHeight, { samples: +(PERF.get('msaa') ?? 4), type: THREE.HalfFloatType }));
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.5, 0.82);
 composer.addPass(bloom);
@@ -1865,6 +1999,7 @@ function updateApartmentWardrobe() {
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
+  if (neonMarket) neonMarket.update(dt);
 
   if (phase === 'menu') {
     // aerial menu: slow orbit high above the dive drop point, sunset city
@@ -1937,7 +2072,8 @@ function animate() {
   skyDome.position.copy(camera.position);
   for (const c of cloudMeshes) c.quaternion.copy(camera.quaternion);   // clouds = billboards
   skyUniforms.uTime.value += dt;
-  composer.render();
+  updateLightZones();
+  if (PERF.has('nopost')) renderer.render(scene, camera); else composer.render();
   frames++;
   const now = performance.now();
   if (now - fpsT > 500) { fps = Math.round(frames * 1000 / (now - fpsT)); frames = 0; fpsT = now; }
@@ -1955,6 +2091,7 @@ setTimeout(() => {
       if (t && t.image && t.image.width) renderer.initTexture(t);
     }
   }
+  warmLightZones();
 }, 1200);
 
 loadMsg('choose your runner');
@@ -1970,7 +2107,7 @@ function showMenu() {
   setTimeout(() => { loaderEl.style.display = 'none'; }, 600);
   menuEl.classList.add('show');
   animate();
-  if (arrivedFromVilla) {
+  if (arrivedFromVilla || arrivedAtMarket) {
     selectGender('girl');
     startGame();
   }

@@ -808,9 +808,11 @@ export function buildLevel7Interior({ THREE, scene, world, bw, MAXANISO = 8, ctr
     aptFloor: new THREE.MeshStandardMaterial({
       map: floorTileTex, color: 0xffffff, roughness: 0.28, metalness: 0.25,
     }),
-    windowGlass: new THREE.MeshPhysicalMaterial({
+    // plain alpha glass: `transmission` makes three re-render the whole
+    // opaque city into a texture whenever a pane is on screen (2x draw calls)
+    windowGlass: new THREE.MeshStandardMaterial({
       color: 0x7799aa, transparent: true, opacity: 0.22,
-      roughness: 0.05, transmission: 0.95, thickness: 0.1,
+      roughness: 0.05, metalness: 0.1, depthWrite: false,
     }),
     neonPink: new THREE.MeshStandardMaterial({
       color: 0xff4088, emissive: new THREE.Color(0xff1493), emissiveIntensity: 2.2,
