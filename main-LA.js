@@ -106,6 +106,110 @@ function ntex(url, repeatX = 1, repeatY = 1) {
   t.anisotropy = maxAniso;
   return t;
 }
+// Honed travertine for the great room: 60×120 slabs in running bond, each cut
+// with its own tone and the stone's horizontal bands and pores. The old floor
+// was one flat beige, which is what made the room read as a mock-up. One
+// canvas covers 4.8 m (4 × 8 slabs) so repeats are too far apart to notice.
+// Values sit near white; M.floorInt's colour still sets the overall tone.
+function makeTravertineMap() {
+  const size = 1024, cols = 4, rows = 8;
+  const tw = size / cols, th = size / rows;
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = c.getContext('2d');
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let r = 0; r < rows; r++) {
+    const off = (r % 2) * tw / 2;
+    for (let k = -1; k < cols; k++) {
+      const x0 = k * tw + off, y0 = r * th;
+      const tone = 0.935 + rnd() * 0.04;
+      const warm = rnd() * 0.02;
+      ctx.fillStyle = `rgb(${255 * tone | 0},${255 * (tone - warm) | 0},${255 * (tone - warm * 2.2) | 0})`;
+      ctx.fillRect(x0, y0, tw, th);
+      // Bands run along the slab's length, the way travertine is cut.
+      for (let b = 0; b < 9; b++) {
+        const y = y0 + rnd() * th, h = 1 + rnd() * 5;
+        ctx.fillStyle = `rgba(${rnd() < 0.5 ? '150,125,95' : '255,250,240'},${0.05 + rnd() * 0.08})`;
+        ctx.beginPath();
+        ctx.moveTo(x0, y);
+        for (let x = 0; x <= tw; x += tw / 8) ctx.lineTo(x0 + x, y + Math.sin(x * 0.02 + b) * 3 + (rnd() - 0.5) * 2);
+        ctx.lineTo(x0 + tw, y + h);
+        ctx.lineTo(x0, y + h);
+        ctx.fill();
+      }
+      // Filled pores: short dark dashes stretched along the bands.
+      for (let p = 0; p < 40; p++) {
+        ctx.fillStyle = `rgba(120,98,72,${0.12 + rnd() * 0.18})`;
+        ctx.fillRect(x0 + rnd() * tw, y0 + rnd() * th, 2 + rnd() * 7, 1 + rnd() * 1.4);
+      }
+    }
+  }
+  // Tight joints, a shade darker than the stone.
+  ctx.fillStyle = 'rgba(110,95,75,0.3)';
+  for (let r = 0; r < rows; r++) {
+    ctx.fillRect(0, r * th, size, 2);
+    const off = (r % 2) * tw / 2;
+    for (let k = 0; k <= cols; k++) ctx.fillRect(k * tw + off - 1, r * th, 2, th);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  return t;
+}
+// Flat-woven wool for the plain rugs: a fine warp/weft grain and a two-line
+// border, near white so each rug's colour still comes from its material. The
+// rug's top face spans the whole map (no tiling), so the border frames it.
+// The same canvas drives the bump, so the weave catches the light.
+function makeFlatweaveMap() {
+  const size = 512;
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(size, size);
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let y = 0; y < size; y++) {
+    const row = 0.94 + rnd() * 0.05;
+    for (let x = 0; x < size; x++) {
+      const weave = ((x + (y >> 1)) % 4 < 2) ? 1 : 0.93;
+      const u = Math.min(x, size - 1 - x) / size, v = Math.min(y, size - 1 - y) / size;
+      const edge = Math.min(u, v);
+      const border = (edge > 0.035 && edge < 0.05) || (edge > 0.07 && edge < 0.078) ? 0.72 : 1;
+      const g = 255 * row * weave * border * (0.96 + rnd() * 0.04);
+      const i = (y * size + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = g;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = maxAniso;
+  return t;
+}
+// Soft contact shadow: the point lights indoors cast none, so a table or a
+// sofa used to hover over a uniformly lit floor. Black with an alpha that is
+// solid over the inner fifth and falls off smoothly to the edge. Stored as
+// grey because alphaMap reads the green channel.
+function makeContactShadowTex() {
+  const size = 128;
+  const c = Object.assign(document.createElement('canvas'), { width: size, height: size });
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = Math.max(0, Math.abs((x + 0.5) / size - 0.5) * 2 - 0.2) / 0.8;
+      const dy = Math.max(0, Math.abs((y + 0.5) / size - 0.5) * 2 - 0.2) / 0.8;
+      const k = 1 - Math.min(1, Math.hypot(dx, dy));
+      const a = k * Math.sqrt(k);
+      const i = (y * size + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255 * a;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return new THREE.CanvasTexture(c);
+}
 // Bedroom kilim: cream wool, pastel diamonds, a woven pile. Flat beige read as
 // a painted slab; this is a textile, so the pattern is unique (clamp, not tile)
 // and the normal comes off the weft so the pile catches the sun.
@@ -632,6 +736,10 @@ const leafCardTex = loader.load('./textures/nature/foliage_card.png');
 leafCardTex.colorSpace = THREE.SRGBColorSpace;
 leafCardTex.anisotropy = maxAniso;
 const calRug = makeCalRugMaps();
+// Great-room slab is 25.6 × 24 m; one canvas spans 4.8 m.
+const travertineA = makeTravertineMap();
+const flatweave = makeFlatweaveMap();
+travertineA.repeat.set(25.6 / 4.8, 24 / 4.8);
 const hollywoodRug = makeHollywoodRugMaps();
 const boucle = makeBoucleMaps();
 const houseplantA = makeHouseplantAlbedo();
@@ -649,8 +757,16 @@ const M = {
     map: stuccoA, normalMap: stuccoPN, normalScale: new THREE.Vector2(0.55, 0.55),
     color: 0xe4d7c2, roughness: 0.93, metalness: 0.01
   }),
-  plaster: new THREE.MeshStandardMaterial({ color: 0xf8f5ee, roughness: 0.95, metalness: 0.01 }),
-  plasterWarm: new THREE.MeshStandardMaterial({ color: 0xe9dfd0, roughness: 0.94, metalness: 0.01 }),
+  // Interior plaster keeps a whisper of the stucco's trowel relief: without it
+  // the partitions read as flat paper under the point lights.
+  plaster: new THREE.MeshStandardMaterial({
+    normalMap: stuccoPN, normalScale: new THREE.Vector2(0.14, 0.14),
+    color: 0xf8f5ee, roughness: 0.95, metalness: 0.01
+  }),
+  plasterWarm: new THREE.MeshStandardMaterial({
+    normalMap: stuccoPN, normalScale: new THREE.Vector2(0.14, 0.14),
+    color: 0xe9dfd0, roughness: 0.94, metalness: 0.01
+  }),
   ceiling: new THREE.MeshStandardMaterial({ color: 0xfcfaf5, roughness: 0.97, metalness: 0.0 }),
   travertine: new THREE.MeshStandardMaterial({
     normalMap: travN, normalScale: new THREE.Vector2(0.25, 0.25),
@@ -658,7 +774,7 @@ const M = {
   }),
   // Indoors the same stone is honed: almost no relief, warmer and less glary.
   floorInt: new THREE.MeshStandardMaterial({
-    normalMap: travN, normalScale: new THREE.Vector2(0.05, 0.05),
+    map: travertineA, normalMap: travN, normalScale: new THREE.Vector2(0.05, 0.05),
     color: 0xd7c9b2, roughness: 0.5, metalness: 0.02
   }),
   deck: new THREE.MeshStandardMaterial({
@@ -724,8 +840,12 @@ const M = {
   houseplant: new THREE.MeshStandardMaterial({
     map: houseplantA, color: 0xc8e0b0, roughness: 0.72, metalness: 0.0,
   }),
-  rug: new THREE.MeshStandardMaterial({ color: 0xb9a689, roughness: 0.98, metalness: 0.0 }),
-  rugDark: new THREE.MeshStandardMaterial({ color: 0x6f6558, roughness: 0.98, metalness: 0.0 }),
+  rug: new THREE.MeshStandardMaterial({
+    map: flatweave, bumpMap: flatweave, bumpScale: 0.6, color: 0xb9a689, roughness: 0.98, metalness: 0.0
+  }),
+  rugDark: new THREE.MeshStandardMaterial({
+    map: flatweave, bumpMap: flatweave, bumpScale: 0.6, color: 0x6f6558, roughness: 0.98, metalness: 0.0
+  }),
   rugCal: new THREE.MeshStandardMaterial({
     map: calRug.albedo, normalMap: calRug.normal, normalScale: new THREE.Vector2(0.55, 0.55),
     color: 0xffffff, roughness: 0.96, metalness: 0.0,
@@ -1055,6 +1175,29 @@ function box(mat, x, y, z, sx, sy, sz, ry = 0) {
     x: FX + x * c + z * s, y: y + LIFT, z: FZ - x * s + z * c,
     sx, sy, sz, ry: FR + ry
   });
+}
+// Contact shadows live outside the kits: they must neither cast shadows nor
+// be walkable, so they get their own InstancedMesh added straight to the scene.
+const contactItems = [];
+function contact(w, d) {
+  contactItems.push({ x: FX, y: F + 0.037 + LIFT, z: FZ, w, d, ry: FR });
+}
+function flushContacts() {
+  const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x000000, alphaMap: makeContactShadowTex(), opacity: 0.7,
+    transparent: true, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  });
+  const im = new THREE.InstancedMesh(geo, mat, contactItems.length);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+  const p = new THREE.Vector3(), sc = new THREE.Vector3();
+  contactItems.forEach((it, i) => {
+    q.setFromAxisAngle(_yAxis, it.ry);
+    im.setMatrixAt(i, m.compose(p.set(it.x, it.y, it.z), q, sc.set(it.w, 1, it.d)));
+  });
+  scene.add(im);
+  contactItems.length = 0;
 }
 const _frameQ = new THREE.Quaternion(), _localQ = new THREE.Quaternion();
 const _yAxis = new THREE.Vector3(0, 1, 0);
@@ -1477,7 +1620,7 @@ wallZ(M.stucco, WX1, WZ0, WZ1, {
 });
 
 // Interior partitions
-wallZ(M.plaster, PX_W, WZ0, 9.0, {
+wallZ(M.plaster, PX_W, WZ0, WZ1, {
   t: INT_T, openings: [{ a: -2.95, w: 1.4, top: 2.3, glass: false }, { a: 7.6, w: 1.1, top: 2.3, glass: false }]
 });
 wallX(M.plaster, PZ_S, PX_W, PX_F, { t: INT_T });
@@ -1617,6 +1760,7 @@ function sofa(len, { depth = 0.95, mat = M.sofaCream, cushion = M.fabricWarm, ar
     [-len / 2 + inset, -depth / 2 + inset], [len / 2 - inset, -depth / 2 + inset],
     [-len / 2 + inset, depth / 2 - inset], [len / 2 - inset, depth / 2 - inset],
   ]) shape(G.cylBase, M.walnut, lx, F, lz, 0.055, 0.14, 0.055);
+  contact(len + 0.9, depth + 0.9);
   box(mat, 0, F + 0.22, 0, len - 0.04, 0.16, depth - 0.1);      // plinth, F+0.14..F+0.30
   box(mat, 0, F + 0.33, 0.02, len - 0.06, 0.06, depth - 0.16);  // deck the pads rest on
   box(mat, 0, F + 0.60, -depth / 2 + 0.11, len - 0.06, 0.56, 0.16);  // back frame
@@ -1657,6 +1801,7 @@ function armchair(mat = M.sofaSage) {
   // capsule through between this pair and the long sofa. Same bouclé as the
   // sage sofa, same cushion/arm language, so they read as a set not as boxes.
   furnitureInteraction('sit', 0.26, 0.34, 0.06, F + 0.50);
+  contact(1.4, 1.3);
   for (const [dx, dz] of [[-0.24, -0.26], [0.24, -0.26], [-0.24, 0.04], [0.24, 0.04]])
     shape(G.cylBase, M.walnut, dx, F, dz, 0.05, 0.16, 0.05);
   box(mat, 0, F + 0.24, -0.12, 0.62, 0.16, 0.40);                 // plinth: front +0.08
@@ -1670,10 +1815,12 @@ function armchair(mat = M.sofaSage) {
   }
 }
 function lowTable(w, d, mat = M.walnut) {
+  contact(w + 0.7, d + 0.7);
   box(mat, 0, F + 0.4, 0, w, 0.07, d);
   box(mat, 0, F + 0.19, 0, w - 0.5, 0.36, d - 0.4);
 }
 function diningTable(w, d, mat = M.walnut) {
+  contact(w + 0.9, d + 0.9);
   box(mat, 0, F + 0.74, 0, w, 0.08, d);
   box(mat, 0, F + 0.36, 0, w - 1.1, 0.7, 0.14);
   box(mat, -w / 2 + 0.45, F + 0.36, 0, 0.12, 0.7, d - 0.2);
@@ -1681,6 +1828,7 @@ function diningTable(w, d, mat = M.walnut) {
 }
 function chair(mat = M.fabric, wood = M.walnut) {
   furnitureInteraction('sit', 0.25, 0.25, 0, F + 0.495);   // on the seat board
+  contact(1.0, 1.0);
   box(mat, 0, F + 0.45, 0, 0.5, 0.09, 0.5);
   box(mat, 0, F + 0.72, -0.21, 0.46, 0.48, 0.08);
   for (const [dx, dz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]])
@@ -1694,6 +1842,7 @@ function stool(h = 0.72) {
 }
 function bed(w, l, { linen = M.linen, throwMat = M.fabricWarm } = {}) {
   furnitureInteraction('lie', w / 2, l / 2, l / 2 - 0.12, F + 0.66);  // on the duvet
+  contact(w + 0.9, l + 0.9);
   box(M.walnut, 0, F + 0.16, 0, w, 0.32, l);                         // base
   box(linen, 0, F + 0.46, 0, w - 0.06, 0.3, l - 0.06);               // mattress
   box(linen, 0, F + 0.63, 0.1, w - 0.02, 0.06, l - 0.9);             // duvet
@@ -1839,6 +1988,7 @@ function counterRun(len, depth = 0.66, { uppers = 0, sink = false, cooktop = fal
   }
 }
 function kitchenIsland(len, wid) {
+  contact(wid + 0.8, len + 0.8);
   box(M.walnut, 0, F + 0.375, 0, wid, 0.65, len);                // below the bowls
   holedTop(M.walnut, 0, F + 0.765, 0, wid, 0.13, len, 0.08, 1.3, 0.96, 0.54);
   box(M.bronze, 0, F + 0.06, 0, wid - 0.1, 0.12, len - 0.1);
@@ -2024,6 +2174,7 @@ function pergola(w, d, h = 2.9) {
     box(M.teak, -w / 2 + (w * i) / n, F + h + 0.24, 0, 0.09, 0.14, d + 0.5);
 }
 function planter(size, h = 0.7, plant = M.houseplant) {
+  contact(size + 0.8, size + 0.8);
   box(M.concrete, 0, F + h / 2, 0, size, h, size);
   box(M.gravel, 0, F + h + 0.02, 0, size - 0.14, 0.06, size - 0.14);
   shape(G.trunk, M.barkDark, 0, F + h, 0, size * 0.14, size * 0.5, size * 0.14);
@@ -2941,6 +3092,7 @@ for (let x = -247; x < 245; x += 19) {
 }
 
 flushKits();
+flushContacts();
 flushLeafCards();
 
 // ---------------------------------------------------------------------------
