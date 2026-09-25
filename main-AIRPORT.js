@@ -375,6 +375,20 @@ const slatA = makeSlatTex();
 vinylA.repeat.set(1, 1);
 slatA.repeat.set(4, 2);
 
+// GATE CAFÉ renovation. The city pack already ships an exposed-brick set and
+// the nature folder a leaf card, so the LA look costs four texture loads and
+// zero new assets. cafeSlatA is the shop's slat canvas re-tiled for the plank
+// ceiling, where slatA's shared 4×2 repeat would stretch one slat to 3.5 m.
+const brickA = tex('./textures/CP_Brick_Wall_A.webp', 1, 1);
+const brickN = ntex('./textures/CP_Brick_Wall_N.webp', 1, 1);
+const cafeTileA = tex('./textures/CP_Ceramic_Tile_A.webp', 1, 1);
+const cafeTileN = ntex('./textures/CP_Ceramic_Tile_N.webp', 1, 1);
+const canopyA = tex('./textures/nature/canopy_diff.jpg', 2, 2);
+const leafCardA = tex('./textures/nature/foliage_card.png', 1, 1);
+const cafeSlatA = slatA.clone();
+cafeSlatA.repeat.set(1, 1);
+cafeSlatA.needsUpdate = true;
+
 function canvasTex(w, h, draw, { srgb = true, wrap = false } = {}) {
   const c = Object.assign(document.createElement('canvas'), { width: w, height: h });
   draw(c.getContext('2d'), w, h);
@@ -432,6 +446,41 @@ function makeTravelPoster({ city, tag, c0, c1, accent, motif }) {
       ctx.fill();
       ctx.fillStyle = 'rgba(0,0,0,0.18)';
       ctx.fillRect(0, h * 0.78, w, h * 0.22);
+    } else if (motif === 'palm') {
+      // Sunset and three silhouetted palms — the postcard Los Angeles actually
+      // sends, and the only motif that reads as "home" for the café's poster.
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath();
+      ctx.arc(w * 0.62, h * 0.4, 130, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(24,14,32,0.6)';
+      const palm = (px, groundY, ph, lean) => {
+        ctx.save();
+        ctx.translate(px, groundY);
+        ctx.rotate(lean);
+        ctx.beginPath();                       // tapering trunk with a lean
+        ctx.moveTo(-8, 0);
+        ctx.quadraticCurveTo(8, -ph * 0.55, 3, -ph);
+        ctx.lineTo(14, -ph);
+        ctx.quadraticCurveTo(21, -ph * 0.5, 9, 0);
+        ctx.fill();
+        for (let f = 0; f < 7; f++) {          // drooping fronds, not a starburst
+          const a = -Math.PI * 0.88 + (f / 6) * Math.PI * 0.98;
+          ctx.save();
+          ctx.translate(9, -ph);
+          ctx.rotate(a);
+          ctx.beginPath();
+          ctx.ellipse(66, 0, 68, 12, 0.16, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.restore();
+      };
+      palm(w * 0.14, h * 0.82, 320, -0.06);
+      palm(w * 0.38, h * 0.82, 430, 0.05);
+      palm(w * 0.85, h * 0.82, 370, 0.1);
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(0, h * 0.82, w, h * 0.18);
     } else {
       ctx.fillStyle = 'rgba(255,255,255,0.14)';
       ctx.beginPath();
@@ -452,30 +501,118 @@ function makeTravelPoster({ city, tag, c0, c1, accent, motif }) {
   });
 }
 function makeMenuBoard() {
-  const t = canvasTex(1024, 512, (ctx, w, h) => {
-    ctx.fillStyle = '#241810';
+  // Chalk on a deep espresso board, priced in dollars: the unit reads LA when
+  // the menu says horchata and avocado toast. 2048 wide because the board is
+  // 4.4 m of wall and players walk right up to it — 1024 went blurry at a metre.
+  const t = canvasTex(2048, 536, (ctx, w, h) => {
+    ctx.fillStyle = '#1c1512';
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#c47858';
-    ctx.fillRect(0, 0, w, 10);
+    // chalk dust, so the board reads as used rather than as a black rectangle
+    for (let i = 0; i < 900; i++) {
+      ctx.fillStyle = `rgba(244,234,216,${0.02 + Math.random() * 0.05})`;
+      ctx.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 3, 2);
+    }
+    ctx.strokeStyle = '#6a4a2c';
+    ctx.lineWidth = 26;
+    ctx.strokeRect(13, 13, w - 26, h - 26);
     ctx.fillStyle = '#f6ead8';
-    ctx.font = 'bold 42px sans-serif';
-    ctx.fillText('GATE CAFÉ', 40, 64);
-    ctx.font = '28px sans-serif';
-    ctx.fillStyle = '#d8c4a8';
-    const rows = [
-      ['Espresso', '3.2'], ['Flat white', '4.4'], ['Iced latte', '4.8'],
-      ['Croissant', '3.8'], ['Berry danish', '4.1'], ['Airport bun', '5.0'],
-    ];
-    rows.forEach((r, i) => {
-      const y = 130 + i * 56;
+    ctx.font = 'bold 74px Georgia';
+    ctx.fillText('GATE CAFÉ', 56, 96);
+    ctx.fillStyle = '#d8a05c';
+    ctx.font = 'italic 34px Georgia';
+    ctx.fillText('Los Angeles  ·  Sunset Blvd', 480, 96);
+    ctx.strokeStyle = '#c47858';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(56, 124); ctx.lineTo(w - 56, 124); ctx.stroke();
+    const col = (x0, title, rows) => {
       ctx.fillStyle = '#f0e0cc';
-      ctx.fillText(r[0], 48, y);
-      ctx.fillStyle = '#c47858';
-      ctx.fillText(r[1], w - 140, y);
-    });
+      ctx.font = 'bold 40px Georgia';
+      ctx.fillText(title, x0, 180);
+      rows.forEach((r, i) => {
+        const y = 242 + i * 62;
+        ctx.fillStyle = '#efe2d0';
+        ctx.font = '38px Georgia';
+        ctx.fillText(r[0], x0, y);
+        ctx.strokeStyle = 'rgba(240,224,208,0.28)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([10, 12]);
+        ctx.beginPath();
+        ctx.moveTo(x0 + ctx.measureText(r[0]).width + 24, y - 8);
+        ctx.lineTo(x0 + 760, y - 8);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#e8a86a';
+        ctx.font = 'bold 38px Georgia';
+        ctx.fillText(r[1], x0 + 790, y);
+      });
+    };
+    col(72, '—  SIP  —', [
+      ['Drip of the day', '3.5'], ['Café latte', '5.0'], ['Horchata latte', '5.5'],
+      ['Iced oat matcha', '5.5'], ['Cold brew', '4.5'],
+    ]);
+    col(1104, '—  EAT  —', [
+      ['Avocado toast', '9.5'], ['Breakfast burrito', '8.5'], ['Croissant', '3.8'],
+      ['Berry danish', '4.1'], ['Lemon bar', '4.5'],
+    ]);
   });
   return new THREE.MeshStandardMaterial({
-    map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.22, roughness: 0.55,
+    map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.26, roughness: 0.55,
+  });
+}
+function makeNeonSign() {
+  // Coral neon script on a near-black mounting panel — the piece that says
+  // "LA coffee" from across the concourse. The glow is painted with canvas
+  // shadowBlur and carried by the emissive map, so no real light is spent on it.
+  const t = canvasTex(1280, 206, (ctx, w, h) => {
+    ctx.fillStyle = '#160d0a';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#3a241a';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(4, 4, w - 8, h - 8);
+    ctx.textAlign = 'center';
+    const tube = (text, y, font, glow, fill) => {
+      ctx.font = font;
+      ctx.shadowColor = glow;
+      ctx.shadowBlur = 36;
+      ctx.fillStyle = fill;
+      ctx.fillText(text, w / 2, y);
+      ctx.shadowBlur = 12;
+      ctx.fillText(text, w / 2, y);
+      ctx.shadowBlur = 0;
+    };
+    tube('GATE  CAFÉ', 114, 'bold 108px Georgia', '#ff5a8a', '#ffdce8');
+    tube('·  fresh roasted daily  ·', 182, 'italic 38px Georgia', '#ffb03c', '#ffe9c4');
+  });
+  return new THREE.MeshStandardMaterial({
+    map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 1.5, roughness: 0.4,
+  });
+}
+function makeCafeRug() {
+  // Flat-woven kilim in rust and cream: the one soft plane on a hard floor,
+  // and the warmest read in the room short of actual sunlight.
+  return canvasTex(512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#a8503a';
+    ctx.fillRect(0, 0, w, h);
+    const bands = ['#b8623f', '#e8d5b8', '#8a4030', '#c87850', '#e8d5b8'];
+    let y = 0, bi = 0;
+    while (y < h) {
+      const bh = 26 + ((bi * 53) % 40);
+      ctx.fillStyle = bands[bi % bands.length];
+      ctx.fillRect(0, y, w, bh);
+      y += bh;
+      bi++;
+    }
+    ctx.fillStyle = '#e8d5b8';
+    for (let i = 0; i < 4; i++) {
+      const cx = 64 + i * 128;
+      ctx.beginPath();
+      ctx.moveTo(cx, h / 2 - 44); ctx.lineTo(cx + 30, h / 2);
+      ctx.lineTo(cx, h / 2 + 44); ctx.lineTo(cx - 30, h / 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(60,20,10,0.25)';
+    for (let i = 0; i < 400; i++)
+      ctx.fillRect(Math.random() * w, Math.random() * h, 2, 6);
   });
 }
 function makeClock() {
@@ -1011,6 +1148,55 @@ const M = {
   }),
   menu: makeMenuBoard(),
   clock: makeClock(),
+  // — GATE CAFÉ, LA renovation — exposed brick, saltillo-warm tile, walnut
+  // and neon. Tints run warm because the unit's own lights are 2400–2700 K;
+  // every cool surface in here would fight them and grey the room back out.
+  brickCafe: worldTriUv(pbrRough(new THREE.MeshStandardMaterial({
+    map: brickA, normalMap: brickN, normalScale: new THREE.Vector2(0.8, 0.8),
+    color: 0xc08868, roughness: 0.9, metalness: 0.02,
+  }), './textures/CP_Brick_Wall_MS.webp'), 2.4),
+  cafeFloor: worldXZUv(pbrRough(new THREE.MeshPhysicalMaterial({
+    map: cafeTileA, normalMap: cafeTileN, metalness: 0.05, clearcoat: 0.25,
+    clearcoatRoughness: 0.35, color: 0xbe7f50, roughness: 0.55,
+  }), './textures/CP_Ceramic_Tile_MS.webp'), 1.2),
+  cafeCeiling: worldTriUv(new THREE.MeshStandardMaterial({
+    map: cafeSlatA, color: 0xb08050, roughness: 0.68, metalness: 0.03,
+  }), 2.2),
+  slatWalnut: new THREE.MeshStandardMaterial({
+    map: cafeSlatA, color: 0x6a4830, roughness: 0.7, metalness: 0.03,
+  }),
+  walnutTop: new THREE.MeshStandardMaterial({
+    map: woodA, normalMap: woodN, color: 0x5a3a22, roughness: 0.4, metalness: 0.06,
+  }),
+  cafeLightWarm: new THREE.MeshStandardMaterial({
+    color: 0xffeed0, emissive: 0xffc878, emissiveIntensity: 1.8, roughness: 0.3,
+  }),
+  bulbEdison: new THREE.MeshStandardMaterial({
+    color: 0xffc890, emissive: 0xff9c40, emissiveIntensity: 2.4, roughness: 0.3,
+  }),
+  bulbCore: new THREE.MeshStandardMaterial({
+    color: 0xfff2d0, emissive: 0xffd9a0, emissiveIntensity: 4.5, roughness: 0.2,
+  }),
+  neon: makeNeonSign(),
+  posterLA: makeTravelPoster({
+    city: 'LOS ANGELES', tag: 'PACIFIC COAST  ·  HIGHWAY ONE',
+    c0: '#3a1c48', c1: '#e87848', accent: '#ffd9a0', motif: 'palm',
+  }),
+  rugCafe: new THREE.MeshStandardMaterial({ map: makeCafeRug(), roughness: 0.95 }),
+  potCeramic: new THREE.MeshPhysicalMaterial({
+    color: 0xe8ddd0, roughness: 0.5, metalness: 0.02, clearcoat: 0.3, clearcoatRoughness: 0.5,
+  }),
+  leafCard: new THREE.MeshStandardMaterial({
+    map: leafCardA, color: 0xbccfa0, roughness: 0.95, metalness: 0.0,
+    alphaTest: 0.3, alphaToCoverage: true, side: THREE.DoubleSide,
+  }),
+  bushMass: new THREE.MeshStandardMaterial({
+    map: canopyA, color: 0x55703f, roughness: 0.96, metalness: 0.0,
+  }),
+  espresso: new THREE.MeshStandardMaterial({ color: 0x2a180e, roughness: 0.22, metalness: 0.05 }),
+  foamCream: new THREE.MeshStandardMaterial({ color: 0xf0dfc2, roughness: 0.6 }),
+  croissant: new THREE.MeshStandardMaterial({ color: 0xc8883c, roughness: 0.68 }),
+  cakePink: new THREE.MeshStandardMaterial({ color: 0xe0a0ac, roughness: 0.75 }),
   slat: new THREE.MeshStandardMaterial({
     map: slatA, roughness: 0.72, metalness: 0.04, color: 0xffffff,
   }),
@@ -1450,9 +1636,9 @@ function slab(mat, x0, x1, z0, z1, y0, y1) {
   box(mat, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2,
     Math.abs(x1 - x0), Math.abs(y1 - y0), Math.abs(z1 - z0));
 }
-function roomLight(x, y, z, intensity, distance) {
+function roomLight(x, y, z, intensity, distance, color = 0xfff0d8) {
   const c = Math.cos(FR), s = Math.sin(FR);
-  const l = new THREE.PointLight(0xfff0d8, intensity, distance, 2);
+  const l = new THREE.PointLight(color, intensity, distance, 2);
   l.position.set(FX + x * c + z * s, y, FZ - x * s + z * c);
   world.add(l);
 }
@@ -2417,17 +2603,36 @@ prop(() => {
 // ---------------------------------------------------------------------------
 // GATE CAFÉ — a real walled unit, x -24..-10 / z 2..16, storefront on the
 // walkway with its opening at z 6..12, its own bulkhead ceiling and lights.
+// Reworked as an LA specialty-coffee room: exposed brick on the west wall,
+// saltillo-warm tile underfoot, a eucalyptus slat ceiling, Edison pendants
+// and festoon bulbs over the seating, a neon script and one palm poster.
+// The terminal's palette is cyan-on-plaster; this room is the deliberate
+// exception, all amber-on-brick, so it reads as a place you'd choose rather
+// than a place you're passing through.
 // ---------------------------------------------------------------------------
 slab(M.plasterWarm, -10.2, -9.8, 2, 6, F, RETAIL_H);
 slab(M.plasterWarm, -10.2, -9.8, 12, 16, F, RETAIL_H);
 slab(M.plasterWarm, -10.2, -9.8, 6, 12, 2.55, RETAIL_H);   // header over opening
 slab(M.plasterWarm, -24, -10, 15.8, 16.2, F, RETAIL_H);    // north wall
 slab(M.ceiling, -24, -10, 2, 16, RETAIL_H, RETAIL_H + 0.14);
+slab(M.brickCafe, -23.8, -23.74, 2.3, 15.7, F, RETAIL_H);  // exposed brick, west wall
+slab(M.cafeCeiling, -23.9, -10.25, 2.1, 15.9, RETAIL_H - 0.05, RETAIL_H); // slat ceiling
+slab(M.cafeFloor, -23.8, -10.25, 2.1, 15.9, F, F + 0.04);  // the café's own warm ground
 for (const lz of [5.5, 12.5])
-  box(M.lightBar, -17, RETAIL_H - 0.08, lz, 8, 0.07, 0.35);
+  box(M.cafeLightWarm, -17, RETAIL_H - 0.12, lz, 8, 0.07, 0.35);
+// Four amber room lights — the shop across the walk got the same treatment.
+// Warmth is mostly a lighting-budget decision; the surfaces above only hold it.
+roomLight(-16.8, 2.95, 5.5, 1.6, 11, 0xffd9a8);
+roomLight(-16.8, 2.95, 12.5, 1.6, 11, 0xffd9a8);
+roomLight(-20.6, 2.55, 9, 1.4, 9, 0xffcf98);
+roomLight(-13.2, 2.9, 9, 1.1, 9, 0xffd9a8);
 box(M.signCafe, -9.66, 3.0, 9, 0.08, 0.8, 5.0);            // fascia over opening
 slab(M.glass, -10.02, -9.98, 2.4, 5.7, 0.25, 2.4);         // storefront glazing
 slab(M.glass, -10.02, -9.98, 12.3, 15.6, 0.25, 2.4);
+// Neon script and one LA poster on the north wall, hung where the seating
+// looks and where both carry straight through the storefront glass.
+box(M.neon, -17.6, 2.62, 15.76, 5.6, 0.9, 0.06);
+box(M.posterLA, -12.9, 1.98, 15.77, 1.5, 0.92, 0.05);
 
 function cafeChair(x, z, ry) {
   prop(() => {
@@ -2442,18 +2647,65 @@ function cafeChair(x, z, ry) {
 }
 prop(() => {
   box(M.cafeWood, -21.3, F + 0.6, 9, 1.3, 1.2, 7.6);       // service counter
+  box(M.slatWalnut, -20.66, F + 0.6, 9, 0.05, 1.16, 7.5);  // slat front panel
+  box(M.walnutTop, -21.3, F + 1.23, 9, 1.42, 0.06, 7.72);  // walnut counter top
   box(M.cafeWood, -23.5, F + 1.0, 9, 0.6, 2.0, 7.6);       // back bar
+  box(M.walnutTop, -23.5, F + 2.02, 9, 0.68, 0.05, 7.68);  // back bar shelf
   box(M.menu, -23.15, 2.5, 9, 0.06, 1.15, 4.4);            // menu board
   box(M.steel, -21.3, F + 1.45, 6.8, 0.9, 0.5, 1.2);       // espresso machine
   box(M.steelDark, -21.3, F + 1.72, 6.55, 0.55, 0.18, 0.55);
   shape(G.cyl, M.steel, -21.55, F + 1.82, 6.55, 0.18, 0.22, 0.18);
+  // Machine details: group head, portafilter on its side, steam wand, and the
+  // two cups waiting. A silhouette with none of these reads as a metal brick.
+  box(M.steelDark, -20.94, F + 1.36, 6.8, 0.14, 0.1, 0.5);
+  shape(G.cyl, M.steelDark, -20.83, F + 1.33, 6.8, 0.05, 0.26, 0.05, { rz: Math.PI / 2 });
+  shape(G.cyl, M.steelDark, -20.92, F + 1.5, 7.28, 0.025, 0.3, 0.025, { rz: 0.5 });
+  shape(G.cyl, M.shirt, -20.95, F + 1.56, 7.62, 0.09, 0.12, 0.09);
+  shape(G.cyl, M.shirt, -20.95, F + 1.56, 7.75, 0.09, 0.12, 0.09);
   box(M.glass, -21.3, F + 1.5, 11.2, 0.8, 0.6, 1.4);       // pastry case
-  box(M.fabricWarm, -21.55, F + 1.28, 10.7, 0.22, 0.08, 0.28);
-  box(M.fabricWarm, -21.2, F + 1.3, 11.15, 0.26, 0.1, 0.22);
-  box(M.shirt, -21.45, F + 1.29, 11.55, 0.2, 0.07, 0.24);
-  for (const pz of [5, 9, 13]) {                            // pendants over the bar
-    box(M.steelDark, -20.4, 2.9, pz, 0.04, 0.9, 0.04);
-    shape(G.sphere, M.lightBar, -20.4, 2.4, pz, 0.3, 0.24, 0.3);
+  box(M.walnutTop, -21.3, F + 1.22, 11.2, 0.84, 0.04, 1.44); // case deck
+  shape(G.cone, M.croissant, -21.55, F + 1.32, 10.75, 0.13, 0.22, 0.13, { rz: Math.PI / 2.2 });
+  shape(G.cone, M.croissant, -21.1, F + 1.32, 10.95, 0.13, 0.22, 0.13, { rz: Math.PI / 1.9 });
+  shape(G.cyl, M.cakePink, -21.45, F + 1.29, 11.5, 0.24, 0.14, 0.24);
+  shape(G.sphere, M.fabricWarm, -21.45, F + 1.39, 11.5, 0.07, 0.06, 0.07);   // berry
+  shape(G.cyl, M.croissant, -21.1, F + 1.29, 11.62, 0.2, 0.1, 0.2);
+  // Back bar merch: kraft bags of beans, jars, a cup stack, one trailing plant.
+  box(M.bag, -23.5, F + 2.26, 5.9, 0.36, 0.42, 0.24);
+  box(M.bag2, -23.5, F + 2.24, 6.3, 0.36, 0.38, 0.24);
+  for (const [jz, jm] of [[11.9, M.bottleAmber], [12.25, M.bottleGreen], [12.6, M.bottleAmber]])
+    shape(G.cyl, jm, -23.5, F + 2.21, jz, 0.14, 0.34, 0.14);
+  for (const cy of [0, 1, 2])
+    shape(G.cyl, M.shirt, -23.5, F + 2.15 + cy * 0.09, 12.95, 0.16 - cy * 0.02, 0.02, 0.16 - cy * 0.02);
+  shape(G.cylBase, M.potCeramic, -23.5, F + 2.05, 9.6, 0.2, 0.18, 0.2);
+  shape(G.sphere, M.bushMass, -23.5, F + 2.32, 9.6, 0.3, 0.26, 0.3);
+  // Edison pendants over the bar: amber globes with a hot filament core,
+  // repositioned to actually straddle the machine and the pastry case.
+  for (const pz of [6, 9, 12]) {
+    box(M.steelDark, -20.4, 3.0, pz, 0.04, 0.8, 0.04);
+    shape(G.cyl, M.steelDark, -20.4, 2.62, pz, 0.09, 0.1, 0.09);
+    shape(G.sphere, M.bulbEdison, -20.4, 2.44, pz, 0.24, 0.3, 0.24);
+    shape(G.sphere, M.bulbCore, -20.4, 2.44, pz, 0.07, 0.1, 0.07);
+  }
+});
+// Festoon bulbs over the seating: three swags on real catenaries. The wire is
+// drawn segment by segment — a straight box cannot sag — and the bulbs hang on
+// short drops, which is the whole trick to reading as string lights rather
+// than as beads on a rail.
+prop(() => {
+  for (const rz of [4.4, 8.4, 12.8]) {
+    const x0 = -23.72, x1 = -10.3, y0 = 3.18, sag = 0.36, n = 16;
+    let px = x0, py = y0;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n;
+      const x = x0 + (x1 - x0) * t;
+      const y = y0 - Math.sin(t * Math.PI) * sag;
+      shape(G.cyl, M.steelDark, (px + x) / 2, (py + y) / 2, rz,
+        0.013, Math.hypot(x - px, y - py), 0.013,
+        { rz: Math.atan2(px - x, y - py) });
+      shape(G.cyl, M.steelDark, x, y - 0.03, rz, 0.008, 0.06, 0.008);
+      shape(G.sphere, M.bulbEdison, x, y - 0.085, rz, 0.055, 0.085, 0.055);
+      px = x; py = y;
+    }
   }
 });
 function cafeTable(x, z) {
@@ -2465,19 +2717,62 @@ function cafeTable(x, z) {
   cafeChair(x - 0.85, z, Math.PI / 2);
   cafeChair(x + 0.85, z, -Math.PI / 2);
 }
+// Kilim rug under the seating first, so the legs stand on it: one soft plane
+// and the tile stops reading as terminal overflow.
+slab(M.rugCafe, -19.4, -11.9, 3.9, 14.1, F + 0.04, F + 0.052);
 cafeTable(-17.6, 4.8);
 cafeTable(-13.6, 5.2);
 cafeTable(-17.6, 9);
 cafeTable(-13.6, 9.4);
 cafeTable(-17.6, 13.2);
 cafeTable(-13.6, 12.8);
+// Every table gets a saucered latte with a poured rosetta; three keep the
+// pastry plate. Lived-in beats staged from two metres away.
 prop(() => {
-  for (const [x, z] of [[-17.6, 4.8], [-13.6, 9.4], [-17.6, 13.2]]) {
-    shape(G.cyl, M.shirt, x + 0.16, F + 0.82, z + 0.1, 0.09, 0.08, 0.09);
-    shape(G.cyl, M.shirt, x + 0.16, F + 0.88, z + 0.1, 0.07, 0.04, 0.07);
+  for (const [x, z] of [[-17.6, 4.8], [-13.6, 5.2], [-17.6, 9], [-13.6, 9.4], [-17.6, 13.2], [-13.6, 12.8]]) {
+    shape(G.cyl, M.shirt, x + 0.16, F + 0.78, z + 0.1, 0.17, 0.02, 0.17);        // saucer
+    shape(G.cyl, M.shirt, x + 0.16, F + 0.84, z + 0.1, 0.09, 0.1, 0.09);         // cup
+    shape(G.cyl, M.espresso, x + 0.16, F + 0.888, z + 0.1, 0.074, 0.012, 0.074);
+    shape(G.sphere, M.foamCream, x + 0.16, F + 0.896, z + 0.1, 0.05, 0.008, 0.03);
+  }
+  for (const [x, z] of [[-17.6, 4.8], [-17.6, 9], [-17.6, 13.2]]) {
     shape(G.cyl, M.fabricWarm, x - 0.18, F + 0.8, z - 0.12, 0.14, 0.05, 0.1);
+    shape(G.cyl, M.croissant, x - 0.18, F + 0.85, z - 0.12, 0.1, 0.06, 0.1);
   }
 });
+// Bar stools on the walkway side of the counter, at the machine end where a
+// customer actually perches. Sit height matches the seat's top face.
+function cafeStool(x, z) {
+  prop(() => {
+    frame(x, z, 0, () => {
+      furnitureInteraction('sit', 0.26, 0.26, 0, F + 0.78);
+      shape(G.cylBase, M.steelDark, 0, F + 0.04, 0, 0.4, 0.05, 0.4);
+      shape(G.cyl, M.steelDark, 0, F + 0.42, 0, 0.07, 0.7, 0.07);
+      shape(G.cyl, M.walnutTop, 0, F + 0.74, 0, 0.44, 0.08, 0.44);
+    });
+  });
+}
+cafeStool(-20.1, 6.6);
+cafeStool(-20.1, 9);
+cafeStool(-20.1, 11.4);
+// Fiddle-leaf figs in ceramic pots — the apex predator of LA interior design.
+// A canopy-mass core gives the stack a shadowed body; three crossed leaf cards
+// give it silhouette. Scaled per pot so the four corners don't read as clones.
+function cafePlant(x, z, s) {
+  prop(() => {
+    frame(x, z, 0, () => {
+      shape(G.cylBase, M.potCeramic, 0, F + 0.04, 0, 0.46 * s, 0.5 * s, 0.46 * s);
+      shape(G.cyl, M.bag, 0, F + 0.85 * s, 0, 0.09, 0.75 * s, 0.09);
+      shape(G.sphere, M.bushMass, 0, F + 1.55 * s, 0, 0.6 * s, 0.65 * s, 0.6 * s);
+      for (const ry of [0, Math.PI / 4, Math.PI / 2, Math.PI * 3 / 4])
+        shape(G.card, M.leafCard, 0, F + 1.7 * s, 0, 1.5 * s, 1.5 * s, 1, { ry });
+    });
+  });
+}
+cafePlant(-22.9, 3.5, 1.0);
+cafePlant(-22.9, 14.7, 0.85);
+cafePlant(-11.3, 15.05, 0.9);
+cafePlant(-11.2, 3.2, 0.75);
 
 // ---------------------------------------------------------------------------
 // SOUVENIR SHOP (DUTY FREE) — Warm, rich and vibrant retail flagship unit,
