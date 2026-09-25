@@ -375,16 +375,15 @@ const slatA = makeSlatTex();
 vinylA.repeat.set(1, 1);
 slatA.repeat.set(4, 2);
 
-// GATE CAFÉ renovation. The city pack already ships an exposed-brick set and
-// the nature folder a leaf card, so the LA look costs four texture loads and
-// zero new assets. cafeSlatA is the shop's slat canvas re-tiled for the plank
+// GATE CAFÉ renovation. The city pack already ships an exposed-brick set, with
+// greenery painted on canvas rather than loaded - the nature folder's one card
+// is a grass disc with punched holes that reads as moss at indoor range.
+// cafeSlatA is the shop's slat canvas re-tiled for the plank
 // ceiling, where slatA's shared 4×2 repeat would stretch one slat to 3.5 m.
 const brickA = tex('./textures/CP_Brick_Wall_A.webp', 1, 1);
 const brickN = ntex('./textures/CP_Brick_Wall_N.webp', 1, 1);
 const cafeTileA = tex('./textures/CP_Ceramic_Tile_A.webp', 1, 1);
 const cafeTileN = ntex('./textures/CP_Ceramic_Tile_N.webp', 1, 1);
-const canopyA = tex('./textures/nature/canopy_diff.jpg', 2, 2);
-const leafCardA = tex('./textures/nature/foliage_card.png', 1, 1);
 const cafeSlatA = slatA.clone();
 cafeSlatA.repeat.set(1, 1);
 cafeSlatA.needsUpdate = true;
@@ -664,6 +663,120 @@ function makeSlatTex() {
       ctx.fillStyle = 'rgba(255,220,180,0.08)';
       ctx.fillRect(x + 3, 0, 3, h);
     }
+  }, { wrap: true });
+}
+// Foliage painted on canvas. Ficus lyrata: a rosette of pandurate blades -
+// slim stalk, waist, broad rounded top - with the shapes cut out of the alpha
+// like the apartment's monstera, so a card's edge is leaf-shaped instead of
+// the nature pack's grass disc with punched holes. Back leaves go down first
+// in deeper greens, each blade gets a margin, a midrib and laterals, then one
+// source-atop pass lays a waxy sheen over the painted pixels only.
+function makeFigLeafTexture() {
+  return canvasTex(512, 512, (ctx, w, h) => {
+    ctx.clearRect(0, 0, w, h);
+    let seed = 20260911;
+    const rand = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+    const cx = w / 2, cy = h / 2;
+    // One blade from a base point out along ang; len is base to tip.
+    const blade = (bx, by, ang, len, dark, light) => {
+      const dx = Math.cos(ang), dy = Math.sin(ang);
+      const px = -dy, py = dx;                        // across the blade
+      const tx = bx + dx * len, ty = by + dy * len;   // apex
+      const wx = bx + dx * len * 0.42, wy = by + dy * len * 0.42;
+      const wBase = len * 0.09, wWaist = len * 0.14, wTop = len * 0.24;
+      ctx.beginPath();
+      ctx.moveTo(bx + px * wBase, by + py * wBase);
+      ctx.bezierCurveTo(
+        wx + px * wWaist * 1.5, wy + py * wWaist * 1.5,
+        tx - dx * len * 0.24 + px * wTop, ty - dy * len * 0.24 + py * wTop,
+        tx, ty);
+      ctx.bezierCurveTo(
+        tx - dx * len * 0.24 - px * wTop, ty - dy * len * 0.24 - py * wTop,
+        wx - px * wWaist * 1.5, wy - py * wWaist * 1.5,
+        bx - px * wBase, by - py * wBase);
+      ctx.closePath();
+      const g = ctx.createLinearGradient(bx, by, tx, ty);
+      g.addColorStop(0, dark);
+      g.addColorStop(1, light);
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(10,26,12,0.8)';         // darker margin
+      ctx.lineWidth = Math.max(1.5, len * 0.012);
+      ctx.stroke();
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(186,218,156,0.34)';     // midrib
+      ctx.lineWidth = Math.max(1.2, len * 0.014);
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(tx, ty); ctx.stroke();
+      ctx.strokeStyle = 'rgba(170,205,148,0.22)';     // laterals
+      ctx.lineWidth = Math.max(0.8, len * 0.008);
+      for (let v = 1; v <= 3; v++) {
+        const t = v / 4.2;
+        for (const sgn of [1, -1]) {
+          ctx.beginPath();
+          ctx.moveTo(bx + dx * len * t, by + dy * len * t);
+          ctx.quadraticCurveTo(
+            bx + (dx + px * 0.9 * sgn) * len * (t + 0.16),
+            by + (dy + py * 0.9 * sgn) * len * (t + 0.16),
+            bx + (dx + px * 1.5 * sgn) * len * (t + 0.3),
+            by + (dy + py * 1.5 * sgn) * len * (t + 0.3));
+          ctx.stroke();
+        }
+      }
+    };
+    const BACK = [['#14301a', '#204a20'], ['#17351b', '#255021']];
+    const FRONT = [['#1e4520', '#356e2a'], ['#235220', '#3d7a2e'],
+      ['#1a3f1e', '#316526']];
+    // Back layer first, offset half a step so the front gaps never line up.
+    for (let i = 0; i < 6; i++) {
+      const [d, l] = BACK[i % BACK.length];
+      blade(cx + (rand() - 0.5) * 14, cy + (rand() - 0.5) * 14,
+        i * Math.PI / 3 + 0.35 + rand() * 0.3, w * (0.3 + rand() * 0.08), d, l);
+    }
+    for (let i = 0; i < 7; i++) {
+      const [d, l] = FRONT[i % FRONT.length];
+      blade(cx + (rand() - 0.5) * 12, cy + (rand() - 0.5) * 12,
+        i * Math.PI * 2 / 7 - 0.15 + rand() * 0.3, w * (0.34 + rand() * 0.1), d, l);
+    }
+    // Waxy sheen, then a shaded rim - composited only where leaves were drawn.
+    ctx.globalCompositeOperation = 'source-atop';
+    const sheen = ctx.createRadialGradient(w * 0.36, h * 0.3, 10, w * 0.36, h * 0.3, w * 0.62);
+    sheen.addColorStop(0, 'rgba(214,240,178,0.2)');
+    sheen.addColorStop(1, 'rgba(214,240,178,0)');
+    ctx.fillStyle = sheen;
+    ctx.fillRect(0, 0, w, h);
+    const shade = ctx.createRadialGradient(cx, cy, w * 0.3, cx, cy, w * 0.72);
+    shade.addColorStop(0, 'rgba(8,20,10,0)');
+    shade.addColorStop(1, 'rgba(8,20,10,0.3)');
+    ctx.fillStyle = shade;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = 'source-over';
+  });
+}
+// The shadowed body behind the cards: dark foliage mottle on canvas rather
+// than the lawn texture, so the mass reads as shade under leaves, not sod.
+function makeLeafMassTexture() {
+  return canvasTex(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#1e3a1c';
+    ctx.fillRect(0, 0, w, h);
+    let seed = 4711;
+    const rand = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+    const dab = (fill, n, l0, l1) => {
+      ctx.fillStyle = fill;
+      for (let i = 0; i < n; i++) {
+        ctx.save();
+        ctx.translate(rand() * w, rand() * h);
+        ctx.rotate(rand() * Math.PI * 2);
+        const len = l0 + rand() * (l1 - l0);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, len * 0.5, len * 0.18, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    };
+    dab('#173119', 90, 10, 24);   // shadow dabs first
+    dab('#27501f', 90, 8, 20);
+    dab('#31612a', 60, 6, 14);    // sparse lit tips
+    dab('rgba(10,24,12,0.55)', 34, 8, 18);
   }, { wrap: true });
 }
 function makeAirlineDecal(name, hex) {
@@ -1186,12 +1299,15 @@ const M = {
   potCeramic: new THREE.MeshPhysicalMaterial({
     color: 0xe8ddd0, roughness: 0.5, metalness: 0.02, clearcoat: 0.3, clearcoatRoughness: 0.5,
   }),
+  // The figs' leaf cards and the shadowed masses behind them are painted on
+  // canvas (makeFigLeafTexture / makeLeafMassTexture). The tint stays at 1:
+  // the maps carry the final colours, as with the apartment's plants.
   leafCard: new THREE.MeshStandardMaterial({
-    map: leafCardA, color: 0xbccfa0, roughness: 0.95, metalness: 0.0,
-    alphaTest: 0.3, alphaToCoverage: true, side: THREE.DoubleSide,
+    map: makeFigLeafTexture(), roughness: 0.55, metalness: 0.0,
+    alphaTest: 0.4, alphaToCoverage: true, side: THREE.DoubleSide,
   }),
   bushMass: new THREE.MeshStandardMaterial({
-    map: canopyA, color: 0x55703f, roughness: 0.96, metalness: 0.0,
+    map: makeLeafMassTexture(), roughness: 0.92, metalness: 0.0,
   }),
   espresso: new THREE.MeshStandardMaterial({ color: 0x2a180e, roughness: 0.22, metalness: 0.05 }),
   foamCream: new THREE.MeshStandardMaterial({ color: 0xf0dfc2, roughness: 0.6 }),
@@ -2677,7 +2793,12 @@ prop(() => {
   for (const cy of [0, 1, 2])
     shape(G.cyl, M.shirt, -23.5, F + 2.15 + cy * 0.09, 12.95, 0.16 - cy * 0.02, 0.02, 0.16 - cy * 0.02);
   shape(G.cylBase, M.potCeramic, -23.5, F + 2.05, 9.6, 0.2, 0.18, 0.2);
-  shape(G.sphere, M.bushMass, -23.5, F + 2.32, 9.6, 0.3, 0.26, 0.3);
+  shape(G.sphere, M.bushMass, -23.5, F + 2.3, 9.6, 0.26, 0.22, 0.26);
+  // Trailing sprigs spilling over the rim toward the aisle - the bare ball
+  // read as a scoop of moss on the shelf.
+  shape(G.card, M.leafCard, -23.5, F + 2.14, 9.6, 0.52, 0.52, 1,
+    { ry: Math.PI / 2, rx: 0.5 });
+  shape(G.card, M.leafCard, -23.5, F + 2.22, 9.78, 0.44, 0.44, 1, { rx: 0.35 });
   // Edison pendants over the bar: amber globes with a hot filament core,
   // repositioned to actually straddle the machine and the pastry case.
   for (const pz of [6, 9, 12]) {
@@ -2756,16 +2877,20 @@ cafeStool(-20.1, 6.6);
 cafeStool(-20.1, 9);
 cafeStool(-20.1, 11.4);
 // Fiddle-leaf figs in ceramic pots — the apex predator of LA interior design.
-// A canopy-mass core gives the stack a shadowed body; three crossed leaf cards
-// give it silhouette. Scaled per pot so the four corners don't read as clones.
+// A canopy-mass core gives the stack a shadowed body; four leaf cards carry
+// the silhouette at two sizes, two heights and opposing tilts, so the crown
+// reads as layered foliage instead of one crossed-planes X. Per-pot scaling
+// keeps the four corners from reading as clones.
 function cafePlant(x, z, s) {
   prop(() => {
     frame(x, z, 0, () => {
       shape(G.cylBase, M.potCeramic, 0, F + 0.04, 0, 0.46 * s, 0.5 * s, 0.46 * s);
       shape(G.cyl, M.bag, 0, F + 0.85 * s, 0, 0.09, 0.75 * s, 0.09);
-      shape(G.sphere, M.bushMass, 0, F + 1.55 * s, 0, 0.6 * s, 0.65 * s, 0.6 * s);
-      for (const ry of [0, Math.PI / 4, Math.PI / 2, Math.PI * 3 / 4])
-        shape(G.card, M.leafCard, 0, F + 1.7 * s, 0, 1.5 * s, 1.5 * s, 1, { ry });
+      shape(G.sphere, M.bushMass, 0, F + 1.5 * s, 0, 0.56 * s, 0.58 * s, 0.56 * s);
+      for (const [ry, rx, w, y] of [
+        [0, 0.14, 1.55, 1.66], [Math.PI / 2, -0.1, 1.5, 1.6],
+        [Math.PI / 4, -0.16, 1.32, 1.5], [Math.PI * 3 / 4, 0.08, 1.4, 1.56]])
+        shape(G.card, M.leafCard, 0, F + y * s, 0, w * s, w * s, 1, { ry, rx });
     });
   });
 }
