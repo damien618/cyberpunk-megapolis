@@ -2258,7 +2258,16 @@ export class Player {
       this.poseRoot.updateMatrixWorld(true);
       const extra = this.seatContactLift();
       if (extra > 0.004) {
-        this.seatHipRise += extra;
+        // The lift is measured on the seat being sat on but it rides along in
+        // seatHipRise to every later seat. Left unbounded it can climb past the
+        // leg's reach — 0.236 on the 0.73 m café stool — where seatFlex's acos
+        // clamps to zero flexion: straight legs, hips perched at standing
+        // height, seated in the HUD and standing on screen. measureSeatHipRise
+        // caps the load-time rise at 0.22 for the same reason; hold the
+        // corrected rise to that same band. A seat whose correction exceeds the
+        // band may keep its cushion a few cm inside the flesh, which is the
+        // cheap side of this trade — the alternative taxed every OTHER seat.
+        this.seatHipRise = Math.min(0.22, this.seatHipRise + extra);
         this._seatFlex = null;
         this.placeSeated(seat, pose);
       }

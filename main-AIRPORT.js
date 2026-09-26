@@ -1672,6 +1672,7 @@ const G = {
   sphere: withUV2(new THREE.SphereGeometry(0.5, 14, 10)),
   cone: withUV2(new THREE.ConeGeometry(0.5, 1, 14).translate(0, 0.5, 0)),
   card: withUV2(new THREE.PlaneGeometry(1, 1)),
+  ring: withUV2(new THREE.TorusGeometry(0.5, 0.03, 6, 24).rotateX(Math.PI / 2)),
 };
 
 const kits = new Map();
@@ -1811,12 +1812,17 @@ const gateDoorX = gx => gx - GATE_FUSE_R;
 const gateTubeX = gx => gx - GATE_FUSE_R - GATE_TUBE_OUT;
 const GATE_OPEN_HW = 1.05; // half-width of the lounge boarding opening
 const furnitureInteractions = [];
-function furnitureInteraction(type, halfWidth, halfDepth, anchorZ = 0, restY = F + 0.46, label) {
+// `floorY` is the ground the seat stands on, not a constant: the seated pose
+// spans the gap between the two, so a seat that reports the wrong floor has
+// its legs solved for the wrong height (same lesson as the zoo's benches —
+// the café's finished tile tops this map's F + 0.02 default by 3 cm).
+function furnitureInteraction(type, halfWidth, halfDepth, anchorZ = 0, restY = F + 0.46,
+  floorY = F + 0.02, label) {
   const c = Math.cos(FR), s = Math.sin(FR);
   furnitureInteractions.push({
     type,
     x: FX + anchorZ * s, y: restY, z: FZ + anchorZ * c,
-    centerX: FX, centerZ: FZ, approachY: F + 0.02, yaw: FR,
+    centerX: FX, centerZ: FZ, approachY: floorY, yaw: FR,
     halfWidth, halfDepth, occupied: false, label,
   });
 }
@@ -2571,7 +2577,7 @@ baggageMakeUp(-1);
 function bench(x, z, ry) {
   prop(() => {
     frame(x, z, ry, () => {
-      furnitureInteraction('sit', 1.3, 0.3, 0, F + 0.48);
+      furnitureInteraction('sit', 1.3, 0.3, 0, F + 0.48, F + 0.04);
       box(M.cafeWood, 0, F + 0.46, 0, 2.8, 0.09, 0.62);
       box(M.steelDark, -1.2, F + 0.2, 0, 0.08, 0.4, 0.55);
       box(M.steelDark, 1.2, F + 0.2, 0, 0.08, 0.4, 0.55);
@@ -2753,7 +2759,7 @@ box(M.posterLA, -12.9, 1.98, 15.77, 1.5, 0.92, 0.05);
 function cafeChair(x, z, ry) {
   prop(() => {
     frame(x, z, ry, () => {
-      furnitureInteraction('sit', 0.32, 0.32, 0, F + 0.48);
+      furnitureInteraction('sit', 0.32, 0.32, 0, F + 0.48, F + 0.05);
       box(M.cafeWood, 0, F + 0.46, 0, 0.5, 0.08, 0.5);
       box(M.cafeWood, 0, F + 0.78, -0.18, 0.48, 0.56, 0.07);
       for (const [dx, dz] of [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]])
@@ -2865,10 +2871,23 @@ prop(() => {
 // customer actually perches. Sit height matches the seat's top face.
 function cafeStool(x, z) {
   prop(() => {
-    frame(x, z, 0, () => {
-      furnitureInteraction('sit', 0.26, 0.26, 0, F + 0.78);
+    // Turned to face the counter (local +Z → world −X). At yaw 0 the sitter
+    // faced down the bar, sideways to it.
+    frame(x, z, -Math.PI / 2, () => {
+      // Hips 4 cm ahead of the post (SEAT_BACK puts them 16 cm behind the
+      // anchor), well inside the 44 cm seat disc.
+      furnitureInteraction('sit', 0.26, 0.26, 0.2, F + 0.78, F + 0.05);
+      // A 73 cm stool is taller than the leg: solved for the floor, the thighs
+      // hit zero flexion and the sitter stood straight up beside the seat.
+      // The feet go on the footrest instead, which leaves a 43 cm drop — an
+      // ordinary chair's.
+      furnitureInteractions.at(-1).feetY = F + 0.35;
       shape(G.cylBase, M.steelDark, 0, F + 0.04, 0, 0.4, 0.05, 0.4);
       shape(G.cyl, M.steelDark, 0, F + 0.42, 0, 0.07, 0.7, 0.07);
+      shape(G.ring, M.steelDark, 0, F + 0.35, 0, 0.62, 0.6, 0.62);   // footrest
+      for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2])        // its spokes
+        shape(G.box, M.steelDark, Math.sin(a) * 0.17, F + 0.35, Math.cos(a) * 0.17,
+          0.02, 0.02, 0.28, { ry: a });
       shape(G.cyl, M.walnutTop, 0, F + 0.74, 0, 0.44, 0.08, 0.44);
     });
   });
@@ -3165,7 +3184,7 @@ function loungeChair(x, z, ry) {
       // Sit forward of centre so the posed knees clear the lip; recess the
       // plinth so the calves hang in air instead of through the cushion
       // (same layout as the villa armchair).
-      furnitureInteraction('sit', 0.28, 0.28, 0.12, F + 0.48);
+      furnitureInteraction('sit', 0.28, 0.28, 0.12, F + 0.48, F + 0.05);
       box(M.fabric, 0, F + 0.20, -0.12, 0.58, 0.14, 0.40);
       box(M.fabric, 0, F + 0.40, -0.08, 0.54, 0.10, 0.44);
       box(M.fabric, 0, F + 0.64, -0.30, 0.58, 0.44, 0.14);
@@ -4962,7 +4981,7 @@ function updateAvatar(dt) {
     ropeSlack: ctrl.webOn ? Math.max(0, ctrl.pos.distanceTo(ctrl.anchor) - ctrl.ropeLen) : 0,
     posture: activeFurnitureInteraction?.type,
     facingYaw: activeFurnitureInteraction?.yaw,
-    floorY: activeFurnitureInteraction?.approachY,
+    floorY: activeFurnitureInteraction?.feetY ?? activeFurnitureInteraction?.approachY,
   });
 }
 
