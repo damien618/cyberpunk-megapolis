@@ -2760,6 +2760,13 @@ function cafeChair(x, z, ry) {
   prop(() => {
     frame(x, z, ry, () => {
       furnitureInteraction('sit', 0.32, 0.32, 0, F + 0.48, F + 0.05);
+      // SEAT_BACK parks the hips 16 cm behind the anchor — tuned for a
+      // backless dining chair — but this backrest's front face stands only
+      // 14.5 cm behind it, so the sitter's hip and thigh crossed straight
+      // through the chair back. `back` (the same per-seat pose field main.js
+      // already feeds ctx.seatPose) sits her ON the anchor instead: buttocks
+      // clear the backrest, thighs still land on the 50 cm plank.
+      furnitureInteractions.at(-1).pose = { back: 0 };
       box(M.cafeWood, 0, F + 0.46, 0, 0.5, 0.08, 0.5);
       box(M.cafeWood, 0, F + 0.78, -0.18, 0.48, 0.56, 0.07);
       for (const [dx, dz] of [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]])
@@ -4982,6 +4989,7 @@ function updateAvatar(dt) {
     posture: activeFurnitureInteraction?.type,
     facingYaw: activeFurnitureInteraction?.yaw,
     floorY: activeFurnitureInteraction?.feetY ?? activeFurnitureInteraction?.approachY,
+    seatPose: activeFurnitureInteraction?.pose,
   });
 }
 

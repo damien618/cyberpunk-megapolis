@@ -1061,6 +1061,7 @@ export class Player {
     this.group.add(this.poseRoot);
     this.sleepPlush = makeSleepPlush();
     this.poseRoot.add(this.sleepPlush);
+    this.backpackProp = null;   // the pack set down on the floor while seated
     this.mixer = null;
     this.actions = {};
     this.cur = null;
@@ -2072,6 +2073,56 @@ export class Player {
     for (const material of this.clothing[part]?.materials ?? []) material.visible = visible;
   }
 
+  // Sitting takes the pack off. Nobody keeps 43 cm of luggage pressed against
+  // a chair back: it is the deepest part of every backrest clip, and the
+  // worn mesh is skinned, so it cannot just be re-parented to the floor. Its
+  // GEOMETRY, though, is the bind pose — the pack as worn standing upright,
+  // which is exactly a pack posed upright on the ground. A plain Mesh over
+  // that geometry, set down beside the seat, reads as the pack she just
+  // shrugged off. The prop clones the material so hiding the worn one
+  // (setPartVisible) leaves the prop lit, and the stand-up re-lights the
+  // worn one here: setOutfit only re-applies visibility when the outfit
+  // itself changes, so a sit would otherwise leave her pack dark for good.
+  updateBackpackProp(posture, floorY) {
+    const worn = this.clothing?.backpack?.mesh;
+    const wanted = posture === 'sit' && worn && this.outfit?.backpack !== false;
+    if (wanted && !this.backpackProp) {
+      const source = Array.isArray(worn.material) ? worn.material[0] : worn.material;
+      const prop = new THREE.Mesh(worn.geometry, source.clone());
+      prop.castShadow = worn.castShadow;
+      prop.receiveShadow = worn.receiveShadow;
+      prop.visible = false;
+      this.group.add(prop);
+      this.backpackProp = prop;
+    }
+    const down = wanted && this.backpackProp;
+    if (down) {
+      this._packDown = true;
+      this.setPartVisible('backpack', false);
+      const box = worn.geometry.boundingBox
+        ?? (worn.geometry.computeBoundingBox(), worn.geometry.boundingBox);
+      // A hand's span off her hip — broadside to the table a cafe pair faces,
+      // so it never meets the pedestal — and sagged back a touch, the way a
+      // soft pack leans once set down. Y rides the group (parked on the seat),
+      // so the floor is reached by difference; the lean swings the box past
+      // its own minimum, so the lowest TILTED corner stands on the floor, not
+      // the untilted one.
+      const lean = -0.14;
+      this.backpackProp.rotation.set(lean, 0, 0);
+      this.backpackProp.position.set(
+        0.46,
+        (Number.isFinite(floorY) ? floorY : this.group.position.y - 0.45)
+          - this.group.position.y
+          - (box.min.y * Math.cos(lean) - box.min.z * Math.sin(lean)) + 0.004,
+        -0.06);
+      this.backpackProp.visible = true;
+    } else if (this._packDown) {
+      this._packDown = false;
+      this.backpackProp.visible = false;
+      this.setPartVisible('backpack', this.outfit?.backpack !== false);
+    }
+  }
+
   setOutfit(options = {}) {
     const outfit = {
       hat: options.hat !== false,
@@ -2837,6 +2888,10 @@ export class Player {
     } else if (posture === 'kneel') {
       this.applyKneelingPose(ctx.floorY);
     }
+    // The pack comes off when she sits: hidden off her back and set down on
+    // the floor beside the seat (updateBackpackProp). After the pose, so it
+    // reads the settled seat height.
+    this.updateBackpackProp(posture, ctx.floorY);
 
     // web rope
     this.updateWeb(ctx);
