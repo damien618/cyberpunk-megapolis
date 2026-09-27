@@ -65,6 +65,9 @@ const operaNoPrompt = document.getElementById('operaNoPrompt');
 const slotPromptGroup = document.getElementById('slotPromptGroup');
 const slotYesPrompt = document.getElementById('slotYesPrompt');
 const slotNoPrompt = document.getElementById('slotNoPrompt');
+const islandPromptGroup = document.getElementById('islandPromptGroup');
+const islandYesPrompt = document.getElementById('islandYesPrompt');
+const islandNoPrompt = document.getElementById('islandNoPrompt');
 const slotGameOverlay = document.getElementById('slotGameOverlay');
 const slotCabinet = document.getElementById('slotCabinet');
 const slotStatus = document.getElementById('slotStatus');
@@ -6589,7 +6592,12 @@ const travelParams = new URLSearchParams(location.search);
 // You arrive at the starboard door, on the promenade deck, facing inboard —
 // which is the shot the whole map is laid out around: the house on your left,
 // the sea on your right, and the lifeboats overhead.
-const spawnPoint = new THREE.Vector3(SUP_X2 + 2.6, DECK_Y + 0.3, -6.6);
+// Back from the island (main-JUNGLE.js) the tender brings you up the PORT
+// side instead, the island's side, looking back at where you have been.
+const arrivedFromIsland = travelParams.get('arrival') === 'jungle';
+const spawnPoint = arrivedFromIsland
+  ? new THREE.Vector3(-(SUP_X2 + 2.6), DECK_Y + 0.3, -6.6)
+  : new THREE.Vector3(SUP_X2 + 2.6, DECK_Y + 0.3, -6.6);
 ctrl.rescueTo(spawnPoint);
 
 // Furniture and stair treads must not yank the boom in: that read as a
@@ -6613,6 +6621,7 @@ const camBw = {
 const rig = new CameraRig(camera, camBw);
 const input = new Input(renderer.domElement);
 input.yaw = Math.PI / 2;             // looking inboard, at the atrium door
+                                     // (or, back from the island, out at it)
 function requestGamePointerLock() {
   try {
     const pending = renderer.domElement.requestPointerLock?.();
@@ -7094,6 +7103,8 @@ const hook = {
   get lieState() { return typeof lieState !== 'undefined' ? lieState : null; },
   get cabinAskOpen() { return typeof cabinAskOpen !== 'undefined' ? cabinAskOpen : false; },
   islandData,
+  islandOffAxis: () => islandOffAxis(),
+  get islandAskOpen() { return islandAskOpen; },
   marineFauna,
   gulls,
 };
@@ -8238,6 +8249,13 @@ let ballroomAudioFailed = false;
 let ballroomAudioWanted = false;
 let ballroomAudioEverStarted = false;
 let cabinAskOpen = false;
+// The island off the port beam. Look at it from the open deck for a moment
+// and the ship offers the tender ashore (main-JUNGLE.js). `islandDeclined`
+// is set by "non" — and on arrival from the island, which lands you facing
+// it — and cleared once you look away, so the question never nags.
+let islandAskOpen = false;
+let islandDeclined = arrivedFromIsland;
+let islandGaze = 0;
 let slotAskOpen = false;
 let slotGameOpen = false;
 let slotSpinning = false;
@@ -8473,10 +8491,78 @@ function updatePrompts(dt) {
   const atSlot = nearSlotMachine();
   setSlotAsk(atSlot);
   setCabinAsk(!atSlot && nearBed());
+  updateIslandAsk(dt, atSlot || cabinAskOpen);
 }
 
+// --- The island -----------------------------------------------------------
+// Aim for the massif rather than the group's origin, which is at sea level.
+const ISLAND_AIM = new THREE.Vector3(0, 70, 0);
+// The island spans about ±22° seen from the rail, so "looking at it" means
+// anywhere on its silhouette, not at its centre: ask inside 28°, withdraw
+// past 38°. At 16° a player looking straight out to port (24° off the
+// centre, well inside the island) was never asked.
+const ISLAND_ENTER = THREE.MathUtils.degToRad(28);
+const ISLAND_LEAVE = THREE.MathUtils.degToRad(38);
+const ISLAND_DWELL = 0.8;                            // seconds of looking
+const _toIsland = new THREE.Vector3();
+// Back from the island, face it: forward is (-sin yaw, -cos yaw).
+if (arrivedFromIsland) {
+  const p = islandData.island.position;
+  input.yaw = Math.atan2(-(p.x - spawnPoint.x), -(p.z - spawnPoint.z));
+}
+
+// How far (radians) the view is from the island, or Infinity when the ship
+// itself is in the way: the deck has to be open between you and it.
+function islandOffAxis() {
+  _toIsland.copy(islandData.island.position).add(ISLAND_AIM).sub(camera.position);
+  const bearing = Math.atan2(_toIsland.x, _toIsland.z);
+  const look = Math.atan2(forward.x, forward.z);
+  const off = Math.abs(Math.atan2(Math.sin(bearing - look), Math.cos(bearing - look)));
+  if (forward.y < -0.4 || forward.y > 0.55) return Infinity;
+  _toIsland.y = 0;
+  _toIsland.normalize();
+  if (castFn(camera.position, _toIsland, 45)) return Infinity;
+  return off;
+}
+
+function setIslandAsk(show) {
+  if (show === islandAskOpen) return;
+  islandAskOpen = show;
+  islandPromptGroup?.classList.toggle('show', show);
+  islandPromptGroup?.setAttribute('aria-hidden', show ? 'false' : 'true');
+  if (show) {
+    if (document.pointerLockElement === renderer.domElement) document.exitPointerLock?.();
+  } else if (started && !paused && !leavingShip) {
+    requestGamePointerLock();
+  }
+}
+
+function updateIslandAsk(dt, busy) {
+  if (busy || ctrl.mode !== 'ground') { islandGaze = 0; setIslandAsk(false); return; }
+  const off = islandOffAxis();
+  if (off > ISLAND_LEAVE) { islandDeclined = false; islandGaze = 0; setIslandAsk(false); return; }
+  if (islandDeclined || islandAskOpen) return;
+  islandGaze = off < ISLAND_ENTER ? islandGaze + dt : 0;
+  if (islandGaze >= ISLAND_DWELL) setIslandAsk(true);
+}
+
+islandYesPrompt?.addEventListener('click', e => {
+  e.stopPropagation();
+  setIslandAsk(false);
+  leavingShip = true;
+  fade.style.opacity = '1';
+  setTimeout(() => {
+    location.href = `index.html?map=jungle&arrival=cruise&time=${cruiseTime}`;
+  }, 650);
+});
+islandNoPrompt?.addEventListener('click', e => {
+  e.stopPropagation();
+  islandDeclined = true;
+  setIslandAsk(false);
+});
+
 renderer.domElement.addEventListener('click', () => {
-  if (started && !paused && !cabinAskOpen && !operaAskOpen && !input.locked)
+  if (started && !paused && !cabinAskOpen && !operaAskOpen && !islandAskOpen && !input.locked)
     requestGamePointerLock();
   if (started && !paused) { resumeBallroomAudio(); if (operaRunning) playOperaAudio(); }
 });
@@ -8819,8 +8905,8 @@ document.addEventListener('pointerlockchange', () => {
   // Dropping the lock so a prompt button can be clicked is intentional, and so
   // is dropping it while lying down: a failed lock must not freeze the player
   // in the bed with the overlay up and no way to answer.
-  if ((cabinAskOpen || slotAskOpen || slotGameOpen || operaAskOpen
-    || ctrl.mode === 'lie') && document.pointerLockElement === null) {
+  if ((cabinAskOpen || slotAskOpen || slotGameOpen || operaAskOpen || islandAskOpen
+    || leavingShip || ctrl.mode === 'lie') && document.pointerLockElement === null) {
     paused = false;
     overlay.style.display = 'none';
     return;
@@ -8830,6 +8916,7 @@ document.addEventListener('pointerlockchange', () => {
   if (paused) {
     setCabinAsk(false);
     setSlotAsk(false);
+    setIslandAsk(false);
     pauseBallroomAudio();
   } else if (started) {
     resumeBallroomAudio();

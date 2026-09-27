@@ -16,6 +16,7 @@
       shinto: { engine: 'world', title: 'Cyberpunk Megapolis — Visit to a Shinto shrine (Japan)' },
       beach: { engine: 'world', title: 'Cyberpunk Megapolis — Aller à la plage de L.A.' },
       cruise: { engine: 'world', title: 'Cyberpunk Megapolis — Croisière de luxe' },
+      jungle: { engine: 'world', title: 'Cyberpunk Megapolis — Promenade tropicale — la cascade' },
     };
     const mode = new URLSearchParams(location.search).get('map');
     const world = WORLDS[mode];
@@ -60,6 +61,7 @@
     --shinto-accent: #ff6050;
     --beach-accent: #ffa85c;
     --cruise-accent: #ffd98a;
+    --jungle-accent: #7fe0a0;
     --mono: 'Geist Mono', ui-monospace, "SF Mono", Menlo, monospace;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -144,6 +146,7 @@
   #panelShinto  { grid-column: 3; grid-row: 3; justify-self: end;   align-self: end; }
   #panelBeach   { grid-column: 2; grid-row: 3; justify-self: center; align-self: end; }
   #panelCruise  { grid-column: 2; grid-row: 4; justify-self: center; align-self: end; }
+  #panelJungle  { grid-column: 3; grid-row: 4; justify-self: end;   align-self: end; }
 
   /* Circuit Board SVG overlay */
   .circuit-svg {
@@ -409,6 +412,29 @@
     box-shadow: 0 0 26px rgba(255,217,138,.26); }
   #enterBtnCruise:hover { background: linear-gradient(90deg, rgba(255,217,138,.58), rgba(255,217,138,.32)); }
 
+  /* Jungle — hangs off satellite 06: the island is only reached by the
+     liner's tender, so the circuit is drawn from the cruise card. */
+  .jungle-panel {
+    border-color: rgba(127, 224, 160, 0.38);
+    align-items: flex-end; text-align: right;
+  }
+  .jungle-panel:hover {
+    border-color: rgba(127, 224, 160, 0.85);
+    box-shadow: 0 0 32px rgba(127, 224, 160, 0.35), 0 14px 40px rgba(0, 0, 0, 0.7);
+  }
+  .jungle-panel .kicker { color: #c4f5d2; }
+  .jungle-panel .accent-jungle { color: var(--jungle-accent); text-shadow: 0 0 24px rgba(127,224,160,.42); }
+  .jungle-panel .m-name { color: var(--jungle-accent); text-shadow: 0 0 12px rgba(127,224,160,.4); }
+  .jungle-panel .m-tag { color: var(--jungle-accent); }
+  .jungle-panel .la-card { align-items: flex-end; }
+  #brandRuleJungle { margin-top: 10px; width: 64px; height: 1px;
+    background: linear-gradient(270deg, var(--jungle-accent), transparent); }
+  #enterBtnJungle {
+    color: #06280f; background: linear-gradient(90deg, rgba(127,224,160,.38), rgba(127,224,160,.14));
+    border-color: var(--jungle-accent); text-shadow: 0 0 8px rgba(127,224,160,.9);
+    box-shadow: 0 0 26px rgba(127,224,160,.26); }
+  #enterBtnJungle:hover { background: linear-gradient(90deg, rgba(127,224,160,.58), rgba(127,224,160,.32)); }
+
   .la-card { margin-top: 12px; display: flex; flex-direction: column; gap: 3px; }
   .cyber-panel .la-card, .zoo-panel .la-card { align-items: flex-start; }
   .airport-panel .la-card, .shinto-panel .la-card { align-items: flex-end; }
@@ -449,11 +475,12 @@
     #panelShinto { grid-column: 2; grid-row: 3; justify-self: center; }
     #panelBeach { grid-column: 1 / -1; grid-row: 4; justify-self: center; }
     #panelCruise { grid-column: 1 / -1; grid-row: 5; justify-self: center; }
+    #panelJungle { grid-column: 1 / -1; grid-row: 6; justify-self: center; }
   }
   @media (max-width: 640px) {
     #menuHubArea {
       grid-template-columns: 1fr;
-      grid-template-rows: repeat(7, auto);
+      grid-template-rows: repeat(8, auto);
       gap: 16px;
       padding: 20px 14px;
     }
@@ -464,6 +491,7 @@
     #panelShinto { grid-column: 1; grid-row: 5; }
     #panelBeach { grid-column: 1; grid-row: 6; }
     #panelCruise { grid-column: 1; grid-row: 7; }
+    #panelJungle { grid-column: 1; grid-row: 8; }
     .la-panel { align-items: center !important; text-align: center !important; }
     .la-card { align-items: center !important; }
   }
@@ -608,7 +636,7 @@
     background: #f1f1f1; outline: 2px solid #fff; outline-offset: 2px;
   }
   #liePromptGroup, #travelPromptGroup, #planePromptGroup, #kneelPromptGroup,
-  #cruisePromptGroup, #cabinPromptGroup {
+  #cruisePromptGroup, #cabinPromptGroup, #islandPromptGroup, #tenderPromptGroup {
     position: fixed; left: 50%; top: calc(50% + 42px); z-index: 9;
     transform: translate(-50%, 8px); display: flex; flex-direction: column; gap: 9px;
     width: min(470px, calc(100vw - 32px));
@@ -616,7 +644,7 @@
     transition: opacity .14s ease, transform .14s ease, visibility .14s;
   }
   #liePromptGroup.show, #travelPromptGroup.show, #planePromptGroup.show, #kneelPromptGroup.show,
-  #cruisePromptGroup.show, #cabinPromptGroup.show {
+  #cruisePromptGroup.show, #cabinPromptGroup.show, #islandPromptGroup.show, #tenderPromptGroup.show {
     transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto;
   }
   .lie-prompt { width: 100%; }
@@ -692,6 +720,8 @@
   html:not([data-engine="world"]) #kneelPromptGroup,
   html:not([data-engine="world"]) #cruisePromptGroup,
   html:not([data-engine="world"]) #cabinPromptGroup,
+  html:not([data-engine="world"]) #islandPromptGroup,
+  html:not([data-engine="world"]) #tenderPromptGroup,
   html:not([data-engine="world"]) #slotPromptGroup,
   html:not([data-engine="world"]) #operaPromptGroup,
   html:not([data-engine="world"]) #slotGameOverlay,
@@ -748,7 +778,8 @@
   html:not([data-mode="airport"]) .brief-airport,
   html:not([data-mode="shinto"]) .brief-shinto,
   html:not([data-mode="beach"]) .brief-beach,
-  html:not([data-mode="cruise"]) .brief-cruise { display: none !important; }
+  html:not([data-mode="cruise"]) .brief-cruise,
+  html:not([data-mode="jungle"]) .brief-jungle { display: none !important; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -802,6 +833,11 @@
         <stop offset="0%" stop-color="#ffa85c" stop-opacity="1" />
         <stop offset="50%" stop-color="#ffd98a" stop-opacity="1" />
         <stop offset="100%" stop-color="#ffd98a" stop-opacity="1" />
+      </linearGradient>
+      <linearGradient id="grad-jungle" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#ffd98a" stop-opacity="1" />
+        <stop offset="50%" stop-color="#7fe0a0" stop-opacity="1" />
+        <stop offset="100%" stop-color="#7fe0a0" stop-opacity="1" />
       </linearGradient>
     </defs>
     <!-- Dynamic paths generated & updated via JS -->
@@ -901,6 +937,19 @@
         </div>
         <button id="enterBtnCruise" class="enter-btn ready">Enter Game</button>
       </div>
+
+      <!-- HANGS OFF SATELLITE 06: PROMENADE TROPICALE — the island seen from
+           the liner's rail; aboard, look at it and the ship offers the tender. -->
+      <div class="la-panel jungle-panel" id="panelJungle" data-target="jungle">
+        <div class="kicker">Satellite 07 · L'île</div>
+        <h2>PROMENADE<br><span class="accent-jungle">TROPICALE</span></h2>
+        <div id="brandRuleJungle"></div>
+        <div class="la-card">
+          <span class="m-tag">Runner 01</span>
+          <span class="m-name">Jungle Girl</span>
+        </div>
+        <button id="enterBtnJungle" class="enter-btn ready">Enter Game</button>
+      </div>
     </div>
   </div>
 
@@ -985,6 +1034,14 @@
         <button class="tt-btn" data-time="night">🌙 Nuit</button>
       </div>
     </div>
+    <div class="brief-jungle">
+      <span class="tag">Nouvelle map</span>
+      <h1>Promenade tropicale — la cascade</h1>
+      <p>L'île que longe le paquebot. La chaloupe vous dépose au ponton d'une anse de sable blanc; derrière les cocotiers, un sentier monte à travers la forêt tropicale jusqu'à une cascade qui tombe d'une falaise dans un bassin.</p>
+      <p>On entre dans le lagon et dans le bassin jusqu'à la taille. Pour rentrer à bord, retournez au bout du ponton: la chaloupe vous attend.</p>
+      <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter / tenir pour tirer la toile, <b>E</b> zip, <b>Shift</b> sprint, <b>R</b> reset.</p>
+      <p class="credit">L'île — Cyberpunk Megapolis</p>
+    </div>
     <div class="brief-cruise">
       <span class="tag">Nouvelle map</span>
       <h1>Croisière de luxe</h1>
@@ -998,7 +1055,7 @@
         <button class="tt-btn" data-time="night">🌙 Nuit</button>
       </div>
     </div>
-    <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span><span class="brief-airport">Entrer dans l'aéroport</span><span class="brief-shinto">Entrer dans le temple</span><span class="brief-beach">Descendre à la plage</span><span class="brief-cruise">Embarquer</span></button>
+    <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span><span class="brief-airport">Entrer dans l'aéroport</span><span class="brief-shinto">Entrer dans le temple</span><span class="brief-beach">Descendre à la plage</span><span class="brief-cruise">Embarquer</span><span class="brief-jungle">Débarquer sur l'île</span></button>
   </div>
 </div>
 <button id="furniturePrompt" type="button" aria-hidden="true"></button>
@@ -1033,6 +1090,18 @@
   <button id="cabinBeachPrompt" class="lie-prompt" type="button">S'allonger et se lever à la plage de L.A.</button>
   <button id="cabinDayPrompt" class="lie-prompt" type="button">S'allonger et se lever dans le bateau de croisière de jour</button>
   <button id="cabinNightPrompt" class="lie-prompt" type="button">S'allonger et se lever dans le bateau de croisière de nuit</button>
+</div>
+<!-- The island from the liner's rail (main-CRUISE.js), and the tender back
+     at the island's jetty (main-JUNGLE.js): a question each, both leave the map. -->
+<div id="islandPromptGroup" role="group" aria-label="Débarquer sur l'île" aria-hidden="true">
+  <div class="prompt-ask">« Débarquer dans la forêt tropicale ? »</div>
+  <button id="islandYesPrompt" class="lie-prompt" type="button">Oui — prendre la chaloupe jusqu'à l'île</button>
+  <button id="islandNoPrompt" class="lie-prompt" type="button">Non — rester à bord</button>
+</div>
+<div id="tenderPromptGroup" role="group" aria-label="Remonter à bord" aria-hidden="true">
+  <div class="prompt-ask">« Remonter à bord du paquebot ? »</div>
+  <button id="tenderYesPrompt" class="lie-prompt" type="button">Oui — reprendre la chaloupe</button>
+  <button id="tenderNoPrompt" class="lie-prompt" type="button">Non — rester sur l'île</button>
 </div>
 <div id="operaPromptGroup" role="dialog" aria-label="S'asseoir au théâtre" aria-hidden="true">
   <div class="prompt-ask">« Voulez-vous vous asseoir&nbsp;? »</div>
@@ -1102,6 +1171,9 @@
   document.getElementById('enterBtnCruise')?.addEventListener('click', () => {
     location.href = 'index.html?map=cruise';
   });
+  document.getElementById('enterBtnJungle')?.addEventListener('click', () => {
+    location.href = 'index.html?map=jungle';
+  });
   document.getElementById('enterBtn')?.addEventListener('click', () => {
     if (document.documentElement.dataset.mode !== 'menu') {
       location.href = 'index.html';
@@ -1146,7 +1218,9 @@
       // Directly under the pivot, so it takes the vertical-stack fallback below.
       { id: 'panelBeach',   color: '#ffa85c', grad: 'grad-beach' },
       // Branch from satellite 05, not from the pivot.
-      { id: 'panelCruise',  color: '#ffd98a', grad: 'grad-cruise', hub: 'panelBeach', hubColor: '#ffa85c' }
+      { id: 'panelCruise',  color: '#ffd98a', grad: 'grad-cruise', hub: 'panelBeach', hubColor: '#ffa85c' },
+      // Branch from satellite 06: the island is reached from the liner.
+      { id: 'panelJungle',  color: '#7fe0a0', grad: 'grad-jungle', hub: 'panelCruise', hubColor: '#ffd98a' }
     ];
 
     let tracksHTML = '';
@@ -1367,16 +1441,17 @@
     airport: './main-AIRPORT.js?v=20260926-stool-footrest',
     shinto: './main-SHINTO.js?v=20260912-bridge-zfight3',
     beach: './main-BEACH.js?v=20260906-seam-fix',
-    cruise: './main-CRUISE.js?v=20260919-cetacean-heading',
+    cruise: './main-CRUISE.js?v=20260927-island-landing',
+    jungle: './main-JUNGLE.js?v=20260927-skeleton',
   };
   const mode = document.documentElement.dataset.mode;
   const cityEntrypoint = `./main.js?v=20260919-bedroom-v2-${Date.now()}`;
   import(ENGINES[mode] ?? cityEntrypoint).catch(error => {
     console.error('[Map loading failed]', error);
-    if (mode !== 'shinto' && mode !== 'cruise') return;
+    if (mode !== 'shinto' && mode !== 'cruise' && mode !== 'jungle') return;
     const button = document.getElementById('startBtn');
     button.disabled = false;
-    const label = button.querySelector(mode === 'cruise' ? '.brief-cruise' : '.brief-shinto');
+    const label = button.querySelector(`.brief-${mode}`);
     label.textContent = 'Échec du chargement — Réessayer';
     button.addEventListener('click', () => location.reload(), { once: true });
   });
