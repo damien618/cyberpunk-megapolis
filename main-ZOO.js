@@ -9,7 +9,7 @@ import { CameraRig } from './cameraRig.js?v=5';
 import { buildCityBoxes } from './cityBoxes.js?v=4';
 import { buildCar } from './cars.js?v=8-optics';
 import { makeVisitor, loadVisitorBase, loadGuestRig, STAFF_UNIFORM } from './crowd.js?v=22';
-import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=31';
+import { loadSpecies, placeAnimal, SPECIES } from './fauna.js?v=32';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ---------------------------------------------------------------------------
@@ -2765,12 +2765,31 @@ async function populate(rng) {
       // front of them, because that is where a calf is.
       const calf = i >= count - young;
       let x = 0, z = 0;
-      for (let tries = 0; tries < 8; tries++) {
+      let placed = false;
+      for (let tries = 0; tries < 24 && !placed; tries++) {
+        // `spread` is the fraction of the half-extent the herd scatters
+        // across; the old `* 2` flung placements past the roam line and, at
+        // the paddock edges, past the fence itself.
         x = calf && last ? last.x + (rng() * 2 - 1) * 2.2
-          : cx + (rng() * 2 - 1) * rx * spread * 2;
+          : cx + (rng() * 2 - 1) * rx * spread;
         z = calf && last ? last.z + (rng() * 2 - 1) * 2.2
-          : cz + (rng() * 2 - 1) * rz * spread * 2;
-        if (!inPool(x, z)) break;
+          : cz + (rng() * 2 - 1) * rz * spread;
+        // No two animals share a spawn spot — overlapping starts are what
+        // the herd spacing would spend its first minute undoing. Calves sit
+        // close to the adult in front of them by design, so their bar is
+        // lower.
+        placed = !inPool(x, z) && animals.every(a => {
+          const dx = a.group.position.x - x, dz = a.group.position.z - z;
+          return dx * dx + dz * dz > (calf ? 1.2 : 2.2) ** 2;
+        });
+      }
+      if (!placed && !calf) {
+        // A pool can eat the middle of a paddock (the zebra one does) and
+        // swallow every draw from the centre out. Land in a clear strip down
+        // the roam band at each side rather than give up into the water: an
+        // animal spawned in the basin is one the walk code refuses to move.
+        x = rng() < 0.5 ? rect.x0 + 6 + rng() * 6 : rect.x1 - 12 + rng() * 6;
+        z = rect.z0 + 6 + rng() * Math.max(0.1, rect.z1 - rect.z0 - 12);
       }
       last = { x, z };
       const a = placeAnimal(species, {
@@ -2783,6 +2802,8 @@ async function populate(rng) {
         avoid,
         // Only the aviary birds take these; everyone else ignores them.
         perches: name === 'crow' ? CROW_PERCHES : null,
+        // The shared roster: animals hold their spacing off one another.
+        herd: animals,
       });
       if (!a) continue;
       fauna.add(a.group);

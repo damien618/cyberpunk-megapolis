@@ -93,7 +93,23 @@ export const SPECIES = {
       rest: [6, 16], bout: [10, 22], stop: 0.7,
     },
   },
-  zebra: { file: 'zebra.glb', fit: ['withers', 1.35], rest: ['Idle_Armature'] },
+  zebra: {
+    file: 'zebra.glb', fit: ['withers', 1.35], rest: ['Idle_Armature'],
+    // The file ships no walk clip — the gait is the procedural quadruped walk.
+    // The steering is what was missing: with no `locomotion` block the roam
+    // code pivoted on the spot to face every new heading before stepping, and
+    // a paddock of animals turning like chess pieces reads as broken. These
+    // numbers sit beside the lion's — a big horse turns a little wider and
+    // walks an unhurried zoo stroll — and the long rests suit a grazer.
+    locomotion: {
+      steering: 'curved', speed: [0.55, 0.80], turnRate: 0.62,
+      turnAccel: 1.1, accel: 0.6, brake: 0.95,
+      rest: [5, 14], bout: [9, 20], stop: 0.85,
+      // A horse's walk swings the leg ~20° each way; the lion's quiet 0.16 on
+      // a long-legged equid reads as a slide.
+      stepAmp: 0.30,
+    },
+  },
   // Red fox: Survey is the looking-around idle, Walk is the gait. Sized a
   // little over a wild fox so five of them fill a 30 m paddock at the glass.
   fox: {
@@ -810,6 +826,29 @@ function autoRigQuadruped(group) {
   return skinned;
 }
 
+/**
+ * Feet the rig left behind. The zebra was exported from a Blender IK setup:
+ * its four hooves are weighted to `FrontFootR_0` & co., the IK targets, which
+ * hang off the armature root and not off the leg. Swing the leg and the hoof
+ * stays nailed to the ground — the animal glides on stilts. Each such foot is
+ * moved under the lower leg of the same end and side, keeping its world
+ * transform, so the skin does not budge until the leg does. The lower leg then
+ * has a child bone too, which is what gives it a measured knee in findParts.
+ * No clip animates these targets, so nothing is re-parented out from under a
+ * track. GLTFLoader strips the dots: `FrontFoot.R_0` arrives as `FrontFootR_0`.
+ */
+function adoptStrayFeet(group) {
+  const bones = [];
+  group.traverse(o => { if (o.isBone) bones.push(o); });
+  for (const foot of bones) {
+    const m = /^(front|back|fore|hind)foot([lr])_?\d*$/i.exec(foot.name);
+    if (!m) continue;
+    const low = bones.find(b => new RegExp(`^${m[1]}lowleg${m[2]}_?\\d*$`, 'i').test(b.name));
+    if (!low || foot.parent === low) continue;
+    low.attach(foot);
+  }
+}
+
 /** Head, neck, tail and the leg chains, whatever this pack calls them. */
 function findParts(group) {
   const bones = usableBones(group);
@@ -839,7 +878,13 @@ function findParts(group) {
     if (!/(upleg|upperleg|thigh|[lr][fb]leg1)/.test(n)) continue;
     const lower = b.children.find(c => c.isBone && /(leg2|leg3|low|shin|calf)/i.test(c.name))
       ?? b.children.find(c => c.isBone);
-    const left = /(lb|lf|left)/.test(n) && !/(rb|rf|right)/.test(n);
+    // Bare-letter sides count too: the zebra exports `FrontUpLeg.L_8`, which
+    // GLTFLoader strips to `FrontUpLegL_8` — the side is the letter glued to
+    // the `_8` index. Without it every zebra leg reads as a right leg,
+    // quadWalkPhase then times each pair together, and the animal paces — a
+    // gait no horse uses.
+    const left = /(lb|lf|left|(^|[^a-z])l(?![a-z])|l_\d+$)/.test(n)
+      && !/(rb|rf|right|(^|[^a-z])r(?![a-z])|r_\d+$)/.test(n);
     const front = /(front|fore|lf|rf)/.test(n);
     const swing = swingAxis(b, forward);
     if (!swing) continue;
@@ -856,14 +901,16 @@ function findParts(group) {
 /**
  * One animal, standing where it is put and playing a resting clip.
  * `rng` keeps a herd reproducible between reloads. `roam` and `ground`, when
- * given, let it walk its own enclosure.
+ * given, let it walk its own enclosure. `herd` is the array every animal of
+ * the paddock is returned into — members hold their spacing (see `motion`).
  */
 export function placeAnimal(species, {
   x, y = 0, z, ry = 0, rng = Math.random, size = 1, roam = null, ground = null,
-  avoid = null, perches = null,
+  avoid = null, perches = null, herd = null,
 }) {
   if (!species) return null;
   const group = cloneSkinned(species.root);
+  adoptStrayFeet(group);
   group.rotation.y = ry;
   // A skeleton cut out of the mesh, for the species that lost theirs. Done
   // before the materials are cloned below so the new SkinnedMesh is dressed
@@ -1066,6 +1113,24 @@ export function placeAnimal(species, {
   const approach = (value, wanted, amount) => value
     + THREE.MathUtils.clamp(wanted - value, -amount, amount);
 
+  // Body radius in metres, off the same fit that sized the model. Spacing,
+  // not the withers tape, is what this is for.
+  const bodyR = 0.55 * (species.fitMetres ?? 1) * size;
+  // A walk target that lands on a herd mate is how a paddock ends up with two
+  // animals sharing one shadow. Candidates closer than the two radii and a
+  // step are passed over; if every candidate is taken, any will do — the
+  // per-frame spacing in motion() keeps them honest regardless.
+  const herdClear = (px, pz, pad) => {
+    if (!herd) return true;
+    for (const o of herd) {
+      if (!o.group || o.group === group) continue;
+      const min = bodyR + o.r + pad;
+      const dx = px - o.group.position.x, dz = pz - o.group.position.z;
+      if (dx * dx + dz * dz < min * min) return false;
+    }
+    return true;
+  };
+
   // A destination chosen anywhere in the rectangle is very often behind the
   // animal.  Biasing candidates toward its current heading creates connected
   // walking arcs; inward points still win near a boundary, where a turn is
@@ -1076,18 +1141,23 @@ export function placeAnimal(species, {
     const heading = group.rotation.y - facingOffset;
     const preferred = Math.min(11, Math.hypot(maxX - minX, maxZ - minZ) * 0.38);
     let best = null;
+    let loose = null;
     for (let i = 0; i < 18; i++) {
       const px = minX + rng() * Math.max(0.1, maxX - minX);
       const pz = minZ + rng() * Math.max(0.1, maxZ - minZ);
       if (inHole(px, pz)) continue;
+      // Held back for the case where every draw also fails the herd or
+      // distance tests — never aim an animal at the middle of a basin.
+      loose = { x: px, z: pz };
       const dx = px - group.position.x, dz = pz - group.position.z;
       const dist = Math.hypot(dx, dz);
       if (dist < 3.5) continue;
+      if (!herdClear(px, pz, 0.8)) continue;
       const turn = Math.abs(wrapAngle(Math.atan2(dx, dz) - heading));
       const score = turn * 1.35 + Math.abs(dist - preferred) * 0.075 + rng() * 0.18;
       if (!best || score < best.score) best = { x: px, z: pz, score };
     }
-    return best ?? { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 };
+    return best ?? loose ?? { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 };
   };
 
   // A bird with a `fly` range does not wander the ground: it holds on a perch,
@@ -1184,7 +1254,7 @@ export function placeAnimal(species, {
               x: roam.x0 + inset + rng() * Math.max(0.1, roam.x1 - roam.x0 - inset * 2),
               z: roam.z0 + inset + rng() * Math.max(0.1, roam.z1 - roam.z0 - inset * 2),
             };
-            if (!inHole(target.x, target.z)) break;
+            if (!inHole(target.x, target.z) && herdClear(target.x, target.z, 0.8)) break;
           }
         }
       }
@@ -1215,6 +1285,18 @@ export function placeAnimal(species, {
             const arrival = wantsStop ? 0 : THREE.MathUtils.smoothstep(dist, stop, stop + 2.4);
             let wantedSpeed = walkSpeed * (1 - curve * 0.38) * arrival;
             if (Math.abs(d) > 1.35) wantedSpeed *= 0.58;
+            // Yield to a herd mate holding the line: meet at a shuffle and
+            // let the spacing slide the two apart, instead of pressing on
+            // through the overlap.
+            if (herd) {
+              for (const o of herd) {
+                if (!o.group || o.group === group) continue;
+                if (Math.abs(group.position.y - o.group.position.y) > 1.2) continue;
+                const ox = o.group.position.x - group.position.x;
+                const oz = o.group.position.z - group.position.z;
+                if (ox * ox + oz * oz < 4.4) { wantedSpeed *= 0.3; break; }
+              }
+            }
             const change = wantedSpeed > moveSpeed ? (cfg.accel ?? 0.72) : (cfg.brake ?? 0.95);
             moveSpeed = approach(moveSpeed, wantedSpeed, change * dt);
 
@@ -1279,6 +1361,34 @@ export function placeAnimal(species, {
       walkW += (0 - walkW) * Math.min(1, dt * 2);
     }
 
+    // Herd spacing. Targets are drawn clear of neighbours and walks are short,
+    // but two animals whose paths cross still end up nose to nose. Any pair
+    // whose centres come closer than their two body radii slides directly
+    // apart — half the overlap each, capped, so the rescue eases over several
+    // frames instead of snapping. Only x/z move here; the ground re-derives y.
+    if (herd) {
+      for (const o of herd) {
+        if (!o.group || o.group === group) continue;
+        const dx = group.position.x - o.group.position.x;
+        const dz = group.position.z - o.group.position.z;
+        const min = bodyR + o.r;
+        const d2 = dx * dx + dz * dz;
+        // Another level does not crowd: a perched or flying crow is not
+        // standing in the zebra's back.
+        if (d2 >= min * min || d2 < 1e-8
+          || Math.abs(group.position.y - o.group.position.y) > 1.2) continue;
+        const d = Math.sqrt(d2);
+        const push = Math.min((min - d) * 0.5, dt * 0.45);
+        const nx = group.position.x + (dx / d) * push;
+        const nz = group.position.z + (dz / d) * push;
+        if (inHole(nx, nz)) continue;
+        group.position.x = roam
+          ? THREE.MathUtils.clamp(nx, roam.x0 + 1.2, roam.x1 - 1.2) : nx;
+        group.position.z = roam
+          ? THREE.MathUtils.clamp(nz, roam.z0 + 1.2, roam.z1 - 1.2) : nz;
+      }
+    }
+
     // Clip-driven gait: crossfade idle ↔ walk and let the mixer own the bones.
     if (useAnimGait && idleAction && walkAction) {
       const w = _smooth(walkW);
@@ -1294,7 +1404,9 @@ export function placeAnimal(species, {
     if (!useAnimGait && isQuad) {
       // Keep the hip arc small: the mesh is already mid-stride, and cats take
       // quiet steps.  naturalSteering (lions) is the softer of the two.
-      const amp = (naturalSteering ? 0.16 : 0.22) * _smooth(walkW);
+      // A species with a real rig can ask for more: `stepAmp` overrides it.
+      const amp = (species.locomotion?.stepAmp ?? (naturalSteering ? 0.16 : 0.22))
+        * _smooth(walkW);
       const cycle01 = ((gait / (Math.PI * 2)) % 1 + 1) % 1;
       let support = 0;
       for (const leg of parts.legs) {
@@ -1397,5 +1509,5 @@ export function placeAnimal(species, {
     }
   };
 
-  return { group, mixer, motion };
+  return { group, mixer, motion, r: bodyR };
 }
