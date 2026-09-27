@@ -75,6 +75,39 @@ venir : il reçoit le layout d'une map (`layout`) et un `preset` (vagues,
 couleurs, écume), et expose `ocean.waterHeightAt(x, z, t)` pour tout ce qui
 flottera ou pataugera plus tard.
 
+Végétation raffinée (toujours l'anse) : neuf espèces au lieu de cinq —
+palmiers en trois présentations (dressé, penché vers la mer, tordu de côté),
+géants de la pluie en deux statures (sous-étage de 6–9 m, dominants de 14–26 m)
+et deux morphologies de couronne (boule de lobes ou disque plat plus large,
+pour que la silhouette ne se répète jamais), jeunes pousses de palmier en
+rosettes, deux fougères (plume et dressée), deux plantes à larges feuilles
+(bananier déchiré et monstera fendu), buissons pleins qui portent l'ombre, et
+des touffes d'herbe sans texture. Le placement suit des règles, plus des
+coordonnées tirées : anneau luxuriant sur les berges du ruisseau et du bassin
+(l'ancien scatter laissait un cercle nu), buissons en lisière et dans les
+clairières, herbe sur les épaules du sentier en laissant le passe-pied nu,
+rien à moins de 1,2 m du fil et aucun collider dessus, rien dans l'eau ni sur
+le sol bâti (ponton, bassin). Les lignes de vue voulues par le layout
+(`SIGHTLINES` — dernier virage du sentier vers la cascade, anse vers le
+paquebot) éclaircissent les troncs mais laissent le sous-étage dense : on voit
+la cascade à travers une trouée, pas une allée tondue. Le vent plie le feuillage
+dans le vertex shader — un seul uniform de temps partagé, phase par instance
+gratuite, amplitude par espèce (herbe 0.06, fougères 0.03–0.04, palmes 0.02,
+lianes 0.012) — et le dessous des feuilles coupées s'assombrit. Le sol de
+forêt reçoit des taches de lumière lentes qui errent (dapple dans le shader
+du terrain, piloté par le masque de sol de forêt : aucune passe de rendu en
+plus), et le brouillard/hémisphérique forêt se resserrent. Le module est
+réutilisable à l'échelle de l'île comme l'océan et la cascade :
+`buildJungleVegetation({ scene, rnd, maxAniso, layout, rules })` — `layout`
+pour le relief d'une autre map, `rules` pour `keepOffBuilt` (les villages
+dégageront leurs places) et des densités par espèce. Pire pose mesurée :
+170 draw calls / 636 k triangles (budget 180 / 650 k), culling par tuiles et
+à distance pour le sous-étage. Tests : `tests/jungle_vegetation.py` (+
+`.mjs`) — rien dans l'eau, rien sur le sentier ni le sol bâti, palmiers
+penchés vers la mer, anneau humide garni, sightlines plus clairsemées que la
+forêt ouverte ; captures et mesure par `tests/jungle_vegetation_shot.py` à
+sept poses.
+
 
 
 ---

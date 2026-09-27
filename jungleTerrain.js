@@ -239,6 +239,9 @@ export function buildJungleTerrain({ scene, addInstanced, rnd, maxAniso = 4 }) {
   const uv = geo.getAttribute('uv');
   for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) / 3, pos.getZ(i) / 3);
   geo.computeVertexNormals();
+  // Canopy dapple: the clock the shader below wanders pools of light by.
+  // update(t) advances it — the only per-frame cost of the ground's light.
+  const dappleTime = { value: 0 };
   const groundMat = new THREE.MeshStandardMaterial({
     vertexColors: true, map: grain, roughness: 0.96, metalness: 0,
   });
@@ -247,12 +250,14 @@ export function buildJungleTerrain({ scene, addInstanced, rnd, maxAniso = 4 }) {
   // everywhere; wet ground darkens and glosses. One extra texture fetch.
   groundMat.onBeforeCompile = sh => {
     sh.uniforms.uDetail = { value: detail };
+    sh.uniforms.uDappleTime = dappleTime;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 aMask;\nvarying vec4 vMask;\nvarying vec2 vGroundUv;\nvarying vec3 vGroundPos;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMask = aMask;\nvGroundUv = uv;\nvGroundPos = (modelMatrix * vec4(position, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform sampler2D uDetail;
+uniform float uDappleTime;
 varying vec4 vMask;
 varying vec2 vGroundUv;
 varying vec3 vGroundPos;`)
@@ -270,7 +275,14 @@ float strata = texture2D(uDetail, vec2((vGroundPos.x + vGroundPos.z) * 0.06, vGr
 diffuseColor.rgb *= mix(1.0, 0.62 + 0.76 * strata, vMask.y);
 diffuseColor.rgb *= mix(1.0, 0.88 + 0.24 * det.b, vMask.z);
 // Wet ground darkens.
-diffuseColor.rgb *= mix(1.0, 0.66, vMask.w);`)
+diffuseColor.rgb *= mix(1.0, 0.66, vMask.w);
+// Canopy dapple: slow pools of light wandering over the forest floor —
+// sunlight through the moving leaves, read through the paint's own forest
+// mask (vMask.x) so it never touches the beach, the path or the bare rock.
+float dapple = smoothstep(0.12, 0.9,
+  sin(vGroundPos.x * 0.47 + uDappleTime * 0.31) * cos(vGroundPos.z * 0.43 - uDappleTime * 0.23) * 0.72
+  + sin((vGroundPos.x + vGroundPos.z) * 0.23 - uDappleTime * 0.17) * 0.28 + 0.2);
+diffuseColor.rgb *= 1.0 + dapple * vMask.x * 0.55;`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
   };
@@ -367,5 +379,5 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
   buckets.forEach((row, gi) => row.forEach((items, mi) =>
     addInstanced(rockGeos[gi], rockMats[mi], items, { prop: true })));
 
-  return { terrain, path, grain };
+  return { terrain, path, grain, update(t) { dappleTime.value = t; } };
 }

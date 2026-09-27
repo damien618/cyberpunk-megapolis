@@ -514,8 +514,31 @@ export function soilAt(x, z, pre) {
 // ---------------------------------------------------------------------------
 // Zones.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Sightlines the map keeps open: the path's last bend looks up at the falls,
+// and the spawn looks out through the cove to the liner. Inside a corridor
+// the TALL growth thins to a few stems — the undergrowth keeps its own rules
+// and stays lush, so the opening reads as a break in the canopy, not a mown
+// lane. Pure numbers, so the vegetation and the tests read the same corridors.
+// ---------------------------------------------------------------------------
+export const SIGHTLINES = [
+  { x0: 8, z0: 133, x1: 22, z1: 150, halfW: 4.5 },   // path's last bend → the falls
+  { x0: -8, z0: -2, x1: -8, z1: -26, halfW: 6 },     // spawn → the cove and the ship
+];
+export function sightlineClear(x, z) {
+  let k = 1;
+  for (const s of SIGHTLINES) {
+    const dx = s.x1 - s.x0, dz = s.z1 - s.z0, l2 = dx * dx + dz * dz;
+    const t = clamp(((x - s.x0) * dx + (z - s.z0) * dz) / l2, 0, 1);
+    const d = Math.hypot(x - s.x0 - dx * t, z - s.z0 - dz * t);
+    k *= smoothstep(d, s.halfW * 0.35, s.halfW * 1.7) * 0.82 + 0.18;
+  }
+  return k;
+}
+
 // How much forest belongs here, 0..1. The vegetation scatter multiplies its
-// density by this; clearings are just places where it is low.
+// density by this; clearings are just places where it is low, and the
+// sightlines thin the tall growth where the map wants a view kept open.
 export function forestDensity(x, z) {
   if (Math.abs(x) > PLAY_HALF_W + 30) return 0;
   const edge = smoothstep(z, SAND_END - 4, SAND_END + 16);
@@ -523,7 +546,7 @@ export function forestDensity(x, z) {
   const clearStream = smoothstep(streamDistance(x, z), STREAM_HALF_W + 0.5, STREAM_HALF_W + 3);
   const clearPool = smoothstep(Math.hypot(x - POOL.x, z - POOL.z), POOL.r + 1, POOL.r + 6);
   const clearCliff = 1 - smoothstep(z, cliffZ(x) - 5, cliffZ(x) - 1);
-  return edge * clearPath * clearStream * clearPool * clearCliff;
+  return edge * clearPath * clearStream * clearPool * clearCliff * sightlineClear(x, z);
 }
 
 // 0 on the open beach, 1 under the canopy — what the fog and the light blend on.

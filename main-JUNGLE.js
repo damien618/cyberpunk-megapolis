@@ -10,10 +10,10 @@ import {
   POOL, FALLS, SAND_END, WADE_Z,
 } from './jungleLayout.js';   // no ?v: the element modules import it bare, and
                                   // two URLs would be two module instances
-import { buildJungleTerrain } from './jungleTerrain.js?v=20260927-falls4';
+import { buildJungleTerrain } from './jungleTerrain.js?v=20260927-dapple';
 import { createJungleOcean } from './jungleOcean.js?v=20260927-ocean3';
 import { createJungleWaterfall } from './jungleWaterfall.js?v=20260927-falls8';
-import { buildJungleVegetation } from './jungleVegetation.js?v=20260927-terrain2';
+import { buildJungleVegetation } from './jungleVegetation.js?v=20260927-veg2';
 
 // ---------------------------------------------------------------------------
 // Promenade tropicale — la cascade. SKELETON.
@@ -68,9 +68,11 @@ const scene = new THREE.Scene();
 // is: clear and blue on the sand, close and green in the forest.
 const FOG = {
   // Far enough that the open sea keeps its blue to the horizon: at 120–760
-  // the water past the reef was fogged to a grey band.
+  // the water past the reef was fogged to a grey band. The forest half is
+  // tight on purpose: under the canopy the air itself should feel green and
+  // close, and the depth comes from the fog eating the far trunks.
   beach: { color: new THREE.Color(0xcfe2ea), near: 220, far: 1500 },
-  forest: { color: new THREE.Color(0x93ad8c), near: 14, far: 190 },
+  forest: { color: new THREE.Color(0x93ad8c), near: 11, far: 160 },
 };
 scene.fog = new THREE.Fog(FOG.beach.color.clone(), FOG.beach.near, FOG.beach.far);
 
@@ -110,7 +112,7 @@ function updateSunShadow(focus) {
 
 const HEMI = {
   beach: { sky: new THREE.Color(0xdcecff), ground: new THREE.Color(0xc8b48c), intensity: 1.1 },
-  forest: { sky: new THREE.Color(0xc4dcb4), ground: new THREE.Color(0x4a5a30), intensity: 0.95 },
+  forest: { sky: new THREE.Color(0xc4dcb4), ground: new THREE.Color(0x44541f), intensity: 0.92 },
 };
 const hemi = new THREE.HemisphereLight(0xdcecff, 0xc8b48c, 1.1);
 scene.add(hemi);
@@ -577,6 +579,7 @@ function animate() {
 
   ocean.update(t);
   falls.update(t);
+  terrain.update(t);   // the ground's canopy dapple keeps wandering
   tender.position.y = SEA_Y + 0.3 + Math.sin(t * 0.9) * 0.08;
   tender.rotation.z = Math.sin(t * 0.7 + 1) * 0.025;
   skyDome.position.copy(camera.position);

@@ -1,5 +1,13 @@
-// jungleVegetation.js — coconut palms, rainforest giants, ferns, broad-leaved
-// understorey plants and hanging lianas, every one of them an InstancedMesh.
+// jungleVegetation.js — the island's plants: coconut palms leaning over the
+// beach, rainforest giants in two statures, saplings, ferns in two kinds,
+// broad-leaved plants in two kinds (banana and split leaf), bushes, grass
+// tufts and hanging lianas, every one of them an InstancedMesh.
+//
+// REUSABLE AT ISLAND SCALE, like the ocean and the falls: this module owns no
+// map. It asks a `layout` for the ground (defaulting to jungleLayout) and
+// takes `rules` (a keepOffBuilt hook plus per-species density knobs). The
+// village maps will pass their own layout and rules that keep plants off the
+// built ground; nothing here changes.
 //
 // Three rules shape this file:
 //
@@ -9,7 +17,7 @@
 // 2. Instances are bucketed into TILE-metre tiles, one InstancedMesh per
 //    species per tile, so the camera frustum culls tile by tile and the small
 //    undergrowth can be switched off beyond UNDERGROWTH_FAR (the fog hides
-//    the edge). update(cameraPos) does that, a few times a second.
+//    the edge). update() does that, a few times a second.
 // 3. Nothing here is on `world`. cityBoxes would turn every fern into a wall
 //    and every leaf into a camera occluder. The trunks that must stop you are
 //    returned as `colliders` for main-JUNGLE.js to register; the canopy
@@ -17,15 +25,18 @@
 //
 // Leaves are cut-alpha canvas cards (alphaTest, not blending, so they still
 // write depth), cupped so they never collapse to a line edge-on.
+//
+// Wind: the foliage bends in the VERTEX SHADER (makeLeafMaterial /
+// makeSolidMaterial). One shared time uniform; the phase comes from the
+// instance's world offset (free), the amplitude from the vertex's distance to
+// the plant's base, squared so roots stay planted. update() only advances the
+// clock and re-culls — no CPU per leaf or per instance.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import {
-  terrainHeight, terrainSlope, soilAt, SOIL, forestDensity, shoreAt, cliffZ, ridgeAt, pathDistance, PATH,
-  PATH_HALF_W, SAND_END, PLAY_HALF_W, POOL, JETTY, smoothstep,
-} from './jungleLayout.js';
+import * as jungleLayout from './jungleLayout.js';
 
-const TILE = 40;
-const UNDERGROWTH_FAR = 75;
+const TILE = 52;
+const UNDERGROWTH_FAR = 72;
 
 // ---------------------------------------------------------------------------
 // Leaf textures.
@@ -82,6 +93,26 @@ function fernTexture(a) {
   }, a);
 }
 
+// Upright fern (sword fern): a stiffer, paler rosette — the second fern kind,
+// so two plants side by side never read as copies.
+function fernUprightTexture(a) {
+  return canvas(128, 256, (g, W, H) => {
+    const cx = W / 2;
+    for (let i = 0; i < 26; i++) {
+      const t = i / 25, y = H - 6 - t * (H - 14);
+      const len = Math.sin(Math.PI * Math.min(1, 0.12 + t)) * W * 0.3 * (1 - t * 0.55);
+      for (const dir of [-1, 1]) {
+        g.beginPath();
+        g.ellipse(cx + dir * len * 0.5, y, len * 0.46, 2.6, dir * -0.5, 0, Math.PI * 2);
+        g.fillStyle = rgb(88, 148, 58, 0.7 + (i % 3) * 0.1);
+        g.fill();
+      }
+    }
+    g.strokeStyle = '#5d7a34'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(cx, H); g.lineTo(cx, 4); g.stroke();
+  }, a);
+}
+
 // Broad leaf (banana / heliconia): one blade, midrib, parallel veins, and a
 // few NARROW tears cut after the veins are painted.
 function broadLeafTexture(a) {
@@ -117,6 +148,39 @@ function broadLeafTexture(a) {
   }, a);
 }
 
+// Split leaf (monstera): broader, bluer green, with deep RADIAL slits cut
+// through the margin and a couple of oval holes — unmistakable next to the
+// banana, which is why the two split the broad-leaved scatter.
+function monsteraTexture(a) {
+  return canvas(160, 256, (g, W, H) => {
+    const cx = W / 2;
+    g.beginPath();
+    g.moveTo(cx, H - 2);
+    g.bezierCurveTo(cx + W * 0.72, H * 0.72, cx + W * 0.55, H * 0.1, cx, 2);
+    g.bezierCurveTo(cx - W * 0.55, H * 0.1, cx - W * 0.72, H * 0.72, cx, H - 2);
+    const grd = g.createLinearGradient(0, 0, W, 0);
+    grd.addColorStop(0, '#245c33'); grd.addColorStop(0.5, '#3f8a4a'); grd.addColorStop(1, '#245c33');
+    g.fillStyle = grd;
+    g.fill();
+    g.globalCompositeOperation = 'destination-out';
+    g.lineWidth = 5;
+    for (const [side, y, k] of [[1, 66, 0.95], [-1, 92, 0.9], [1, 122, 1], [-1, 150, 0.85], [1, 178, 0.8], [-1, 202, 0.7]]) {
+      g.beginPath();
+      g.moveTo(cx + side * W * 0.55, y - 26);
+      g.quadraticCurveTo(cx + side * W * 0.3, y - 8, cx + side * W * 0.1 * k, y);
+      g.stroke();
+    }
+    for (const [side, y] of [[1, 104], [-1, 132]]) {
+      g.beginPath();
+      g.ellipse(cx + side * W * 0.16, y, 5, 9, side * 0.4, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.globalCompositeOperation = 'source-over';
+    g.strokeStyle = 'rgba(200,230,140,0.3)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(cx, H - 4); g.lineTo(cx, 6); g.stroke();
+  }, a);
+}
+
 // Liana: a twisting stem with small alternating leaves.
 function vineTexture(a) {
   return canvas(64, 512, (g, W, H) => {
@@ -136,11 +200,49 @@ function vineTexture(a) {
   }, a);
 }
 
-function leafMaterial(map, color = 0xffffff) {
-  const m = new THREE.MeshStandardMaterial({
-    map, color, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.78,
-  });
-  return m;
+// ---------------------------------------------------------------------------
+// Materials. The foliage bends in the vertex shader; cut-out cards also shade
+// their underside darker (a leaf seen from below is not the leaf seen from
+// above). One shared wind uniform pair; each material carries its own
+// amplitude as its own uniform, so programs stay shareable per amplitude.
+// ---------------------------------------------------------------------------
+const WIND = {
+  uWindTime: { value: 0 },
+  uWindDir: { value: new THREE.Vector2(0.82, 0.57).normalize() },   // trade wind, off the sea
+};
+
+const WIND_CHUNK = `
+  #ifdef USE_INSTANCING
+    float wRad = length(transformed.xz) + abs(transformed.y);
+    float wPh = uWindTime * 1.9 + (instanceMatrix[3][0] + instanceMatrix[3][2]) * 0.14;
+    float gust = 0.62 + 0.38 * sin(uWindTime * 0.37 + instanceMatrix[3][0] * 0.017);
+    float wK = wRad * wRad * uWindAmp * gust;
+    transformed.xz += uWindDir * (sin(wPh) * 0.62 + sin(wPh * 2.17 + 1.4) * 0.27) * wK;
+    transformed.y -= wK * 0.16;
+  #endif`;
+
+function applyWind(mat, amp, underside = false) {
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.uWindTime = WIND.uWindTime;
+    sh.uniforms.uWindDir = WIND.uWindDir;
+    sh.uniforms.uWindAmp = { value: amp };
+    sh.vertexShader = 'uniform float uWindTime;\nuniform vec2 uWindDir;\nuniform float uWindAmp;\n'
+      + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + WIND_CHUNK);
+    if (underside) {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>',
+        '#include <color_fragment>\n  if (!gl_FrontFacing) diffuseColor.rgb *= 0.74;');
+    }
+  };
+  // The patched fragment shader differs by `underside` but the closure's
+  // source does not — key the program cache on what actually changed.
+  mat.customProgramCacheKey = () => 'vegwind:' + amp + (underside ? ':u' : '');
+  return mat;
+}
+
+function makeLeafMaterial(map, amp) {
+  return applyWind(new THREE.MeshStandardMaterial({
+    map, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.78,
+  }), amp, true);
 }
 // Shadow casters with cut-out leaves need their own depth material, or the
 // shadow is the card's rectangle.
@@ -148,6 +250,11 @@ function leafDepth(map) {
   return new THREE.MeshDepthMaterial({
     depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5, side: THREE.DoubleSide,
   });
+}
+function makeSolidMaterial({ rough = 0.9, flat = true } = {}, amp) {
+  return applyWind(new THREE.MeshStandardMaterial({
+    color: 0xffffff, roughness: rough, flatShading: flat,
+  }), amp);
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +318,21 @@ function fernGeo() {
   return mergeGeometries(parts);
 }
 
-// Broad-leaved plant: leaves held up on stalks, arching out.
+// Upright fern (sword fern): fewer, stiffer blades standing more vertically —
+// the second fern kind.
+function fernUprightGeo() {
+  const parts = [];
+  const n = 7;
+  for (let i = 0; i < n; i++) {
+    parts.push(leaf({
+      w: 0.34, len: 1.15 + (i % 3) * 0.25, tilt: 0.22 + (i % 3) * 0.22, droop: 0.18,
+      spin: (i / n) * Math.PI * 2 + (i % 2) * 0.4, cup: 0.1, segY: 3,
+    }));
+  }
+  return mergeGeometries(parts);
+}
+
+// Broad-leaved plant (banana): leaves held up on stalks, arching out.
 function broadPlantGeo() {
   const parts = [];
   const n = 6;
@@ -225,7 +346,22 @@ function broadPlantGeo() {
   return mergeGeometries(parts);
 }
 
-// Rainforest giant's crown: a few faceted lobes. Solid, so it shades the
+// Split-leaved plant (monstera): five wide blades held LOW, arching almost
+// horizontally — it hugs the damp ground the bananas stand above.
+function monsteraGeo() {
+  const parts = [];
+  const n = 5;
+  for (let i = 0; i < n; i++) {
+    const spin = (i / n) * Math.PI * 2 + (i % 2) * 0.5;
+    parts.push(leaf({
+      w: 1.05, len: 1.55, tilt: 0.85 + (i % 2) * 0.18, droop: 0.55, spin, cup: 0.16, y0: 0.5,
+    }));
+    parts.push(leaf({ w: 0.06, len: 0.7, tilt: 0.5, spin, cup: 0, segY: 1 }));
+  }
+  return mergeGeometries(parts);
+}
+
+// Rainforest giant's crown lobe: a faceted blob. Solid, so it shades the
 // floor below without an alpha depth pass.
 function crownLobeGeo() {
   const g = new THREE.IcosahedronGeometry(1, 1);
@@ -241,6 +377,28 @@ function crownLobeGeo() {
   }
   g.computeVertexNormals();
   return g;
+}
+
+// A bush: two squashed crown lobes — solid, cheap, casts a real shadow, and
+// gives the mid layer of the forest somewhere to be.
+function bushGeo() {
+  const a = crownLobeGeo(); a.scale(1, 0.62, 1); a.translate(0, 0.3, 0);
+  const b = crownLobeGeo(); b.scale(0.66, 0.5, 0.66); b.translate(0.3, 0.55, -0.18);
+  return mergeGeometries([a, b]);
+}
+
+// A tuft of grass: plain green blades (no texture, no alpha) fanning from the
+// base. Cheap enough to scatter by the thousand.
+function grassTuftGeo() {
+  const parts = [];
+  const n = 6;
+  for (let i = 0; i < n; i++) {
+    parts.push(leaf({
+      w: 0.05, len: 0.34 + (i % 4) * 0.09, tilt: 0.16 + (i % 3) * 0.17, droop: 0.12,
+      spin: (i / n) * Math.PI * 2 + (i % 2) * 0.35, cup: 0.08, segY: 2,
+    }));
+  }
+  return mergeGeometries(parts);
 }
 
 // ---------------------------------------------------------------------------
@@ -303,14 +461,36 @@ function jittered(rnd, x0, x1, z0, z1, cell, keep) {
   return out;
 }
 
-// Keep plants off the jetty and out of the pool.
-function clearOfBuilt(x, z) {
-  if (Math.abs(x - JETTY.x) < JETTY.halfW + 2 && z < JETTY.z0 + 3) return false;
-  if (Math.hypot(x - POOL.x, z - POOL.z) < POOL.r + 1) return false;
-  return true;
-}
+// ---------------------------------------------------------------------------
+// Build.
+// ---------------------------------------------------------------------------
+export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules } = {}) {
+  const L = { ...jungleLayout, ...(layout || {}) };
+  const {
+    terrainHeight, terrainSlope, soilAt, SOIL, forestDensity,
+    shoreAt, cliffZ, ridgeAt, pathDistance, PATH_HALF_W, SAND_END, PLAY_HALF_W, smoothstep,
+    streamDistance, STREAM_HALF_W,
+  } = L;
 
-export function buildJungleVegetation({ scene, rnd, maxAniso = 4 }) {
+  // The scatter rules. A map retunes these: the villages pass a keepOffBuilt
+  // that also clears their plazas and gardens, and pull densities down where
+  // people walk. Everything else — soil, slope, altitude, distance to water,
+  // the sightlines — comes from the layout, so the rules stay small.
+  const R = {
+    densities: {
+      palms: 1, giants: 1, understory: 0.9, saplings: 1, ferns: 1,
+      broads: 1, bushes: 1, grass: 1, vines: 1,
+    },
+    // The cove keeps plants off the jetty and out of the pool bowl.
+    keepOffBuilt: (x, z) => {
+      if (Math.abs(x - L.JETTY.x) < L.JETTY.halfW + 2 && z < L.JETTY.z0 + 3) return false;
+      if (Math.hypot(x - L.POOL.x, z - L.POOL.z) < L.POOL.r + 1) return false;
+      return true;
+    },
+    ...(rules || {}),
+  };
+  const dens = k => (R.densities[k] ?? 1);
+
   const group = new THREE.Group();
   group.name = 'jungle_vegetation';
   scene.add(group);
@@ -318,66 +498,110 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4 }) {
   const meshes = [];
 
   const tex = {
-    frond: frondTexture(maxAniso), fern: fernTexture(maxAniso),
-    broad: broadLeafTexture(maxAniso), vine: vineTexture(maxAniso),
+    frond: frondTexture(maxAniso), fern: fernTexture(maxAniso), fernUp: fernUprightTexture(maxAniso),
+    broad: broadLeafTexture(maxAniso), monstera: monsteraTexture(maxAniso), vine: vineTexture(maxAniso),
   };
   const mat = {
-    frond: leafMaterial(tex.frond),
-    fern: leafMaterial(tex.fern),
-    broad: leafMaterial(tex.broad),
-    vine: leafMaterial(tex.vine),
-    palmBark: new THREE.MeshStandardMaterial({ color: 0x8a7458, roughness: 0.95 }),
-    bark: new THREE.MeshStandardMaterial({ color: 0x6b5d4a, roughness: 0.95 }),
-    crown: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, flatShading: true }),
+    frond: makeLeafMaterial(tex.frond, 0.022),
+    fern: makeLeafMaterial(tex.fern, 0.04),
+    fernUp: makeLeafMaterial(tex.fernUp, 0.03),
+    broad: makeLeafMaterial(tex.broad, 0.03),
+    monstera: makeLeafMaterial(tex.monstera, 0.026),
+    vine: makeLeafMaterial(tex.vine, 0.012),
+    palmBark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }),
+    bark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }),
+    crown: makeSolidMaterial({}, 0.012),
+    bush: makeSolidMaterial({ rough: 0.92 }, 0.02),
+    grass: applyWind(new THREE.MeshStandardMaterial({
+      color: 0xffffff, side: THREE.DoubleSide, roughness: 0.85,
+    }), 0.06),
   };
   const geo = {
     palmTrunk: palmTrunkGeo(), palmCrown: palmCrownGeo(),
-    fern: fernGeo(), broad: broadPlantGeo(),
+    fern: fernGeo(), fernUp: fernUprightGeo(),
+    broad: broadPlantGeo(), monstera: monsteraGeo(),
     trunk: new THREE.CylinderGeometry(0.32, 0.55, 1, 8).translate(0, 0.5, 0),
-    lobe: crownLobeGeo(),
+    lobe: crownLobeGeo(), bush: bushGeo(), grass: grassTuftGeo(),
     vine: new THREE.PlaneGeometry(0.5, 1, 1, 4).translate(0, -0.5, 0),
   };
 
-  // --- Coconut palms: along the back of the beach and the forest edge,
-  // leaning out toward the light over the sand.
+  // --- Coconut palms: a band along the back of the beach and the forest
+  // edge, leaning out toward the light over the sand; a few more scattered
+  // through the forest (the island's signature). Three presentations —
+  // upright, leaning seaward, twisting aside — so no two crowns match.
   const palmTrunks = [], palmCrowns = [];
   const palmSpots = jittered(rnd, -PLAY_HALF_W + 6, PLAY_HALF_W - 6, -12, SAND_END + 22, 6.5, (x, z, r) => {
     const d = z - shoreAt(x);
-    if (d < 7 || !clearOfBuilt(x, z)) return false;
+    if (d < 7 || !R.keepOffBuilt(x, z)) return false;
     if (pathDistance(x, z) < PATH_HALF_W + 1.5) return false;
     if (ridgeAt(x) > 0.3) return false;
     if (terrainSlope(x, z) > 0.6) return false;   // not on the talus or a scarp
     const band = smoothstep(d, 7, 12) * (1 - smoothstep(z, SAND_END + 8, SAND_END + 22));
-    return r < band * (0.25 + 0.5 * clump(x, z, 1.3));
+    return r < band * (0.25 + 0.5 * clump(x, z, 1.3)) * dens('palms');
   });
-  // A few palms scattered through the forest too — the island's signature.
   palmSpots.push(...jittered(rnd, -70, 70, SAND_END + 20, 130, 22, (x, z, r) =>
-    r < 0.35 * forestDensity(x, z) && terrainSlope(x, z) < 0.7));
+    r < 0.35 * forestDensity(x, z) * dens('palms') && terrainSlope(x, z) < 0.7));
   const top = new THREE.Vector3();
   for (const [x, z] of palmSpots) {
     const h = 8 + rnd() * 6;
+    const kind = rnd();
     // Local -Z is the way the trunk bends and leans; ry ≈ 0 points that
     // seaward, give or take.
-    const ry = (rnd() - 0.5) * 1.6;
-    const lean = -(0.08 + rnd() * 0.22);
+    const ry = (rnd() - 0.5) * 1.4;
+    const rx = kind < 0.55 ? -(0.1 + rnd() * 0.24)        // leaning over the sand
+      : kind < 0.8 ? -(0.02 + rnd() * 0.06)               // standing up
+      : -(0.06 + rnd() * 0.1);                            // a little of both
+    const rz = kind >= 0.8 ? (rnd() - 0.5) * 0.3 : 0;
     const y = terrainHeight(x, z) - 0.2;
-    const trunk = { x, y, z, sx: 1.1, sy: h, sz: 1.1, ry, rx: lean };
+    const trunk = { x, y, z, sx: 1.1, sy: h, sz: 1.1, ry, rx, rz,
+      hue: (rnd() - 0.5) * 0.02, light: (rnd() - 0.5) * 0.08 };
     palmTrunks.push(trunk);
     // The crown sits on the bent, leaning top, found through the same matrix.
     top.set(0, 1, -PALM_BEND).applyMatrix4(matrixOf(trunk));
     palmCrowns.push({ x: top.x, y: top.y - 0.1, z: top.z, s: 1.25 + rnd() * 0.35, ry: rnd() * 6.28,
-      rx: (rnd() - 0.5) * 0.15, hue: (rnd() - 0.5) * 0.04, light: (rnd() - 0.5) * 0.08 });
+      rx: (rnd() - 0.5) * 0.15, rz: (rnd() - 0.5) * 0.1,
+      hue: (rnd() - 0.5) * 0.05, light: (rnd() - 0.5) * 0.1 });
     colliders.push({ x0: x - 0.3, x1: x + 0.3, z0: z - 0.3, z1: z + 0.3, y0: y, y1: y + 3, tall: false });
   }
-  meshes.push(...tiled(group, 'palmTrunk', geo.palmTrunk, mat.palmBark, palmTrunks, { cast: true }));
-  meshes.push(...tiled(group, 'palmCrown', geo.palmCrown, mat.frond, palmCrowns,
-    { cast: true, depth: leafDepth(tex.frond), tint: { h: 0, s: 0, l: 1 } }));
 
-  // --- Rainforest giants: in the valley, on the ridges and on the plateau
-  // above the falls (the skyline you see from the beach).
-  const trees = [];
+  // --- Saplings: the palms' children — small rosettes of the same fronds —
+  // filling the forest's mid-ground wherever the giants let light through.
+  const saplings = jittered(rnd, -PLAY_HALF_W - 10, PLAY_HALF_W + 10, SAND_END + 2, 148, 5.2, (x, z, r) =>
+    R.keepOffBuilt(x, z) && soilAt(x, z) === SOIL.FOREST && terrainSlope(x, z) < 0.75
+    && pathDistance(x, z) > PATH_HALF_W + 1
+    && r < forestDensity(x, z) * (0.16 + 0.4 * clump(x, z, 9.1)) * dens('saplings'))
+    .map(([x, z]) => ({ x, y: terrainHeight(x, z) - 0.03, z, s: 0.1 + rnd() * 0.12,
+      ry: rnd() * 6.28, hue: (rnd() - 0.5) * 0.05, light: (rnd() - 0.5) * 0.1 }));
+
+  // --- Rainforest giants in two statures: an understorey of 6–9 m trees that
+  // fills the mid-distance below the dominants, and the 14–26 m giants of the
+  // valley, the ridges and the skyline above the falls. The valley's
+  // dominants wear one of two crown morphologies — the old ball of lobes, or
+  // a wider, flatter disc of smaller ones — so no two silhouettes repeat.
+  const understory = [], understoryLobes = [];
+  jittered(rnd, -PLAY_HALF_W - 10, PLAY_HALF_W + 10, SAND_END + 6, 148, 8, (x, z, r) => {
+    if (!R.keepOffBuilt(x, z) || soilAt(x, z) !== SOIL.FOREST || terrainSlope(x, z) > 0.8
+      || pathDistance(x, z) <= PATH_HALF_W + 1.2
+      || r >= forestDensity(x, z) * (0.3 + 0.4 * clump(x, z, 6.3)) * dens('understory')) return;
+    const y = terrainHeight(x, z);
+    const h = 6 + rnd() * 3.5, girth = 0.7 + rnd() * 0.4;
+    understory.push({ x, y: y - 0.2, z, sx: girth, sy: h, sz: girth, ry: rnd() * 6.28,
+      hue: (rnd() - 0.5) * 0.02, light: (rnd() - 0.5) * 0.07 });
+    const Rc = 2.4 + rnd() * 1.6, nL = 2 + Math.floor(rnd() * 2);
+    for (let i = 0; i < nL; i++) {
+      const off = i === 0 ? 0 : Rc * (0.4 + rnd() * 0.3);
+      understoryLobes.push({
+        x: x + Math.cos(i * 2.4) * off, y: y + h - 0.4 + (rnd() - 0.5), z: z + Math.sin(i * 2.4) * off,
+        sx: Rc * (0.85 + rnd() * 0.3), sy: Rc * (0.5 + rnd() * 0.25), sz: Rc * (0.85 + rnd() * 0.3),
+        ry: rnd() * 6.28, hue: (rnd() - 0.5) * 0.05, light: (rnd() - 0.5) * 0.08,
+      });
+    }
+    colliders.push({ x0: x - girth * 0.4, x1: x + girth * 0.4, z0: z - girth * 0.4,
+      z1: z + girth * 0.4, y0: y - 0.3, y1: y + h, tall: false });
+  });
+
   const valleySpots = jittered(rnd, -PLAY_HALF_W - 30, PLAY_HALF_W + 30, SAND_END + 4, 160, 10, (x, z, r) =>
-    (r < forestDensity(x, z) * (0.35 + 0.45 * clump(x, z, 4.1))
+    (r < forestDensity(x, z) * (0.35 + 0.45 * clump(x, z, 4.1)) * dens('giants')
       || (ridgeAt(x) > 0.4 && z < cliffZ(x) - 3 && z > -20 && r < 0.4))
     && terrainSlope(x, z) < 0.9);
   // The skyline above the falls. Always on screen from the valley, never
@@ -395,15 +619,20 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4 }) {
     const y = terrainHeight(x, z);
     const h = 14 + rnd() * 12;
     const girth = 1.2 + rnd() * 0.9;
-    trunkList.push({ x, y: y - 0.3, z, sx: girth, sy: h, sz: girth, ry: rnd() * 6.28 });
-    const R = 4 + rnd() * 3.5;
-    const nL = 3 + Math.floor(rnd() * 3);
+    trunkList.push({ x, y: y - 0.3, z, sx: girth, sy: h, sz: girth, ry: rnd() * 6.28,
+      hue: (rnd() - 0.5) * 0.02, light: (rnd() - 0.5) * 0.06 });
+    const disc = !backdrop && rnd() < 0.4;
+    const Rc = (4 + rnd() * 3.5) * (disc ? 1.3 : 1);
+    const nL = disc ? 5 + Math.floor(rnd() * 3) : 3 + Math.floor(rnd() * 3);
     for (let i = 0; i < nL; i++) {
       const a = (i / nL) * Math.PI * 2 + rnd();
-      const off = i === 0 ? 0 : R * (0.45 + rnd() * 0.35);
+      const off = i === 0 ? 0 : Rc * (disc ? 0.62 + rnd() * 0.3 : 0.45 + rnd() * 0.35);
       lobeList.push({
-        x: x + Math.cos(a) * off, y: y + h + (rnd() - 0.3) * 2.5, z: z + Math.sin(a) * off,
-        sx: R * (0.8 + rnd() * 0.4), sy: R * (0.8 + rnd() * 0.4), sz: R * (0.8 + rnd() * 0.4),
+        x: x + Math.cos(a) * off,
+        y: y + h + (disc ? (rnd() - 0.7) * 1.6 : (rnd() - 0.3) * 2.5),
+        z: z + Math.sin(a) * off,
+        sx: Rc * (0.8 + rnd() * 0.4), sy: Rc * (disc ? 0.42 + rnd() * 0.2 : 0.8 + rnd() * 0.4),
+        sz: Rc * (0.8 + rnd() * 0.4),
         ry: rnd() * 6.28, hue: (rnd() - 0.5) * 0.05, light: (rnd() - 0.5) * 0.07,
       });
     }
@@ -412,14 +641,14 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4 }) {
     if (Math.abs(x) < PLAY_HALF_W && z < 150) {
       const nV = Math.floor(rnd() * 4);
       for (let i = 0; i < nV; i++) {
-        const a = rnd() * Math.PI * 2, off = R * (0.4 + rnd() * 0.5);
+        const a = rnd() * Math.PI * 2, off = Rc * (0.4 + rnd() * 0.5);
         const vx = x + Math.cos(a) * off, vz = z + Math.sin(a) * off;
         const ground = terrainHeight(vx, vz);
-        const top = y + h - 0.5;
-        const len = (top - ground) * (0.45 + rnd() * 0.5);
-        if (pathDistance(vx, vz) < PATH_HALF_W + 0.3 && top - len < ground + 2.2) continue;
-        vines.push({ x: vx, y: top, z: vz, sx: 1, sy: len, sz: 1, ry: rnd() * 6.28 });
-        vines.push({ x: vx, y: top, z: vz, sx: 1, sy: len, sz: 1, ry: rnd() * 6.28 + Math.PI / 2 });
+        const top2 = y + h - 0.5;
+        const len = (top2 - ground) * (0.45 + rnd() * 0.5);
+        if (pathDistance(vx, vz) < PATH_HALF_W + 0.3 && top2 - len < ground + 2.2) continue;
+        vines.push({ x: vx, y: top2, z: vz, sx: 1, sy: len, sz: 1, ry: rnd() * 6.28 });
+        vines.push({ x: vx, y: top2, z: vz, sx: 1, sy: len, sz: 1, ry: rnd() * 6.28 + Math.PI / 2 });
       }
     }
     if (Math.abs(x) < PLAY_HALF_W + 2) {
@@ -427,39 +656,131 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4 }) {
         z1: z + girth * 0.4, y0: y - 0.3, y1: y + h, tall: true });
     }
   }
-  meshes.push(...tiled(group, 'trunk', geo.trunk, mat.bark, trunks, { cast: true }));
+
+  // --- Undergrowth: the two ferns and the two broad-leaved plants, in
+  // patches, densest where the ground stays WET — the stream banks and the
+  // pool rim, where the old scatter kept a bare ring — and thinning toward
+  // the path so it stays a path. The wet ring is lush on its own terms
+  // (forestDensity is ~0 there by design), but only inland: the beach's wet
+  // sand is the swash's business, not the ferns'.
+  const fernsAll = [];
+  const pushFern = (x, z, s0, s1) => fernsAll.push({
+    x, y: terrainHeight(x, z) - 0.05 - terrainSlope(x, z) * 0.2, z,
+    s: s0 + rnd() * (s1 - s0), ry: rnd() * 6.28,
+    hue: (rnd() - 0.5) * 0.06, light: (rnd() - 0.5) * 0.1,
+  });
+  // Damp ground by the layout's own measures: the stream's banks and the
+  // pool's rim (SOIL.WET's 0.5 threshold is narrower than the visibly damp
+  // band, so the ring is measured, not read off the mask).
+  const damp = (x, z) =>
+    streamDistance(x, z) < STREAM_HALF_W + 2.8
+    || Math.hypot(x - L.POOL.x, z - L.POOL.z) < L.POOL.r + 2.8;
+  jittered(rnd, -PLAY_HALF_W - 10, PLAY_HALF_W + 10, SAND_END - 4, 156, 2.7, (x, z, r) => {
+    if (!R.keepOffBuilt(x, z) || terrainSlope(x, z) > 1.0) return;
+    const soil = soilAt(x, z);
+    if (soil === SOIL.SHALLOW || soil === SOIL.ROCK) return;
+    if (damp(x, z) && z > L.SAND_END - 2) {
+      if (r < (0.62 + 0.3 * clump(x, z, 7.7)) * dens('ferns')) pushFern(x, z, 1.1, 2.2);
+    } else if (soil === SOIL.FOREST
+      && pathDistance(x, z) > PATH_HALF_W + 0.6
+      && r < forestDensity(x, z) * (0.2 + 0.7 * clump(x, z, 7.7)) * dens('ferns')) {
+      pushFern(x, z, 0.8, 1.7);
+    }
+  });
+  const ferns = [], fernsUp = [];
+  for (const it of fernsAll) (rnd() < 0.42 ? fernsUp : ferns).push(it);
+
+  const broadsAll = [];
+  const pushBroad = (x, z, s0, s1) => broadsAll.push({
+    x, y: terrainHeight(x, z) - 0.05 - terrainSlope(x, z) * 0.2, z,
+    s: s0 + rnd() * (s1 - s0), ry: rnd() * 6.28,
+    hue: (rnd() - 0.5) * 0.05, light: (rnd() - 0.5) * 0.08,
+  });
+  jittered(rnd, -PLAY_HALF_W - 10, PLAY_HALF_W + 10, SAND_END - 2, 156, 4.6, (x, z, r) => {
+    if (!R.keepOffBuilt(x, z) || terrainSlope(x, z) > 1.0) return;
+    const soil = soilAt(x, z);
+    if (soil === SOIL.SHALLOW || soil === SOIL.ROCK) return;
+    if (damp(x, z) && z > L.SAND_END - 2) {
+      if (r < (0.46 + 0.38 * clump(x, z, 2.9)) * dens('broads')) pushBroad(x, z, 1.0, 1.9);
+    } else if (soil === SOIL.FOREST
+      && pathDistance(x, z) > PATH_HALF_W + 0.6
+      && r < forestDensity(x, z) * (0.1 + 0.55 * clump(x, z, 2.9)) * dens('broads')) {
+      pushBroad(x, z, 0.9, 1.7);
+    }
+  });
+  const broads = [], monsteras = [];
+  for (const it of broadsAll) (rnd() < 0.45 ? monsteras : broads).push(it);
+
+  // --- Bushes: solid squashed lobes edging the forest and spotting the
+  // clearings — the mid layer the eye had nowhere to rest on.
+  const bushes = jittered(rnd, -PLAY_HALF_W - 8, PLAY_HALF_W + 8, SAND_END - 2, 152, 5.5, (x, z, r) => {
+    if (!R.keepOffBuilt(x, z) || terrainSlope(x, z) > 0.7) return false;
+    if (pathDistance(x, z) <= PATH_HALF_W + 1.2) return false;
+    const soil = soilAt(x, z);
+    if (soil !== SOIL.FOREST && soil !== SOIL.WET) return false;
+    return r < forestDensity(x, z) * (0.22 + 0.45 * clump(x, z, 2.2)) * dens('bushes');
+  }).map(([x, z]) => ({ x, y: terrainHeight(x, z) - 0.1, z, s: 0.65 + rnd() * 0.75,
+    ry: rnd() * 6.28, hue: (rnd() - 0.5) * 0.04, light: (rnd() - 0.5) * 0.09 }));
+
+  // --- Grass: plain-green tufts dressing the open ground — the path's
+  // shoulders, the clearings, the damp ring, the back of the beach. The tread
+  // itself stays bare: the tufts start just off it, fade out within three
+  // metres, and leave the dense undergrowth to close the seam.
+  const grass = jittered(rnd, -PLAY_HALF_W - 6, PLAY_HALF_W + 6, -18, 152, 2.0, (x, z, r) => {
+    if (!R.keepOffBuilt(x, z) || terrainSlope(x, z) > 0.8) return false;
+    const soil = soilAt(x, z);
+    if (soil === SOIL.SHALLOW || soil === SOIL.ROCK) return false;
+    const pd = pathDistance(x, z);
+    if (pd < PATH_HALF_W + 0.12) return false;   // the tread stays a tread
+    const d = z - shoreAt(x);
+    const back = smoothstep(d, 6, 10) * (1 - smoothstep(z, SAND_END + 2, SAND_END + 10)) * 0.3;
+    const edge = smoothstep(pd, PATH_HALF_W + 0.12, PATH_HALF_W + 0.9)
+      * (1 - smoothstep(pd, PATH_HALF_W + 0.9, PATH_HALF_W + 2.6)) * 0.7;
+    const clearing = (1 - smoothstep(forestDensity(x, z), 0.15, 0.55)) * 0.38
+      * (0.4 + 0.6 * clump(x, z, 5.5));
+    const wetK = soil === SOIL.WET && z > L.SAND_END - 2 ? 0.5 : 0;
+    return r < Math.max(edge, clearing, wetK, back) * dens('grass');
+  }).map(([x, z]) => ({ x, y: terrainHeight(x, z) - 0.03, z, s: 0.7 + rnd() * 0.9,
+    ry: rnd() * 6.28, hue: (rnd() - 0.5) * 0.05, light: (rnd() - 0.5) * 0.12 }));
+
+  meshes.push(...tiled(group, 'palmTrunk', geo.palmTrunk, mat.palmBark, palmTrunks,
+    { cast: true, tint: { h: 0.08, s: 0.26, l: 0.36 } }));
+  meshes.push(...tiled(group, 'palmCrown', geo.palmCrown, mat.frond, palmCrowns,
+    { cast: true, depth: leafDepth(tex.frond), tint: { h: 0, s: 0, l: 1 } }));
+  meshes.push(...tiled(group, 'sapling', geo.palmCrown, mat.frond, saplings,
+    { far: UNDERGROWTH_FAR, tint: { h: 0, s: 0, l: 1 } }));
+  meshes.push(...tiled(group, 'understory', geo.trunk, mat.bark, understory,
+    { cast: true, tint: { h: 0.08, s: 0.24, l: 0.27 } }));
+  meshes.push(...tiled(group, 'understoryCrown', geo.lobe, mat.crown, understoryLobes,
+    { cast: true, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
+  meshes.push(...tiled(group, 'trunk', geo.trunk, mat.bark, trunks,
+    { cast: true, tint: { h: 0.08, s: 0.24, l: 0.27 } }));
   meshes.push(...tiled(group, 'crown', geo.lobe, mat.crown, lobes,
     { cast: true, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
-  meshes.push(...tiled(group, 'backTrunk', geo.trunk, mat.bark, backTrunks, { tile: 200 }));
+  meshes.push(...tiled(group, 'backTrunk', geo.trunk, mat.bark, backTrunks,
+    { tile: 200, tint: { h: 0.08, s: 0.24, l: 0.27 } }));
   meshes.push(...tiled(group, 'backCrown', geo.lobe, mat.crown, backLobes,
     { tile: 200, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
   meshes.push(...tiled(group, 'vine', geo.vine, mat.vine, vines, { far: UNDERGROWTH_FAR }));
-
-  // --- Undergrowth: ferns and broad-leaved plants, in patches, thinning out
-  // toward the path so it stays a path, and densest at the forest edge. They
-  // ask the layout what the ground IS: forest floor only — not the talus,
-  // not the muddy margins, not the trail — and they sink a little on slopes
-  // so no root ball hangs in the air.
-  const ferns = jittered(rnd, -PLAY_HALF_W - 10, PLAY_HALF_W + 10, SAND_END - 4, 156, 3.2, (x, z, r) =>
-    clearOfBuilt(x, z) && soilAt(x, z) === SOIL.FOREST
-    && r < forestDensity(x, z) * (0.2 + 0.7 * clump(x, z, 7.7)))
-    .map(([x, z]) => ({ x, y: terrainHeight(x, z) - 0.05 - terrainSlope(x, z) * 0.2, z,
-      s: 0.8 + rnd() * 0.9, ry: rnd() * 6.28, hue: (rnd() - 0.5) * 0.06, light: (rnd() - 0.5) * 0.1 }));
   meshes.push(...tiled(group, 'fern', geo.fern, mat.fern, ferns,
     { far: UNDERGROWTH_FAR, tint: { h: 0, s: 0, l: 1 } }));
-
-  const broads = jittered(rnd, -PLAY_HALF_W - 10, PLAY_HALF_W + 10, SAND_END - 2, 156, 4.6, (x, z, r) =>
-    clearOfBuilt(x, z) && soilAt(x, z) === SOIL.FOREST
-    && r < forestDensity(x, z) * (0.1 + 0.55 * clump(x, z, 2.9)))
-    .map(([x, z]) => ({ x, y: terrainHeight(x, z) - 0.05 - terrainSlope(x, z) * 0.2, z,
-      s: 0.9 + rnd() * 0.8, ry: rnd() * 6.28, hue: (rnd() - 0.5) * 0.05, light: (rnd() - 0.5) * 0.08 }));
+  meshes.push(...tiled(group, 'fernUp', geo.fernUp, mat.fernUp, fernsUp,
+    { far: UNDERGROWTH_FAR, tint: { h: 0, s: 0, l: 1 } }));
   meshes.push(...tiled(group, 'broad', geo.broad, mat.broad, broads,
     { far: UNDERGROWTH_FAR, tint: { h: 0, s: 0, l: 1 } }));
+  meshes.push(...tiled(group, 'monstera', geo.monstera, mat.monstera, monsteras,
+    { far: UNDERGROWTH_FAR, tint: { h: 0, s: 0, l: 1 } }));
+  meshes.push(...tiled(group, 'bush', geo.bush, mat.bush, bushes,
+    { cast: true, tint: { h: 0.29, s: 0.4, l: 0.2 } }));
+  meshes.push(...tiled(group, 'grass', geo.grass, mat.grass, grass,
+    { far: UNDERGROWTH_FAR, tint: { h: 0.26, s: 0.45, l: 0.3 } }));
 
-  // Distance culling of the undergrowth tiles, by tile centre.
+  // Distance culling of the undergrowth tiles, by tile centre — and the
+  // wind's clock, which is the only per-frame CPU the plants cost.
   const culled = meshes.filter(m => Number.isFinite(m.userData.far));
   let acc = 1;
   function update(camPos, dt) {
+    WIND.uWindTime.value += dt;
     acc += dt;
     if (acc < 0.25) return;
     acc = 0;
@@ -470,9 +791,24 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4 }) {
   }
 
   const counts = {
-    palms: palmTrunks.length, giants: trunks.length + backTrunks.length,
-    lobes: lobes.length + backLobes.length,
-    vines: vines.length, ferns: ferns.length, broads: broads.length, meshes: meshes.length,
+    palms: palmTrunks.length, saplings: saplings.length, understory: understory.length,
+    giants: trunks.length + backTrunks.length,
+    lobes: lobes.length + understoryLobes.length + backLobes.length,
+    vines: vines.length, ferns: fernsAll.length,
+    broads: broadsAll.length, bushes: bushes.length, grass: grass.length, meshes: meshes.length,
   };
-  return { group, colliders, update, counts };
+  // The scatter's raw positions, for the tests to hold the rules to.
+  const spots = {
+    palms: palmTrunks, saplings, understory, giants: trunks,
+    ferns: fernsAll, broads: broadsAll, bushes, grass,
+  };
+  return { group, colliders, update, counts, spots, wind: WIND };
 }
+
+
+
+
+
+
+
+
