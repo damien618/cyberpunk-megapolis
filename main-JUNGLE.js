@@ -10,9 +10,9 @@ import {
   POOL, FALLS, SAND_END, WADE_Z,
 } from './jungleLayout.js';   // no ?v: the element modules import it bare, and
                                   // two URLs would be two module instances
-import { buildJungleTerrain } from './jungleTerrain.js?v=20260927-terrain2';
+import { buildJungleTerrain } from './jungleTerrain.js?v=20260927-falls4';
 import { createJungleOcean } from './jungleOcean.js?v=20260927-ocean3';
-import { createJungleWaterfall } from './jungleWaterfall.js?v=20260927-terrain2';
+import { createJungleWaterfall } from './jungleWaterfall.js?v=20260927-falls8';
 import { buildJungleVegetation } from './jungleVegetation.js?v=20260927-terrain2';
 
 // ---------------------------------------------------------------------------

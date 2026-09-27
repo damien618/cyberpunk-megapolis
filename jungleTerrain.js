@@ -12,7 +12,7 @@ import * as THREE from 'three';
 import {
   terrainHeight, terrainMasks, shoreAt, pathDistance, PATH, PATH_LEN, PATH_HALF_W, SAND_END,
   cliffZ, CLIFF_FOOT, CLIFF_LIP, ridgeAt, streamDistance, STREAM_HALF_W, POOL,
-  FALLS, PLAY_HALF_W, smoothstep,
+  FALLS, FALLS_HALF_W, clearOfFalls, PLAY_HALF_W, smoothstep,
 } from './jungleLayout.js';
 
 const TERRAIN_X = [-240, 240];
@@ -291,10 +291,16 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
   const buckets = rockGeos.map(() => rockMats.map(() => []));
   const put = (x, y, z, s, squash = 0.8) => {
     const gi = Math.floor(rnd() * 3), mi = Math.floor(rnd() * 3);
-    buckets[gi][mi].push({
+    const it = {
       x, y, z, sx: s * (0.8 + rnd() * 0.5), sy: s * squash * (0.7 + rnd() * 0.6),
       sz: s * (0.8 + rnd() * 0.5), ry: rnd() * Math.PI * 2, rx: (rnd() - 0.5) * 0.4,
-    });
+    };
+    // Bounding radius of the jittered shell (vertices reach 0.5 × 1.28).
+    const r = Math.max(it.sx, it.sy, it.sz) * 0.64;
+    // Nothing through or in front of the falling sheet. The draw from rnd()
+    // is spent either way, so dropping a rock does not reshuffle the rest.
+    if (!clearOfFalls(x, y, z, r)) return;
+    buckets[gi][mi].push(it);
   };
   // The cliff face: stacked boulders from the foot to the lip, leaving the
   // falls' own slot clear.
@@ -306,11 +312,35 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
       put(x + (rnd() - 0.5) * 2, terrainHeight(x, z) - 1.5, z, 4 + rnd() * 5, 1.1);
     }
   }
-  // Framing the falls: two big shoulders either side of the slot.
+  // Framing the falls: two big shoulders either side of the slot, stood
+  // just outside the sheet's spread at its foot so they frame it rather
+  // than swallow its edges.
   for (const s of [-1, 1]) {
-    const x = FALLS.x + s * (FALLS.width * 0.5 + 2.2);
+    const x = FALLS.x + s * (FALLS_HALF_W + 4.6);
     for (let y = POOL.waterY - 1; y < FALLS.topY; y += 4.5)
       put(x + (rnd() - 0.5), y, cliffZ(x) + 0.5 + rnd(), 4.5 + rnd() * 2, 1.0);
+  }
+  // Behind the curtain: smaller boulders set into the face, seen through the
+  // water. Without them clearing the sheet's path left a bare, striped wall.
+  // Each one is centred on the face (bisected from the analytic ground) and
+  // clearOfFalls drops any that would reach the sheet.
+  const faceZ = (x, y) => {
+    let lo = FALLS.z - 8, hi = FALLS.z + 1;
+    for (let i = 0; i < 16; i++) {
+      const m = (lo + hi) / 2;
+      if (terrainHeight(x, m) > y) hi = m; else lo = m;
+    }
+    return (lo + hi) / 2;
+  };
+  // Sunk well into the wall so only their caps show — a rock surface, not a
+  // grid of pebbles — and staggered row to row.
+  let row = 0;
+  for (let y = POOL.waterY + 0.6; y < FALLS.topY - 1; y += 2.4, row++) {
+    for (let dx = -FALLS_HALF_W - 1.5 + (row % 2) * 1.4; dx <= FALLS_HALF_W + 1.5; dx += 2.8) {
+      const x = FALLS.x + dx + (rnd() - 0.5) * 1.2;
+      const size = 2.4 + rnd() * 1.4;
+      put(x, y + (rnd() - 0.5) * 0.8, faceZ(x, y) + size * 0.55, size, 0.85);
+    }
   }
   // Headlands and ridge shoulders.
   for (let i = 0; i < 160; i++) {

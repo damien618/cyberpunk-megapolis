@@ -32,6 +32,35 @@ le monde consomme — maillage, végétation, tests), `jungleTerrain.js`
 `jungleOcean.js`, `jungleWaterfall.js`, `jungleVegetation.js`. Tests :
 `tests/jungle_layout.py`, `tests/jungle_walk.py`, `tests/cruise_island_prompt.py`.
 
+Cascade raffinée (toujours l'anse) : le rideau d'eau tombe en chute libre,
+dégagé de la paroi, sur une trajectoire définie une seule fois dans le layout
+(`fallsSheetZ`) — les rochers de la falaise s'en écartent (`clearOfFalls`) et
+seuls ceux entièrement derrière lui restent, visibles à travers l'eau — et se
+dessine en cordes : gros cordon blanc opaque au centre,
+voiles fins sur les bords, aération croissante vers le pied. Un filet d'eau
+amont naît dans le lit de la alcôve derrière la lèvre (fin de fondu amont,
+donc l'eau « arrive » au lieu d'apparaître). Au pied : écume en dôme qui
+brande (déplacement vertex) avec anneaux déchiquetés filant vers l'extérieur,
+plus ~90 gouttelettes balistiques pilotées dans le vertex shader. Brume
+paramétrable (alpha + nombre actif via draw range, taille de sprite plafonnée
+pour l'overdraw). Le bassin et le ruisseau sont la même eau douce : même
+matériau éclairé, même rampe vert d'eau (`freshShallow`/`freshDeep`), et
+chacun connaît le lit réel sous chaque sommet (chenal de sortie compris), si
+bien que l'eau s'arrête sur les berges et que le bassin se déverse dans le
+ruisseau sans couture. Des anneaux partent de l'impact, et un courant visible
+glisse vers l'exutoire puis descend le ruisseau au même rythme. Le module est réutilisable à l'échelle de
+l'île comme l'océan : `createJungleWaterfall({ scene, waterNormal, preset,
+spec })` prend un `preset` sur `CASCADE_PRESET` (flow, foam, splash, mist,
+ripples, couleurs) et une `spec` de géométrie (lèvre, dénivelé, largeur) —
+une autre cascade ou une rivière des villages sera une autre spec/preset, pas
+une copie. Aucune passe de rendu en plus, aucun CPU par particule ;
+`update(t)` ne pose que des uniforms. Le son est préparé, pas implémenté :
+`falls.audioAnchor` (Object3D à l'impact) attend un `PositionalAudio` (recette
+dans l'en-tête de `jungleWaterfall.js`, pattern `main-CRUISE.js`). Tests :
+`tests/jungle_waterfall.py` (+ `.mjs`) — le rideau ne passe ni dans le sol
+ni derrière un rocher, le filet amont suit le lit, le preset atteint les
+uniforms.
+
 Océan raffiné (toujours l'anse) : houle de Gerstner modérée qui se lève puis
 meurt sur les hauts-fonds d'après la profondeur réelle d'eau — le lit est lu
 dans le shader via `SEA_BED_GLSL` (jumeau shader des fonctions du layout),

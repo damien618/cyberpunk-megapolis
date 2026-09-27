@@ -309,7 +309,9 @@ function uncutHeight(x, z) {
 const STREAM_STEP = 0.5;
 const STREAM_BED = (() => {
   const bed = [];
-  let lo = POOL.waterY - 0.55;
+  // Starts a hand below the pool's surface, so the stream leaves at the
+  // pool's own level instead of a step down.
+  let lo = POOL.waterY - 0.45;
   for (let z = STREAM_Z0; z > SHORE_Z - 30; z -= STREAM_STEP) {
     lo = Math.min(lo, uncutHeight(streamX(z), z) - 0.85);
     bed.push(lo);
@@ -351,10 +353,39 @@ export function terrainHeight(x, z) {
   return y;
 }
 
+// ---------------------------------------------------------------------------
+// The falling sheet's trajectory — ONE model, read by the sheet that draws it
+// (jungleWaterfall) and by the rocks that must stay out of its way
+// (jungleTerrain). The sheet leaves the ground at the lip a hand's depth
+// deep and free-falls: it does not hug the wall. Water off a lip this height
+// leaps clear of a concave face, and a sheet drawn 6 cm off the terrain
+// passed BEHIND the boulders stacked on that face and vanished into them.
+// ---------------------------------------------------------------------------
+export const FALLS_LAUNCH = 2.3;     // m/s off the lip: how far the sheet arcs out
+export const FALLS_LIP_Y = terrainHeight(FALLS.x, FALLS.z) + 0.12;
+// Half width at the foot: the sheet spreads 35 % as it falls.
+export const FALLS_HALF_W = FALLS.width * 0.5 * 1.35;
+export function fallsSheetZ(y) {
+  const drop = Math.max(FALLS_LIP_Y - y, 0);
+  return FALLS.z - 0.2 - FALLS_LAUNCH * Math.sqrt(2 * drop / 9.8);
+}
+// Does a boulder (centre, bounding radius) keep clear of the sheet — neither
+// through it nor in front of it? Rocks wholly BEHIND the curtain are fine:
+// they show through it, as rock behind falling water does.
+export function clearOfFalls(x, y, z, r) {
+  if (Math.abs(x - FALLS.x) - r > FALLS_HALF_W + 0.4) return true;
+  if (y - r > FALLS_LIP_Y + 0.6 || y + r < POOL.waterY - 0.4) return true;
+  // The sheet's backmost point within the rock's height span is at its top.
+  const top = Math.min(y + r, FALLS_LIP_Y);
+  const back = top > FALLS_LIP_Y - 0.4 ? FALLS.z + 0.8 : fallsSheetZ(top);
+  // +0.6: the sheet's edges hang back that far behind its centreline.
+  return z - r > back + 0.9;
+}
+
 // Height of the stream's water surface: a steady depth over a bed that only
 // ever falls, capped by the pool it leaves and floored by the sea.
 export function streamWaterY(z) {
-  return Math.max(SEA_Y + 0.04, Math.min(POOL.waterY - 0.12, streamBedAt(z) + 0.4));
+  return Math.max(SEA_Y + 0.04, Math.min(POOL.waterY - 0.04, streamBedAt(z) + 0.4));
 }
 
 // The ocean's shader twin of shoreAt() and the sea-bed branch of
