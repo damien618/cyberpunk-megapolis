@@ -10,10 +10,10 @@ import {
   POOL, FALLS, SAND_END, WADE_Z,
 } from './jungleLayout.js';   // no ?v: the element modules import it bare, and
                                   // two URLs would be two module instances
-import { buildJungleTerrain } from './jungleTerrain.js?v=20260927-skeleton';
+import { buildJungleTerrain } from './jungleTerrain.js?v=20260927-terrain2';
 import { createJungleOcean } from './jungleOcean.js?v=20260927-skeleton';
-import { createJungleWaterfall } from './jungleWaterfall.js?v=20260927-skeleton';
-import { buildJungleVegetation } from './jungleVegetation.js?v=20260927-skeleton';
+import { createJungleWaterfall } from './jungleWaterfall.js?v=20260927-terrain2';
+import { buildJungleVegetation } from './jungleVegetation.js?v=20260927-terrain2';
 
 // ---------------------------------------------------------------------------
 // Promenade tropicale — la cascade. SKELETON.

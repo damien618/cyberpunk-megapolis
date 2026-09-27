@@ -19,15 +19,18 @@ peint sous le lustre. Pour revenir à bord, reprendre l’escalier ou la sortie
 « Atrium · Cabines » à l’entrée de la galerie. Sources et licences :
 [crédits de la galerie](textures/cruise-monet/CREDITS.md).
 
-Nouveau paysage : Promenade tropicale — la cascade, par Opus 5 (squelette).
+Nouveau paysage : Promenade tropicale — la cascade, par Opus 5.
 C'est l'île que longe le paquebot : sur le pont, regardez-la un instant et le
 bord propose « Débarquer dans la forêt tropicale ? ». La chaloupe vous dépose
 au ponton d'une anse; un sentier monte à travers la forêt jusqu'à une cascade
 qui tombe dans un bassin. Pour rentrer, retournez au bout du ponton. Code :
 `main-JUNGLE.js` (coquille) et un module par élément — `jungleLayout.js`
-(plan, fonctions pures), `jungleTerrain.js`, `jungleOcean.js`,
-`jungleWaterfall.js`, `jungleVegetation.js`. Tests : `tests/jungle_layout.py`,
-`tests/jungle_walk.py`, `tests/cruise_island_prompt.py`.
+(plan, fonctions pures : relief, rivage, plage, falaise, bassin, sentier, et
+l'API du sol `terrainSlope`/`terrainNormal`/`terrainMasks`/`soilAt` que tout
+le monde consomme — maillage, végétation, tests), `jungleTerrain.js`
+(matériau procédural : peinture par masques + micro-détail shader),
+`jungleOcean.js`, `jungleWaterfall.js`, `jungleVegetation.js`. Tests :
+`tests/jungle_layout.py`, `tests/jungle_walk.py`, `tests/cruise_island_prompt.py`.
 
 
 

@@ -47,11 +47,17 @@ export const FALLS = { x: 22, z: CLIFF_Z + 2.5, topY: CLIFF_TOP, width: 7 };
 export const JETTY = { x: -40, z0: -6, z1: -34, halfW: 1.6, deckY: 0.85 };
 
 // ---------------------------------------------------------------------------
-// Shoreline. The cove bows inland in the middle; the foam and the wet band
-// read signed distance from this, never height (see the beach's note).
+// Shoreline. The cove bows inland in the middle, and no two stretches of it
+// repeat: a slow asymmetry between the horns, a mid-scale wiggle and the old
+// fine line ride on the bow. The foam and the wet band read signed distance
+// from this curve, never height (see the beach's note), and the layout tests
+// hold its range so the water at the wade barrier stays wadeable.
 // ---------------------------------------------------------------------------
 export function shoreAt(x) {
-  return SHORE_Z + COVE_BOW * Math.cos(clamp(x / 120, -1, 1) * Math.PI / 2)
+  return SHORE_Z
+    + COVE_BOW * Math.cos(clamp(x / 120, -1, 1) * Math.PI / 2)
+    + Math.sin(x * 0.011 + 4.2) * 1.3
+    + Math.sin(x * 0.032 + 0.6) * 0.9
     + Math.sin(x * 0.041) * 1.2;
 }
 
@@ -89,19 +95,38 @@ export const PATH_LEN = (() => {
   return L;
 })();
 
-// Distance from (x, z) to the path polyline. A bounding test first, because
-// the terrain asks this for ~40 000 vertices and most are nowhere near it.
-export function pathDistance(x, z) {
-  if (z < -20 || z > 145 || x < -40 || x > 30) return 99;
-  let best = 1e9;
+// Distance from (x, z) to the path polyline, plus the arc length of the
+// nearest point (the ribbon's UVs need it, and so does the corridor carve),
+// and — in the shared scratch — the nearest segment and its parameter, so
+// the corridor can interpolate the trail's own profile without a second
+// scan. A bounding test first, because the terrain asks this for ~40 000
+// vertices and most are nowhere near it. pathDistance wraps it without
+// allocating.
+export function pathFrame(x, z, out) {
+  if (z < -20 || z > 145 || x < -40 || x > 30) {
+    if (out) { out.d = 99; out.s = 0; out.i = 0; out.t = 0; return out; }
+    return { d: 99, s: 0 };
+  }
+  let best = 1e9, bestS = 0, bestI = 0, bestT = 0;
   for (let i = 0; i < PATH.length - 1; i++) {
     const [ax, az] = PATH[i], [bx, bz] = PATH[i + 1];
     const dx = bx - ax, dz = bz - az;
     const t = clamp(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz), 0, 1);
     const d = Math.hypot(x - ax - dx * t, z - az - dz * t);
-    if (d < best) best = d;
+    if (d < best) {
+      best = d; bestS = PATH_LEN[i] + (PATH_LEN[i + 1] - PATH_LEN[i]) * t;
+      bestI = i; bestT = t;
+    }
   }
-  return best;
+  if (out) {
+    out.d = best; out.s = bestS; out.i = bestI; out.t = bestT;
+    return out;
+  }
+  return { d: best, s: bestS };
+}
+const _pf = { d: 0, s: 0, i: 0, t: 0 };
+export function pathDistance(x, z) {
+  return pathFrame(x, z, _pf).d;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +147,8 @@ export function streamDistance(x, z) {
 // Terrain.
 // ---------------------------------------------------------------------------
 // The forest floor's mean slope: SAND_TOP at the edge of the beach up to the
-// foot of the cliff. About 7 %, which the path can take head-on.
+// foot of the cliff. About 7 %, which the path can take head-on. The hills
+// below ride on it; the path profile flattens its own corridor later.
 function forestBase(z) {
   return SAND_TOP + (Math.max(z, SAND_END) - SAND_END) / (CLIFF_Z - SAND_END) * 9.5;
 }
@@ -137,6 +163,10 @@ export function cliffZ(x) {
 // The face runs from cliffZ - CLIFF_FOOT to cliffZ + CLIFF_LIP.
 export const CLIFF_FOOT = 1.5, CLIFF_LIP = 2.5;
 
+// Where the falls actually land: just off the cliff's foot, which the layout
+// pins over the pool's back half. The plunge pool scoops deepest here.
+export const POOL_IMPACT = { x: FALLS.x, z: cliffZ(FALLS.x) - CLIFF_FOOT };
+
 // 0 in the valley, 1 up on the side ridges.
 export function ridgeAt(x) {
   return smoothstep(Math.abs(x), RIDGE_X, RIDGE_X + 36);
@@ -147,6 +177,42 @@ export function ridgeAt(x) {
 function floorNoise(x, z) {
   return Math.sin(x * 0.11 + z * 0.03) * 0.7 + Math.cos(z * 0.13 - x * 0.05) * 0.55
     + Math.sin((x + z) * 0.27) * 0.18;
+}
+
+// Broad, soft hills under the forest — the eye reads them as a ground swell,
+// not as bumps: wavelengths 55–140 m, so the mesh's 2.5 m cells resolve them
+// with room to spare, and the same damps as the fine noise keep the path,
+// the stream and the beach free of them.
+function hillNoise(x, z) {
+  return Math.sin(x * 0.045 + 1.7) * Math.cos(z * 0.052 - 0.4) * 2.2
+    + Math.sin(x * 0.083 - z * 0.061 + 2.9) * 1.1
+    + Math.sin((x * 0.5 + z) * 0.11 + 0.8) * 0.7;
+}
+
+// ---------------------------------------------------------------------------
+// The trail's own corridor. A real path is a line of consistent grade cut
+// slightly below the ground around it, with the spoil heaped at its edges.
+// The profile is forestBase sampled along PATH — the hills are already
+// damped off the tread, so the profile IS the trail's grade — and the
+// corridor blends the terrain toward it: a hand's width of cut at the
+// centre, low spoil berms just outside the tread, both fading by
+// PATH_CARVE_W and fading in over the first metres of forest.
+// ---------------------------------------------------------------------------
+const PATH_CARVE_W = PATH_HALF_W + 2.1;   // corridor half width
+const PATH_CUT = 0.12;                    // tread below grade
+const PATH_BERM = 0.16;                   // spoil heap height
+const PATH_BERM_AT = PATH_HALF_W + 0.7;   // where the spoil sits
+const PATH_PROFILE = PATH.map(([, z]) => forestBase(z));
+
+function pathCorridor(x, z, y, pf) {
+  if (pf.d >= PATH_CARVE_W) return y;
+  const a = PATH_PROFILE[pf.i], b = PATH_PROFILE[pf.i + 1];
+  const bank = a + (b - a) * pf.t;
+  const tread = 1 - smoothstep(pf.d, 0, PATH_CARVE_W);
+  const fade = smoothstep(z, SAND_END, SAND_END + 3);
+  const cut = PATH_CUT * Math.exp(-(pf.d * pf.d) / (PATH_HALF_W * PATH_HALF_W));
+  const berm = PATH_BERM * Math.exp(-((pf.d - PATH_BERM_AT) ** 2) / 0.8);
+  return y + (bank - y) * tread + (berm - cut) * tread * fade;
 }
 
 // Everything except the two cuts (stream bed, pool bowl). Split out because
@@ -160,26 +226,64 @@ function uncutHeight(x, z) {
     y = SEA_Y - (d * 0.034 + (d / 40) ** 2 * 1.9);
     if (d > 60) y -= (d - 60) * 0.12;
   } else if (z < SAND_END) {
-    // Beach, concave like a real one.
+    // Beach: a near-flat swash shelf at the waterline, then a gentle concave
+    // rise — the profile water actually lays down — with low cusps scalloping
+    // along it, faded at both ends so the jetty root and the forest edge keep
+    // their heights.
     const t = (z - shore) / (SAND_END - shore);
-    y = SEA_Y + SAND_TOP * (t * t * 0.5 + t * 0.5);
+    const SWASH = 0.18;
+    const shelf = SWASH * SAND_TOP;
+    if (t < SWASH) {
+      y = SEA_Y + shelf * smoothstep(t / SWASH, 0, 1);
+    } else {
+      const u = (t - SWASH) / (1 - SWASH);
+      y = SEA_Y + shelf + (SAND_TOP - shelf) * (u * u * 0.5 + u * 0.5);
+    }
+    // Cusps scalloping along the beach — calmed around the jetty root so the
+    // step off the planks stays under the controller's STEP_H.
+    const calm = smoothstep(Math.abs(x - JETTY.x), 3, 9);
+    y += Math.sin(x * 0.16 + Math.cos(x * 0.021) * 1.7) * 0.14 * t * (1 - t) * 4 * calm;
   } else {
     y = forestBase(z);
+    const pf = pathFrame(x, z, _pf);
     const damp = smoothstep(z, SAND_END, SAND_END + 14)
-      * smoothstep(pathDistance(x, z), PATH_HALF_W + 0.5, PATH_HALF_W + 6)
+      * smoothstep(pf.d, PATH_HALF_W + 0.5, PATH_HALF_W + 6)
       * smoothstep(streamDistance(x, z), STREAM_HALF_W + 1, STREAM_HALF_W + 6);
-    y += floorNoise(x, z) * damp;
+    y += (hillNoise(x, z) + floorNoise(x, z)) * damp;
+    y = pathCorridor(x, z, y, pf);
   }
 
-  // Cliff and plateau. Steep enough that nothing reads it as a hill, and
-  // backed by invisible walls because the ground probe cannot climb it.
+  // Cliff and plateau. The face is a short concave ramp so nothing reads it
+  // as a hill; a lumpy talus of scree spills from its foot; and behind the
+  // falls the lip is notched into an alcove the sheet pours out of. Steep
+  // enough that the ground probe cannot climb it, and backed by invisible
+  // walls either way.
   const cz = cliffZ(x);
-  const up = smoothstep(z, cz - CLIFF_FOOT, cz + CLIFF_LIP);
+  const w = z - cz;
+  // Scree at the foot, fading out around the falls' own slot so the pool's
+  // cliff-side rim stays clean rock.
+  if (w < -0.5) {
+    const apron = smoothstep(w, -5.5, -2.5) * (1 - smoothstep(w, -2.5, -1));
+    if (apron > 0) {
+      const slot = smoothstep(Math.abs(x - POOL.x), FALLS.width * 0.5 + 1, FALLS.width * 0.5 + 5);
+      y += apron * slot * (1.1 + 0.5 * Math.sin(x * 0.31) + 0.4 * Math.sin(x * 0.17 + 2.0));
+    }
+  }
+  const up = smoothstep(w, -CLIFF_FOOT, CLIFF_LIP);
   if (up > 0) {
-    const plateau = CLIFF_TOP + Math.max(0, z - cz - 20) * 0.35
-      + Math.sin(x * 0.02) * 6 * smoothstep(z, cz + 20, cz + 80)
+    const plateau = CLIFF_TOP + Math.max(0, w - 20) * 0.35
+      + Math.sin(x * 0.02) * 6 * smoothstep(w, 20, 80)
       + 90 * Math.exp(-(((x + 60) / 120) ** 2) - (((z - 380) / 110) ** 2));
-    y = lerp(y, plateau, up);
+    // Concave face: slow off the talus, steep under the lip.
+    const face = Math.pow(up, 1.3);
+    // The notch the falls pour through: the lip and the channel behind it
+    // are lowered TOGETHER, so the bed is level up to the edge. A hollow
+    // just behind the lip (the first version, 2.2 m deep at w = 5) left the
+    // lip standing a metre above its own channel — water would have had to
+    // climb out of the dip to fall.
+    const alcove = (1 - smoothstep(Math.abs(x - FALLS.x), 2.5, 6))
+      * smoothstep(w, 0.5, CLIFF_LIP) * 0.6;
+    y = lerp(y, plateau - alcove, face);
   }
 
   // Side ridges close the valley, and run on into the sea as headlands.
@@ -234,10 +338,13 @@ export function terrainHeight(x, z) {
     }
   }
 
-  // Plunge pool, cut last so nothing above fills it in again.
+  // Plunge pool, cut last so nothing above fills it in again. The bowl is
+  // scooped deepest where the falls land and shallows toward the stream
+  // outlet, the way a real plunge pool wears itself.
   const pr = Math.hypot(x - POOL.x, z - POOL.z);
   if (pr < POOL.r + 2) {
-    const floor = POOL.waterY - POOL.depth;
+    const scoop = 0.9 * (1 - smoothstep(Math.hypot(x - POOL_IMPACT.x, z - POOL_IMPACT.z), 0, 5.5));
+    const floor = POOL.waterY - POOL.depth - scoop;
     const bowl = lerp(floor, POOL.waterY + 0.9, smoothstep(pr, POOL.r * 0.55, POOL.r + 2));
     y = Math.min(y, bowl);
   }
@@ -248,6 +355,100 @@ export function terrainHeight(x, z) {
 // ever falls, capped by the pool it leaves and floored by the sea.
 export function streamWaterY(z) {
   return Math.max(SEA_Y + 0.04, Math.min(POOL.waterY - 0.12, streamBedAt(z) + 0.4));
+}
+
+// ---------------------------------------------------------------------------
+// Ground queries: slope, normal, surface masks, soil type.
+// ---------------------------------------------------------------------------
+// One model of "what the ground is here" that the mesh's colours, the
+// vegetation's scatter and later the agents all read, so what you see and
+// what the game obeys cannot drift apart. Pure numbers — no THREE — so the
+// layout tests can hold them to it under plain node.
+const GROUND_STEP = 1;    // matches how the mesh estimates its own slope
+
+// Tangent of the inclination (0 flat, 1 = 45°).
+export function terrainSlope(x, z) {
+  const e = GROUND_STEP;
+  const dx = (terrainHeight(x + e, z) - terrainHeight(x - e, z)) / (2 * e);
+  const dz = (terrainHeight(x, z + e) - terrainHeight(x, z - e)) / (2 * e);
+  return Math.hypot(dx, dz);
+}
+
+// Unit surface normal, a plain {x, y, z} to keep the layout THREE-free.
+export function terrainNormal(x, z) {
+  const e = GROUND_STEP;
+  const dx = (terrainHeight(x + e, z) - terrainHeight(x - e, z)) / (2 * e);
+  const dz = (terrainHeight(x, z + e) - terrainHeight(x, z - e)) / (2 * e);
+  const l = Math.hypot(dx, 1, dz);
+  return { x: -dx / l, y: 1 / l, z: -dz / l };
+}
+
+// Standing mottle of the forest floor — which patches wear litter and which
+// grow moss. The mesh paints by it; anything wanting the same patchwork
+// asks for it instead of re-inventing one.
+export function forestMottle(x, z) {
+  return 0.5 + 0.5 * Math.sin(x * 0.21 + Math.cos(z * 0.17) * 2.3);
+}
+
+// Continuous surface masks, 0..1 each. The base surfaces are near-exclusive —
+// seabed | sand | forest floor (litter + moss) | rock — with the path's dirt
+// carved out of the floor, and `wet` overlays moisture on any of them.
+// `pre` may carry { h, slope } the caller has already paid for (the mesh's
+// vertex loop does).
+export function terrainMasks(x, z, pre) {
+  const h = pre && pre.h !== undefined ? pre.h : terrainHeight(x, z);
+  const slope = pre && pre.slope !== undefined ? pre.slope : terrainSlope(x, z);
+  const d = z - shoreAt(x);
+  const dry = d < 0 ? 0 : 1;                    // hard split at the waterline
+
+  // The forest floor takes the land over at the head of the beach.
+  const forest = smoothstep(z, SAND_END - 6, SAND_END + 10);
+
+  // Rock wherever the ground is steep: the cliff face, the ridges' shoulders.
+  const rock = smoothstep(slope, 0.55, 1.1) * dry;
+
+  // Path dirt, cut into the forest floor only — on the sand the ribbon and
+  // the footprints do the telling.
+  const pf = pathFrame(x, z, _pf);
+  const dirt = (1 - smoothstep(pf.d, PATH_HALF_W - 0.2, PATH_HALF_W + 1.6)) * forest * (1 - rock);
+
+  // Moisture: the swash line on the beach, the stream banks and the pool rim
+  // in the forest.
+  const beachWet = d >= 0 ? 1 - smoothstep(d, 1.5, 6) : 1;
+  const margins = Math.max(
+    1 - smoothstep(streamDistance(x, z), STREAM_HALF_W, STREAM_HALF_W + 2.5),
+    1 - smoothstep(Math.hypot(x - POOL.x, z - POOL.z), POOL.r, POOL.r + 3),
+  ) * forest;
+  const wet = Math.max(beachWet * dry, margins);
+
+  const floor = forest * (1 - rock) * (1 - dirt);
+  const mottle = forestMottle(x, z) * 0.7;      // as the mesh mixes it
+  return {
+    seabed: 1 - dry,
+    sand: dry * (1 - forest) * (1 - rock),
+    litter: floor * (1 - mottle),
+    moss: floor * mottle,
+    rock, dirt, wet,
+  };
+}
+
+// The soil types soilAt reports.
+export const SOIL = { SHALLOW: 0, WET: 1, SAND: 2, DIRT: 3, FOREST: 4, ROCK: 5 };
+
+// What the ground IS at (x, z). Placement, footfall and outfit decisions ask
+// this instead of re-deriving their own idea of the ground.
+export function soilAt(x, z, pre) {
+  const m = terrainMasks(x, z, pre);
+  if (m.seabed > 0.5) return SOIL.SHALLOW;
+  const h = pre && pre.h !== undefined ? pre.h : terrainHeight(x, z);
+  // Standing water: the pool bowl and the stream channel.
+  if (Math.hypot(x - POOL.x, z - POOL.z) < POOL.r - 0.5 && h < POOL.waterY + 0.05) return SOIL.SHALLOW;
+  if (streamDistance(x, z) < STREAM_HALF_W && h < streamWaterY(z) + 0.05) return SOIL.SHALLOW;
+  if (m.rock > 0.5) return SOIL.ROCK;
+  if (m.dirt > 0.5) return SOIL.DIRT;
+  if (m.wet > 0.5) return SOIL.WET;
+  if (m.litter + m.moss > 0.5) return SOIL.FOREST;
+  return SOIL.SAND;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,7 @@
 // jungleTerrain.js — the ground of the tropical cove: one heightfield mesh
-// painted with vertex colours, the promenade path laid on it as a ribbon, and
+// painted from the layout's surface masks (the same masks soilAt reads, so
+// the paint and the logic cannot disagree), a procedural detail texture the
+// shader picks per surface, the promenade path laid on it as a ribbon, and
 // faceted rocks dressing the cliff, the headlands and the beach.
 //
 // Heights come from jungleLayout.js and nowhere else. The ground probe in
@@ -8,7 +10,7 @@
 // on `world`, and never enters the collision world.
 import * as THREE from 'three';
 import {
-  terrainHeight, shoreAt, pathDistance, PATH, PATH_LEN, PATH_HALF_W, SAND_END,
+  terrainHeight, terrainMasks, shoreAt, pathDistance, PATH, PATH_LEN, PATH_HALF_W, SAND_END,
   cliffZ, CLIFF_FOOT, CLIFF_LIP, ridgeAt, streamDistance, STREAM_HALF_W, POOL,
   FALLS, PLAY_HALF_W, smoothstep,
 } from './jungleLayout.js';
@@ -61,6 +63,62 @@ function makeGrainTexture(maxAniso) {
   return t;
 }
 
+// A detail texture: four procedural channels in one 512² RGBA tile —
+// R undergrowth speckle, G rock striation, B sand ripples, A broad macro
+// blotches — all generated, nothing loaded, all tileable (the fbm blends
+// four shifted samples by bilinear weights so the result wraps).
+function makeDetailTexture(maxAniso) {
+  const S = 512;
+  const c = Object.assign(document.createElement('canvas'), { width: S, height: S });
+  const g = c.getContext('2d');
+  const img = g.createImageData(S, S);
+  const hash = (x, y) => {
+    const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+    return s - Math.floor(s);
+  };
+  const vnoise = (x, y) => {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    return hash(xi, yi) * (1 - u) * (1 - v) + hash(xi + 1, yi) * u * (1 - v)
+      + hash(xi, yi + 1) * (1 - u) * v + hash(xi + 1, yi + 1) * u * v;
+  };
+  const oct = (x, y, n) => {
+    let a = 0.5, s = 0;
+    for (let o = 0; o < n; o++) { s += a * vnoise(x, y); x *= 2.03; y *= 2.11; a *= 0.5; }
+    return s;
+  };
+  // fbm made periodic over the whole tile.
+  const fbm4 = (x, y, n) => {
+    const fx = x / S, fy = y / S;
+    return (oct(x, y, n) * (1 - fx) * (1 - fy) + oct(x - S, y, n) * fx * (1 - fy)
+      + oct(x, y - S, n) * (1 - fx) * fy + oct(x - S, y - S, n) * fx * fy);
+  };
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const i = (y * S + x) * 4;
+      const macro = fbm4(x, y, 3);
+      // R: clustered dark speckle the litter layer breaks up with.
+      const speck = hash(x * 3.7 + 0.5, y * 3.1 + 1.5);
+      img.data[i] = 255 * (speck < 0.16 + macro * 0.3 ? 0.25 + speck * 2 : 0.85 + 0.15 * speck);
+      // G and B: bands and ripples, warped by an edge-windowed field so the
+      // tile still wraps.
+      const win = Math.sin(Math.PI * x / S) * Math.sin(Math.PI * y / S);
+      const warp = (fbm4(x, y, 3) - 0.5) * 2 * win;
+      img.data[i + 1] = 255 * (0.5 + 0.5 * Math.sin((y / S) * Math.PI * 2 * 9 + warp * 5));
+      img.data[i + 2] = 255 * (0.5 + 0.5 * Math.sin(((x + y) * 0.71 / S) * Math.PI * 2 * 6 + warp * 6));
+      // A: broad blotches for macro variation.
+      img.data[i + 3] = 255 * macro;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.NoColorSpace;
+  t.anisotropy = maxAniso;
+  return t;
+}
+
 // Irregular, flat-shaded boulders — the beach's recipe: jitter hashed off the
 // vertex POSITION (the geometry is non-indexed), squashed so they sit.
 function makeRockGeo(salt) {
@@ -79,33 +137,32 @@ function makeRockGeo(salt) {
   return g;
 }
 
-function terrainColor(x, z, h, slope, out) {
-  const shore = shoreAt(x);
-  const d = z - shore;
-  if (d < 0) {
-    out.copy(C.seabed).lerp(C.wetSand, smoothstep(d, -4, 0) * 0.6);
-  } else {
-    out.copy(C.sand).lerp(C.wetSand, 1 - smoothstep(d, 1.5, 6));
+// The paint, from the layout's surface masks — the very masks soilAt reads,
+// so what the ground looks like and what the game says it is cannot drift
+// apart. `maskOut` (a 4-slot scratch) receives the weights the shader needs:
+// forest floor, rock, path dirt, wet.
+function terrainPaint(x, z, h, slope, out, maskOut) {
+  const m = terrainMasks(x, z, { h, slope });
+  let r = 0, g = 0, b = 0;
+  const add = (col, k) => { r += col.r * k; g += col.g * k; b += col.b * k; };
+  add(C.seabed, m.seabed);
+  add(C.sand, m.sand);
+  add(C.litter, m.litter);
+  add(C.moss, m.moss);
+  // Rock picks its tone by altitude: pale strata high, damp dark low.
+  add(h > 20 ? C.rock : C.darkRock, m.rock);
+  // Bare dirt on the path, under the ribbon, mostly replacing the floor.
+  add(C.dirt, m.dirt * 0.85);
+  out.setRGB(r, g, b);
+  // Wet overlay: mud on the forest floor, darker wet sand on the beach.
+  const floorW = m.litter + m.moss;
+  if (m.wet > 0) {
+    _c.copy(floorW > m.sand ? C.darkRock : C.wetSand);
+    out.lerp(_c, m.wet * (floorW > m.sand ? 0.55 : 0.9));
   }
-  // Sand gives way to leaf litter over the forest edge, mottled with moss.
-  const forest = smoothstep(z, SAND_END - 6, SAND_END + 10);
-  if (forest > 0) {
-    const mottle = 0.5 + 0.5 * Math.sin(x * 0.21 + Math.cos(z * 0.17) * 2.3);
-    _c.copy(C.litter).lerp(C.moss, mottle * 0.7);
-    out.lerp(_c, forest);
-  }
-  // Wet margins: the stream banks and the pool's rim.
-  const wet = Math.max(
-    1 - smoothstep(streamDistance(x, z), STREAM_HALF_W, STREAM_HALF_W + 2.5),
-    1 - smoothstep(Math.hypot(x - POOL.x, z - POOL.z), POOL.r, POOL.r + 3),
-  ) * forest;
-  if (wet > 0) out.lerp(C.darkRock, wet * 0.55);
-  // Bare dirt on the path, under the ribbon, so its edges blend.
-  const p = 1 - smoothstep(pathDistance(x, z), PATH_HALF_W - 0.2, PATH_HALF_W + 1.6);
-  if (p > 0) out.lerp(C.dirt, p * 0.8 * forest);
-  // Rock wherever the ground is steep: the cliff, the ridges' shoulders.
-  const rock = smoothstep(slope, 0.55, 1.1);
-  if (rock > 0) out.lerp(h > 20 ? C.rock : C.darkRock, rock);
+  // Shallow water reads sandy through its film.
+  if (m.seabed > 0) out.lerp(C.wetSand, smoothstep(z - shoreAt(x), -4, 0) * 0.6);
+  maskOut[0] = floorW; maskOut[1] = m.rock; maskOut[2] = m.dirt; maskOut[3] = m.wet;
   return out;
 }
 const _c = new THREE.Color();
@@ -157,29 +214,67 @@ function buildPathRibbon(grain) {
 
 export function buildJungleTerrain({ scene, addInstanced, rnd, maxAniso = 4 }) {
   const grain = makeGrainTexture(maxAniso);
+  const detail = makeDetailTexture(maxAniso);
   const w = TERRAIN_X[1] - TERRAIN_X[0], d = TERRAIN_Z[1] - TERRAIN_Z[0];
   const geo = new THREE.PlaneGeometry(w, d, Math.round(w / CELL), Math.round(d / CELL));
   geo.rotateX(-Math.PI / 2);
   geo.translate((TERRAIN_X[0] + TERRAIN_X[1]) / 2, 0, (TERRAIN_Z[0] + TERRAIN_Z[1]) / 2);
   const pos = geo.getAttribute('position');
   const col = new Float32Array(pos.count * 3);
+  const mask = new Float32Array(pos.count * 4);
   const out = new THREE.Color();
+  const m4 = [0, 0, 0, 0];
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
     const h = terrainHeight(x, z);
     pos.setY(i, h);
     const slope = Math.hypot(terrainHeight(x + 1, z) - terrainHeight(x - 1, z),
       terrainHeight(x, z + 1) - terrainHeight(x, z - 1)) / 2;
-    terrainColor(x, z, h, slope, out);
+    terrainPaint(x, z, h, slope, out, m4);
     col[i * 3] = out.r; col[i * 3 + 1] = out.g; col[i * 3 + 2] = out.b;
+    mask[i * 4] = m4[0]; mask[i * 4 + 1] = m4[1]; mask[i * 4 + 2] = m4[2]; mask[i * 4 + 3] = m4[3];
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('aMask', new THREE.BufferAttribute(mask, 4));
   const uv = geo.getAttribute('uv');
   for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) / 3, pos.getZ(i) / 3);
   geo.computeVertexNormals();
-  const terrain = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+  const groundMat = new THREE.MeshStandardMaterial({
     vertexColors: true, map: grain, roughness: 0.96, metalness: 0,
-  }));
+  });
+  // Micro detail, picked per surface by the vertex masks: speckle in the
+  // litter, striation on the rock, ripples in the sand, broad blotches
+  // everywhere; wet ground darkens and glosses. One extra texture fetch.
+  groundMat.onBeforeCompile = sh => {
+    sh.uniforms.uDetail = { value: detail };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 aMask;\nvarying vec4 vMask;\nvarying vec2 vGroundUv;\nvarying vec3 vGroundPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMask = aMask;\nvGroundUv = uv;\nvGroundPos = (modelMatrix * vec4(position, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+uniform sampler2D uDetail;
+varying vec4 vMask;
+varying vec2 vGroundUv;
+varying vec3 vGroundPos;`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+vec4 det = texture2D(uDetail, vGroundUv * 0.35);
+// Broad blotches modulate value, not hue.
+diffuseColor.rgb *= 0.84 + 0.32 * det.a;
+// Speckle in the litter, striation on the rock, ripple in the sand.
+diffuseColor.rgb *= mix(1.0, 0.72 + 0.56 * det.r, vMask.x);
+// Rock strata are laid in a VERTICAL projection — along the face, up the
+// height — so they read as horizontal beds on the cliff. Sampled with the
+// top-down ground UV they stretched into long vertical streaks down every
+// steep face, like corrugated sheet.
+float strata = texture2D(uDetail, vec2((vGroundPos.x + vGroundPos.z) * 0.06, vGroundPos.y * 0.11)).g;
+diffuseColor.rgb *= mix(1.0, 0.62 + 0.76 * strata, vMask.y);
+diffuseColor.rgb *= mix(1.0, 0.88 + 0.24 * det.b, vMask.z);
+// Wet ground darkens.
+diffuseColor.rgb *= mix(1.0, 0.66, vMask.w);`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
+  };
+  const terrain = new THREE.Mesh(geo, groundMat);
   terrain.receiveShadow = true;
   terrain.name = 'jungle_terrain';
   scene.add(terrain);

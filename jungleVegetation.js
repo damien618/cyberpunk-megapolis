@@ -20,7 +20,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
-  terrainHeight, forestDensity, shoreAt, cliffZ, ridgeAt, pathDistance, PATH,
+  terrainHeight, terrainSlope, soilAt, SOIL, forestDensity, shoreAt, cliffZ, ridgeAt, pathDistance, PATH,
   PATH_HALF_W, SAND_END, PLAY_HALF_W, POOL, JETTY, smoothstep,
 } from './jungleLayout.js';
 
@@ -346,12 +346,13 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4 }) {
     if (d < 7 || !clearOfBuilt(x, z)) return false;
     if (pathDistance(x, z) < PATH_HALF_W + 1.5) return false;
     if (ridgeAt(x) > 0.3) return false;
+    if (terrainSlope(x, z) > 0.6) return false;   // not on the talus or a scarp
     const band = smoothstep(d, 7, 12) * (1 - smoothstep(z, SAND_END + 8, SAND_END + 22));
     return r < band * (0.25 + 0.5 * clump(x, z, 1.3));
   });
   // A few palms scattered through the forest too — the island's signature.
   palmSpots.push(...jittered(rnd, -70, 70, SAND_END + 20, 130, 22, (x, z, r) =>
-    r < 0.35 * forestDensity(x, z)));
+    r < 0.35 * forestDensity(x, z) && terrainSlope(x, z) < 0.7));
   const top = new THREE.Vector3();
   for (const [x, z] of palmSpots) {
     const h = 8 + rnd() * 6;
@@ -376,12 +377,13 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4 }) {
   // above the falls (the skyline you see from the beach).
   const trees = [];
   const valleySpots = jittered(rnd, -PLAY_HALF_W - 30, PLAY_HALF_W + 30, SAND_END + 4, 160, 10, (x, z, r) =>
-    r < forestDensity(x, z) * (0.35 + 0.45 * clump(x, z, 4.1))
-      || (ridgeAt(x) > 0.4 && z < cliffZ(x) - 3 && z > -20 && r < 0.4));
+    (r < forestDensity(x, z) * (0.35 + 0.45 * clump(x, z, 4.1))
+      || (ridgeAt(x) > 0.4 && z < cliffZ(x) - 3 && z > -20 && r < 0.4))
+    && terrainSlope(x, z) < 0.9);
   // The skyline above the falls. Always on screen from the valley, never
   // close, so it goes in big tiles: fewer draw calls, nothing to cull.
   const backdropSpots = jittered(rnd, -200, 200, 150, 300, 13, (x, z, r) =>
-    z > cliffZ(x) + 5 && r < 0.55);
+    z > cliffZ(x) + 5 && r < 0.55 && terrainSlope(x, z) < 1.1);
   const trunks = [], lobes = [], vines = [];
   const backTrunks = [], backLobes = [];
   for (const [x, z, backdrop] of [
@@ -434,18 +436,23 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4 }) {
   meshes.push(...tiled(group, 'vine', geo.vine, mat.vine, vines, { far: UNDERGROWTH_FAR }));
 
   // --- Undergrowth: ferns and broad-leaved plants, in patches, thinning out
-  // toward the path so it stays a path, and densest at the forest edge.
+  // toward the path so it stays a path, and densest at the forest edge. They
+  // ask the layout what the ground IS: forest floor only — not the talus,
+  // not the muddy margins, not the trail — and they sink a little on slopes
+  // so no root ball hangs in the air.
   const ferns = jittered(rnd, -PLAY_HALF_W - 10, PLAY_HALF_W + 10, SAND_END - 4, 156, 3.2, (x, z, r) =>
-    clearOfBuilt(x, z) && r < forestDensity(x, z) * (0.2 + 0.7 * clump(x, z, 7.7)))
-    .map(([x, z]) => ({ x, y: terrainHeight(x, z) - 0.05, z, s: 0.8 + rnd() * 0.9,
-      ry: rnd() * 6.28, hue: (rnd() - 0.5) * 0.06, light: (rnd() - 0.5) * 0.1 }));
+    clearOfBuilt(x, z) && soilAt(x, z) === SOIL.FOREST
+    && r < forestDensity(x, z) * (0.2 + 0.7 * clump(x, z, 7.7)))
+    .map(([x, z]) => ({ x, y: terrainHeight(x, z) - 0.05 - terrainSlope(x, z) * 0.2, z,
+      s: 0.8 + rnd() * 0.9, ry: rnd() * 6.28, hue: (rnd() - 0.5) * 0.06, light: (rnd() - 0.5) * 0.1 }));
   meshes.push(...tiled(group, 'fern', geo.fern, mat.fern, ferns,
     { far: UNDERGROWTH_FAR, tint: { h: 0, s: 0, l: 1 } }));
 
   const broads = jittered(rnd, -PLAY_HALF_W - 10, PLAY_HALF_W + 10, SAND_END - 2, 156, 4.6, (x, z, r) =>
-    clearOfBuilt(x, z) && r < forestDensity(x, z) * (0.1 + 0.55 * clump(x, z, 2.9)))
-    .map(([x, z]) => ({ x, y: terrainHeight(x, z) - 0.05, z, s: 0.9 + rnd() * 0.8,
-      ry: rnd() * 6.28, hue: (rnd() - 0.5) * 0.05, light: (rnd() - 0.5) * 0.08 }));
+    clearOfBuilt(x, z) && soilAt(x, z) === SOIL.FOREST
+    && r < forestDensity(x, z) * (0.1 + 0.55 * clump(x, z, 2.9)))
+    .map(([x, z]) => ({ x, y: terrainHeight(x, z) - 0.05 - terrainSlope(x, z) * 0.2, z,
+      s: 0.9 + rnd() * 0.8, ry: rnd() * 6.28, hue: (rnd() - 0.5) * 0.05, light: (rnd() - 0.5) * 0.08 }));
   meshes.push(...tiled(group, 'broad', geo.broad, mat.broad, broads,
     { far: UNDERGROWTH_FAR, tint: { h: 0, s: 0, l: 1 } }));
 

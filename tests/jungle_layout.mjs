@@ -3,9 +3,10 @@
 // These are the contracts the rest of the map leans on; each failure here is
 // a bug you would otherwise only find by walking into it.
 import {
-  terrainHeight, shoreAt, pathDistance, PATH, PATH_LEN, PATH_HALF_W, POOL, FALLS,
+  terrainHeight, shoreAt, pathDistance, pathFrame, PATH, PATH_LEN, PATH_HALF_W, POOL, FALLS,
   JETTY, WADE_Z, SEA_Y, SAND_END, cliffZ, CLIFF_FOOT, streamX, streamWaterY,
   STREAM_Z0, STREAM_HALF_W, boundaryWalls, SPAWN, TENDER_SPOT, PLAY_HALF_W, forestDensity,
+  terrainSlope, terrainNormal, terrainMasks, soilAt, SOIL, forestMottle,
 } from '../jungleLayout.js';
 
 let failed = 0;
@@ -115,6 +116,88 @@ check('forest is dense mid-map', forestDensity(-40, 80) > 0.9);
 
 // 9. Beach profile sanity.
 check('sand top meets forest', Math.abs(terrainHeight(0, SAND_END) - terrainHeight(0, SAND_END + 0.5)) < 0.2);
+
+// 10. Ground queries: slope, normal, path frame, mottle.
+{
+  let maxBeach = 0, minCliff = Infinity;
+  for (let x = -60; x <= 60; x += 4) {
+    // The falls' own slot: the pool bowl cuts the cliff line away there,
+    // on purpose — skip it exactly as the cliff rocks do.
+    if (Math.abs(x - FALLS.x) < FALLS.width + 3) continue;
+    maxBeach = Math.max(maxBeach, terrainSlope(x, 2));
+    minCliff = Math.min(minCliff, terrainSlope(x, cliffZ(x)));
+  }
+  check('beach is gentle', maxBeach < 0.35, maxBeach.toFixed(2));
+  check('cliff face is steep', minCliff > 0.9, minCliff.toFixed(2));
+  const n = terrainNormal(0, 20);
+  check('normal is unit', Math.abs(Math.hypot(n.x, n.y, n.z) - 1) < 1e-9);
+  check('normal points up on the beach', terrainNormal(0, 0).y > 0.94);
+  let worst = 0;
+  for (const [px, pz] of PATH) worst = Math.max(worst, pathFrame(px, pz).d);
+  check('pathFrame ~0 on the path', worst < 0.5, worst.toFixed(2));
+  let mono = true, sPrev = -1;
+  for (const [px, pz] of PATH) {
+    const { s } = pathFrame(px, pz);
+    if (s < sPrev - 1e-6) mono = false;
+    sPrev = s;
+  }
+  check('pathFrame s runs 0→length', mono && sPrev > PATH_LEN.at(-1) - 3,
+    `end ${sPrev.toFixed(1)} vs ${PATH_LEN.at(-1).toFixed(1)}`);
+  check('pathFrame far away is 99', pathFrame(200, 300).d === 99);
+  check('pathDistance wraps pathFrame', Math.abs(pathDistance(-20, 78) - pathFrame(-20, 78).d) < 1e-12);
+  let mottleOK = true;
+  for (let i = 0; i < 200; i++) {
+    const m = forestMottle(-80 + i, 20 + i * 0.7);
+    if (!(m >= 0 && m <= 1)) { mottleOK = false; break; }
+  }
+  check('forest mottle in range', mottleOK);
+}
+
+// 11. Masks and soil: what the ground is, everywhere it matters.
+{
+  let bad = 0, badVal = 0, n = 0;
+  for (let x = -90; x <= 90; x += 6) for (let z = -60; z <= 170; z += 6) {
+    n++;
+    const m = terrainMasks(x, z);
+    if (m.seabed + m.sand + m.litter + m.moss + m.rock > 1.001) bad++;
+    for (const k of Object.keys(m)) {
+      if (!Number.isFinite(m[k]) || m[k] < 0 || m[k] > 1) badVal++;
+    }
+  }
+  check('masks are finite, in range, near-exclusive', bad === 0 && badVal === 0,
+    `${bad} overlaps, ${badVal} bad values over ${n} samples`);
+  check('mid-beach is sand', terrainMasks(10, 2).sand > 0.9);
+  check('mid-forest is litter/moss', (() => {
+    const m = terrainMasks(-40, 80);
+    return m.litter + m.moss > 0.9;
+  })());
+  check('path centre is dirt', terrainMasks(-14, 60).dirt > 0.5);
+  check('cliff face is rock', terrainMasks(52, cliffZ(52)).rock > 0.9);
+  check('open sea is seabed', terrainMasks(0, -40).seabed === 1);
+  check('swash line is wet', terrainMasks(10, shoreAt(10) + 1).wet > 0.9);
+
+  check('soil: open beach SAND', soilAt(10, 2) === SOIL.SAND);
+  check('soil: sea SHALLOW', soilAt(0, -40) === SOIL.SHALLOW);
+  check('soil: pool centre SHALLOW', soilAt(POOL.x, POOL.z) === SOIL.SHALLOW);
+  check('soil: stream channel SHALLOW', soilAt(streamX(80), 80) === SOIL.SHALLOW);
+  check('soil: path mid DIRT', soilAt(-14, 60) === SOIL.DIRT);
+  check('soil: forest floor FOREST', soilAt(-40, 80) === SOIL.FOREST);
+  check('soil: cliff face ROCK', soilAt(52, cliffZ(52)) === SOIL.ROCK);
+  check('soil: waterline WET', soilAt(10, shoreAt(10) + 0.8) === SOIL.WET);
+}
+
+// 12. The forest floor has soft hills — broad swell, not bumps.
+{
+  let lo = Infinity, hi = -Infinity;
+  for (let x = -55; x <= 55; x += 5) for (let z = 30; z <= 130; z += 5) {
+    if (Math.abs(x - FALLS.x) < FALLS.width + 4 && z > 118) continue;   // the falls' slot
+    if (pathDistance(x, z) < PATH_HALF_W + 6) continue;                 // the corridor stays calm
+    if (Math.hypot(x - POOL.x, z - POOL.z) < POOL.r + 8) continue;      // the pool terrace
+    const h = terrainHeight(x, z);
+    lo = Math.min(lo, h); hi = Math.max(hi, h);
+  }
+  check('forest floor has soft hills (≥ 1.5 m of swell)', hi - lo > 1.5, `${(hi - lo).toFixed(2)} m`);
+}
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed');
 globalThis.__jungleLayoutFailed = failed;

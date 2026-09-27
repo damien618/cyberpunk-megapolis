@@ -8,7 +8,7 @@
 // and that is the whole per-frame cost.
 import * as THREE from 'three';
 import {
-  FALLS, POOL, streamX, streamWaterY, STREAM_Z0, STREAM_HALF_W, shoreAt,
+  FALLS, POOL, terrainHeight, streamX, streamWaterY, STREAM_Z0, STREAM_HALF_W, shoreAt,
 } from './jungleLayout.js';
 
 const G = 9.8;
@@ -57,7 +57,10 @@ function fallsZ(drop) {
 }
 
 function buildFalls() {
-  const drop = FALLS.topY - POOL.waterY;
+  // The sheet leaves from the ground actually at the lip (the notch lowers
+  // it a little below FALLS.topY), riding a hand's depth of water over it.
+  const lipY = terrainHeight(FALLS.x, FALLS.z) + 0.12;
+  const drop = lipY - POOL.waterY;
   const SEG_X = 10, SEG_Y = 36;
   const g = new THREE.PlaneGeometry(1, 1, SEG_X, SEG_Y);
   const p = g.getAttribute('position'), uv = g.getAttribute('uv');
@@ -68,11 +71,11 @@ function buildFalls() {
     let y, z;
     if (v < lip) {
       const k = v / lip;
-      y = FALLS.topY + 0.25 * Math.cos(k * Math.PI / 2);
+      y = lipY + 0.06 * Math.cos(k * Math.PI / 2);
       z = FALLS.z + 1.2 * (1 - k) - 0.2 * k;
     } else {
       const d = ((v - lip) / (1 - lip)) * (drop + 0.3);
-      y = FALLS.topY - d;
+      y = lipY - d;
       z = fallsZ(d);
     }
     // The sheet spreads a little as it falls, and its edges hang back.
@@ -258,7 +261,7 @@ function buildStream() {
 }
 
 export function createJungleWaterfall({ scene, waterNormal }) {
-  const impact = { x: FALLS.x, z: fallsZ(FALLS.topY - POOL.waterY) };
+  const impact = { x: FALLS.x, z: fallsZ(terrainHeight(FALLS.x, FALLS.z) + 0.12 - POOL.waterY) };
   const falls = buildFalls();
   const pool = buildPool(waterNormal);
   const foam = buildImpactFoam(impact);
