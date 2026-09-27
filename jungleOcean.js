@@ -1,14 +1,28 @@
-// jungleOcean.js — the sea in front of the cove: a swell displaced on the
-// GPU, a pale-turquoise lagoon over the sand, and a swash of foam running up
-// the beach and draining back.
+// jungleOcean.js — the sea in front of the cove, and the island's sea: a
+// Gerstner swell displaced on the GPU, damped by the REAL depth of water
+// above the bed (read in-shader from jungleLayout's SEA_BED_GLSL — no depth
+// texture, no extra pass), a lagoon that goes from thin turquoise over the
+// sand to deep blue in the channel, breakers that ride their depth contour,
+// a swash of foam running up the beach, and a fresnel reflection of the very
+// sky dome the map draws.
 //
-// Adapted from main-BEACH.js (which exports nothing), keeping its hard-won
-// rules: the swell is damped to nothing before the shallows, the shallows
-// read by COLOUR rather than transparency, the foam rides the water surface
-// rather than the bed, and the swash position is computed ONCE in JS and
-// handed to the shader, so there is a single model of where the water is.
+// REUSABLE AT ISLAND SCALE: this module owns no map. It asks a `layout` for
+// the bed and the waterline ({ terrainHeight, shoreAt, SEA_Y, SHORE_Z,
+// bedGLSL } — defaulting to jungleLayout) and takes a `preset` over
+// oceanSurface's OCEAN_PRESET for the waves, colours and foam. The two
+// village maps will pass their own layout and a tuned preset; nothing here
+// changes. waterHeightAt(x, z, t) is the one-call surface height for
+// anything that floats or wades — kept in lockstep with the shader by the
+// shared wave table (oceanSurface.js).
+//
+// Rules kept from main-BEACH.js: the swell dies on the shallows rather than
+// at a hard line, the shallows read by COLOUR as well as transparency, the
+// foam rides the water surface rather than the bed, and the swash position
+// is computed ONCE in JS and handed to the shaders, so there is a single
+// model of where the water is.
 import * as THREE from 'three';
-import { terrainHeight, shoreAt, SEA_Y, SHORE_Z } from './jungleLayout.js';
+import { terrainHeight, shoreAt, SEA_Y, SHORE_Z, SEA_BED_GLSL } from './jungleLayout.js';
+import { resolvePreset, gerstnerGLSL, waterHeightAt as waterSurfaceAt } from './oceanSurface.js';
 
 // Foam mottle. Every blob drawn nine times so the tile wraps.
 function makeFoamTexture(maxAniso) {
@@ -39,134 +53,234 @@ function makeFoamTexture(maxAniso) {
   return t;
 }
 
-// The swell, in GLSL and (for anything that floats) in JS. Same numbers.
-const SWELL_GLSL = `
-  float seaH(vec2 p, float t, out vec2 grad) {
-    float h = 0.0;
-    grad = vec2(0.0);
-    float k1 = 0.085, a1 = 0.36, s1 = 1.05;
-    float p1 = p.y * k1 + t * s1;
-    h += sin(p1) * a1;  grad.y += cos(p1) * a1 * k1;
-    float k2 = 0.052, a2 = 0.26, s2 = 0.72;
-    float p2 = (p.y * 0.96 + p.x * 0.28) * k2 - t * s2;
-    h += sin(p2) * a2;
-    grad.y += cos(p2) * a2 * k2 * 0.96;
-    grad.x += cos(p2) * a2 * k2 * 0.28;
-    float k3 = 0.24, a3 = 0.08, s3 = 2.1;
-    float p3 = (p.y + p.x * 0.5) * k3 + t * s3;
-    h += sin(p3) * a3;
-    grad.y += cos(p3) * a3 * k3;
-    grad.x += cos(p3) * a3 * k3 * 0.5;
-    return h;
-  }
-  // Full swell offshore, none from the wade barrier in.
-  float seaDeep(float wz) { return 1.0 - smoothstep(-95.0, -48.0, wz); }`;
 
-export function swellAt(x, z, t) {
-  const h = Math.sin(z * 0.085 + t * 1.05) * 0.36
-    + Math.sin((z * 0.96 + x * 0.28) * 0.052 - t * 0.72) * 0.26
-    + Math.sin((z + x * 0.5) * 0.24 + t * 2.1) * 0.08;
-  return h * (1 - THREE.MathUtils.smoothstep(z, -95, -48));
-}
+// ---------------------------------------------------------------------------
+// The sea.
+// ---------------------------------------------------------------------------
+export function createJungleOcean({
+  scene, waterNormal, maxAniso = 4,
+  layout,       // another map's bed: { terrainHeight, shoreAt, SEA_Y, SHORE_Z, bedGLSL }
+  preset,       // overrides on OCEAN_PRESET (waveScale, colours, foam, swash)
+  skyUniforms,  // the sky dome's uniforms — the reflection reads the same sky
+}) {
+  const P = resolvePreset(preset);
+  const L = {
+    terrainHeight, shoreAt, SEA_Y, SHORE_Z, bedGLSL: SEA_BED_GLSL,
+    ...(layout || {}),
+  };
+  const seaY = L.SEA_Y;
+  const f = v => Number(v).toFixed(4);
 
-export function createJungleOcean({ scene, waterNormal, maxAniso = 4 }) {
   const uniforms = {
     uTime: { value: 0 },
-    uShallow: { value: new THREE.Color(0x6fe0d2) },
+    uSeaY: { value: seaY },
+    uWaveScale: { value: P.waveScale },
+    uShallowCol: { value: new THREE.Color(P.colors.shallow) },
+    uMidCol: { value: new THREE.Color(P.colors.mid) },
+    uDeepCol: { value: new THREE.Color(P.colors.deep) },
+    uMidDepth: { value: P.midDepth },
+    uDeepDepth: { value: P.deepDepth },
+    uAlphaShallow: { value: P.alphaShallow },
+    uAlphaDeep: { value: P.alphaDeep },
+    uAlphaRamp: { value: P.alphaRampDepth },
+    uFoamBreak: { value: P.foamBreak },
+    uShoreFoam: { value: P.shoreFoam },
+    uRipple: { value: P.rippleAmp },
+    uRefl: { value: P.reflection },
+    uNormalMap: { value: waterNormal },   // the fragment chop rides this
+    uEdge: { value: 0 },          // the swash edge, shared with the foam strip
+    uFoamMap: { value: null },    // the strip's mottle, shared by the sea
   };
-  const mat = new THREE.MeshPhysicalMaterial({
-    color: 0x17708f,
-    roughness: 0.14,
+
+  // Standard, not physical: the sun glint is the light's own GGX highlight
+  // off the wave normal, and the sky comes back by fresnel below — the
+  // clearcoat pass bought nothing the sea needed.
+  const mat = new THREE.MeshStandardMaterial({
+    color: P.colors.deep,
+    roughness: P.roughness,
     metalness: 0,
     transparent: true,
-    opacity: 0.88,
-    normalMap: waterNormal,
-    normalScale: new THREE.Vector2(0.45, 0.45),
-    clearcoat: 0.8,
-    clearcoatRoughness: 0.12,
+    opacity: 1.0,   // the fragment's depth ramp owns alpha; foam overrides it
   });
+
   mat.onBeforeCompile = sh => {
-    sh.uniforms.uTime = uniforms.uTime;
-    sh.uniforms.uShallow = uniforms.uShallow;
+    Object.assign(sh.uniforms, uniforms);
+    if (skyUniforms) {
+      sh.uniforms.uHorizon = skyUniforms.uHorizon;
+      sh.uniforms.uZenith = skyUniforms.uZenith;
+      sh.uniforms.uGlow = skyUniforms.uGlow;
+      sh.uniforms.uGlowDir = skyUniforms.uGlowDir;
+      sh.uniforms.uGlowStrength = skyUniforms.uGlowStrength;
+      sh.uniforms.uGlowTightness = skyUniforms.uGlowTightness;
+    }
+    const skyGLSL = skyUniforms ? `
+        uniform vec3 uHorizon, uZenith, uGlow, uGlowDir;
+        uniform float uGlowStrength, uGlowTightness;
+        vec3 seaSky(vec3 d) {
+          float h = clamp(d.y * 0.5 + 0.5, 0.0, 1.0);
+          vec3 col = mix(uHorizon, uZenith, pow(smoothstep(0.5, 1.0, h), 0.8));
+          col += uGlow * pow(max(dot(d, normalize(uGlowDir)), 0.0), uGlowTightness) * uGlowStrength;
+          return col;
+        }` : '';
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
         uniform float uTime;
-        varying float vWz;
-        ${SWELL_GLSL}`)
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
-        vec2 wpos = (modelMatrix * vec4(position, 1.0)).xz;
-        vWz = wpos.y;
-        vec2 sGrad;
-        float sH = seaH(wpos, uTime, sGrad);
-        transformed.z += sH * seaDeep(wpos.y);`)
+        uniform float uSeaY;
+        varying float vDepth;
+        varying float vShoreD;
+        varying vec3 vWorldPos;
+        varying vec3 vWaveN;
+        ${L.bedGLSL}
+        ${gerstnerGLSL(P)}`)
       .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
-        {
-          vec2 g2;
-          vec2 wp2 = (modelMatrix * vec4(position, 1.0)).xz;
-          seaH(wp2, uTime, g2);
-          g2 *= seaDeep(wp2.y);
-          objectNormal = normalize(vec3(-g2.x, g2.y, 1.0));
-        }`);
+        // Depth, shore distance and the swell in one pass. The amplitude
+        // scale shoals up and dies by the real depth of water here.
+        vec3 seaWp = (modelMatrix * vec4(position, 1.0)).xyz;
+        float seaDep = max(uSeaY - bedHeight(seaWp.xz), 0.0);
+        float seaAlive = smoothstep(${f(P.dieDepth)}, ${f(P.breakDepth)}, seaDep);
+        float seaShoal = 1.0 + ${f(P.shoalPeak - 1.0)}
+          * (1.0 - smoothstep(${f(P.breakDepth)}, ${f(P.deepRef)}, seaDep));
+        float seaH = 0.0; vec2 seaDisp = vec2(0.0);
+        vec2 seaGrad = vec2(0.0); float seaPinch = 0.0;
+        seaGerstner(seaWp.xz, uTime, seaAlive * seaShoal, seaH, seaDisp, seaGrad, seaPinch);
+        vec3 seaWN = normalize(vec3(-seaGrad.x, 1.0 - seaPinch, -seaGrad.y));
+        // The plane is XY rotated -90° about X: local +z is world +y, local
+        // +y is world -z. The normal rides along.
+        objectNormal = normalize(vec3(seaWN.x, -seaWN.z, seaWN.y));
+        vDepth = seaDep;
+        vShoreD = seaWp.y - shoreDist(seaWp.xz);
+        vWaveN = seaWN;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        transformed.x += seaDisp.x;
+        transformed.y -= seaDisp.y;
+        transformed.z += seaH;
+        vWorldPos = seaWp + vec3(seaDisp.x, seaH, seaDisp.y);`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        varying float vWz;
-        uniform vec3 uShallow;`)
+        uniform float uTime;
+        uniform float uSeaY;
+        uniform float uMidDepth, uDeepDepth, uAlphaShallow, uAlphaDeep, uAlphaRamp;
+        uniform float uFoamBreak, uShoreFoam, uEdge, uRipple, uRefl;
+        uniform vec3 uShallowCol, uMidCol, uDeepCol;
+        uniform sampler2D uNormalMap, uFoamMap;
+        varying float vDepth;
+        varying float vShoreD;
+        varying vec3 vWorldPos;
+        varying vec3 vWaveN;
+        ${skyGLSL}`)
       .replace('vec4 diffuseColor = vec4( diffuse, opacity );', `
         vec4 diffuseColor = vec4( diffuse, opacity );
-        // Lagoon turquoise over the sand, deep blue past the reef line.
-        float dep = clamp((${SHORE_Z.toFixed(1)} - vWz) / 42.0, 0.0, 1.0);
-        diffuseColor.rgb = mix(uShallow, diffuseColor.rgb, dep);
-        diffuseColor.a *= mix(0.72, 1.0, dep);`);
+        // Depth of water above the bed, passed from the vertex stage — the
+        // same bed the terrain mesh stands on (jungleLayout's SEA_BED_GLSL).
+        float seaDepth = vDepth;
+        // Colour: turquoise over the sand through azures to the channel.
+        vec3 seaCol = mix(uMidCol, uDeepCol, smoothstep(uMidDepth, uDeepDepth, seaDepth));
+        seaCol = mix(uShallowCol, seaCol, smoothstep(0.0, uMidDepth, seaDepth));
+        // White water: the breaker line rides its depth contour; the wash
+        // over the last hand's width of sand stays calm while the strip
+        // carries the swash that runs up the beach (same uEdge there).
+        float seaMote = texture2D(uFoamMap, vWorldPos.xz * 0.05
+          + vec2(uTime * 0.013, uTime * 0.05)).r;
+        float seaBl = uFoamBreak
+          + sin(uTime * 0.42 + vWorldPos.x * 0.033) * 0.55
+          + sin(uTime * 0.27 + vWorldPos.x * 0.011) * 0.35;
+        float seaBrk = exp(-pow((seaDepth - seaBl) / 0.28, 2.0)) * (0.3 + 0.7 * seaMote);
+        float seaWash = (1.0 - smoothstep(0.0, uShoreFoam, seaDepth))
+          * (0.45 + 0.55 * seaMote)
+          * (0.5 + 0.5 * smoothstep(-3.0, -0.3, vShoreD));
+        float seaFoam = clamp(seaBrk + seaWash, 0.0, 1.0);
+        seaCol = mix(seaCol, vec3(0.94, 0.98, 1.0), seaFoam);
+        diffuseColor.rgb = seaCol;
+        // Transparency: the sand shows through the shallows; foam does not.
+        diffuseColor.a *= mix(uAlphaShallow, uAlphaDeep, smoothstep(0.05, uAlphaRamp, seaDepth));
+        diffuseColor.a = max(diffuseColor.a, seaFoam * 0.85);`)
+      .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+        // Water normal, world axes: the swell from the vertex stage plus two
+        // scrolled layers of normal map for the chop, calmed in the shallows.
+        vec3 seaN = normalize(vWaveN);
+        {
+          float seaCalm = mix(0.4, 1.0, smoothstep(0.0, 1.5, seaDepth)) * uRipple;
+          vec3 seaN1 = texture2D(uNormalMap, vWorldPos.xz * 0.055
+            + vec2(uTime * 0.021, uTime * 0.033)).xyz * 2.0 - 1.0;
+          vec3 seaN2 = texture2D(uNormalMap, vWorldPos.xz * 0.021
+            + vec2(-uTime * 0.011, uTime * 0.017)).xyz * 2.0 - 1.0;
+          seaN = normalize(seaN
+            + vec3(seaN1.x, 0.0, seaN1.y) * 0.35 * seaCalm
+            + vec3(seaN2.x, 0.0, seaN2.y) * 0.22 * seaCalm);
+        }
+        normal = normalize((viewMatrix * vec4(seaN, 0.0)).xyz);`)
+      .replace('#include <opaque_fragment>', `
+        ${skyUniforms ? `{
+          // The missing envMap term: the dome's own colours come back by
+          // fresnel, always in step with the sky overhead. The fresnel is
+          // capped near water's real grazing answer, and the reflected ray
+          // leans upward — wave slopes sample the bluer sky on average, so
+          // the sea never reads as a milk mirror of the pale horizon.
+          vec3 seaV = normalize(cameraPosition - vWorldPos);
+          float seaF = 0.02 + 0.98 * pow(1.0 - clamp(dot(seaV, seaN), 0.0, 1.0), 5.0);
+          vec3 seaR = reflect(-seaV, seaN);
+          seaR.y = seaR.y * 0.35 + 0.3;
+          seaR = normalize(seaR);
+          outgoingLight = mix(outgoingLight, seaSky(seaR), min(seaF, 0.6) * uRefl);
+        }` : ''}
+        #include <opaque_fragment>`);
   };
-  // The plane is XY rotated -90° about X, so local +Z is world +Y. 8 m cells
-  // resolve the shortest (26 m) swell component.
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1000, 200, 125), mat);
+
+  // The plane is XY rotated -90° about X, so local +Z is world +Y. 7.1 m
+  // cells resolve the shortest (34 m) swell component with room to spare.
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1000, 224, 140), mat);
   sea.rotation.x = -Math.PI / 2;
-  sea.position.set(0, SEA_Y, SHORE_Z + 30 - 500);
+  sea.position.set(0, seaY, L.SHORE_Z + 30 - 500);
   sea.name = 'jungle_sea';
   scene.add(sea);
 
   // --- Swash --------------------------------------------------------------
-  const swash = { edge: 0, period: 7.2 };
+  const swash = { edge: 0, period: P.swash.period };
   function updateSwash(t) {
     const cyc = Math.floor(t / swash.period);
     const ph = t / swash.period - cyc;
     const h = Math.abs(Math.sin(cyc * 12.9898) * 43758.5453) % 1;
-    const reach = 2.2 + h * 3.8;       // a lagoon: gentler than L.A.'s surf
+    const reach = P.swash.reachMin + h * (P.swash.reachMax - P.swash.reachMin);
     const e = ph < 0.22
       ? THREE.MathUtils.smoothstep(ph, 0, 0.22)
       : 1 - THREE.MathUtils.smoothstep(ph, 0.22, 1);
-    swash.edge = -1.4 + e * reach;
+    swash.edge = P.swash.base + e * reach;
   }
 
   // --- Foam strip, conformed to max(bed, sea) -----------------------------
+  const foamTex = makeFoamTexture(maxAniso);
+  uniforms.uFoamMap.value = foamTex;
   const X0 = -130, X1 = 130, Z0 = -62, Z1 = 6, SX = 130, SZ = 34;
   const fg = new THREE.PlaneGeometry(X1 - X0, Z1 - Z0, SX, SZ);
   fg.rotateX(-Math.PI / 2);
   fg.translate((X0 + X1) / 2, 0, (Z0 + Z1) / 2);
   const fp = fg.getAttribute('position');
   const aD = new Float32Array(fp.count), aX = new Float32Array(fp.count);
-  const aH = new Float32Array(fp.count);
+  const aH = new Float32Array(fp.count), aDep = new Float32Array(fp.count);
   for (let i = 0; i < fp.count; i++) {
     const x = fp.getX(i), z = fp.getZ(i);
-    const bed = terrainHeight(x, z);
-    fp.setY(i, Math.max(bed, SEA_Y) + 0.07);
-    aD[i] = z - shoreAt(x);
+    const bed = L.terrainHeight(x, z);
+    fp.setY(i, Math.max(bed, seaY) + 0.07);
+    aD[i] = z - L.shoreAt(x);
     aX[i] = x;
     // Height of the ground above the sea. The headlands climb out of the
     // water well before shoreAt says the shore is, and foam painted up a
     // ten-metre rock face is the first thing anyone would see.
-    aH[i] = bed - SEA_Y;
+    aH[i] = bed - seaY;
+    // Real depth of water here — the breaker line rides its contour.
+    aDep[i] = Math.max(0, seaY - bed);
   }
   fg.setAttribute('aD', new THREE.BufferAttribute(aD, 1));
   fg.setAttribute('aX', new THREE.BufferAttribute(aX, 1));
   fg.setAttribute('aH', new THREE.BufferAttribute(aH, 1));
+  fg.setAttribute('aDep', new THREE.BufferAttribute(aDep, 1));
   const foamUniforms = {
     uTime: { value: 0 },
     uEdge: { value: 0 },
-    uMap: { value: makeFoamTexture(maxAniso) },
+    uMap: { value: foamTex },
     uColor: { value: new THREE.Color(0xf4fcff) },
     uOpacity: { value: 0.55 },
+    uBreak: { value: P.foamBreak },
   };
   const foamMat = new THREE.ShaderMaterial({
     uniforms: foamUniforms,
@@ -177,21 +291,24 @@ export function createJungleOcean({ scene, waterNormal, maxAniso = 4 }) {
       attribute float aD;
       attribute float aX;
       attribute float aH;
+      attribute float aDep;
       varying float vD;
       varying float vX;
       varying float vH;
+      varying float vDep;
       varying vec2 vUv;
       void main() {
-        vD = aD; vX = aX; vH = aH; vUv = uv;
+        vD = aD; vX = aX; vH = aH; vDep = aDep; vUv = uv;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }`,
     fragmentShader: `
-      uniform float uTime, uEdge, uOpacity;
+      uniform float uTime, uEdge, uOpacity, uBreak;
       uniform sampler2D uMap;
       uniform vec3 uColor;
       varying float vD;
       varying float vX;
       varying float vH;
+      varying float vDep;
       varying vec2 vUv;
       void main() {
         float edge = uEdge + sin(vX * 0.047) * 1.1 + sin(vX * 0.017 + 2.1) * 1.6;
@@ -199,9 +316,11 @@ export function createJungleOcean({ scene, waterNormal, maxAniso = 4 }) {
         float lead  = 1.0 - smoothstep(0.0, 1.4, abs(d - edge));
         float sheet = (1.0 - smoothstep(edge - 0.3, edge + 0.5, d))
                     * smoothstep(-8.0, -1.0, d) * 0.14;
-        // A reef line offshore, where the lagoon's small waves break.
-        float bl = -30.0 + sin(uTime * 0.4 + vX * 0.035) * 2.4;
-        float brk = (1.0 - smoothstep(0.0, 2.6, abs(d - bl))) * 0.36;
+        // The lagoon's small waves fail where the water is about uBreak deep:
+        // the white line rides the real depth contour instead of a fixed
+        // offset, so it follows the cove's curve.
+        float bl = uBreak + sin(uTime * 0.4 + vX * 0.035) * 0.5;
+        float brk = (1.0 - smoothstep(0.0, 1.4, abs(vDep - bl))) * 0.4;
         float a = clamp(lead + sheet + brk, 0.0, 1.0);
         float n = texture2D(uMap, vUv * vec2(50.0, 2.5)
                   + vec2(uTime * 0.013, uTime * 0.05)).r;
@@ -216,16 +335,33 @@ export function createJungleOcean({ scene, waterNormal, maxAniso = 4 }) {
   foam.name = 'jungle_foam';
   scene.add(foam);
 
+  // --- What floats asks the sea -------------------------------------------
+  // The maths live in oceanSurface.js (pure, testable); this wrapper wires
+  // them to the map's bed. The wading player, the tender and any floating
+  // prop will ask this instead of keeping their own sea.
+  function waterHeightAt(x, z, t) {
+    return waterSurfaceAt(x, z, t, {
+      seaY, preset: P,
+      depthAt: (px, pz) => seaY - L.terrainHeight(px, pz),
+    });
+  }
+
   function update(t) {
     uniforms.uTime.value = t;
-    if (waterNormal) {
-      waterNormal.offset.x = t * 0.006;
-      waterNormal.offset.y = -t * 0.02;
-    }
+    // The chop scrolls in the fragment shader (two layers of uNormalMap at
+    // different scales); the shared texture's offset stays untouched — the
+    // waterfall's pool cloned it and scrolls its own.
     updateSwash(t);
     foamUniforms.uTime.value = t;
     foamUniforms.uEdge.value = swash.edge;
+    uniforms.uEdge.value = swash.edge;
   }
 
-  return { sea, foam, uniforms, swash, update, swellAt };
+  return {
+    sea, foam, uniforms, swash, update,
+    waterHeightAt,
+    swellAt: waterHeightAt,   // the old name — the swell died at a hard line
+    preset: P,
+  };
 }
+

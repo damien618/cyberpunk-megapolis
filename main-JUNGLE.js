@@ -11,7 +11,7 @@ import {
 } from './jungleLayout.js';   // no ?v: the element modules import it bare, and
                                   // two URLs would be two module instances
 import { buildJungleTerrain } from './jungleTerrain.js?v=20260927-terrain2';
-import { createJungleOcean } from './jungleOcean.js?v=20260927-skeleton';
+import { createJungleOcean } from './jungleOcean.js?v=20260927-ocean3';
 import { createJungleWaterfall } from './jungleWaterfall.js?v=20260927-terrain2';
 import { buildJungleVegetation } from './jungleVegetation.js?v=20260927-terrain2';
 
@@ -67,7 +67,9 @@ const scene = new THREE.Scene();
 // Fog is blended between two states by how far under the canopy the player
 // is: clear and blue on the sand, close and green in the forest.
 const FOG = {
-  beach: { color: new THREE.Color(0xcfe2ea), near: 120, far: 760 },
+  // Far enough that the open sea keeps its blue to the horizon: at 120–760
+  // the water past the reef was fogged to a grey band.
+  beach: { color: new THREE.Color(0xcfe2ea), near: 220, far: 1500 },
   forest: { color: new THREE.Color(0x93ad8c), near: 14, far: 190 },
 };
 scene.fog = new THREE.Fog(FOG.beach.color.clone(), FOG.beach.near, FOG.beach.far);
@@ -196,7 +198,9 @@ function addInstanced(geometry, material, items, { prop = false, parent = world,
 // The elements.
 // ---------------------------------------------------------------------------
 const terrain = buildJungleTerrain({ scene, addInstanced, rnd, maxAniso });
-const ocean = createJungleOcean({ scene, waterNormal, maxAniso });
+// skyUniforms: the sea's fresnel reflection reads the very dome overhead, so
+// a change of sky hours changes the water's answer with it.
+const ocean = createJungleOcean({ scene, waterNormal, maxAniso, skyUniforms });
 const falls = createJungleWaterfall({ scene, waterNormal });
 const vegetation = buildJungleVegetation({ scene, rnd, maxAniso });
 

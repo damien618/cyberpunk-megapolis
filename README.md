@@ -32,6 +32,20 @@ le monde consomme — maillage, végétation, tests), `jungleTerrain.js`
 `jungleOcean.js`, `jungleWaterfall.js`, `jungleVegetation.js`. Tests :
 `tests/jungle_layout.py`, `tests/jungle_walk.py`, `tests/cruise_island_prompt.py`.
 
+Océan raffiné (toujours l'anse) : houle de Gerstner modérée qui se lève puis
+meurt sur les hauts-fonds d'après la profondeur réelle d'eau — le lit est lu
+dans le shader via `SEA_BED_GLSL` (jumeau shader des fonctions du layout),
+sans texture ni passe de rendu en plus —, turquoise par profondeur (sable
+visible en eau claire), brisantes qui suivent leurs lignes de profondeur,
+swash qui monte sur le sable, reflet du dôme de ciel par fresnel et
+spéculaire du soleil, et bande de sable mouillé raccordée à la portée du
+swash. Les maths vivent dans `oceanSurface.js` (pur, testé par
+`tests/jungle_ocean.py`, captures par `tests/jungle_ocean_shot.py`). Le
+module océan est réutilisable à l'échelle de l'île pour les deux villages à
+venir : il reçoit le layout d'une map (`layout`) et un `preset` (vagues,
+couleurs, écume), et expose `ocean.waterHeightAt(x, z, t)` pour tout ce qui
+flottera ou pataugera plus tard.
+
 
 
 ---

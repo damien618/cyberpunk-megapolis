@@ -357,6 +357,31 @@ export function streamWaterY(z) {
   return Math.max(SEA_Y + 0.04, Math.min(POOL.waterY - 0.12, streamBedAt(z) + 0.4));
 }
 
+// The ocean's shader twin of shoreAt() and the sea-bed branch of
+// terrainHeight(), generated from the same constants. The sea material
+// splices it in so depth — the colour ramp, the transparency, the foam
+// lines, the dying of the swell — is read from the same bed the mesh stands
+// on: no depth texture, no extra pass, and no way for the paint and the
+// water to disagree. Not ported: the stream's cut (a hand's width of bed at
+// the waterline, where the sea is a film) and the headlands' exact height
+// (the sea only needs to know they are land, and depth clamps at 0).
+export const SEA_BED_GLSL = `
+  float shoreDist(vec2 p) {
+    float x = p.x;
+    return ${SHORE_Z.toFixed(1)}
+      + ${COVE_BOW.toFixed(1)} * cos(clamp(x / 120.0, -1.0, 1.0) * 1.5707963)
+      + sin(x * 0.011 + 4.2) * 1.3
+      + sin(x * 0.032 + 0.6) * 0.9
+      + sin(x * 0.041) * 1.2;
+  }
+  float bedHeight(vec2 p) {
+    float d = shoreDist(p) - p.y;          // metres of run off the waterline
+    float y = ${SEA_Y.toFixed(1)} - (d * 0.034 + (d * d) * 0.0011875);  // (d/40)^2 * 1.9
+    if (d > 60.0) y -= (d - 60.0) * 0.12;
+    return y;
+  }`;
+
+
 // ---------------------------------------------------------------------------
 // Ground queries: slope, normal, surface masks, soil type.
 // ---------------------------------------------------------------------------
@@ -413,8 +438,12 @@ export function terrainMasks(x, z, pre) {
   const dirt = (1 - smoothstep(pf.d, PATH_HALF_W - 0.2, PATH_HALF_W + 1.6)) * forest * (1 - rock);
 
   // Moisture: the swash line on the beach, the stream banks and the pool rim
-  // in the forest.
-  const beachWet = d >= 0 ? 1 - smoothstep(d, 1.5, 6) : 1;
+  // in the forest. The beach band is the swash's envelope: the water's edge
+  // oscillates between -1.4 and +4.6 m from the waterline (jungleOcean's
+  // swash), so sand stays saturated a little past the common reach and dries
+  // out toward the top of the biggest runs — wet paint lags the water, as it
+  // does on a real beach.
+  const beachWet = d >= 0 ? 1 - smoothstep(d, 2.5, 7) : 1;
   const margins = Math.max(
     1 - smoothstep(streamDistance(x, z), STREAM_HALF_W, STREAM_HALF_W + 2.5),
     1 - smoothstep(Math.hypot(x - POOL.x, z - POOL.z), POOL.r, POOL.r + 3),
