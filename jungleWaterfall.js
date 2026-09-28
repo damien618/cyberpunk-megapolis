@@ -276,7 +276,8 @@ function buildPool(waterNormal, P, spec) {
   // one `===` per frame until it does.
   const normal = waterNormal.clone();
   normal.repeat.set(2.2, 2.2);
-  if (waterNormal.image) normal.needsUpdate = true;
+  // clone() → copy() flags needsUpdate itself; unflag it while the image is null.
+  if (waterNormal.image) normal.needsUpdate = true; else normal.version = 0;
   const uniforms = {
     uTime: { value: 0 },
     uPoolY: { value: spec.waterY },
@@ -593,7 +594,8 @@ function buildStream(waterNormal, P) {
 
   // Its own clone of the sea's normal map, scrolled downstream in update().
   const normal = waterNormal.clone();
-  if (waterNormal.image) normal.needsUpdate = true;
+  // clone() → copy() flags needsUpdate itself; unflag it while the image is null.
+  if (waterNormal.image) normal.needsUpdate = true; else normal.version = 0;
   const uniforms = {
     uTime: { value: 0 },
     uFlow: { value: P.flow },

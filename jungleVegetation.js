@@ -32,11 +32,12 @@
 // the plant's base, squared so roots stay planted. update() only advances the
 // clock and re-culls — no CPU per leaf or per instance.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as jungleLayout from './jungleLayout.js';
 
 const TILE = 52;
 const UNDERGROWTH_FAR = 72;
+const LOD_CROWN = { dist: 4 };   // tile sphere within this → detail-2 crowns (tiles are 52 m)
 
 // ---------------------------------------------------------------------------
 // Leaf textures.
@@ -251,10 +252,94 @@ function leafDepth(map) {
     depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.5, side: THREE.DoubleSide,
   });
 }
-function makeSolidMaterial({ rough = 0.9, flat = true } = {}, amp) {
-  return applyWind(new THREE.MeshStandardMaterial({
-    color: 0xffffff, roughness: rough, flatShading: flat,
-  }), amp);
+// Solid foliage (crowns, bushes): smooth-shaded, with leaf clumps painted in
+// the fragment shader from a world-space noise — darker hollows, lit tips and
+// a bump through screen derivatives. No UVs, so no seams on the blob, and the
+// clumps never stretch with the instance's scale.
+const FOLIAGE_BUMP_VERT = `
+  #ifdef USE_INSTANCING
+    vFolPos = (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz;
+  #else
+    vFolPos = (modelMatrix * vec4(position, 1.0)).xyz;
+  #endif`;
+const FOLIAGE_BUMP_FRAG_HEAD = `
+varying vec3 vFolPos;
+float folHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0;
+  return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float folNoise(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(folHash(i), folHash(i + vec3(1,0,0)), f.x), mix(folHash(i + vec3(0,1,0)), folHash(i + vec3(1,1,0)), f.x), f.y),
+             mix(mix(folHash(i + vec3(0,0,1)), folHash(i + vec3(1,0,1)), f.x), mix(folHash(i + vec3(0,1,1)), folHash(i + vec3(1,1,1)), f.x), f.y), f.z); }
+float folLeaves(vec3 p) {
+  float n = folNoise(p * 1.1) * 0.55 + folNoise(p * 2.9 + 7.3) * 0.3 + folNoise(p * 7.7 + 3.1) * 0.15;
+  return smoothstep(0.25, 0.8, n);
+}`;
+function makeSolidMaterial({ rough = 0.9 } = {}, amp) {
+  const mat = applyWind(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: rough }), amp);
+  const windPatch = mat.onBeforeCompile;
+  mat.onBeforeCompile = sh => {
+    windPatch(sh);
+    sh.vertexShader = 'varying vec3 vFolPos;\n' + sh.vertexShader
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>' + FOLIAGE_BUMP_VERT);
+    sh.fragmentShader = FOLIAGE_BUMP_FRAG_HEAD + "\n" + sh.fragmentShader
+      .replace('#include <color_fragment>', `#include <color_fragment>
+  float folH = folLeaves(vFolPos);
+  diffuseColor.rgb *= mix(0.55, 1.25, folH);`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  {
+    // Bump from the leaf-clump height (cf. three's perturbNormalArb).
+    vec3 vSigmaX = dFdx(-vViewPosition), vSigmaY = dFdy(-vViewPosition);
+    vec3 R1 = cross(vSigmaY, normal), R2 = cross(normal, vSigmaX);
+    float fDet = dot(vSigmaX, R1) * faceDirection;
+    float bump = 0.9 / (1.0 + 0.02 * length(vViewPosition));
+    vec2 dH = vec2(dFdx(folH), dFdy(folH)) * bump;
+    vec3 vGrad = sign(fDet) * (dH.x * R1 + dH.y * R2);
+    normal = normalize(abs(fDet) * normal - vGrad);
+  }`);
+  };
+  mat.customProgramCacheKey = () => 'vegsolid:' + amp;
+  return mat;
+}
+
+// Bark: vertical fissures and a mossy foot, painted once. The trunk's UVs run
+// once round and once up, so the tall scale only lengthens the fissures.
+function barkTexture(a) {
+  const t = canvas(128, 512, (g, W, H) => {
+    g.fillStyle = rgb(118, 104, 88); g.fillRect(0, 0, W, H);
+    let s = 7; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 70; i++) {
+      const x = r() * W, w = 1 + r() * 3.5, k = 0.45 + r() * 0.35;
+      g.fillStyle = rgb(118, 104, 88, k);
+      g.fillRect(x, 0, w, H);
+      if (x + w > W) g.fillRect(x - W, 0, w, H);   // wraps round the trunk
+    }
+    for (let i = 0; i < 260; i++) {
+      g.fillStyle = r() < 0.5 ? 'rgba(160,150,130,0.35)' : 'rgba(40,34,28,0.35)';
+      g.fillRect(r() * W, r() * H, 2 + r() * 6, 1 + r() * 3);
+    }
+    const moss = g.createLinearGradient(0, H, 0, H * 0.72);
+    moss.addColorStop(0, 'rgba(62,84,40,0.85)'); moss.addColorStop(1, 'rgba(62,84,40,0)');
+    g.fillStyle = moss; g.fillRect(0, H * 0.72, W, H * 0.28);
+  }, a);
+  t.wrapS = THREE.RepeatWrapping;
+  return t;
+}
+
+// A rainforest trunk: tapered, with a buttress flare at the foot.
+function trunkGeo() {
+  // Three rings, bunched at the foot where the flare needs them.
+  const g = new THREE.CylinderGeometry(0.3, 0.5, 1, 8, 3, true).translate(0, 0.5, 0);
+  const p = g.getAttribute('position');
+  const RING_Y = [0, 0.05, 0.14, 1];
+  for (let i = 0; i < p.count; i++) {
+    const y = RING_Y[Math.round(p.getY(i) * 3)];
+    const r = 0.5 - 0.2 * y, r0 = Math.hypot(p.getX(i), p.getZ(i));
+    p.setXYZ(i, p.getX(i) * r / r0, y, p.getZ(i) * r / r0);
+    const a = Math.atan2(p.getZ(i), p.getX(i));
+    const flare = 1 + Math.max(0, 1 - y / 0.12) ** 2 * (0.6 + 0.35 * Math.cos(a * 5));
+    p.setX(i, p.getX(i) * flare); p.setZ(i, p.getZ(i) * flare);
+  }
+  g.computeVertexNormals();
+  return g;
 }
 
 // ---------------------------------------------------------------------------
@@ -361,18 +446,24 @@ function monsteraGeo() {
   return mergeGeometries(parts);
 }
 
-// Rainforest giant's crown lobe: a faceted blob. Solid, so it shades the
-// floor below without an alpha depth pass.
-function crownLobeGeo() {
-  const g = new THREE.IcosahedronGeometry(1, 1);
+// Rainforest giant's crown lobe: a lumpy blob. Solid, so it shades the
+// floor below without an alpha depth pass. Welded and smooth-shaded — the
+// leafy relief comes from the material's world-space bump (foliageBump), not
+// from facets. `detail` 2 near the eye, 1 for the backdrop and the bushes.
+function crownLobeGeo(detail = 2) {
+  let g = new THREE.IcosahedronGeometry(1, detail);
+  g.deleteAttribute('normal'); g.deleteAttribute('uv');
+  g = mergeVertices(g);
   const p = g.getAttribute('position');
   const v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
-    const k = Math.sin(Math.round(v.x * 700) * 12.99 + Math.round(v.y * 700) * 78.23
-      + Math.round(v.z * 700) * 37.72) * 43758.5453;
-    v.multiplyScalar(0.8 + (k - Math.floor(k)) * 0.35);
+    const k = Math.sin(v.x * 3.1 + 1.7) * Math.sin(v.y * 2.7 + 0.4) * Math.sin(v.z * 3.3 + 2.1)
+      + 0.5 * Math.sin(v.x * 5.3 - v.z * 4.1 + v.y * 2.3);
+    v.multiplyScalar(0.94 + k * 0.1);
     v.y *= 0.55;
+    // A flatter, slightly tucked underside: crowns are lit from above.
+    if (v.y < 0) v.y *= 0.8;
     p.setXYZ(i, v.x, v.y, v.z);
   }
   g.computeVertexNormals();
@@ -382,8 +473,8 @@ function crownLobeGeo() {
 // A bush: two squashed crown lobes — solid, cheap, casts a real shadow, and
 // gives the mid layer of the forest somewhere to be.
 function bushGeo() {
-  const a = crownLobeGeo(); a.scale(1, 0.62, 1); a.translate(0, 0.3, 0);
-  const b = crownLobeGeo(); b.scale(0.66, 0.5, 0.66); b.translate(0.3, 0.55, -0.18);
+  const a = crownLobeGeo(1); a.scale(1, 0.62, 1); a.translate(0, 0.3, 0);
+  const b = crownLobeGeo(1); b.scale(0.66, 0.5, 0.66); b.translate(0.3, 0.55, -0.18);
   return mergeGeometries([a, b]);
 }
 
@@ -414,7 +505,7 @@ function matrixOf(it) {
   return _m.compose(_p, _q, _s);
 }
 
-function tiled(group, name, geo, mat, items, { cast = false, depth = null, far = Infinity, tint = null, tile = TILE } = {}) {
+function tiled(group, name, geo, mat, items, { cast = false, depth = null, far = Infinity, tint = null, tile = TILE, lod = null } = {}) {
   const tiles = new Map();
   for (const it of items) {
     const k = `${Math.floor(it.x / tile)},${Math.floor(it.z / tile)}`;
@@ -436,6 +527,7 @@ function tiled(group, name, geo, mat, items, { cast = false, depth = null, far =
     if (depth) im.customDepthMaterial = depth;
     im.name = `${name}@${k}`;
     im.userData.far = far;
+    im.userData.lod = lod;
     group.add(im);
     meshes.push(im);
   }
@@ -509,7 +601,7 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     monstera: makeLeafMaterial(tex.monstera, 0.026),
     vine: makeLeafMaterial(tex.vine, 0.012),
     palmBark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }),
-    bark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }),
+    bark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, map: barkTexture(maxAniso) }),
     crown: makeSolidMaterial({}, 0.012),
     bush: makeSolidMaterial({ rough: 0.92 }, 0.02),
     grass: applyWind(new THREE.MeshStandardMaterial({
@@ -520,7 +612,8 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     palmTrunk: palmTrunkGeo(), palmCrown: palmCrownGeo(),
     fern: fernGeo(), fernUp: fernUprightGeo(),
     broad: broadPlantGeo(), monstera: monsteraGeo(),
-    trunk: new THREE.CylinderGeometry(0.32, 0.55, 1, 8).translate(0, 0.5, 0),
+    trunk: trunkGeo(), lobeFar: crownLobeGeo(1),
+    trunkFar: new THREE.CylinderGeometry(0.3, 0.5, 1, 7, 1, true).translate(0, 0.5, 0),
     lobe: crownLobeGeo(), bush: bushGeo(), grass: grassTuftGeo(),
     vine: new THREE.PlaneGeometry(0.5, 1, 1, 4).translate(0, -0.5, 0),
   };
@@ -750,16 +843,16 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
   meshes.push(...tiled(group, 'sapling', geo.palmCrown, mat.frond, saplings,
     { far: UNDERGROWTH_FAR, tint: { h: 0, s: 0, l: 1 } }));
   meshes.push(...tiled(group, 'understory', geo.trunk, mat.bark, understory,
-    { cast: true, tint: { h: 0.08, s: 0.24, l: 0.27 } }));
+    { cast: true, tint: { h: 0.08, s: 0.12, l: 0.62 } }));
   meshes.push(...tiled(group, 'understoryCrown', geo.lobe, mat.crown, understoryLobes,
-    { cast: true, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
+    { cast: true, lod: LOD_CROWN, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
   meshes.push(...tiled(group, 'trunk', geo.trunk, mat.bark, trunks,
-    { cast: true, tint: { h: 0.08, s: 0.24, l: 0.27 } }));
+    { cast: true, tint: { h: 0.08, s: 0.12, l: 0.62 } }));
   meshes.push(...tiled(group, 'crown', geo.lobe, mat.crown, lobes,
-    { cast: true, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
-  meshes.push(...tiled(group, 'backTrunk', geo.trunk, mat.bark, backTrunks,
-    { tile: 200, tint: { h: 0.08, s: 0.24, l: 0.27 } }));
-  meshes.push(...tiled(group, 'backCrown', geo.lobe, mat.crown, backLobes,
+    { cast: true, lod: LOD_CROWN, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
+  meshes.push(...tiled(group, 'backTrunk', geo.trunkFar, mat.bark, backTrunks,
+    { tile: 200, tint: { h: 0.08, s: 0.12, l: 0.62 } }));
+  meshes.push(...tiled(group, 'backCrown', geo.lobeFar, mat.crown, backLobes,
     { tile: 200, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
   meshes.push(...tiled(group, 'vine', geo.vine, mat.vine, vines, { far: UNDERGROWTH_FAR }));
   meshes.push(...tiled(group, 'fern', geo.fern, mat.fern, ferns,
@@ -777,7 +870,7 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
 
   // Distance culling of the undergrowth tiles, by tile centre — and the
   // wind's clock, which is the only per-frame CPU the plants cost.
-  const culled = meshes.filter(m => Number.isFinite(m.userData.far));
+  const culled = meshes.filter(m => Number.isFinite(m.userData.far) || m.userData.lod);
   let acc = 1;
   function update(camPos, dt) {
     WIND.uWindTime.value += dt;
@@ -786,7 +879,10 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     acc = 0;
     for (const m of culled) {
       const c = m.boundingSphere.center;
-      m.visible = Math.hypot(c.x - camPos.x, c.z - camPos.z) - m.boundingSphere.radius < m.userData.far;
+      const d = Math.hypot(c.x - camPos.x, c.z - camPos.z) - m.boundingSphere.radius;
+      m.visible = d < m.userData.far;
+      // Crowns trade their fine blob for the coarse one out of close view.
+      if (m.userData.lod) m.geometry = d < m.userData.lod.dist ? geo.lobe : geo.lobeFar;
     }
   }
 
