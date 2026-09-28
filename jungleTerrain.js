@@ -301,6 +301,9 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
   const rockMats = [0x57524b, 0x4a4641, 0x625c52].map(c =>
     new THREE.MeshStandardMaterial({ color: c, roughness: 0.92, flatShading: true }));
   const buckets = rockGeos.map(() => rockMats.map(() => []));
+  // Every rock's footprint, for whatever wants to shelter by one (the
+  // wildlife's crabs, later lizards and sea lions).
+  const rockSpots = [];
   const put = (x, y, z, s, squash = 0.8) => {
     const gi = Math.floor(rnd() * 3), mi = Math.floor(rnd() * 3);
     const it = {
@@ -313,6 +316,7 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
     // is spent either way, so dropping a rock does not reshuffle the rest.
     if (!clearOfFalls(x, y, z, r)) return;
     buckets[gi][mi].push(it);
+    rockSpots.push({ x, y, z, r });
   };
   // The cliff face: stacked boulders from the foot to the lip, leaving the
   // falls' own slot clear.
@@ -379,5 +383,5 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
   buckets.forEach((row, gi) => row.forEach((items, mi) =>
     addInstanced(rockGeos[gi], rockMats[mi], items, { prop: true })));
 
-  return { terrain, path, grain, update(t) { dappleTime.value = t; } };
+  return { terrain, path, grain, rockSpots, update(t) { dappleTime.value = t; } };
 }

@@ -10,12 +10,13 @@ import {
   POOL, FALLS, SAND_END, WADE_Z,
 } from './jungleLayout.js';   // no ?v: the element modules import it bare, and
                                   // two URLs would be two module instances
-import { buildJungleTerrain } from './jungleTerrain.js?v=20260927-dapple';
+import { buildJungleTerrain } from './jungleTerrain.js?v=20260928-rockspots';
 import { createJungleOcean } from './jungleOcean.js?v=20260927-ocean3';
 import { createJungleWaterfall } from './jungleWaterfall.js?v=20260927-falls8';
 import { buildJungleVegetation } from './jungleVegetation.js?v=20260927-veg2';
 import { createJungleTender } from './jungleTender.js?v=20260928-tender3';
 import { createJungleLiner } from './jungleLiner.js?v=20260928-liner1';
+import { createJungleWildlife } from './jungleWildlife.js?v=20260928-wild1';
 
 // ---------------------------------------------------------------------------
 // Promenade tropicale — la cascade. SKELETON.
@@ -38,6 +39,7 @@ import { createJungleLiner } from './jungleLiner.js?v=20260928-liner1';
 //   jungleVegetation.js  palms, giants, ferns, broad leaves, lianas
 //   jungleTender.js      the moored water-taxi — hull, awning, moorings
 //   jungleLiner.js       the cruise ship at anchor on the horizon
+//   jungleWildlife.js    the animals (engine: wildlife.js — see WILDLIFE.md)
 //
 // Contracts inherited from the L.A. beach: the sea is WADEABLE, not
 // swimmable (wade barrier at WADE_Z); the ground probe evaluates the
@@ -210,6 +212,9 @@ const terrain = buildJungleTerrain({ scene, addInstanced, rnd, maxAniso });
 const ocean = createJungleOcean({ scene, waterNormal, maxAniso, skyUniforms });
 const falls = createJungleWaterfall({ scene, waterNormal });
 const vegetation = buildJungleVegetation({ scene, rnd, maxAniso });
+// Its own seeded RNGs, so the shared rnd() above is not drawn from: adding
+// an animal never moves a rock or a palm.
+const wildlife = createJungleWildlife({ scene, ocean, terrain });
 
 // ---------------------------------------------------------------------------
 // The jetty: a plank deck on pilings, walkable, from the sand out to where
@@ -596,6 +601,7 @@ function animate() {
   updateAvatar(dt);
   rig.update(dt, input, ctrl);
   vegetation.update(camera.position, dt);
+  wildlife.update(dt, t, ctrl.pos, ctrl.vel);
   updateHud();
   renderer.render(scene, camera);
   input.endFrame();
@@ -643,7 +649,7 @@ onResize();
 // other worlds, so the shared framing scripts work unchanged.
 const hook = {
   THREE, scene, camera, renderer, world, ctrl, rig, input, spawnPoint, bw,
-  terrainHeight, ocean, falls, vegetation, terrain, tender, tenderCtl, liner,
+  terrainHeight, ocean, falls, vegetation, terrain, tender, tenderCtl, liner, wildlife,
   SEA_Y, SPAWN, TENDER_SPOT, JETTY, POOL, FALLS, WADE_Z,
   get player() { return player; },
   playerReady,
