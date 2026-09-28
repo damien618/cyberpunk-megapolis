@@ -29,8 +29,12 @@ qui tombe dans un bassin. Pour rentrer, retournez au bout du ponton. Code :
 l'API du sol `terrainSlope`/`terrainNormal`/`terrainMasks`/`soilAt` que tout
 le monde consomme — maillage, végétation, tests), `jungleTerrain.js`
 (matériau procédural : peinture par masques + micro-détail shader),
-`jungleOcean.js`, `jungleWaterfall.js`, `jungleVegetation.js`. Tests :
-`tests/jungle_layout.py`, `tests/jungle_walk.py`, `tests/cruise_island_prompt.py`.
+`jungleOcean.js`, `jungleWaterfall.js`, `jungleVegetation.js`,
+`jungleTender.js` (le bateau-taxi du ponton : coque loftée, auvent, hors-bord,
+amarres — il flotte sur `waterHeightAt`), `jungleLiner.js` (le paquebot au
+mouillage à l'horizon, même silhouette et même livrée que celui de `main-CRUISE.js`). Tests :
+`tests/jungle_layout.py`, `tests/jungle_walk.py`, `tests/cruise_island_prompt.py`,
+`tests/jungle_tender_shot.py`.
 
 Cascade raffinée (toujours l'anse) : le rideau d'eau tombe en chute libre,
 dégagé de la paroi, sur une trajectoire définie une seule fois dans le layout

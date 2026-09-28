@@ -14,6 +14,8 @@ import { buildJungleTerrain } from './jungleTerrain.js?v=20260927-dapple';
 import { createJungleOcean } from './jungleOcean.js?v=20260927-ocean3';
 import { createJungleWaterfall } from './jungleWaterfall.js?v=20260927-falls8';
 import { buildJungleVegetation } from './jungleVegetation.js?v=20260927-veg2';
+import { createJungleTender } from './jungleTender.js?v=20260928-tender3';
+import { createJungleLiner } from './jungleLiner.js?v=20260928-liner1';
 
 // ---------------------------------------------------------------------------
 // Promenade tropicale — la cascade. SKELETON.
@@ -25,14 +27,17 @@ import { buildJungleVegetation } from './jungleVegetation.js?v=20260927-veg2';
 //
 // This file is the shell every world has (renderer, light, player,
 // controller, camera, HUD, loop) plus the few built things that are not
-// "an element": the jetty, the tender and the liner at anchor. The elements
-// each live in their own module so they can be iterated on separately:
+// "an element": the jetty and the liner at anchor. The tender outgrew its
+// box-hull sketch and moved to its own module. The elements each live in
+// their own module so they can be iterated on separately:
 //
 //   jungleLayout.js      the plan — pure functions of (x, z), node-testable
 //   jungleTerrain.js     ground mesh, path ribbon, rocks
 //   jungleOcean.js       swell, lagoon colour, swash foam
 //   jungleWaterfall.js   falls, pool, mist, stream
 //   jungleVegetation.js  palms, giants, ferns, broad leaves, lianas
+//   jungleTender.js      the moored water-taxi — hull, awning, moorings
+//   jungleLiner.js       the cruise ship at anchor on the horizon
 //
 // Contracts inherited from the L.A. beach: the sea is WADEABLE, not
 // swimmable (wade barrier at WADE_Z); the ground probe evaluates the
@@ -211,13 +216,43 @@ const vegetation = buildJungleVegetation({ scene, rnd, maxAniso });
 // the tender can come alongside.
 // ---------------------------------------------------------------------------
 const BOX = new THREE.BoxGeometry(1, 1, 1);
+// The deck's planking: the shared PBR deck boards (as on the L.A. beach
+// boardwalk), laid ACROSS the jetty. One tile holds 15 boards; its length is
+// picked so each deck half holds a whole number of tiles, so the boards run
+// on unbroken across the seam between the two instanced halves.
+const DECK_HALF = (JETTY.z0 - JETTY.z1) / 2;
+const DECK_TILE = DECK_HALF / Math.round(DECK_HALF / 2.3);
+const deckTex = (url, srgb) => {
+  const t = loader.load(url);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = maxAniso;
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+};
+// A unit box whose UVs are metres / DECK_TILE for the deck's own scale
+// (every half is the same size), each face mapped so the grain runs along
+// the boards: across on the top, lengthwise on the fascia.
+function makeDeckGeo(sx, sy, sz) {
+  const g = new THREE.BoxGeometry(1, 1, 1);
+  const p = g.attributes.position, n = g.attributes.normal, uv = g.attributes.uv;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i) * sx, y = p.getY(i) * sy, z = p.getZ(i) * sz;
+    const ax = Math.abs(n.getX(i)), ay = Math.abs(n.getY(i));
+    if (ay > 0.5) uv.setXY(i, x / DECK_TILE, z / DECK_TILE);
+    else if (ax > 0.5) uv.setXY(i, z / DECK_TILE, y / DECK_TILE);
+    else uv.setXY(i, x / DECK_TILE, y / DECK_TILE);
+  }
+  return g.scale(sx, sy, sz);
+}
 const M = {
-  plank: new THREE.MeshStandardMaterial({ color: 0x9a7b58, roughness: 0.9 }),
+  plank: new THREE.MeshStandardMaterial({
+    map: deckTex('./textures/nature/wood_diff.jpg', true),
+    normalMap: deckTex('./textures/nature/wood_n.jpg'),
+    roughnessMap: deckTex('./textures/nature/wood_r.jpg'),
+    normalScale: new THREE.Vector2(0.9, 0.9),
+    color: 0xd6bf9f, roughness: 1, metalness: 0,   // sun- and salt-bleached
+  }),
   piling: new THREE.MeshStandardMaterial({ color: 0x5e4a36, roughness: 0.95 }),
-  hullWhite: new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.45 }),
-  hullNavy: new THREE.MeshStandardMaterial({ color: 0x12314f, roughness: 0.5 }),
-  canvas: new THREE.MeshStandardMaterial({ color: 0xe9e2cf, roughness: 0.85, side: THREE.DoubleSide }),
-  funnel: new THREE.MeshStandardMaterial({ color: 0xc8a24a, roughness: 0.5, metalness: 0.3 }),
 };
 {
   const deck = [], posts = [];
@@ -226,9 +261,14 @@ const M = {
   for (let k = 0; k < 2; k++) {
     const za = JETTY.z0 - (len * k) / 2, zb = JETTY.z0 - (len * (k + 1)) / 2;
     deck.push({ x: JETTY.x, y: JETTY.deckY - 0.12, z: (za + zb) / 2,
-      sx: JETTY.halfW * 2, sy: 0.24, sz: za - zb + 0.02 });
+      sx: 1, sy: 1, sz: 1 });            // the size is baked into the geometry
   }
-  for (let z = JETTY.z0 - 1; z > JETTY.z1 - 0.1; z -= 3.2) {
+  // Pilings on a 3.2 m rhythm (the tender's mooring lines count on it),
+  // plus a pair at the very head to carry the stringer.
+  const pileZ = [];
+  for (let z = JETTY.z0 - 1; z > JETTY.z1 - 0.1; z -= 3.2) pileZ.push(z);
+  pileZ.push(JETTY.z1 + 0.1);
+  for (const z of pileZ) {
     for (const s of [-1, 1]) {
       const x = JETTY.x + s * (JETTY.halfW - 0.15);
       const bed = terrainHeight(x, z);
@@ -236,60 +276,29 @@ const M = {
         sy: JETTY.deckY + 0.9 - bed + 0.4, sz: 0.22 });
     }
   }
-  addInstanced(BOX, M.plank, deck);
+  addInstanced(makeDeckGeo(JETTY.halfW * 2, 0.24, DECK_HALF + 0.02), M.plank, deck);
   // A stringer across the head, so walking to the end stops you there
-  // rather than stepping you off into the lagoon. The tender lies along the
-  // east side, which stays open.
-  posts.push({ x: JETTY.x, y: JETTY.deckY + 0.45, z: JETTY.z1 + 0.1, sx: JETTY.halfW * 2, sy: 0.12, sz: 0.14 });
+  // rather than stepping you off into the lagoon. It spans the two head
+  // pilings (it used to hang in the air 1.3 m past the last pair). The
+  // tender lies along the east side, which stays open.
+  posts.push({ x: JETTY.x, y: JETTY.deckY + 0.45, z: JETTY.z1 + 0.1,
+    sx: 2 * (JETTY.halfW - 0.15) + 0.22, sy: 0.12, sz: 0.14 });
   addInstanced(BOX, M.piling, posts, { prop: true });
 }
 
-// The liner's tender, moored at the jetty head. Scenery: it bobs, so it is
-// on `scene`, not in the collision world.
-const tender = new THREE.Group();
-{
-  const hull = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2)
-    .rotateX(Math.PI), M.hullWhite);
-  hull.scale.set(2.6, 1.4, 8.5);
-  const band = new THREE.Mesh(BOX, M.hullNavy);
-  band.scale.set(2.62, 0.18, 7.2);
-  band.position.y = -0.08;
-  const roof = new THREE.Mesh(BOX, M.canvas);
-  roof.scale.set(2.2, 0.08, 4.2);
-  roof.position.y = 1.55;
-  const cabin = new THREE.Mesh(BOX, M.hullWhite);
-  cabin.scale.set(2.1, 0.7, 1.6);
-  cabin.position.set(0, 0.35, 2.1);
-  tender.add(hull, band, roof, cabin);
-  for (const [x, z] of [[-1, -1.9], [1, -1.9], [-1, 1.9], [1, 1.9]]) {
-    const post = new THREE.Mesh(BOX, M.hullNavy);
-    post.scale.set(0.06, 1.55, 0.06);
-    post.position.set(x, 0.78, z);
-    tender.add(post);
-  }
-  tender.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-  tender.position.set(JETTY.x + JETTY.halfW + 1.7, SEA_Y + 0.35, JETTY.z1 + 4);
-  scene.add(tender);
-}
+// The water-taxi moored at the jetty head — its own module, since it is a
+// whole boat now: lofted hull, benches, awning, outboard, moorings. It
+// floats on the ocean's surface (scenery: it bobs, so it is on `scene`, not
+// in the collision world) and update() samples the real water at four
+// points of the hull, heave from the mean, pitch and roll from the diffs.
+const tenderCtl = createJungleTender({ scene, ocean });
+const tender = tenderCtl.group;
 
 // The liner at anchor off the cove, so the island and the ship see each
-// other. A silhouette only — 190 m of hull, the house, the funnel.
-{
-  const liner = new THREE.Group();
-  const part = (mat, x, y, z, sx, sy, sz) => {
-    const m = new THREE.Mesh(BOX, mat);
-    m.position.set(x, y, z); m.scale.set(sx, sy, sz);
-    liner.add(m);
-  };
-  part(M.hullNavy, 0, 1, 0, 190, 12, 32);
-  part(M.hullWhite, 0, 9, 0, 186, 6, 32);
-  part(M.hullWhite, -6, 16, 0, 124, 8, 26);
-  part(M.hullWhite, -2, 22, 0, 90, 5, 22);
-  part(M.funnel, -30, 29, 0, 12, 10, 8);
-  liner.position.set(-150, SEA_Y, -620);
-  liner.rotation.y = 0.18;
-  scene.add(liner);
-}
+// other — the same ship as main-CRUISE.js, modelled for 600 m away.
+const liner = createJungleLiner({
+  scene, position: new THREE.Vector3(-150, SEA_Y, -620), yaw: 0.18 + Math.PI / 2,
+}).group;
 
 // ---------------------------------------------------------------------------
 // Collision world, ground probe, controller.
@@ -580,8 +589,7 @@ function animate() {
   ocean.update(t);
   falls.update(t);
   terrain.update(t);   // the ground's canopy dapple keeps wandering
-  tender.position.y = SEA_Y + 0.3 + Math.sin(t * 0.9) * 0.08;
-  tender.rotation.z = Math.sin(t * 0.7 + 1) * 0.025;
+  tenderCtl.update(t, dt);   // the taxi rides the same sea the shader draws
   skyDome.position.copy(camera.position);
   updateAtmosphere();
   updateSunShadow(ctrl.pos);
@@ -635,7 +643,7 @@ onResize();
 // other worlds, so the shared framing scripts work unchanged.
 const hook = {
   THREE, scene, camera, renderer, world, ctrl, rig, input, spawnPoint, bw,
-  terrainHeight, ocean, falls, vegetation, terrain, tender,
+  terrainHeight, ocean, falls, vegetation, terrain, tender, tenderCtl, liner,
   SEA_Y, SPAWN, TENDER_SPOT, JETTY, POOL, FALLS, WADE_Z,
   get player() { return player; },
   playerReady,
