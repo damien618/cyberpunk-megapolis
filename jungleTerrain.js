@@ -2,13 +2,14 @@
 // painted from the layout's surface masks (the same masks soilAt reads, so
 // the paint and the logic cannot disagree), a procedural detail texture the
 // shader picks per surface, the promenade path laid on it as a ribbon, and
-// faceted rocks dressing the cliff, the headlands and the beach.
+// weathered rocks dressing the cliff, the headlands and the beach.
 //
 // Heights come from jungleLayout.js and nowhere else. The ground probe in
 // main-JUNGLE.js evaluates the same terrainHeight() directly rather than
 // raying this mesh, so the mesh is for looking at: it lives on `scene`, not
 // on `world`, and never enters the collision world.
 import * as THREE from 'three';
+import { makeRockGeo, makeRockDetail, makeRockMaterial } from './jungleRocks.js';
 import {
   terrainHeight, terrainMasks, shoreAt, pathDistance, PATH, PATH_LEN, PATH_HALF_W, SAND_END,
   cliffZ, CLIFF_FOOT, CLIFF_LIP, ridgeAt, streamDistance, STREAM_HALF_W, POOL,
@@ -119,24 +120,6 @@ function makeDetailTexture(maxAniso) {
   return t;
 }
 
-// Irregular, flat-shaded boulders — the beach's recipe: jitter hashed off the
-// vertex POSITION (the geometry is non-indexed), squashed so they sit.
-function makeRockGeo(salt) {
-  const g = new THREE.IcosahedronGeometry(0.5, 1);
-  const p = g.attributes.position;
-  const v = new THREE.Vector3();
-  for (let i = 0; i < p.count; i++) {
-    v.fromBufferAttribute(p, i);
-    const k = Math.sin(Math.round(v.x * 800) * 12.9898 + Math.round(v.y * 800) * 78.233
-      + Math.round(v.z * 800) * 37.719 + salt) * 43758.5453;
-    v.multiplyScalar(0.72 + (k - Math.floor(k)) * 0.56);
-    v.y *= 0.8;
-    p.setXYZ(i, v.x, v.y, v.z);
-  }
-  g.computeVertexNormals();
-  return g;
-}
-
 // The paint, from the layout's surface masks — the very masks soilAt reads,
 // so what the ground looks like and what the game says it is cannot drift
 // apart. `maskOut` (a 4-slot scratch) receives the weights the shader needs:
@@ -215,6 +198,7 @@ function buildPathRibbon(grain) {
 export function buildJungleTerrain({ scene, addInstanced, rnd, maxAniso = 4 }) {
   const grain = makeGrainTexture(maxAniso);
   const detail = makeDetailTexture(maxAniso);
+  const rockDetail = makeRockDetail(maxAniso);
   const w = TERRAIN_X[1] - TERRAIN_X[0], d = TERRAIN_Z[1] - TERRAIN_Z[0];
   const geo = new THREE.PlaneGeometry(w, d, Math.round(w / CELL), Math.round(d / CELL));
   geo.rotateX(-Math.PI / 2);
@@ -250,13 +234,14 @@ export function buildJungleTerrain({ scene, addInstanced, rnd, maxAniso = 4 }) {
   // everywhere; wet ground darkens and glosses. One extra texture fetch.
   groundMat.onBeforeCompile = sh => {
     sh.uniforms.uDetail = { value: detail };
+    sh.uniforms.uRockDetail = { value: rockDetail };
     sh.uniforms.uDappleTime = dappleTime;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 aMask;\nvarying vec4 vMask;\nvarying vec2 vGroundUv;\nvarying vec3 vGroundPos;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMask = aMask;\nvGroundUv = uv;\nvGroundPos = (modelMatrix * vec4(position, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-uniform sampler2D uDetail;
+uniform sampler2D uDetail, uRockDetail;
 uniform float uDappleTime;
 varying vec4 vMask;
 varying vec2 vGroundUv;
@@ -272,7 +257,10 @@ diffuseColor.rgb *= mix(1.0, 0.72 + 0.56 * det.r, vMask.x);
 // top-down ground UV they stretched into long vertical streaks down every
 // steep face, like corrugated sheet.
 float strata = texture2D(uDetail, vec2((vGroundPos.x + vGroundPos.z) * 0.06, vGroundPos.y * 0.11)).g;
-diffuseColor.rgb *= mix(1.0, 0.62 + 0.76 * strata, vMask.y);
+float stoneGrain = texture2D(uRockDetail,
+  vec2((vGroundPos.x + vGroundPos.z) * 0.17, vGroundPos.y * 0.24)).r;
+// Broken, subdued bedding with granular erosion instead of regular stripes.
+diffuseColor.rgb *= mix(1.0, 0.77 + 0.15 * strata + 0.3 * stoneGrain, vMask.y);
 diffuseColor.rgb *= mix(1.0, 0.88 + 0.24 * det.b, vMask.z);
 // Wet ground darkens.
 diffuseColor.rgb *= mix(1.0, 0.66, vMask.w);
@@ -299,7 +287,7 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
   // along the path. All `prop` (walked around, never stood on).
   const rockGeos = [makeRockGeo(0), makeRockGeo(31.7), makeRockGeo(88.1)];
   const rockMats = [0x57524b, 0x4a4641, 0x625c52].map(c =>
-    new THREE.MeshStandardMaterial({ color: c, roughness: 0.92, flatShading: true }));
+    makeRockMaterial(c, rockDetail));
   const buckets = rockGeos.map(() => rockMats.map(() => []));
   // Every rock's footprint, for whatever wants to shelter by one (the
   // wildlife's crabs, later lizards and sea lions).
@@ -310,7 +298,7 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
       x, y, z, sx: s * (0.8 + rngf() * 0.5), sy: s * squash * (0.7 + rngf() * 0.6),
       sz: s * (0.8 + rngf() * 0.5), ry: rngf() * Math.PI * 2, rx: (rngf() - 0.5) * 0.4,
     };
-    // Bounding radius of the jittered shell (vertices reach 0.5 × 1.28).
+    // Conservative shell radius, shared with collision and falls clearance.
     const r = Math.max(it.sx, it.sy, it.sz) * 0.64;
     // Nothing through or in front of the falling sheet. The draw is spent
     // either way, so dropping a rock does not reshuffle the rest.
@@ -407,10 +395,10 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
       const r = put(x, top - s * 0.42, z, s, 0.8, seaRng);
       // The shell's own shape, so a sea lion climbs the rock's real slope
       // instead of a ramp guessed from its bounding radius: the rock
-      // geometry is a 0.5-radius icosahedron jittered 0.72–1.28 and squashed
+      // geometry is a rounded, eroded 0.5-radius icosahedron squashed
       // 0.8 in y, then scaled and turned by the instance — an ellipsoid of
       // semi-axes 0.5·sx, 0.4·sy, 0.5·sz about its centre, taken at 0.95 so
-      // the body sits a touch into the facets rather than over them.
+      // the body sits a touch into the surface rather than over it.
       if (r !== null) {
         const it = put.last;
         hauloutSpots.push({ x, y: top, z, r, shell: {
