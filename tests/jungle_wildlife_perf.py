@@ -2,14 +2,16 @@
 
 Headless Chromium is SwiftShader — useless for fps — so this opens a real,
 headed browser (headless=False, the machine's GPU), stands the player at the
-four reference spots, lets the camera rig settle, then averages draw calls
-and triangles over four seconds and reads the wildlife's own stats.
+reference spots, lets the camera rig settle, then measures four seconds
+twice — animals shown, animals hidden — so the difference (fps, p95 frame,
+draw calls, triangles) is the wildlife's own, and reads its stats.
 
     python3 serve.py 8000 &   # if it is not already up
-    .venv/bin/python tests/jungle_wildlife_perf.py   # opens a window ~2 min
+    .venv/bin/python tests/jungle_wildlife_perf.py              # a window, ~1.5 min
+    .venv/bin/python tests/jungle_wildlife_perf.py --closeups   # + fox/lizard/frog shots
 
-Budget (WILDLIFE.md): the roster costs +12 draw calls at most, 25 k
-triangles, 0.6 ms of wildlife.update. Also saves one screenshot per spot to
+Budget (WILDLIFE.md): +6 draw calls in any view, 25 k triangles, 0.6 ms of
+wildlife.update, and no fps lost. Also saves one screenshot per spot to
 scratch/, to be looked at, not only measured.
 """
 import json, os, sys
@@ -17,17 +19,33 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', ROOT + '/.venv/pw-browsers')
 from playwright.sync_api import sync_playwright
 
-SPOTS = [('spawn', -8, -4), ('beach', 10, -8), ('mid-forest', -14, 60), ('pool', 8, 128)]
+SPOTS = [('spawn', -8, -4), ('beach', 10, -8), ('jetty', 0, -30), ('mid-forest', -14, 60),
+         ('stream', 26, 80), ('pool', 8, 128)]
 
-SAMPLE = '''async ([name, x, z]) => {
-  const v = window.__jungle, THREE = v.THREE;
-  v.ctrl.rescueTo(new THREE.Vector3(x, v.terrainHeight(x, z) + 1.0, z));
-  v.ctrl.vel.set(0, 0, 0);
-  return true;
+# Four seconds of frames: fps, p95 interval, frames over 20 ms, mean draw
+# calls and triangles, and the wildlife's own stats.
+MEASURE = '''async () => {
+  const v = window.__jungle;
+  const iv = []; let last = performance.now(), calls = 0, tris = 0, n = 0;
+  await new Promise(res => {
+    const t0 = last;
+    const f = now => {
+      iv.push(now - last); last = now;
+      calls += v.renderer.info.render.calls; tris += v.renderer.info.render.triangles; n++;
+      if (now - t0 < 4000) requestAnimationFrame(f); else res();
+    };
+    requestAnimationFrame(f);
+  });
+  iv.shift(); iv.sort((a, b) => a - b);
+  const mean = iv.reduce((s, x) => s + x, 0) / iv.length;
+  return { fps: +(1000 / mean).toFixed(1), p95: +iv[Math.floor(iv.length * 0.95)].toFixed(1),
+           slow: iv.filter(x => x > 20).length, calls: Math.round(calls / n), tris: Math.round(tris / n),
+           wl: JSON.parse(JSON.stringify(v.wildlife.stats)) };
 }'''
 
 def main():
     rows = []
+    closeups = '--closeups' in sys.argv
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False, args=['--window-size=1300,850'])
         page = browser.new_page(viewport={'width': 1280, 'height': 800})
@@ -37,29 +55,25 @@ def main():
         page.click('#startBtn')       # drop the intro overlay; the view shows
         page.wait_for_timeout(1500)
         for name, x, z in SPOTS:
-            page.evaluate(SAMPLE, [name, x, z])
+            page.evaluate('''([x, z]) => { const v = window.__jungle;
+              v.ctrl.rescueTo(new v.THREE.Vector3(x, v.terrainHeight(x, z) + 1.0, z)); v.ctrl.vel.set(0, 0, 0); }''', [x, z])
             page.wait_for_timeout(7000)            # the rig settles, the locals wake
-            r = page.evaluate('''async () => {
-              const v = window.__jungle;
-              const N = 20, wait = 200;            // 4 s of samples
-              let calls = 0, tris = 0, n = 0;
-              for (let i = 0; i < N; i++) {
-                await new Promise(res => setTimeout(res, wait));
-                calls += v.renderer.info.render.calls;
-                tris += v.renderer.info.render.triangles;
-                n++;
-              }
-              return {
-                calls: Math.round(calls / n), tris: Math.round(tris / n),
-                wildlife: JSON.parse(JSON.stringify(v.wildlife.stats)),
-              };
-            }''')
-            w = r['wildlife']
-            per = ' '.join(f"{k}:{v['active']}/{v['visible']}" for k, v in sorted(w['species'].items()))
-            rows.append({'spot': name, 'calls': r['calls'], 'tris': r['tris'],
-                         'ms': round(w['ms'], 3), 'active': w['active'], 'visible': w['visible'],
-                         'per species': per})
+            on = page.evaluate(MEASURE)
             page.screenshot(path=f'{ROOT}/scratch/jungle_wildlife_{name}.png')
+            # The same view with the animals hidden: the difference is theirs.
+            page.evaluate('() => { window.__jungle.wildlife.group.visible = false; }')
+            page.wait_for_timeout(500)
+            off = page.evaluate(MEASURE)
+            page.evaluate('() => { window.__jungle.wildlife.group.visible = true; }')
+            w = on['wl']
+            rows.append({'spot': name, 'fps': f"{on['fps']} / {off['fps']}", 'p95 ms': f"{on['p95']} / {off['p95']}",
+                         'slow frames': on['slow'], 'calls': f"+{on['calls'] - off['calls']} ({on['calls']})",
+                         'tris': f"+{(on['tris'] - off['tris']) / 1000:.1f} k", 'update ms': round(w['ms'], 3),
+                         'drawn': ' '.join(f"{k}:{v['visible']}" for k, v in sorted(w['species'].items()) if v['visible'])})
+            print(json.dumps(rows[-1]))
+        if not closeups:
+            browser.close()
+            return report(rows)
         # A close look at one fox: stand next to its home, catch it alert,
         # then again once it has trotted off into the undergrowth and calmed.
         page.evaluate('''async () => {
@@ -118,12 +132,13 @@ def main():
         }''')
         print('closeup frog after the scare:', json.dumps(st))
         browser.close()
-    print(json.dumps(rows, indent=2))
-    worst = max(rows, key=lambda r: r['calls'])
-    ms = max(r['ms'] for r in rows)
-    print(f"worst draw calls {worst['calls']} at the {worst['spot']}; "
-          f"worst wildlife.update {ms:.3f} ms (budget 0.6 ms); "
-          f"budget for the roster: baseline + 12 calls / 25 k triangles")
+    return report(rows)
+
+def report(rows):
+    calls = max(int(r['calls'].split()[0][1:]) for r in rows)
+    ms = max(r['update ms'] for r in rows)
+    print(f"worst: +{calls} draw calls for the animals in a view (budget +6), "
+          f"wildlife.update {ms:.3f} ms (budget 0.6 ms)")
 
 if __name__ == '__main__':
     sys.exit(main())

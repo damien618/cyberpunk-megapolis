@@ -16,7 +16,7 @@
 // the air is a bird's ground. Part ids read by EAGLE_GLSL: 0 body,
 // 1 neck + head, 2 bill, 3 eyes, 4 tail, 5/6 wings.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass4';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass5';
 
 const COL = {
   body: 0x3b2a1b,        // the dark brown of the body and mantle

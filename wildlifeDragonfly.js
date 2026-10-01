@@ -20,7 +20,7 @@
 // Part ids read by DRAGONFLY_GLSL: 0 thorax (+ its dorsal plate), 1 abdomen,
 // 2 head + eyes, 3 fore wings, 4 hind wings.
 import * as THREE from 'three';
-import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass4';
+import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass5';
 
 const COL = {
   thorax: 0x2e8ba8,      // the emperor's turquoise

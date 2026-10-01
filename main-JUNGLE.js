@@ -16,7 +16,7 @@ import { createJungleWaterfall } from './jungleWaterfall.js?v=20260927-falls8';
 import { buildJungleVegetation } from './jungleVegetation.js?v=20260930-veg3';
 import { createJungleTender } from './jungleTender.js?v=20260928-tender3';
 import { createJungleLiner } from './jungleLiner.js?v=20260928-liner1';
-import { createJungleWildlife } from './jungleWildlife.js?v=20261001-pass4';
+import { createJungleWildlife } from './jungleWildlife.js?v=20261001-pass5';
 
 // ---------------------------------------------------------------------------
 // Promenade tropicale — la cascade. SKELETON.

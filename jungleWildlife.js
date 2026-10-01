@@ -17,18 +17,18 @@
 //   sky          the bald eagle over the ridges                 wildlifeEagle.js
 //   offshore     brown pelicans, sea lions on the haul-outs     wildlifePelican.js, wildlifeSeaLion.js
 import * as L from './jungleLayout.js';   // bare, like every element module
-import { createWildlife, spotIndex } from './wildlife.js?v=20261001-pass4';
-import { CRAB } from './wildlifeCrab.js?v=20261001-pass4';
-import { LIZARD, ALLIGATOR } from './wildlifeLizard.js?v=20261001-pass4';
-import { FOX } from './wildlifeFox.js?v=20261001-pass4';
-import { SNAKE } from './wildlifeSnake.js?v=20261001-pass4';
-import { FROG } from './wildlifeFrog.js?v=20261001-pass4';
-import { FISH } from './wildlifeFish.js?v=20261001-pass4';
-import { DRAGONFLY } from './wildlifeDragonfly.js?v=20261001-pass4';
-import { HUMMINGBIRD } from './wildlifeHummingbird.js?v=20261001-pass4';
-import { PELICAN } from './wildlifePelican.js?v=20261001-pass4';
-import { EAGLE } from './wildlifeEagle.js?v=20261001-pass4';
-import { SEA_LION } from './wildlifeSeaLion.js?v=20261001-pass4';
+import { createWildlife, spotIndex } from './wildlife.js?v=20261001-pass5';
+import { CRAB } from './wildlifeCrab.js?v=20261001-pass5';
+import { LIZARD, ALLIGATOR } from './wildlifeLizard.js?v=20261001-pass5';
+import { FOX } from './wildlifeFox.js?v=20261001-pass5';
+import { SNAKE } from './wildlifeSnake.js?v=20261001-pass5';
+import { FROG } from './wildlifeFrog.js?v=20261001-pass5';
+import { FISH } from './wildlifeFish.js?v=20261001-pass5';
+import { DRAGONFLY } from './wildlifeDragonfly.js?v=20261001-pass5';
+import { HUMMINGBIRD } from './wildlifeHummingbird.js?v=20261001-pass5';
+import { PELICAN } from './wildlifePelican.js?v=20261001-pass5';
+import { EAGLE } from './wildlifeEagle.js?v=20261001-pass5';
+import { SEA_LION } from './wildlifeSeaLion.js?v=20261001-pass5';
 
 // The swash's edge along the beach, as the foam shader draws it
 // (jungleOcean's foam: uEdge plus two slow sines in x) — so a crab backs up

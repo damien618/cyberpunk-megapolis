@@ -54,7 +54,7 @@
 // it are not put on that map.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass4';
+import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass5';
 
 // ---------------------------------------------------------------------------
 // States. Every species runs the same machine and opts out of what it does

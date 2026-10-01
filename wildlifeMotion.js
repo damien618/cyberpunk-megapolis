@@ -228,12 +228,15 @@ function schoolInit(sp, ctx) {
         out.x = 0; out.y = 0; out.z = 0;
         const dx = b.x - s.cx, dz = b.z - s.cz;
         const d = Math.hypot(dx, dz) || 1;
+        // The ground under the fish, once: near the path terrainHeight walks
+        // its polyline, the costliest call in the whole wildlife update.
+        const ground = L.terrainHeight(b.x, b.z);
         if (d > s.r) {                       // the rim: a soft push back in
           const k = (s.r - d) * 8;
           out.x = dx / d * k; out.z = dz / d * k;
         } else {
           const w = L.waterAt(b.x, b.z);
-          if (!w || w.kind !== s.kind || w.y - L.terrainHeight(b.x, b.z) < SCHOOL_DEPTH) {
+          if (!w || w.kind !== s.kind || w.y - ground < SCHOOL_DEPTH) {
             // out of the water, or into its shallow fringe: hard pull home
             out.x = -dx / d * 10; out.z = -dz / d * 10;
           }
@@ -242,7 +245,7 @@ function schoolInit(sp, ctx) {
         // band would invert (its bed rises past the surface), so it is
         // pinched shut and the fish held just under the surface instead.
         const top = s.surf - 0.09;
-        let bed = L.terrainHeight(b.x, b.z) + 0.12;
+        let bed = ground + 0.12;
         if (bed > top - 0.04) bed = top - 0.04;
         out.y = b.y < bed ? (bed - b.y) * 9 : b.y > top ? (top - b.y) * 9 : 0;
       },

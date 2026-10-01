@@ -29,12 +29,14 @@ The reference species is the shore crab, `wildlifeCrab.js`. Copy its shape.
 
 The map has these limits (MacBook Air M3 8 GB). The baseline in September 2026 was 81–163 draw calls and 0.3–0.6 M triangles, at 60 fps in every view.
 
-The **whole roster** must stay within:
-- **+12 draw calls** at most, which is about 1 per species;
-- **25 k triangles** visible;
-- **0.6 ms** CPU in `wildlife.update`.
+The budget is per **view**, not per species: each species is one draw call, but only where it is awake and on screen, so a roster grows by zones. In any view, the animals together must stay within:
+- **+6 draw calls** (measured: +1 to +4 in October 2026, with 12 species);
+- **25 k triangles** (measured: at most +6 k, at the pool);
+- **0.6 ms** of `wildlife.update` in the running map (measured: 0.1–0.5 ms; 0.14 ms isolated at the pool, the busiest view), and no fps lost.
 
-The crabs use +1 draw call, about 3 k triangles and 0.02–0.04 ms. Keep each species' model at **400 triangles or fewer** (a fox or a pelican can go to about 800 if there are only 2 or 3 of them). Leave `castShadow` off for small animals, and bake a dark underside instead (`bottomColor`).
+`tests/jungle_wildlife_perf.py` measures each view twice, animals shown and hidden, and prints the difference. Keep each species' model at **400 triangles or fewer** (a fox or a pelican can go to about 800 if there are only 2 or 3 of them). Leave `castShadow` off for small animals, and bake a dark underside instead (`bottomColor`).
+
+The costliest call is `terrainHeight` near the path (it walks the polyline): a motion that needs the ground several times per frame should ask once and reuse it.
 
 ## Checklist: adding a species
 
