@@ -45,13 +45,16 @@
 //   spots:     { name: spotIndex }         e.g. rocks, later flowers
 //   bounds:    { x: [a, b], z: [a, b] }    the default sampling box
 //   keepOffBuilt(x, z) → bool   optional, as in jungleVegetation's rules
+//   obstacles: spotIndex        optional: solid circles { x, z, r } at
+//                               ground level (rock footprints, trunks,
+//                               later walls) that walkers never enter
 //
 // A species only ever reads the layout through these names, so a map that
 // lacks one (no sea inland) simply leaves it out and the species that need
 // it are not put on that map.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass1';
+import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass2';
 
 // ---------------------------------------------------------------------------
 // States. Every species runs the same machine and opts out of what it does
@@ -163,6 +166,9 @@ export function spotIndex(spots, cell = 8) {
 // ---------------------------------------------------------------------------
 export function habitatTest(h, L, x, z) {
   if (L.keepOffBuilt && !L.keepOffBuilt(x, z)) return false;
+  // `clear` is set by the manager for walkers: the body's radius, kept out
+  // of every obstacle (homes and wander targets alike).
+  if (h.clear && L.obstacles && L.obstacles.nearest(x, z, h.clear).d < h.clear) return false;
   if (h.shore) {
     const d = L.shoreDistance(x, z);
     if (d < h.shore[0] || d > h.shore[1]) return false;
@@ -329,7 +335,16 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
     const motion = MOTION[def.motion];
     if (!motion) throw new Error(`[wildlife] ${def.id}: unknown motion "${def.motion}"`);
     const rng = makeRng(hashSeed(seed + ':' + def.id));
-    const sp = { def, motion, rng, frame: 0, visible: 0, active: 0 };
+    // The model first (it draws nothing from the RNG): its footprint is the
+    // body's default radius, the clearance a walker keeps from obstacles.
+    const { geometry } = def.build();
+    geometry.computeBoundingBox();
+    const bb = geometry.boundingBox;
+    const meanScale = 0.5 * (def.body.scale[0] + def.body.scale[1]);
+    const radius = def.body.radius ?? 0.35 * Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) * meanScale;
+    const clear = motion.walks ? radius : 0;
+    if (clear) def.habitat = { ...def.habitat, clear };
+    const sp = { def, motion, rng, frame: 0, visible: 0, active: 0, radius, clear };
     def.hooks.init?.(sp, L);
 
     const homes = sampleHomes(def.habitat, L, rng, def.count, { spacing: def.spacing || 0 });
@@ -347,7 +362,6 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
       return a;
     });
 
-    const { geometry } = def.build();
     const n = Math.max(1, sp.agents.length);
     const anim = new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4);
     anim.setUsage(THREE.DynamicDrawUsage);
@@ -402,7 +416,9 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
     }
     return true;
   }
-  const api = { setTarget, defaultWander, defaultFlee };
+  // Is (x, z) a place this species may live — its habitat, its clearance?
+  const habitatOk = (sp, x, z) => habitatTest(sp.def.habitat, L, x, z);
+  const api = { setTarget, defaultWander, defaultFlee, habitatOk };
 
   function enter(a, sp, state, timer = 0) {
     a.state = state; a.timer = timer; a.speed = 0;

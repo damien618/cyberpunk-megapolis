@@ -18,7 +18,7 @@
 // Part ids read by FISH_GLSL: 0 body + back cap, 1 tail fin, 2 dorsal fin,
 // 3 pectoral fins, 4 eyes.
 import * as THREE from 'three';
-import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass1';
+import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass2';
 
 const COL = {
   top: 0xd0dce2,         // the bright silver of the flanks and body
@@ -132,8 +132,9 @@ export const FISH = {
   habitat: {
     // Wherever the pool's water is — the one thing the keys cannot say.
     test: (x, z, layout) => {
+      // …and deep enough to swim in: not the drawn surface's thin fringe.
       const w = layout.waterAt ? layout.waterAt(x, z) : null;
-      return !!w && w.kind === 'pool';
+      return !!w && w.kind === 'pool' && w.y - layout.terrainHeight(x, z) > 0.3;
     },
   },
   spacing: 0.5,

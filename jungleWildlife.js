@@ -31,18 +31,18 @@
 //              the offshore rocks — the first `amphibious`
 //              species
 import * as L from './jungleLayout.js';   // bare, like every element module
-import { createWildlife, spotIndex } from './wildlife.js?v=20261001-pass1';
-import { CRAB } from './wildlifeCrab.js?v=20261001-pass1';
-import { LIZARD, ALLIGATOR } from './wildlifeLizard.js?v=20261001-pass1';
-import { FOX } from './wildlifeFox.js?v=20261001-pass1';
-import { SNAKE } from './wildlifeSnake.js?v=20261001-pass1';
-import { FROG } from './wildlifeFrog.js?v=20261001-pass1';
-import { FISH } from './wildlifeFish.js?v=20261001-pass1';
-import { DRAGONFLY } from './wildlifeDragonfly.js?v=20261001-pass1';
-import { HUMMINGBIRD } from './wildlifeHummingbird.js?v=20261001-pass1';
-import { PELICAN } from './wildlifePelican.js?v=20261001-pass1';
-import { EAGLE } from './wildlifeEagle.js?v=20261001-pass1';
-import { SEA_LION } from './wildlifeSeaLion.js?v=20261001-pass1';
+import { createWildlife, spotIndex } from './wildlife.js?v=20261001-pass2';
+import { CRAB } from './wildlifeCrab.js?v=20261001-pass2';
+import { LIZARD, ALLIGATOR } from './wildlifeLizard.js?v=20261001-pass2';
+import { FOX } from './wildlifeFox.js?v=20261001-pass2';
+import { SNAKE } from './wildlifeSnake.js?v=20261001-pass2';
+import { FROG } from './wildlifeFrog.js?v=20261001-pass2';
+import { FISH } from './wildlifeFish.js?v=20261001-pass2';
+import { DRAGONFLY } from './wildlifeDragonfly.js?v=20261001-pass2';
+import { HUMMINGBIRD } from './wildlifeHummingbird.js?v=20261001-pass2';
+import { PELICAN } from './wildlifePelican.js?v=20261001-pass2';
+import { EAGLE } from './wildlifeEagle.js?v=20261001-pass2';
+import { SEA_LION } from './wildlifeSeaLion.js?v=20261001-pass2';
 
 // The swash's edge along the beach, as the foam shader draws it
 // (jungleOcean's foam: uEdge plus two slow sines in x) — so a crab backs up
@@ -64,6 +64,21 @@ export function jungleWildlifeLayout({ ocean = null, terrain = null, vegetation 
   // Empty without the vegetation — the tests sample the wildlife alone — so
   // a roster entry that needs them just finds no homes, not an error.
   const flowers = spotIndex(vegetation?.spots?.flowers || [], 4);
+  // What a walker never walks through: every rock's footprint where it meets
+  // the ground (rockSpots carry the shell's bounding radius about its centre,
+  // which may sit below the surface; 0.8 of that sphere's cut at the ground
+  // is the jittered shell's typical reach), and the trunks' colliders.
+  const solid = [];
+  for (const s of terrain?.rockSpots || []) {
+    const h = L.terrainHeight(s.x, s.z) - s.y;
+    if (h >= s.r) continue;                         // buried: nothing shows
+    const r = Math.sqrt(s.r * s.r - h * h) * 0.8;
+    if (r > 0.12) solid.push({ x: s.x, z: s.z, r });
+  }
+  for (const c of vegetation?.colliders || []) {
+    solid.push({ x: 0.5 * (c.x0 + c.x1), z: 0.5 * (c.z0 + c.z1), r: 0.5 * Math.max(c.x1 - c.x0, c.z1 - c.z0) });
+  }
+  const obstacles = spotIndex(solid, 8);
   const J = L.JETTY;
   return {
     terrainHeight: L.terrainHeight,
@@ -81,7 +96,9 @@ export function jungleWildlifeLayout({ ocean = null, terrain = null, vegetation 
     seaHeightAt: ocean ? ocean.waterHeightAt : () => L.SEA_Y,
     waterAt(x, z) {
       if (z < L.shoreAt(x)) return { kind: 'sea', y: L.SEA_Y };
-      if (Math.hypot(x - L.POOL.x, z - L.POOL.z) < L.POOL.r - 0.5
+      // The pool's water as it is drawn: the surface reaches r + 2.2
+      // (jungleWaterfall's disc), wherever the bowl lies below it.
+      if (Math.hypot(x - L.POOL.x, z - L.POOL.z) < L.POOL.r + 2.2
         && L.terrainHeight(x, z) < L.POOL.waterY) return { kind: 'pool', y: L.POOL.waterY };
       if (L.streamDistance(x, z) < L.STREAM_HALF_W) return { kind: 'stream', y: L.streamWaterY(z) };
       return null;
@@ -98,6 +115,7 @@ export function jungleWildlifeLayout({ ocean = null, terrain = null, vegetation 
       haulouts: (x, z) => haulouts.nearest(x, z, 40).d,
     },
     spots: { rocks, flowers, haulouts },
+    obstacles,
   };
 }
 

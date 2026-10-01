@@ -13,7 +13,7 @@
 // dragonflies over the water and the hummingbirds by their flowers, all with
 // the same discipline; and the frame cost.
 import * as THREE from 'three';
-import { createJungleWildlife } from '/jungleWildlife.js';
+import { createJungleWildlife, jungleWildlifeLayout } from '/jungleWildlife.js';
 import { buildJungleTerrain } from '/jungleTerrain.js';
 import { buildJungleVegetation } from '/jungleVegetation.js';
 import { MOTION } from '/wildlifeMotion.js';
@@ -66,7 +66,7 @@ if (W) {
   check(nearRock.length >= 15, `a colony round the rocks (${nearRock.length} / 30 within 6 m)`);
 
   // --- Determinism --------------------------------------------------------
-  const W2 = createJungleWildlife({ scene: new THREE.Scene(), terrain });
+  const W2 = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
   const same = W2.debug.species.crab.agents.every((a, i) => a.home.x === agents[i].home.x && a.home.z === agents[i].home.z);
   check(same, 'the same crabs in the same places on every load');
 
@@ -243,7 +243,7 @@ if (fox) {
     && streamDistance(b.home.x, b.home.z) >= 1.5),
     'none on the path or in the stream');
   check(fox.agents.every(b => b.home.z >= SAND_END), 'none down on the beach');
-  const W3 = createJungleWildlife({ scene: new THREE.Scene(), terrain });
+  const W3 = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
   const sameFox = W3.debug.species.fox.agents.every((b, i) =>
     b.home.x === fox.agents[i].home.x && b.home.z === fox.agents[i].home.z);
   check(sameFox, 'the same foxes in the same places on every load');
@@ -329,7 +329,7 @@ if (snake) {
     || Math.hypot(snake.agents[0].home.x - snake.agents[1].home.x,
       snake.agents[0].home.z - snake.agents[1].home.z) >= 4,
     'the two of them live apart');
-  const W4 = createJungleWildlife({ scene: new THREE.Scene(), terrain });
+  const W4 = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
   const sameSnake = W4.debug.species.snake.agents.every((b, i) =>
     b.home.x === snake.agents[i].home.x && b.home.z === snake.agents[i].home.z);
   check(sameSnake, 'the same snakes in the same places on every load');
@@ -407,7 +407,7 @@ if (frog) {
     return s === SOIL.WET || s === SOIL.ROCK;
   }), 'every frog on wet ground or rock, none in the water');
   check(frog.agents.every(b => pathDistance(b.home.x, b.home.z) >= 1.2), 'none of them on the path');
-  const W5 = createJungleWildlife({ scene: new THREE.Scene(), terrain });
+  const W5 = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
   const sameFrogs = W5.debug.species.frog.agents.every((b, i) =>
     b.home.x === frog.agents[i].home.x && b.home.z === frog.agents[i].home.z);
   check(sameFrogs, 'the same frogs in the same places on every load');
@@ -450,8 +450,15 @@ if (frog) {
   // Calm returns: past calmDistance it hops back out and wanders the ring.
   P.set(fa.x + 16, 0, fa.z);
   const seenCalmF = new Set();
-  for (let k = 0; k < 30 * 22; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); seenCalmF.add(fa.state); }
+  let underF = 0;
+  for (let k = 0; k < 30 * 22; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V); seenCalmF.add(fa.state);
+    // Drawn, in the pool, below its surface: surfacing through the bed.
+    if (fa.state !== S.HIDDEN && fa.sink < 1 && Math.hypot(fa.x - POOL.x, fa.z - POOL.z) < POOL.r + 2.2
+      && fa.y < POOL.waterY - 0.03) underF++;
+  }
   check(seenCalmF.has(S.EMERGE) && fa.sink === 0, 'it hops back out of the pool once you have gone');
+  check(underF === 0, `it surfaces on the bank, never shown under the water (${underF} frames)`);
 
   // The frog shader compiles.
   const errorsFr = [];
@@ -489,15 +496,15 @@ const fish = W && W.debug.species.fish;
 if (fish) {
   const P = new THREE.Vector3(), V = new THREE.Vector3();
   let t = 0;
-  const inPool = (x, z) => Math.hypot(x - POOL.x, z - POOL.z) < POOL.r - 0.5
-    && terrainHeight(x, z) < POOL.waterY;
+  const inPool = (x, z) => Math.hypot(x - POOL.x, z - POOL.z) < POOL.r + 2.2
+    && terrainHeight(x, z) < POOL.waterY - 0.3;
   const spread = bs => {   // farthest fish from the school's centroid
     const c = bs.reduce((s, b) => ({ x: s.x + b.x / bs.length, z: s.z + b.z / bs.length }), { x: 0, z: 0 });
     return Math.max(...bs.map(b => Math.hypot(b.x - c.x, b.z - c.z)));
   };
   check(fish.agents.length === 14, `14 fish placed (${fish.agents.length})`);
   check(fish.agents.every(b => inPool(b.home.x, b.home.z)), 'every fish lives in the pool\'s water');
-  const W6 = createJungleWildlife({ scene: new THREE.Scene(), terrain });
+  const W6 = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
   check(W6.debug.species.fish.agents.every((b, i) =>
     b.home.x === fish.agents[i].home.x && b.home.z === fish.agents[i].home.z),
     'the same fish in the same places on every load');
@@ -577,7 +584,7 @@ if (dfly) {
   check(dfly.agents.length === 6, `6 dragonflies placed (${dfly.agents.length})`);
   check(dfly.agents.every(b => Math.hypot(b.home.x - POOL.x, b.home.z - POOL.z) - POOL.r <= 6),
     'every dragonfly lives within 6 m of the pool');
-  const W7 = createJungleWildlife({ scene: new THREE.Scene(), terrain });
+  const W7 = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
   check(W7.debug.species.dragonfly.agents.every((b, i) =>
     b.home.x === dfly.agents[i].home.x && b.home.z === dfly.agents[i].home.z),
     'the same dragonflies in the same places on every load');
@@ -782,7 +789,7 @@ if (pel) {
   let tp = 0;
   check(pel.agents.length === 5, `5 pelicans placed (${pel.agents.length})`);
   check(pel.agents.every(b => b.home.z < shoreAt(b.home.x)), 'every pelican lives over the sea');
-  const W8 = createJungleWildlife({ scene: new THREE.Scene(), terrain });
+  const W8 = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
   check(W8.debug.species.pelican.agents.every((b, i) =>
     b.home.x === pel.agents[i].home.x && b.home.z === pel.agents[i].home.z),
     'the same pelicans in the same places on every load');
@@ -1017,10 +1024,17 @@ if (eag) {
 // enough to let it settle) and watch every drawn individual frame to frame.
 {
   const W = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
+  const LO = jungleWildlifeLayout({ terrain, vegetation: veg });
   const P = new THREE.Vector3(), V = new THREE.Vector3();
+  const inside = (a) => LO.obstacles.nearest(a.x, a.z, 0).d < 0;
+  check(LO.obstacles.spots.length > 300, `the layout lists the cove's obstacles (${LO.obstacles.spots.length} rocks and trunks)`);
   for (const sp of Object.values(W.debug.species)) {
     const id = sp.def.id, ag = sp.agents;
     if (!ag.length) { check(false, `${id}: no homes found`); continue; }
+    const walks = !!sp.motion.walks;
+    let calm = 0, calmIn = 0;
+    if (walks) check(ag.every(a => LO.obstacles.nearest(a.home.x, a.home.z, 0).d >= 0),
+      `${id}: no home inside a rock or a trunk`);
     const h = ag[0].home;
     // The fastest a body may honestly cover in a frame: its flight, with
     // room for a boids burst or a zigzag swing, at 30 fps.
@@ -1035,6 +1049,7 @@ if (eag) {
       W.update(1 / 30, t, P, V);
       for (const a of ag) {
         if (!Number.isFinite(a.x + a.y + a.z)) nan = true;
+        if (walks && a.awake && (a.state === W.STATE.IDLE || a.state === W.STATE.MOVE)) { calm++; if (inside(a)) calmIn++; }
         const drawn = a.awake && a.sink < 1;
         const l = last.get(a.i);
         if (drawn && l) {
@@ -1045,6 +1060,7 @@ if (eag) {
       }
     }
     check(!nan, `${id}: no NaN in 40 s round a home`);
+    if (walks) check(calmIn === 0, `${id}: never walks through a rock or a trunk (${calmIn} / ${calm} calm frames inside)`);
     check(worst <= lim, `${id}: no jump — at most ${worst.toFixed(2)} m in a frame (limit ${lim.toFixed(2)})${worst > lim ? ': ' + why : ''}`);
 
     // Seen from afar (most of its activeRadius away): a group wakes and

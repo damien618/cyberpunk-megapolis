@@ -22,6 +22,9 @@
 //                  fast body (a bird crossing the sky) shows as a judder.
 //   group: true    one simulation for the whole species (a school, a flock):
 //                  woken and put to sleep together, never half a school.
+//   walks: true    on the ground among layout.obstacles: the manager keeps
+//                  homes and wander targets out of them (habitat.clear, the
+//                  body's radius) and the step slides round them.
 //
 // Kinds: ground, hop, flyFree, glide, flock, school, amphibious (MOTION, at
 // the bottom). A new kind starts as a brief there and its step here.
@@ -37,6 +40,34 @@ const ARRIVE = 0.06;   // m
 // tilts with the ground normal. `body.sideways` animals (crabs) travel along
 // their local ±X: the body keeps its yaw and the heading does the turning.
 // ---------------------------------------------------------------------------
+// Obstacles (layout.obstacles: rock footprints, trunks, walls). A walker
+// whose next position would enter one slides round its rim instead — along
+// the tangent that heads toward the target, held at the rim plus the body's
+// radius (sp.clear). A target INSIDE the obstacle (a crab's refuge under a
+// rock) is reached at the rim: the body stops at the stone's foot, where the
+// HIDDEN sink reads as slipping under it. Writes _ob.x/_ob.z; returns
+// 0 clear, 1 slid, 2 arrived at the rim. No allocation.
+const _ob = { x: 0, z: 0 };
+function obstacleSlide(a, sp, L, nx, nz, step) {
+  _ob.x = nx; _ob.z = nz;
+  const O = L.obstacles, c = sp.clear;
+  if (!O || !c) return 0;
+  const hit = O.nearest(nx, nz, c);
+  if (!hit.spot || hit.d >= c) return 0;
+  const s = hit.spot, R = s.r + c;
+  if (Math.hypot(a.tx - s.x, a.tz - s.z) < R) return 2;
+  let ox = a.x - s.x, oz = a.z - s.z;
+  const ol = Math.hypot(ox, oz) || 1;
+  ox /= ol; oz /= ol;
+  let tx = -oz, tz = ox;
+  if (tx * (a.tx - a.x) + tz * (a.tz - a.z) < 0) { tx = -tx; tz = -tz; }
+  let x = a.x + tx * step, z = a.z + tz * step;
+  const vx = x - s.x, vz = z - s.z, vl = Math.hypot(vx, vz) || 1;
+  if (vl < R) { x = s.x + vx / vl * R; z = s.z + vz / vl * R; }
+  _ob.x = x; _ob.z = z;
+  return 1;
+}
+
 function groundStep(a, sp, dt, ctx, speed) {
   const { def } = sp;
   const dx = a.tx - a.x, dz = a.tz - a.z;
@@ -48,8 +79,11 @@ function groundStep(a, sp, dt, ctx, speed) {
   // Slow into the last few centimetres so nothing overshoots and circles.
   const v = Math.min(speed, d / Math.max(dt, 1e-3), speed * (0.35 + d * 2));
   const step = Math.min(v * dt, d);
-  a.x += Math.sin(a.heading) * step;
-  a.z += Math.cos(a.heading) * step;
+  const blocked = obstacleSlide(a, sp, ctx.layout,
+    a.x + Math.sin(a.heading) * step, a.z + Math.cos(a.heading) * step, step);
+  if (blocked === 2) { a.speed = 0; return true; }
+  if (blocked === 1) a.heading = Math.atan2(_ob.x - a.x, _ob.z - a.z);
+  a.x = _ob.x; a.z = _ob.z;
   a.y = ctx.layout.terrainHeight(a.x, a.z);
   a.speed = step / Math.max(dt, 1e-3);
   // The body follows the heading (plus the sideways offset) at the same rate.
@@ -109,7 +143,11 @@ function hopStep(a, sp, dt, ctx, speed) {
     // One leap of 0.3–1 m toward the target — chains, never a flea shot.
     // Near the target the last leap is exact: no overshoot and hop back.
     const len = d < 0.6 ? d : Math.min(d, HOP_MIN + rng() * (HOP_MAX - HOP_MIN));
-    const lx = a.x + (dx / d) * len, lz = a.z + (dz / d) * len;
+    // A landing inside an obstacle slides to its rim (or, the target being
+    // in it, ends the chain there).
+    const blocked = obstacleSlide(a, sp, ctx.layout, a.x + (dx / d) * len, a.z + (dz / d) * len, len);
+    if (blocked === 2) { a.hopPhase = 2; return true; }
+    const lx = _ob.x, lz = _ob.z;
     const T = Math.min(0.5, Math.max(0.3, len / Math.max(speed, 0.3)));
     a.hx = a.x; a.hy = a.y; a.hz = a.z;
     a.lx = lx; a.lz = lz;
@@ -810,9 +848,10 @@ function amphibiousStep(a, sp, dt, ctx, speed) {
 }
 
 export const MOTION = {
-  ground: { step: groundStep, brief: 'on the terrain, steering at speed.turn' },
+  // walks: true — kept out of layout.obstacles (homes, targets, steps).
+  ground: { step: groundStep, walks: true, brief: 'on the terrain, steering at speed.turn' },
 
-  hop: { step: hopStep, brief: 'ballistic sub-hops point to point; flee = hop into waterAt()' },
+  hop: { step: hopStep, walks: true, brief: 'ballistic sub-hops point to point; flee = hop into waterAt()' },
 
   // Dragonflies, hummingbirds. Hover at an anchor (flowers, the pool's
   // reeds) with a small figure-of-eight, then dart in straight zigzags to the

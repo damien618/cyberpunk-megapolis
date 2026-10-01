@@ -13,7 +13,7 @@
 // Part ids read by FROG_GLSL: 0 body, 1 throat sac, 2 eyes, 10–11 forelegs,
 // 12–13 hind legs.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass1';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass2';
 
 const COL = {
   back: 0x5c8f3e,        // rainette green (tint swings individuals brown)
@@ -146,6 +146,28 @@ function fleeTarget(a, sp, ctx, api) {
   api.setTarget(a, sp, a.x + ax * 2.5, a.z + az * 2.5);
 }
 
+// Back out on the bank, not up through the pool's floor: while it is still
+// under (sink 1, out of the draw) it slips to the nearest dry ground of its
+// habitat, so EMERGE rises on the rocks' edge instead of showing it hop out
+// along the bed under the surface.
+const BANK_RINGS = [0.6, 1.2, 1.8, 2.6, 3.6, 5];
+
+function emergeAt(a, sp, ctx, api) {
+  const L = ctx.layout;
+  if (!L.waterAt || !L.waterAt(a.x, a.z)) return;
+  const base = sp.rng() * Math.PI * 2;
+  for (const r of BANK_RINGS) {
+    for (let k = 0; k < 12; k++) {
+      const th = base + k * 0.5235987755982988;
+      const x = a.x + Math.sin(th) * r, z = a.z + Math.cos(th) * r;
+      if (L.waterAt(x, z) || !api.habitatOk(sp, x, z)) continue;
+      a.x = x; a.z = z; a.y = L.terrainHeight(x, z);
+      a.heading = th; a.hopPhase = 2;
+      return;
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The species definition. Every key is documented in WILDLIFE.md; anything
 // left out takes wildlife.js's DEFAULTS, and a map may override any of it.
@@ -180,5 +202,5 @@ export const FROG = {
     const k = 0.85 + rng() * 0.3, b = rng();   // b: 0 green → 1 brown
     c.setRGB(k * (1 + 0.28 * b), k * (1 - 0.10 * b), k * (1 - 0.28 * b));
   },
-  hooks: { fleeTarget },
+  hooks: { fleeTarget, emergeAt },
 };
