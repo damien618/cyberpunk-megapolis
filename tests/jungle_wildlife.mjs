@@ -1074,6 +1074,55 @@ if (eag) {
   check(atBloom / n > 0.2, `and sip at the blooms (${(100 * atBloom / n).toFixed(0)}% of the time hovering at one)`);
 }
 
+// --- Scrub-jays --------------------------------------------------------------
+// By the bushes; approached, a bound for cover and gone into it (HIDDEN),
+// back out once the player has passed.
+{
+  const W = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
+  const LJ = jungleWildlifeLayout({ terrain, vegetation: veg });
+  const S = W.STATE, ag = W.debug.species.jay.agents;
+  check(ag.length === 5, `5 scrub-jays placed (${ag.length})`);
+  check(ag.every(a => LJ.distances.bushes(a.home.x, a.home.z) <= 4), 'every jay lives within 4 m of a bush');
+  const a = ag[0], P = new THREE.Vector3(a.x + 12, 0, a.z), V = new THREE.Vector3();
+  let t = 0;
+  for (let k = 0; k < 30 * 4; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); }
+  P.set(a.x + 2.5, 0, a.z);
+  const seen = new Set();
+  for (let k = 0; k < 30 * 6; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); seen.add(a.state); }
+  check(seen.has(S.FLEE) && seen.has(S.HIDDEN), 'an approached jay bounds off and ducks into cover (FLEE, HIDDEN)');
+  check(LJ.distances.bushes(a.x, a.z) < 0.5, `into a bush (${LJ.distances.bushes(a.x, a.z).toFixed(2)} m from its edge)`);
+  P.set(a.x + 20, 0, a.z);
+  const back = new Set();
+  for (let k = 0; k < 30 * 16; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); back.add(a.state); }
+  check(back.has(S.EMERGE) && a.sink === 0, 'and hops back out once you have gone');
+}
+
+// --- Gulls and ravens -----------------------------------------------------------
+// Two glide species from one module: gulls low over the shore, the raven
+// pair higher over the cliff.
+{
+  const W = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
+  const LG = jungleWildlifeLayout({ terrain, vegetation: veg });
+  const gulls = W.debug.species.gull.agents, ravens = W.debug.species.raven.agents;
+  check(gulls.length === 4 && ravens.length === 2, `4 gulls and 2 ravens placed (${gulls.length}, ${ravens.length})`);
+  const P = new THREE.Vector3(0, 0, 0), V = new THREE.Vector3();
+  let t = 0, gAlt = [], rAlt = [], gShore = 0, n = 0;
+  for (let k = 0; k < 30 * 40; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V);
+    for (const a of gulls) {
+      const w = LG.waterAt(a.x, a.z);
+      gAlt.push(a.y - (w ? w.y : terrainHeight(a.x, a.z)));
+      n++; if (Math.abs(LG.shoreDistance(a.x, a.z)) < 40) gShore++;
+    }
+    for (const a of ravens) rAlt.push(a.y - terrainHeight(a.x, a.z));
+  }
+  const mean = v => v.reduce((s, x) => s + x, 0) / v.length;
+  check(mean(gAlt) > 4 && mean(gAlt) < 12 && Math.min(...gAlt) > 2,
+    `gulls fly low (${mean(gAlt).toFixed(1)} m mean, ${Math.min(...gAlt).toFixed(1)} m lowest)`);
+  check(gShore / n > 0.9, `gulls keep to the shore (${(100 * gShore / n).toFixed(0)}% within 40 m of it)`);
+  check(mean(rAlt) > 8 && Math.min(...rAlt) > 3, `ravens ride higher (${mean(rAlt).toFixed(1)} m mean above the ground)`);
+}
+
 // --- Roster-wide invariants -------------------------------------------------
 // Held for EVERY species on the roster, the ones to come included: walk a
 // player in circles round one of its homes (close enough to scare it, far

@@ -11,11 +11,13 @@
 // Roster (Channel Islands fauna), by zone:
 //   beach        crabs round the rocks, sanderlings in the swash  wildlifeCrab.js, wildlifeSandpiper.js
 //   undergrowth  lizards by the rocks, fox, kingsnake,          wildlifeLizard.js, wildlifeFox.js,
-//                hummingbirds and monarchs at the flowers       wildlifeSnake.js, wildlifeHummingbird.js,
+//                scrub-jays by the bushes, hummingbirds and     wildlifeSnake.js, wildlifeJay.js,
+//                monarchs at the flowers                        wildlifeHummingbird.js,
 //                                                               wildlifeButterfly.js
 //   waterfall    tree frogs, the pool's fish, dragonflies —     wildlifeFrog.js, wildlifeFish.js,
 //                frogs and dragonflies also down the stream     wildlifeDragonfly.js
-//   sky          the bald eagle over the ridges                 wildlifeEagle.js
+//   sky          the bald eagle over the ridges, ravens over    wildlifeEagle.js, wildlifeSoarer.js
+//                the cliff, gulls along the shore
 //   offshore     brown pelicans, sea lions on the haul-outs     wildlifePelican.js, wildlifeSeaLion.js
 import * as L from './jungleLayout.js';   // bare, like every element module
 import { createWildlife, spotIndex } from './wildlife.js?v=20261001-pass6';
@@ -32,6 +34,8 @@ import { EAGLE } from './wildlifeEagle.js?v=20261001-pass6';
 import { SEA_LION } from './wildlifeSeaLion.js?v=20261001-pass6';
 import { SANDPIPER } from './wildlifeSandpiper.js?v=20261001-pass6';
 import { BUTTERFLY } from './wildlifeButterfly.js?v=20261001-pass6';
+import { JAY } from './wildlifeJay.js?v=20261001-pass7';
+import { GULL, RAVEN } from './wildlifeSoarer.js?v=20261001-pass7';
 
 // The swash's edge along the beach, as the foam shader draws it
 // (jungleOcean's foam: uEdge plus two slow sines in x) — so a crab backs up
@@ -53,6 +57,9 @@ export function jungleWildlifeLayout({ ocean = null, terrain = null, vegetation 
   // Empty without the vegetation — the tests sample the wildlife alone — so
   // a roster entry that needs them just finds no homes, not an error.
   const flowers = spotIndex(vegetation?.spots?.flowers || [], 4);
+  // The bushes (jungleVegetation's scatter, s its size): cover a bird
+  // ducks into — the scrub-jay's refuge and habitat.
+  const bushes = spotIndex((vegetation?.spots?.bushes || []).map(b => ({ x: b.x, z: b.z, r: 0.8 * b.s })), 6);
   // What a walker never walks through: every rock's footprint where it meets
   // the ground (rockSpots carry the shell's bounding radius about its centre,
   // which may sit below the surface; 0.8 of that sphere's cut at the ground
@@ -101,9 +108,10 @@ export function jungleWildlifeLayout({ ocean = null, terrain = null, vegetation 
         Math.max(z - J.z0, J.z1 - z, 0)),
       rocks: (x, z) => rocks.nearest(x, z, 16).d,
       flowers: (x, z) => flowers.nearest(x, z, 12).d,
+      bushes: (x, z) => bushes.nearest(x, z, 12).d,
       haulouts: (x, z) => haulouts.nearest(x, z, 40).d,
     },
-    spots: { rocks, flowers, haulouts },
+    spots: { rocks, flowers, haulouts, bushes },
     obstacles,
   };
 }
@@ -175,6 +183,9 @@ export function createJungleWildlife({ scene, ocean, terrain, vegetation, specie
       // tick picks. Skittish, back at once (hideFor is null). The region
       // keeps the sampling tries inland, where the blooms are.
       { def: HUMMINGBIRD, count: 8, habitat: { ...HUMMINGBIRD.habitat, region: { x: WIDE, z: [L.SAND_END, L.CLIFF_Z + 6] } } },
+      // The island scrub-jay — Santa Cruz's own — bounding over the forest
+      // floor by the bushes it ducks into when you come close.
+      { def: JAY, count: 5, habitat: { ...JAY.habitat, region: { x: WIDE, z: [L.SAND_END + 4, L.CLIFF_Z] } } },
       // Monarchs at the same blooms: a lazy, jinking flutter from tuft to
       // tuft through the undergrowth's clearings.
       { def: BUTTERFLY, count: 10, habitat: { ...BUTTERFLY.habitat, region: { x: WIDE, z: [L.SAND_END, L.CLIFF_Z + 6] } } },
@@ -192,6 +203,11 @@ export function createJungleWildlife({ scene, ocean, terrain, vegetation, specie
       // a hundred and fifty metres under it. The 12 m test picks the homes;
       // the region keeps the sampling tries inland, where the ridges are.
       { def: EAGLE, count: 1, habitat: { ...EAGLE.habitat, region: { x: WIDE, z: [L.SAND_END, L.CLIFF_Z] } } },
+      // Western gulls wheeling low along the shore, over the surf and the
+      // sand — the beach's own sky.
+      { def: GULL, count: 4, habitat: { ...GULL.habitat, region: { x: WIDE, z: [-44, L.SAND_END] } } },
+      // A pair of ravens on the cliff's updraft, over the falls.
+      { def: RAVEN, count: 2, habitat: { ...RAVEN.habitat, region: { x: WIDE, z: [100, L.CLIFF_Z] } } },
       // On the offshore haul-outs: the planned-roster California sea lions,
       // the first `amphibious` species. They loaf on the rock tops, slide
       // off to swim and dive, and surface again nearby — the wade barrier
