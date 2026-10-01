@@ -20,7 +20,7 @@
 // Part ids read by DRAGONFLY_GLSL: 0 thorax (+ its dorsal plate), 1 abdomen,
 // 2 head + eyes, 3 fore wings, 4 hind wings.
 import * as THREE from 'three';
-import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
+import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass4';
 
 const COL = {
   thorax: 0x2e8ba8,      // the emperor's turquoise
@@ -79,12 +79,14 @@ export function buildDragonfly() {
   // anisoptere carries them spread even in the hover — the fore pair longer
   // and set clearly ahead of the hind, a gap of wing between the pairs so
   // all four read. Each pivots at its root (parts 3 and 4).
+  // Each is a thin slab (seen from above and below alike), its length out
+  // across the body: the span, root to tip, is a little over the body's
+  // length, the fore pair longer and narrower than the hind.
   const wing = (s, fore) => {
-    const w = fore ? 0.016 : 0.015, l = fore ? 0.07 : 0.05;
-    const zc = fore ? 0.014 : -0.026;
-    const g = new THREE.PlaneGeometry(w, l);
-    g.rotateX(-Math.PI / 2);           // lie flat along the flight
-    g.translate(s * (0.011 + w / 2), 0.026, zc);
+    const l = fore ? 0.07 : 0.064, w = fore ? 0.016 : 0.02;
+    const zc = fore ? 0.012 : -0.012;
+    const g = new THREE.BoxGeometry(l, 0.0015, w);
+    g.translate(s * (0.011 + l / 2), 0.026, zc);
     parts.push(creaturePart(g, { part: fore ? 3 : 4, pivot: [s * 0.011, 0.026, zc], color: COL.wing, bottomColor: COL.wing }));
   };
   for (const s of [-1, 1]) { wing(s, true); wing(s, false); }
@@ -150,11 +152,11 @@ export const DRAGONFLY = {
   homeRange: 3.5,
   activeRadius: 30,                 // a 19 cm dragonfly is a couple of pixels past this
   fear: { radius: 2.5, runRadius: 4.5, calmDistance: 8, hideFor: null },
-  speed: { walk: 1.6, flee: 3.5, turn: 10 },
+  speed: { walk: 2.6, flee: 4.5, turn: 10 },   // quick darts; a real one doubles this
   strideRate: 70,                   // the body's stride read; the wings run on uTime
   body: {
     yawOffset: 0, alignToGround: false,
-    lift: 0, sinkDepth: 0, sinkTime: 0.3, scale: [0.95, 1.25],
+    lift: 0, sinkDepth: 0, sinkTime: 0.3, scale: [0.8, 0.95],
   },
   fly: { low: 0.35, high: 2.2, hover: [0.6, 1.8], hoverR: 0.2, hoverRate: 1.3, zigzag: 0.38, zigFreq: 9, climb: 2.6 },
   timings: { idle: [0.2, 0.5], move: [2.5, 5], alert: 0.25 },

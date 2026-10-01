@@ -16,7 +16,7 @@
 // the air is a bird's ground. Part ids read by EAGLE_GLSL: 0 body,
 // 1 neck + head, 2 bill, 3 eyes, 4 tail, 5/6 wings.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass4';
 
 const COL = {
   body: 0x3b2a1b,        // the dark brown of the body and mantle
@@ -147,8 +147,8 @@ export const EAGLE = {
   strideRate: 2,                    // no legs to speak of; the GLSL ignores it
   body: {
     yawOffset: 0, alignToGround: false,
-    // About one and a half times life size: it has to read from the beach,
-    // a hundred and fifty metres under its circles.
+    // About life size — a 2.1–2.4 m span, a big female's — so it sits
+    // right beside the pelicans; it reads from the beach as a dark cross.
     lift: 0, sinkDepth: 0, sinkTime: 0.4, scale: [1.3, 1.5],
   },
   fly: { circleR: [11, 16], low: 18, high: 32, drift: 0.18, recenter: [38, 80], bank: 2.2 },

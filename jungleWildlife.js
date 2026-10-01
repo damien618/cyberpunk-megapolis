@@ -8,41 +8,27 @@
 // layout, their `keepOffBuilt`, their roster — and reuse the species modules
 // unchanged.
 //
-// Roster (Channel Islands fauna; the crab, the two lizards, the fox, the
-// snake, the tree frogs, the pool fish, the dragonflies, the hummingbirds
-// and the pelicans are in):
-//   crab       sand & wet sand, colonies round the beach rocks   wildlifeCrab.js
-//   lizards    up-valley by the rocks, with the alligator lizard wildlifeLizard.js
-//   fox        the undergrowth's island fox, three of them       wildlifeFox.js
-//   snake      the forest floor's kingsnake, two, black & cream  wildlifeSnake.js
-//   frogs      the wet rock ring round the pool, eight           wildlifeFrog.js
-//   fish       the pool's silver school, fourteen — the first    wildlifeFish.js
-//              `school` species
-//   dragonflies the pool's blue emperors, six, over the water    wildlifeDragonfly.js
-//              and the foot of the falls — the first `flyFree` species
-//   hummingbirds the clearings' Allen's hummingbirds, eight, at  wildlifeHummingbird.js
-//              the flowers — the second `flyFree` species
-//   pelicans   the open sea's brown file, five, beyond the wade  wildlifePelican.js
-//              barrier — the first `flock` species
-//   eagle      the ridge's bald eagle, one, on slow banked     wildlifeEagle.js
-//              circles over the high ground — the first
-//              `glide` species
-//   sea lions  the haul-outs' California sea lions, six, on     wildlifeSeaLion.js
-//              the offshore rocks — the first `amphibious`
-//              species
+// Roster (Channel Islands fauna), by zone:
+//   beach        crabs round the rocks                         wildlifeCrab.js
+//   undergrowth  lizards by the rocks, fox, kingsnake,          wildlifeLizard.js, wildlifeFox.js,
+//                hummingbirds at the flowers                    wildlifeSnake.js, wildlifeHummingbird.js
+//   waterfall    tree frogs, the pool's fish, dragonflies —     wildlifeFrog.js, wildlifeFish.js,
+//                frogs and dragonflies also down the stream     wildlifeDragonfly.js
+//   sky          the bald eagle over the ridges                 wildlifeEagle.js
+//   offshore     brown pelicans, sea lions on the haul-outs     wildlifePelican.js, wildlifeSeaLion.js
 import * as L from './jungleLayout.js';   // bare, like every element module
-import { createWildlife, spotIndex } from './wildlife.js?v=20261001-pass3';
-import { CRAB } from './wildlifeCrab.js?v=20261001-pass3';
-import { LIZARD, ALLIGATOR } from './wildlifeLizard.js?v=20261001-pass3';
-import { FOX } from './wildlifeFox.js?v=20261001-pass3';
-import { SNAKE } from './wildlifeSnake.js?v=20261001-pass3';
-import { FROG } from './wildlifeFrog.js?v=20261001-pass3';
-import { FISH } from './wildlifeFish.js?v=20261001-pass3';
-import { DRAGONFLY } from './wildlifeDragonfly.js?v=20261001-pass3';
-import { HUMMINGBIRD } from './wildlifeHummingbird.js?v=20261001-pass3';
-import { PELICAN } from './wildlifePelican.js?v=20261001-pass3';
-import { EAGLE } from './wildlifeEagle.js?v=20261001-pass3';
-import { SEA_LION } from './wildlifeSeaLion.js?v=20261001-pass3';
+import { createWildlife, spotIndex } from './wildlife.js?v=20261001-pass4';
+import { CRAB } from './wildlifeCrab.js?v=20261001-pass4';
+import { LIZARD, ALLIGATOR } from './wildlifeLizard.js?v=20261001-pass4';
+import { FOX } from './wildlifeFox.js?v=20261001-pass4';
+import { SNAKE } from './wildlifeSnake.js?v=20261001-pass4';
+import { FROG } from './wildlifeFrog.js?v=20261001-pass4';
+import { FISH } from './wildlifeFish.js?v=20261001-pass4';
+import { DRAGONFLY } from './wildlifeDragonfly.js?v=20261001-pass4';
+import { HUMMINGBIRD } from './wildlifeHummingbird.js?v=20261001-pass4';
+import { PELICAN } from './wildlifePelican.js?v=20261001-pass4';
+import { EAGLE } from './wildlifeEagle.js?v=20261001-pass4';
+import { SEA_LION } from './wildlifeSeaLion.js?v=20261001-pass4';
 
 // The swash's edge along the beach, as the foam shader draws it
 // (jungleOcean's foam: uEdge plus two slow sines in x) — so a crab backs up
@@ -119,6 +105,9 @@ export function jungleWildlifeLayout({ ocean = null, terrain = null, vegetation 
   };
 }
 
+// The valley's width, a little in from the side walls: the inland regions.
+const WIDE = [-L.PLAY_HALF_W + 2, L.PLAY_HALF_W - 2];
+
 // `species` overrides the roster (the tests pass a small one).
 export function createJungleWildlife({ scene, ocean, terrain, vegetation, species } = {}) {
   const layout = jungleWildlifeLayout({ ocean, terrain, vegetation });
@@ -126,39 +115,60 @@ export function createJungleWildlife({ scene, ocean, terrain, vegetation, specie
     scene, layout, seed: 'jungle',
     species: species || [
       // Beach only: sampling the whole valley for them would waste the tries.
-      { def: CRAB, count: 30, habitat: { ...CRAB.habitat, region: { x: [-78, 78], z: [-32, L.SAND_END] } } },
+      { def: CRAB, count: 30, habitat: { ...CRAB.habitat, region: { x: WIDE, z: [-32, L.SAND_END] } } },
       // Up-valley, against the rocks: the path's boulders, the headlands',
       // the cliff foot. Off the sand — that is the crabs' beach.
-      { def: LIZARD, count: 10, habitat: { ...LIZARD.habitat, region: { x: [-78, 78], z: [L.SAND_END, L.CLIFF_Z + 8] } } },
-      { def: ALLIGATOR, count: 3, habitat: { ...ALLIGATOR.habitat, region: { x: [-78, 78], z: [L.SAND_END, L.CLIFF_Z + 8] } } },
+      { def: LIZARD, count: 10, habitat: { ...LIZARD.habitat, region: { x: WIDE, z: [L.SAND_END, L.CLIFF_Z + 8] } } },
+      { def: ALLIGATOR, count: 3, habitat: { ...ALLIGATOR.habitat, region: { x: WIDE, z: [L.SAND_END, L.CLIFF_Z + 8] } } },
       // The undergrowth, in the lizards' region: FOREST/DIRT soils keep it
       // off the beach; the path, stream and pool margins do the rest.
-      { def: FOX, count: 3, habitat: { ...FOX.habitat, region: { x: [-78, 78], z: [L.SAND_END, L.CLIFF_Z + 8] } } },
+      { def: FOX, count: 3, habitat: { ...FOX.habitat, region: { x: WIDE, z: [L.SAND_END, L.CLIFF_Z + 8] } } },
       // The forest floor, with the fox: FOREST soil only, off the path —
       // slow, shy, and it stops rather than flees when you come close.
-      { def: SNAKE, count: 2, habitat: { ...SNAKE.habitat, region: { x: [-78, 78], z: [L.SAND_END, L.CLIFF_Z + 8] } } },
-      // The wet rock ring round the pool, under the falls: WET/ROCK keeps
-      // them off the water itself, the path's last bend off their ring.
-      // Approached, they hop into the pool and stay under till you have gone.
-      { def: FROG, count: 8, habitat: { ...FROG.habitat, region: { x: [L.POOL.x - 16, L.POOL.x + 16], z: [L.POOL.z - 14, L.CLIFF_Z + 4] } } },
+      { def: SNAKE, count: 2, habitat: { ...SNAKE.habitat, region: { x: WIDE, z: [L.SAND_END, L.CLIFF_Z + 8] } } },
+      // The wet rock ring round the pool, under the falls — and, for a few,
+      // the stream's banks down the valley, so the frogs' hop-and-plop is
+      // met on the walk up too. Approached, they hop into the water and stay
+      // under till you have gone.
+      { def: FROG, count: 8, habitat: {
+        // The species' own pool-only keys are dropped (null): the test says
+        // pool or stream instead.
+        within: null, soils: null,
+        slope: FROG.habitat.slope, avoid: FROG.habitat.avoid,
+        near: { pool: 2, share: 0.6 },
+        test: (x, z, Y) => {
+          if (Y.waterAt(x, z)) return false;
+          if (Y.distances.pool(x, z) < 2) return Y.soilAt(x, z) === Y.SOIL.WET || Y.soilAt(x, z) === Y.SOIL.ROCK;
+          const st = Y.distances.stream(x, z);
+          return st > L.STREAM_HALF_W + 0.2 && st < L.STREAM_HALF_W + 2.5;
+        },
+        region: { x: WIDE, z: [L.SAND_END + 6, L.CLIFF_Z + 4] },
+      } },
       // The pool itself: the silver school. The water test in FISH.habitat
       // picks the homes; the region keeps the sampling tries inside the bowl.
       // The wading player scatters them (the boids' threat), they close again
       // behind the wake.
       { def: FISH, count: 14, habitat: { ...FISH.habitat, region: { x: [L.POOL.x - 13, L.POOL.x + 13], z: [L.POOL.z - 13, L.POOL.z + 13] } } },
-      // Over the pool and the foot of the falls: the planned-roster
-      // dragonflies, the first `flyFree` species. They hang on a
-      // figure-of-eight, dart in zigzags a band above the water, and skip
-      // aside when you come close. The within-pool habitat picks their
-      // anchors; the region keeps the sampling tries by the falls.
-      { def: DRAGONFLY, count: 6, habitat: { ...DRAGONFLY.habitat, region: { x: [L.POOL.x - 14, L.POOL.x + 14], z: [L.POOL.z - 14, L.CLIFF_Z + 6] } } },
+      // Over the pool and the foot of the falls, and a few patrolling the
+      // stream: they hang on a figure-of-eight, dart in zigzags a band above
+      // the water, and skip aside when you come close.
+      { def: DRAGONFLY, count: 6, habitat: {
+        within: null,
+        slope: DRAGONFLY.habitat.slope,
+        near: { pool: 6, share: 0.6 },
+        // By the pool at the water's own level (not up on the cliff top), or
+        // over the stream.
+        test: (x, z, Y) => (Y.distances.pool(x, z) < 6 && Y.terrainHeight(x, z) < L.POOL.waterY + 1.5)
+          || Y.distances.stream(x, z) < 2.5,
+        region: { x: WIDE, z: [L.SAND_END + 6, L.CLIFF_Z + 6] },
+      } },
       // Through the undergrowth's clearings and along its edges: the
       // planned-roster hummingbirds, the second `flyFree` species. They hang
       // at a bloom, then dart to the nearest tuft — the vegetation's flowers
       // are both their habitat (`near: { flowers: 4 }`) and the anchors their
       // tick picks. Skittish, back at once (hideFor is null). The region
       // keeps the sampling tries inland, where the blooms are.
-      { def: HUMMINGBIRD, count: 8, habitat: { ...HUMMINGBIRD.habitat, region: { x: [-78, 78], z: [L.SAND_END, L.CLIFF_Z + 6] } } },
+      { def: HUMMINGBIRD, count: 8, habitat: { ...HUMMINGBIRD.habitat, region: { x: WIDE, z: [L.SAND_END, L.CLIFF_Z + 6] } } },
       // Over the open sea, beyond the wade barrier: the planned-roster
       // brown pelicans, the first `flock` species. The leader rides a slow
       // loop over the cove, the file streams out behind it a body apart,
@@ -172,7 +182,7 @@ export function createJungleWildlife({ scene, ocean, terrain, vegetation, specie
       // gliding on to a fresh circle the other way. Not frightened — you are
       // a hundred and fifty metres under it. The 12 m test picks the homes;
       // the region keeps the sampling tries inland, where the ridges are.
-      { def: EAGLE, count: 1, habitat: { ...EAGLE.habitat, region: { x: [-78, 78], z: [L.SAND_END, L.CLIFF_Z] } } },
+      { def: EAGLE, count: 1, habitat: { ...EAGLE.habitat, region: { x: WIDE, z: [L.SAND_END, L.CLIFF_Z] } } },
       // On the offshore haul-outs: the planned-roster California sea lions,
       // the first `amphibious` species. They loaf on the rock tops, slide
       // off to swim and dive, and surface again nearby — the wade barrier

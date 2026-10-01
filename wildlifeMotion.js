@@ -177,6 +177,8 @@ function hopStep(a, sp, dt, ctx, speed) {
 // boids' threat — the school parts around them at double speed and closes
 // again when they wade out. No allocation per call.
 // ---------------------------------------------------------------------------
+const SCHOOL_DEPTH = 0.25;   // m: shallower water is the bank, for a school
+
 function schoolInit(sp, ctx) {
   const L = ctx.layout;
   let s;
@@ -194,8 +196,9 @@ function schoolInit(sp, ctx) {
     for (let i = 0; i < 8; i++) {
       const th = i * 0.7853981633974483 + 0.4, sx = Math.sin(th), sz = Math.cos(th);
       for (let d = 1; d < 20; d += 0.5) {
-        const w = L.waterAt(cx + sx * d, cz + sz * d);
-        if (!w || w.kind !== kind) break;
+        const px = cx + sx * d, pz = cz + sz * d;
+        const w = L.waterAt(px, pz);
+        if (!w || w.kind !== kind || w.y - L.terrainHeight(px, pz) < SCHOOL_DEPTH) break;
         if (d > r) r = d;
       }
     }
@@ -230,7 +233,8 @@ function schoolInit(sp, ctx) {
           out.x = dx / d * k; out.z = dz / d * k;
         } else {
           const w = L.waterAt(b.x, b.z);
-          if (!w || w.kind !== s.kind) {     // out of the water: hard pull home
+          if (!w || w.kind !== s.kind || w.y - L.terrainHeight(b.x, b.z) < SCHOOL_DEPTH) {
+            // out of the water, or into its shallow fringe: hard pull home
             out.x = -dx / d * 10; out.z = -dz / d * 10;
           }
         }
@@ -547,6 +551,7 @@ function flockStep(a, sp, dt, ctx, speed) {
 //   climb 2.6            the exponential ease into a.ty (1/s)
 // ---------------------------------------------------------------------------
 const FLY_HOVER = [0.6, 1.8];
+const FLY_CLIMB = 2.5;   // m/s: the fastest a dart climbs or dives
 const EMPTY_FLY = {};
 
 function flySurfaceY(x, z, L) {
@@ -595,7 +600,10 @@ function flyFreeStep(a, sp, dt, ctx, speed) {
       const nx = bx + a.px * swing, nz = bz + a.pz * swing;
       // Climb/dive on an ease toward a.ty, then the band guard for ground
       // that rises under the chord — the skim up over a bank or the cliff.
-      let y = a.hy + (a.ty - a.hy) * (1 - Math.exp(-(F.climb ?? 2.6) * a.dartT));
+      // The ease, stepped from where the body is and capped at FLY_CLIMB m/s:
+      // a target far up a bank is climbed to, not leapt at.
+      const ease = (a.ty - a.y) * (1 - Math.exp(-(F.climb ?? 2.6) * dt));
+      let y = a.y + Math.max(-FLY_CLIMB * dt, Math.min(FLY_CLIMB * dt, ease));
       const surf = flySurfaceY(nx, nz, L);
       if (y < surf + LOW) y = Math.min(surf + LOW, y + 3 * dt);
       else if (y > surf + HIGH) y = Math.max(surf + HIGH, y - 3 * dt);

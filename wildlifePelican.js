@@ -16,22 +16,26 @@
 // the air is a bird's ground. Part ids read by PELICAN_GLSL: 0 body,
 // 1 neck + head, 2 bill + pouch, 3 eyes, 4 tail, 5/6 wings.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass4';
 
 const COL = {
-  back: 0x4a3a2c,        // dark brown-grey of the back and mantle
-  wing: 0x40332a,        // the long wings, a shade darker
+  back: 0x5e554c,        // grey-brown back and mantle
+  wing: 0x746a60,        // the silvery grey-brown of the upper wing
+  primary: 0x2b2520,     // the dark flight feathers at the wing's hand
   under: 0x2a221b,       // baked underside — the black-brown belly
-  neck: 0x6e4a30,        // the chestnut hindneck
-  head: 0xd9cfae,        // the pale yellow-white head
+  neck: 0xe0d9c6,        // the white neck, drawn back onto the shoulders
+  head: 0xece1b8,        // the pale yellow-white crown
   bill: 0x9a9484,        // the long grey-ivory mandible
-  pouch: 0x8a5a4a,       // the dusky gular pouch
-  tail: 0x38302a,
+  pouch: 0x6b4a3c,       // the dusky gular pouch
+  tail: 0x3a322b,
   eye: 0x14100c,
 };
 
 // ---------------------------------------------------------------------------
-// Model.
+// Model. Proportions of the bird on the wing: a span about 1.7 times its
+// length, the head drawn back onto the shoulders, the bill resting on the
+// chest — the silhouette that says pelican from the beach, where a
+// heron's outstretched neck would not.
 // ---------------------------------------------------------------------------
 export function buildPelican() {
   const parts = [];
@@ -41,32 +45,32 @@ export function buildPelican() {
   // Body: a fusiform ellipsoid, six-sided so the facets read as feathers,
   // its belly resting on y = 0.
   const body = new THREE.SphereGeometry(1, 6, 4);
-  body.scale(0.085, 0.1, 0.26).translate(0, 0.115, -0.01);
+  body.scale(0.09, 0.1, 0.26).translate(0, 0.115, -0.01);
   part(body, 0, COL.back, COL.under);
 
-  // The neck up and forward, then the pale head (part 1: the GLSL turns it
-  // a little on the glide).
-  part(limbGeometry([0, 0.17, 0.2], [0, 0.26, 0.32], 0.045, 0.036), 1, COL.neck, COL.under);
-  part(new THREE.BoxGeometry(0.055, 0.05, 0.095).translate(0, 0.265, 0.365), 1, COL.head, COL.head);
+  // The neck, short and thick, folded up and back; the pale head sits on
+  // the shoulders (part 1: the GLSL turns it a little on the glide).
+  part(limbGeometry([0, 0.16, 0.19], [0, 0.26, 0.24], 0.055, 0.05), 1, COL.neck, COL.neck);
+  part(new THREE.BoxGeometry(0.058, 0.052, 0.1).translate(0, 0.28, 0.275), 1, COL.head, COL.head);
 
-  // The bill: a long thin upper mandible and, slung tight under it, the
-  // pouch — a deep short wedge from the base to near the tip (part 2).
-  part(limbGeometry([0, 0.262, 0.4], [0, 0.248, 0.62], 0.016, 0.009), 2, COL.bill, COL.bill);
-  part(limbGeometry([0, 0.244, 0.42], [0, 0.2, 0.55], 0.044, 0.016), 2, COL.pouch, COL.pouch);
+  // The bill: a long thin upper mandible angled down onto the chest and,
+  // slung tight under it, the pouch (part 2).
+  part(limbGeometry([0, 0.278, 0.32], [0, 0.205, 0.6], 0.017, 0.01), 2, COL.bill, COL.bill);
+  part(limbGeometry([0, 0.255, 0.34], [0, 0.19, 0.52], 0.04, 0.016), 2, COL.pouch, COL.pouch);
 
   for (const s of [-1, 1]) {
-    part(new THREE.BoxGeometry(0.011, 0.011, 0.011).translate(s * 0.024, 0.278, 0.375),
+    part(new THREE.BoxGeometry(0.011, 0.011, 0.011).translate(s * 0.026, 0.292, 0.29),
       3, COL.eye, COL.eye);
-    // The wings: a broad inner blade and a swept outer one per side,
+    // The wings: a broad inner blade, silvery, and the swept, dark hand —
     // pivoted at the shoulder so the GLSL can beat, hold or fold the pair
-    // (parts 5 and 6). The tip boxes lean back — a pelican's long wing.
+    // (parts 5 and 6).
     const id = s < 0 ? 5 : 6, pivot = [s * 0.075, 0.17, 0.03];
-    part(new THREE.BoxGeometry(0.3, 0.011, 0.15).translate(s * 0.225, 0.175, -0.01),
+    part(new THREE.BoxGeometry(0.37, 0.012, 0.17).translate(s * 0.255, 0.175, -0.01),
       id, COL.wing, COL.under, pivot);
-    part(new THREE.BoxGeometry(0.27, 0.009, 0.095)
-      .rotateY(s * 0.3).rotateZ(s * 0.04)
-      .translate(s * 0.49, 0.185, -0.05),
-      id, COL.wing, COL.under, pivot);
+    part(new THREE.BoxGeometry(0.4, 0.01, 0.11)
+      .rotateY(s * 0.22).rotateZ(s * 0.04)
+      .translate(s * 0.615, 0.185, -0.05),
+      id, COL.primary, COL.under, pivot);
   }
 
   // Tail: a short wedge sloping down off the rump (part 4).
@@ -136,9 +140,9 @@ export const PELICAN = {
   strideRate: 18,
   body: {
     yawOffset: 0, alignToGround: false,
-    // Roughly one and a half times life size: the file has to read from the
-    // beach, forty or fifty metres off the flock.
-    lift: 0, sinkDepth: 0, sinkTime: 0.4, scale: [1.1, 1.4],
+    // Life size: a 2.0–2.3 m span, beside the eagle's — the file reads from
+    // the beach, forty or fifty metres off, by its silhouette.
+    lift: 0, sinkDepth: 0, sinkTime: 0.4, scale: [1.2, 1.38],
   },
   fly: { loopX: 30, loopZ: 11, low: 3.2, high: 5.2, delay: 1.15, diveEvery: [16, 34], diveDur: 6.5 },
   timings: { idle: [0.2, 0.6], move: [8, 16], alert: 0 },

@@ -400,12 +400,18 @@ if (frog) {
   const P = new THREE.Vector3(), V = new THREE.Vector3();
   let t = 0;
   check(frog.agents.length === 8, `8 tree frogs placed (${frog.agents.length})`);
-  check(frog.agents.every(b => Math.hypot(b.home.x - POOL.x, b.home.z - POOL.z) - POOL.r <= 2),
-    'every frog lives within 2 m of the pool');
-  check(frog.agents.every(b => {
+  const byPool = b => Math.hypot(b.home.x - POOL.x, b.home.z - POOL.z) - POOL.r <= 2;
+  const byStream = b => streamDistance(b.home.x, b.home.z) < 1.8 + 2.5;
+  check(frog.agents.every(b => byPool(b) || byStream(b)),
+    'every frog lives within 2 m of the pool or on the stream\'s banks');
+  check(frog.agents.filter(byPool).length >= 5 && frog.agents.some(b => !byPool(b)),
+    `most round the pool, a few down the stream (${frog.agents.filter(byPool).length} / 8 by the pool)`);
+  check(frog.agents.filter(byPool).every(b => {
     const s = soilAt(b.home.x, b.home.z);
     return s === SOIL.WET || s === SOIL.ROCK;
-  }), 'every frog on wet ground or rock, none in the water');
+  }), 'the pool\'s frogs on wet ground or rock');
+  const LF = jungleWildlifeLayout({ terrain, vegetation: veg });
+  check(frog.agents.every(b => !LF.waterAt(b.home.x, b.home.z)), 'none in the water');
   check(frog.agents.every(b => pathDistance(b.home.x, b.home.z) >= 1.2), 'none of them on the path');
   const W5 = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
   const sameFrogs = W5.debug.species.frog.agents.every((b, i) =>
@@ -582,8 +588,9 @@ if (dfly) {
   const over = (x, z) => (Math.hypot(x - POOL.x, z - POOL.z) < POOL.r - 0.5
     && terrainHeight(x, z) < POOL.waterY) ? POOL.waterY : terrainHeight(x, z);
   check(dfly.agents.length === 6, `6 dragonflies placed (${dfly.agents.length})`);
-  check(dfly.agents.every(b => Math.hypot(b.home.x - POOL.x, b.home.z - POOL.z) - POOL.r <= 6),
-    'every dragonfly lives within 6 m of the pool');
+  check(dfly.agents.every(b => Math.hypot(b.home.x - POOL.x, b.home.z - POOL.z) - POOL.r <= 6
+    || streamDistance(b.home.x, b.home.z) < 2.5),
+    'every dragonfly lives within 6 m of the pool or over the stream');
   const W7 = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
   check(W7.debug.species.dragonfly.agents.every((b, i) =>
     b.home.x === dfly.agents[i].home.x && b.home.z === dfly.agents[i].home.z),
@@ -1053,7 +1060,9 @@ if (eag) {
         const drawn = a.awake && a.sink < 1;
         const l = last.get(a.i);
         if (drawn && l) {
-          const d = Math.hypot(a.x - l[0], a.y - l[1], a.z - l[2]);
+          // Past the near tier a non-smooth body moves four frames at once.
+          const tier = !sp.motion.smooth && a.dist > 25 ? 4 : 1;
+          const d = Math.hypot(a.x - l[0], a.y - l[1], a.z - l[2]) / tier;
           if (d > worst) { worst = d; why = `#${a.i} frame ${k} ${W.STATE_NAME[l[3]]}→${W.STATE_NAME[a.state]}, ${a.dist.toFixed(1)} m off`; }
         }
         if (drawn) last.set(a.i, [a.x, a.y, a.z, a.state]); else last.delete(a.i);

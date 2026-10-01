@@ -54,7 +54,7 @@
 // it are not put on that map.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass3';
+import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass4';
 
 // ---------------------------------------------------------------------------
 // States. Every species runs the same machine and opts out of what it does
@@ -561,7 +561,10 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
     a.gait += (Math.min(1, gaitWant * 1.6) - a.gait) * Math.min(1, dt * 8);
     const moodWant = a.state === STATE.ALERT || a.state === STATE.FLEE ? 1 : 0;
     a.mood += (moodWant - a.mood) * Math.min(1, dt * 6);
-    a.stride += a.speed * dt * (sp.def.strideRate || 40);
+    // strideStretch: the stride lengthens as the gait rises (a fox's trot
+    // to its gallop), so a faster body swings its legs farther, not only
+    // faster — at gait 1 the stride is (1 + strideStretch) times the walk's.
+    a.stride += a.speed * dt * (sp.def.strideRate || 40) / (1 + (sp.def.strideStretch || 0) * a.gait);
   }
 
   // Normal of the ground under an agent, re-sampled at most 5 times a

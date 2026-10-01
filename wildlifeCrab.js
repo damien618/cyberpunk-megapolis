@@ -13,7 +13,7 @@
 // Local frame: +Z is the front (eyes, claws), +X its right, y = 0 the ground.
 // Part ids read by CRAB_GLSL: 0 body, 2 claws, 3 eyes, 10–13 legs front→back.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass4';
 
 const COL = {
   shell: 0x44522c,       // olive, darkening to the rim
@@ -179,9 +179,10 @@ export const CRAB = {
   strideRate: 38,                   // rad of leg cycle per metre covered
   body: {
     yawOffset: Math.PI / 2, sideways: true, alignToGround: true,
-    // Twice to three times life size (a real one is a 5 cm shell): at
-    // life size it is a speck on the sand at the camera's distance.
-    lift: 0, sinkDepth: 0.24, sinkTime: 0.45, scale: [1.1, 1.6],
+    // About twice life size, legs spread (a real one is a 5 cm shell, some
+    // 10 cm across the legs): at life size it is a speck on the sand at the
+    // camera's distance, at three times it rivals the beach stones.
+    lift: 0, sinkDepth: 0.2, sinkTime: 0.45, scale: [0.7, 1.0],
   },
   timings: { idle: [1.2, 5], move: [0.8, 2.5], alert: 0.35 },
   build: buildCrab,

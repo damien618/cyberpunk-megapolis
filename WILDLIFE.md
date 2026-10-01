@@ -55,7 +55,7 @@ The crabs use +1 draw call, about 3 k triangles and 0.02–0.04 ms. Keep each sp
 
 ## The definition
 
-Anything you leave out takes the value in `DEFAULTS` (in `wildlife.js`). A map entry `{ def, ...overrides }` is merged over the definition, one level deep for `habitat`, `fear`, `speed`, `body`, `timings` and `hooks`.
+Anything you leave out takes the value in `DEFAULTS` (in `wildlife.js`). A map entry `{ def, ...overrides }` is merged over the definition, one level deep for `habitat`, `fear`, `speed`, `body`, `timings` and `hooks`. To drop one of the species' habitat keys in a map, set it to `null` (the cove's frogs: `within: null`, then a `test` that says pool or stream).
 
 | Key | Meaning (crab value) |
 |---|---|
@@ -69,6 +69,7 @@ Anything you leave out takes the value in `DEFAULTS` (in `wildlife.js`). A map e
 | `fear` | `radius` walking, `runRadius` when the player runs (> 3 m/s), `calmDistance` before coming back out, `hideFor` `[min,max]` seconds, or `null` to never hide. |
 | `speed` | `walk`, `flee` (m/s), `turn` (rad/s). |
 | `strideRate` | Radians of leg cycle per metre covered (38). |
+| `strideStretch` | How much the stride lengthens at full gait: the cycle per metre is divided by `1 + strideStretch × gait` (0; the fox's 3). |
 | `body` | `yawOffset` + `sideways` (a crab walks along its ±X), `alignToGround`, `lift`, `sinkDepth`/`sinkTime` (burrowing), `scale` `[min,max]`. |
 | `timings` | `idle` `[min,max]`, `move` `[min,max]`, `alert` in seconds (0 skips ALERT). |
 | `build` | `() → { geometry }`, the merged creature geometry. |

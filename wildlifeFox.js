@@ -19,7 +19,7 @@
 // 0 trunk (and throat), 1 head (and eyes, nose), 2 ears, 10–11 legs
 // front/rear, 20–24 tail sections root→tip (24 is the black tip).
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass4';
 
 const COL = {
   back: 0x8a857e,        // grizzled grey of the saddle
@@ -150,11 +150,14 @@ export const FOX_GLSL = `
     // Legs: the diagonal trot — each front leg with the far hind leg — with
     // a longer sweep than the lizard's, the stride of an animal that covers
     // ground. At rest, a faint weight-shift.
+    // (The swing grows as the root of the gait: a calm walk still reaches,
+    // the bolt reaches all the way.)
     float ph = stride + ((side > 0.0) == (aPart < 10.5) ? 3.14159 : 0.0);
-    float lift = max(0.0, sin(ph)) * 0.6 * gait;
+    float reach = sqrt(gait);
+    float lift = max(0.0, sin(ph)) * 0.6 * reach;
     float shift = sin(uTime * 1.9 + aAnim.x + (aPart - 10.0) * 2.2) * 0.03 * (1.0 - gait);
     transformed = wlRotZ(transformed, aPivot, side * (lift + shift));
-    transformed = wlRotY(transformed, aPivot, cos(ph) * 0.3 * gait);
+    transformed = wlRotY(transformed, aPivot, cos(ph) * 0.3 * reach);
   } else if (aPart > 1.5) {
     // Ears: a lazy twitch when calm; pinned back a touch when alarmed.
     float tw = sin(uTime * 2.9 + aAnim.x * 1.7 + side * 2.4);
@@ -223,8 +226,11 @@ export const FOX = {
   homeRange: 6,
   activeRadius: 42,                 // cat-sized: readable a little past the default
   fear: { radius: 5, runRadius: 7.5, calmDistance: 13, hideFor: null },
-  speed: { walk: 0.7, flee: 2.6, turn: 6 },   // a trot, not a panic
-  strideRate: 26,                   // rad of leg cycle per metre covered
+  // A walk while calm; startled, a bolt — an island fox outruns you over a
+  // few metres before it slows into the undergrowth.
+  speed: { walk: 0.7, flee: 4.2, turn: 6 },
+  strideRate: 26,                   // rad of leg cycle per metre, walking
+  strideStretch: 3,                 // the gallop's stride: four walking ones
   body: {
     alignToGround: true,
     // No sideways, no burrowing: it faces where it goes and never sinks.

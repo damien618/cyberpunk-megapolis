@@ -13,7 +13,7 @@
 // Part ids read by FROG_GLSL: 0 body, 1 throat sac, 2 eyes, 10–11 forelegs,
 // 12–13 hind legs.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass4';
 
 const COL = {
   back: 0x5c8f3e,        // rainette green (tint swings individuals brown)
@@ -185,8 +185,9 @@ export const FROG = {
   strideRate: 5,                    // about half a turn of kick per leap
   body: {
     yawOffset: 0, alignToGround: true,
-    // Twice to three times life size (a real one is 3–4 cm).
-    lift: 0, sinkDepth: 0.16, sinkTime: 0.35, scale: [0.9, 1.3],
+    // About twice life size (a real one is 3–5 cm): 9–12 cm here, smaller
+    // than the hummingbird, the crab and every lizard.
+    lift: 0, sinkDepth: 0.14, sinkTime: 0.35, scale: [0.7, 0.95],
   },
   timings: { idle: [2, 6], move: [0.6, 1.4], alert: 0.25 },
   build: buildFrog,
