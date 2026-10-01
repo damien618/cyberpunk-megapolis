@@ -32,7 +32,7 @@ export function createResortMaterials(maxAniso=4) {
     blue:new THREE.MeshStandardMaterial({color:0x61bcc9,roughness:.9}),
     metal:new THREE.MeshStandardMaterial({color:0x483b2c,roughness:.7,metalness:.35}),
     lantern:new THREE.MeshStandardMaterial({color:0xffecd1,emissive:0xffb75b,emissiveIntensity:0}),
-    pool:new THREE.MeshStandardMaterial({color:0x7fcacb,roughness:.8}),
+    pool:new THREE.MeshStandardMaterial({color:0x5cc6d6,roughness:.55}),
     fruit:new THREE.MeshStandardMaterial({color:0xffbe39,roughness:.65}),
     pink:new THREE.MeshStandardMaterial({color:0xec647f,roughness:.85,side:THREE.DoubleSide}),
     green:new THREE.MeshStandardMaterial({color:0x41833e,roughness:.9}),
