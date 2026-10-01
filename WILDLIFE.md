@@ -182,7 +182,7 @@ Your `animGLSL` runs after `begin_vertex`. It edits `transformed` (object space)
 | `flock` | smooth, group, init | pelicans | The leader's oval over the sea, the file on its trail (boids), the plunge. |
 | `school` | smooth, group, init | fish | 3-D boids between the bed and the surface of water deep enough to swim in. |
 | `porpoise` | smooth, group, init | dolphins | A pod on an oval, each at its slot, leaping on its own clock, pitched along the arc. |
-| `amphibious` | — | sea lions | Crawl on the haul-outs' tops, swim between, one continuous floor across neighbouring rocks. |
+| `amphibious` | — | sea lions | Crawl up the haul-outs, swim low between them (`dive.depth` under the surface), a colony kept from piling up. The floor is the rock's real slope where its spot carries a `shell` (an ellipsoid), else a ramp from its edge; continuous across neighbouring rocks. |
 
 Flags (see the contract in `wildlifeMotion.js`): **walks** keeps the species out of `layout.obstacles`; **smooth** steps it every frame at any distance (past 25 m the rest think one frame in four); **group** wakes and sleeps the whole species together; **init** places the agents on their path at creation, so the first frame is not a jump.
 
@@ -227,6 +227,7 @@ A new map writes its own `xxxWildlife.js`: an adapter and a roster. The species 
 - **Never use the map's shared `rnd()`.** Each species has its own seeded RNG, so adding one never moves a rock or a palm.
 - **Species sit on the analytic terrain, with no raycasts.** Use `terrainHeight` and `soilAt` for sampling and hooks, not per vertex.
 - **Rock spots carry a bounding radius about a centre that may be buried.** The adapter's obstacles use the footprint where the rock meets the ground; use those for anything that must not enter a rock.
+- **A floor guessed from a bounding radius floats.** The sea lions sat on thin air beside their rocks until the haul-out spots carried each rock's `shell`. Give a species that stands on a prop the prop's real shape.
 - **A habitat override merges.** A map's `habitat` keeps the species' keys unless set to `null`.
 - **A flyer's target can change mid-flight** (a fresh wander, a flight). A motion that walks a planned path must notice, and replan from where the body is.
 - **`camera.fov` cannot zoom a capture.** The camera rig resets it every frame. `wildlife_gallery.py` swaps the rig out for its free camera; otherwise place the player (`ctrl.rescueTo`, then wait about 7 s).

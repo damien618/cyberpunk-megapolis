@@ -17,112 +17,124 @@
 //   1  bound for the water (a MOVE the tick set up)
 //   2  under (HIDDEN), then surfaced and swimming home (post-EMERGE MOVE)
 //
-// Model: ~330 triangles, flat-shaded, vertex-coloured, one merged geometry.
+// Model: ~380 triangles, flat-shaded, vertex-coloured, one merged geometry.
 // Local frame: +Z is the front (muzzle, eyes), +X its right, y = 0 the
 // belly — the rock top and the sea surface are both a sea lion's ground.
-// Part ids read by SEA_LION_GLSL: 0 torso, 1 neck + head + muzzle, 3 eyes,
+// Part ids read by SEA_LION_GLSL: 0 torso, 1 neck + head + muzzle, 3 eyes + ears,
 // 5/6 fore flippers, 10/11 hind flippers, 12 tail.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass9';
-import { amphibiousFloor, amphFloor } from './wildlifeMotion.js?v=20261001-pass9';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-sealion1';
+import { amphibiousFloor, amphibiousBodyY, amphFloor } from './wildlifeMotion.js?v=20261001-sealion1';
 
 const COL = {
-  coat: 0x4a3626,        // the dark brown coat, dull on the flanks
-  crown: 0x5f4630,       // the crest, palest on the bulls
-  under: 0x2c2016,       // baked underside — the darker, wet belly
-  muzzle: 0x74604b,      // the bull's pale muzzle, in the skull's line
-  flipper: 0x36281c,     // the leathery flippers, near-black
-  eye: 0x14100c,
+  coat: 0x5b4130,        // the wet chocolate coat
+  back: 0x4a3426,        // darker along the spine
+  chest: 0x6e5039,       // the paler chest and throat
+  under: 0x35261b,       // baked underside — the darker, wet belly
+  muzzle: 0x8b6d52,      // the short pale muzzle
+  nose: 0x1a1310,
+  flipper: 0x2a1e16,     // the leathery flippers, near-black
+  eye: 0x0b0806,
 };
 
 // ---------------------------------------------------------------------------
-// Model.
+// Model. Hauled out, a sea lion is not a lump: the chest stands propped on
+// two long fore flippers, the neck rises long and supple, the small head
+// carries a pointed muzzle and two nubs of ears, and the body tapers away
+// to hind flippers turned forward under the hips. That silhouette is what
+// tells it from a seal, or from a turtle, at fifty metres.
 // ---------------------------------------------------------------------------
 export function buildSeaLion() {
   const parts = [];
   const part = (g, id, color, bottom, pivot) =>
     parts.push(creaturePart(g, { part: id, pivot, color, bottomColor: bottom }));
+  const blob = (sx, sy, sz, x, y, z, id, color, bottom, pivot, seg = [7, 5]) => {
+    const g = new THREE.SphereGeometry(1, seg[0], seg[1]);
+    g.scale(sx, sy, sz).translate(x, y, z);
+    part(g, id, color, bottom, pivot);
+  };
 
-  // Torso: a fusiform ellipsoid, chest-forward, belly resting on y = 0, plus
-  // the heavy shoulders that read as a bull hauled out.
-  const torso = new THREE.SphereGeometry(1, 7, 5);
-  torso.scale(0.185, 0.215, 0.6).translate(0, 0.23, -0.06);
-  part(torso, 0, COL.coat, COL.under);
-  const chest = new THREE.SphereGeometry(1, 6, 4);
-  chest.scale(0.165, 0.2, 0.27).translate(0, 0.23, 0.27);
-  part(chest, 0, COL.crown, COL.under);
+  // Torso: a long spindle tapering to the hips, belly on y = 0, a darker
+  // saddle along the spine; the chest rises in front of it, propped.
+  blob(0.17, 0.16, 0.6, 0, 0.16, -0.16, 0, COL.coat, COL.under);
+  blob(0.12, 0.08, 0.5, 0, 0.255, -0.16, 0, COL.back, COL.coat, undefined, [6, 4]);
+  blob(0.16, 0.2, 0.22, 0, 0.27, 0.27, 0, COL.chest, COL.under);
 
-  // The thick neck up and forward, then the small skull and the pale muzzle
-  // (part 1: the GLSL lifts and scans it while the animal loafs). The muzzle
-  // sits in the skull's line — a sea lion's short face, not a snout.
-  part(limbGeometry([0, 0.3, 0.42], [0, 0.4, 0.56], 0.115, 0.095), 1, COL.coat, COL.under);
-  part(new THREE.BoxGeometry(0.095, 0.075, 0.11).translate(0, 0.425, 0.615), 1, COL.crown, COL.coat);
-  part(new THREE.BoxGeometry(0.042, 0.04, 0.06).translate(0, 0.43, 0.68), 1, COL.muzzle, COL.muzzle);
+  // Neck: long, rising from the chest (part 1 — the GLSL lowers it into the
+  // swim and turns it while the animal loafs); the head on top, small and
+  // long, the muzzle pointed, the ears two nubs.
+  const neck = [0, 0.36, 0.36];
+  part(limbGeometry([0, 0.33, 0.33], [0, 0.6, 0.47], 0.14, 0.095), 1, COL.coat, COL.chest, neck);
+  blob(0.062, 0.062, 0.085, 0, 0.635, 0.5, 1, COL.coat, COL.chest, neck, [6, 4]);
+  part(limbGeometry([0, 0.625, 0.56], [0, 0.6, 0.66], 0.065, 0.034), 1, COL.muzzle, COL.muzzle, neck);
+  part(new THREE.BoxGeometry(0.03, 0.022, 0.02).translate(0, 0.603, 0.665), 1, COL.nose, COL.nose, neck);
 
   for (const s of [-1, 1]) {
-    // The eyes ride the neck's own pivot (the GLSL turns part 1, and a fixed
-    // eye would float off a turned head), sunk into the skull's top so they
-    // read without floating.
-    part(new THREE.BoxGeometry(0.014, 0.014, 0.014).translate(s * 0.028, 0.443, 0.63),
-      3, COL.eye, COL.eye, [0, 0.3, 0.42]);
-    // The fore flippers: long, flat blades hugging the flanks, angled back —
-    // the GLSL scratches (ashore) and rows (swimming) with them (parts 5/6).
-    const id = s < 0 ? 5 : 6, pivot = [s * 0.12, 0.26, 0.34];
-    part(new THREE.BoxGeometry(0.045, 0.012, 0.27)
-      .rotateY(s * 0.28).rotateZ(s * 0.1).translate(s * 0.15, 0.155, 0.18),
-      id, COL.flipper, COL.under, pivot);
-    // The hind flippers, folded back along the body — the swim's main beat.
-    const hip = [s * 0.07, 0.09, -0.55];
-    part(limbGeometry(hip, [s * 0.13, 0.02, -0.68], 0.05, 0.03),
-      10 + (s < 0 ? 0 : 1), COL.flipper, COL.under, hip);
+    // Eyes and ears ride the neck's pivot too (part 3, turned with part 1).
+    part(new THREE.BoxGeometry(0.018, 0.018, 0.018).translate(s * 0.045, 0.655, 0.545), 3, COL.eye, COL.eye, neck);
+    part(new THREE.BoxGeometry(0.014, 0.024, 0.012).rotateZ(s * 0.4).translate(s * 0.05, 0.69, 0.48), 3, COL.back, COL.back, neck);
+    // Fore flippers: from the shoulder down to the rock, the long blade
+    // splayed out and forward — the props the chest stands on (5, 6).
+    const id = s < 0 ? 5 : 6, sh = [s * 0.12, 0.25, 0.3];
+    part(limbGeometry(sh, [s * 0.2, 0.03, 0.4], 0.075, 0.05), id, COL.coat, COL.under, sh);
+    part(new THREE.BoxGeometry(0.1, 0.014, 0.24).rotateY(s * 0.55).translate(s * 0.27, 0.012, 0.47),
+      id, COL.flipper, COL.flipper, sh);
+    // Hind flippers: turned forward under the hips, the webbed blades
+    // splayed on the rock (10, 11); in the swim they trail and beat.
+    const hip = [s * 0.07, 0.07, -0.66];
+    part(limbGeometry(hip, [s * 0.13, 0.015, -0.78], 0.06, 0.035), 10 + (s < 0 ? 0 : 1), COL.coat, COL.under, hip);
+    part(new THREE.BoxGeometry(0.11, 0.012, 0.18).rotateY(-s * 0.35).translate(s * 0.17, 0.008, -0.86),
+      10 + (s < 0 ? 0 : 1), COL.flipper, COL.flipper, hip);
   }
-  // The short tail, between the hind flippers (part 12: a beat behind them).
-  part(limbGeometry([0, 0.11, -0.58], [0, 0.05, -0.7], 0.045, 0.018),
-    12, COL.flipper, COL.flipper);
+  // The short tail, between the hind flippers (part 12).
+  part(limbGeometry([0, 0.07, -0.72], [0, 0.04, -0.82], 0.04, 0.015), 12, COL.flipper, COL.flipper);
 
   return { geometry: mergeCreatureParts(parts) };
 }
 
 // ---------------------------------------------------------------------------
 // Animation, in the vertex shader (see makeCreatureMaterial for the inputs).
-// aAnim: x idle phase, y gait 0..1, z mood 0..1 (alarm), w stride (rad).
+// aAnim: x idle phase, y gait 0..1, z mood 0..1, w stride (rad).
 // ---------------------------------------------------------------------------
 export const SEA_LION_GLSL = `
   float gait = aAnim.y, mood = aAnim.z, stride = aAnim.w;
   float side = aPivot.x > 0.0 ? 1.0 : -1.0;
-  // The neck turn, shared by the head and the eyes (same pivot).
-  float scan = sin(uTime * 0.5 + aAnim.x * 2.0);
-  float neckLift = mix(0.3 + scan * 0.22, 0.1, min(gait, 1.0)) * (1.0 - mood * 0.4);
-  float neckYaw = scan * 0.35 * (1.0 - gait);
+  // Two gaits: the crawl ashore reads gait ~0.35 (0.55 m/s of a 2.4 flee),
+  // the swim ~0.9 (dive.swim × the crawl) — told apart here.
+  float swim = smoothstep(0.55, 0.8, gait);
+  float crawl = smoothstep(0.05, 0.25, gait) * (1.0 - swim);
+  // The neck: up and looking about while it loafs (now and then the head
+  // thrown back in a bark), laid forward along the water in the swim.
+  float scan = sin(uTime * 0.45 + aAnim.x * 2.0);
+  float bark = pow(max(0.0, sin(uTime * 0.31 + aAnim.x * 5.0)), 24.0);
+  float neckX = 0.75 * swim + 0.15 * crawl - (0.45 * bark) * (1.0 - swim) + sin(uTime * 0.9 + aAnim.x) * 0.05 * (1.0 - swim);
+  float neckY = scan * 0.5 * (1.0 - swim);
   if (aPart < 0.5) {
-    // Torso: the swim's body wave reads at the hindquarters (a sea lion
-    // swims by vertical undulation); at rest, the slow breath of the coat.
-    float wave = sin(stride - transformed.z * 2.4)
-      * 0.05 * gait * smoothstep(0.4, -0.55, transformed.z);
-    transformed.y += wave + sin(uTime * 1.8 + aAnim.x) * 0.008 * (1.0 - gait);
-  } else if (aPart < 1.5) {
-    // Neck and head: lifted and scanning while the animal loafs, low and
-    // steady once it is moving — the bull's posture at the haul-out.
-    transformed = wlRotX(transformed, aPivot, neckLift);
-    transformed = wlRotY(transformed, aPivot, neckYaw);
-  } else if (aPart > 2.5 && aPart < 3.5) {
-    transformed = wlRotX(transformed, aPivot, neckLift);
-    transformed = wlRotY(transformed, aPivot, neckYaw);
+    // Torso: the breath while it lies; in the swim the body's wave runs
+    // back to the hips (a sea lion drives with its fore flippers, the rest
+    // follows), and the chest lowers to swim flat.
+    float wave = sin(stride - transformed.z * 3.0) * 0.04 * swim * smoothstep(0.3, -0.6, transformed.z);
+    transformed.y += wave + sin(uTime * 1.6 + aAnim.x) * 0.006 * (1.0 - swim);
+    transformed = wlRotX(transformed, vec3(0.0, 0.16, -0.1), 0.18 * swim * smoothstep(-0.1, 0.3, transformed.z));
+  } else if (aPart < 3.5) {
+    transformed = wlRotX(transformed, aPivot, neckX);
+    transformed = wlRotY(transformed, aPivot, neckY);
   }
   if (aPart > 4.5 && aPart < 6.5) {
-    // Fore flippers: the crawl's scratch-and-prop, each in turn, the blade
-    // kept against the flank; rowing oars, opposed, in the swim.
-    float scratch = max(0.0, sin(uTime * 1.7 + aAnim.x + side * 1.3)) * 0.3 * (1.0 - gait);
-    float row = sin(stride + (side > 0.0 ? 0.0 : 3.14159)) * 0.45 * gait;
-    transformed = wlRotX(transformed, aPivot, row - scratch - 0.12);
-    transformed = wlRotZ(transformed, aPivot, side * (0.08 + row * 0.3));
+    // Fore flippers: propping ashore, a lazy lift of one now and then (the
+    // scratch); swept back and beating together in the swim — the stroke
+    // that drives a sea lion through the water.
+    float scratch = pow(max(0.0, sin(uTime * 0.7 + aAnim.x + side * 2.0)), 6.0) * 0.6 * (1.0 - swim) * (1.0 - crawl);
+    float step = sin(stride + (side > 0.0 ? 0.0 : 3.14159)) * 0.4 * crawl;
+    float beat = sin(stride) * 0.45 * swim;
+    transformed = wlRotX(transformed, aPivot, -scratch - step + 0.75 * swim);
+    transformed = wlRotZ(transformed, aPivot, side * (beat - 0.15 * swim));
   } else if (aPart > 9.5 && aPart < 11.5) {
-    // Hind flippers: streamed ashore, sculling together in the swim.
-    float stream = 0.3 * (1.0 - gait);
-    transformed = wlRotX(transformed, aPivot, sin(stride + 1.2) * 0.5 * gait + stream);
+    // Hind flippers: forward under the hips ashore, trailed and steering in
+    // the swim.
+    transformed = wlRotX(transformed, aPivot, -0.5 * swim + sin(stride + 1.2) * 0.25 * swim);
   } else if (aPart > 11.5) {
-    // Tail: a quarter turn behind the hind flippers' beat.
-    transformed = wlRotX(transformed, aPivot, sin(stride + 2.4) * 0.5 * gait);
+    transformed = wlRotX(transformed, aPivot, sin(stride + 2.4) * 0.3 * swim);
   }
 `;
 
@@ -136,7 +148,7 @@ export const SEA_LION_GLSL = `
 // sampling region (the roster sets it — the cove's keeps it out past the
 // wade barrier), and "off the rock" means away from the player.
 // ---------------------------------------------------------------------------
-const ASHORE = 0.95;       // amphFloor.k from which the body is on a top
+const ASHORE = 0.6;        // amphFloor.k from which the body is up on the rock
 const MARGIN = 4;          // m: kept inside the region's edges
 const anchorsOf = sp => (sp.def.dive && sp.def.dive.anchors) || 'haulouts';
 
@@ -168,7 +180,7 @@ function openWater(sp, ctx, s, r0, r1) {
 // slide is re-phased. Never takes the frame — the machine runs on.
 function tick(a, sp, ctx, dt, api, threat) {
   const S = ctx.STATE, L = ctx.layout;
-  a.y = amphibiousFloor(a.x, a.z, L, ctx.t, anchorsOf(sp));
+  a.y = amphibiousBodyY(a.x, a.z, L, ctx.t, sp.def.dive);
   const ashore = amphFloor.k > ASHORE;
   if (a.dive === undefined) { a.dive = 0; a.diveT = 8 + sp.rng() * 22; }
 
@@ -215,7 +227,7 @@ function pickWander(a, sp, ctx, api) {
   if (!s) { api.defaultWander(a, sp); return; }
   amphibiousFloor(a.x, a.z, L, ctx.t, anchorsOf(sp));
   if (amphFloor.k > ASHORE) {
-    const th = sp.rng() * Math.PI * 2, r = s.r * (0.15 + sp.rng() * 0.55);
+    const th = sp.rng() * Math.PI * 2, r = s.r * (0.1 + sp.rng() * 0.3);   // on the crown
     api.setTarget(a, sp, s.x + Math.sin(th) * r, s.z + Math.cos(th) * r);
   } else {
     const w = openWater(sp, ctx, s, s.r + 1.2, s.r + 4.7);
@@ -232,7 +244,7 @@ function emergeAt(a, sp, ctx, api) {
   const s = (rocks && rocks.nearest(a.x, a.z, 40).spot) || { x: a.x, z: a.z, r: 2 };
   const w = openWater(sp, ctx, s, s.r + 1.5, s.r + 6.5);
   a.x = w.x; a.z = w.z;
-  a.y = amphibiousFloor(a.x, a.z, L, ctx.t, anchorsOf(sp));
+  a.y = amphibiousBodyY(a.x, a.z, L, ctx.t, sp.def.dive);
   a.heading = Math.atan2(s.x - a.x, s.z - a.z);
   a.tx = a.x; a.tz = a.z;
 }
@@ -250,8 +262,14 @@ export const SEA_LION = {
     // On a haul-out: within the rock's own radius of one — the keys read the
     // adapter's haulouts distance, which the spots' radii shape.
     within: { haulouts: 0.4 },
+    // …and up on the rock itself, not on its bounding circle's water: the
+    // amphibious floor's own measure of how far up a rock the point is.
+    test: (x, z, layout) => {
+      amphibiousFloor(x, z, layout, 0);
+      return amphFloor.k > 0.6;
+    },
   },
-  spacing: 2.2,
+  spacing: 1.4,                     // a colony lies close, never on one another
   homeRange: 8,                     // rock to water and back
   activeRadius: 95,                 // the show reads from the whole beach
   fear: {
@@ -270,7 +288,7 @@ export const SEA_LION = {
     lift: 0,
     // HIDDEN: a body-length under, and the draw leaves it out; EMERGE reads
     // as the surfacing.
-    sinkDepth: 1.35, sinkTime: 1.6, scale: [1.15, 1.5],
+    sinkDepth: 1.35, sinkTime: 1.6, scale: [1.05, 1.4],   // 1.7–2.3 m, cows to bulls
   },
   dive: { swim: 2.4, anchors: 'haulouts' },   // the swim: walk * 2.4 ≈ 1.3 m/s
   timings: { idle: [6, 16], move: [4, 10], alert: 0 },
@@ -279,10 +297,15 @@ export const SEA_LION = {
   // Individual variation: a little lighter or darker, a breath warmer or
   // greyer — the darkest read as the bulls (the instance colour multiplies
   // the vertex colours).
+  // A colony: the bulls a deep chocolate, the cows and the young paler and
+  // tawny (about two in three) — the instance colour multiplies the coat.
   tint(rng, c) {
-    const k = 0.78 + rng() * 0.44, w = (rng() - 0.5) * 0.1;
-    c.setRGB(k * (1 + w * 0.5), k * (1 + w * 0.1), k * (1 - w * 0.6));
+    if (rng() < 0.35) { const k = 0.72 + rng() * 0.12; c.setRGB(k, k * 0.96, k * 0.92); }
+    else { const k = 1.12 + rng() * 0.22; c.setRGB(k * 1.08, k, k * 0.82); }
   },
+  // The wet coat's sheen.
+  roughness: 0.42,
+  metalness: 0.08,
   needs: ['spots.haulouts'],
   hooks: { tick, pickWander, emergeAt },
 };

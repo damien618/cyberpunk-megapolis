@@ -806,33 +806,61 @@ function glideStep(a, sp, dt, ctx, speed) {
 // these defaults):
 //   swim 2.4             the swim's speed as a multiple of the crawl
 //   anchors 'haulouts'   the layout.spots index of the rocks it hauls out on
+//   depth 0.28           how low the body rides in the water, metres
 // ---------------------------------------------------------------------------
 const AMPH_ROCK_REACH = 2.2;   // m: how far off a haul-out's edge the climb starts
 const AMPH_SWIM = 2.4;         // the swim's default multiple of the crawl
+const AMPH_DEPTH = 0.28;       // m: how low the body rides when it swims
+const AMPH_SEP = 1.6;          // m: how close two of a colony come (× their scale)
 
 // The floor under (x, z): every haul-out within reach lifts it, the highest
 // lift wins — so the floor stays continuous between two rocks, where "the
 // nearest rock" would flip and jump the body from one top to the other.
-// Module scratch, no allocation per call: amphK is how far up a rock the
-// point is (0 open water, 1 on a top). Exported for a species' own hooks
-// (the sea lion's dive asks the same question as its motion).
+// A spot that carries its `shell` (an ellipsoid: centre height cy, semi-
+// axes ax, ay, az, turned ry — jungleTerrain's haul-outs) lifts the floor
+// exactly where the rock is, up its real slope; a plain spot falls back to
+// a ramp from its edge to its top `y` across AMPH_ROCK_REACH.
+// Module scratch, no allocation per call: amphFloor.k is how far up a rock
+// the point is (0 open water, 1 on its crown). Exported for a species' own
+// hooks (the sea lion's dive asks the same question as its motion).
 export const amphFloor = { k: 0, y: 0 };
-let _amphSea = 0, _amphBest = 0;
+let _amphSea = 0, _amphBest = 0, _amphX = 0, _amphZ = 0;
 function amphVisit(s, d) {
-  // d is signed (negative inside the spot), so the ramp clamps — deep inside
-  // a rock k would run past 1 and the cubic would dive below the sea.
-  const k = Math.min(1, Math.max(0, 1 - d / AMPH_ROCK_REACH));
-  const sk = k * k * (3 - 2 * k);
-  const lift = (s.y - _amphSea) * sk;
-  if (lift > _amphBest) { _amphBest = lift; amphFloor.k = sk; }
+  let lift, top;
+  if (s.shell) {
+    const S = s.shell, dx = _amphX - s.x, dz = _amphZ - s.z;
+    const c = Math.cos(S.ry), sn = Math.sin(S.ry);
+    const lx = dx * c - dz * sn, lz = dx * sn + dz * c;
+    const q = (lx / S.ax) ** 2 + (lz / S.az) ** 2;
+    if (q >= 1) return;
+    top = S.cy + S.ay;
+    lift = S.cy + S.ay * Math.sqrt(1 - q) - _amphSea;
+  } else {
+    // d is signed (negative inside the spot), so the ramp clamps — deep
+    // inside a rock k would run past 1 and the cubic would dive below the sea.
+    const k = Math.min(1, Math.max(0, 1 - d / AMPH_ROCK_REACH));
+    top = s.y;
+    lift = (s.y - _amphSea) * k * k * (3 - 2 * k);
+  }
+  if (lift > _amphBest) {
+    _amphBest = lift;
+    amphFloor.k = Math.min(1, lift / Math.max(0.2, top - _amphSea));
+  }
 }
 export function amphibiousFloor(x, z, L, t, anchors = 'haulouts') {
   _amphSea = flockSeaY(x, z, L, t);
-  _amphBest = 0; amphFloor.k = 0;
+  _amphBest = 0; amphFloor.k = 0; _amphX = x; _amphZ = z;
   const rocks = L.spots && L.spots[anchors];
   if (rocks) rocks.each(x, z, AMPH_ROCK_REACH, amphVisit);
   amphFloor.y = _amphSea + _amphBest;
   return amphFloor.y;
+}
+// Where the body rides: on a rock, on the floor; in open water, swimming
+// low — `depth` under the surface, only the back and head showing — eased
+// across the rock's foot by the same k.
+export function amphibiousBodyY(x, z, L, t, D = EMPTY_FLY) {
+  const y = amphibiousFloor(x, z, L, t, D.anchors);
+  return y - (1 - amphFloor.k) * (D.depth ?? AMPH_DEPTH);
 }
 
 function amphibiousStep(a, sp, dt, ctx, speed) {
@@ -853,8 +881,18 @@ function amphibiousStep(a, sp, dt, ctx, speed) {
   const step = Math.min(v * dt, d);
   a.x += Math.sin(a.heading) * step;
   a.z += Math.cos(a.heading) * step;
-  // The floor: the rocks' tops blended into the live sea across their skirts.
-  a.y = amphibiousFloor(a.x, a.z, L, ctx.t, D.anchors);
+  // Room for each: a colony lies side by side, never one on another.
+  for (const b of sp.agents) {
+    if (b === a || !b.awake || b.sink >= 1) continue;
+    const ex = a.x - b.x, ez = a.z - b.z, e = Math.hypot(ex, ez) || 1e-3;
+    const room = AMPH_SEP * 0.5 * (a.scale + b.scale);
+    if (e < room) {
+      const push = Math.min(room - e, 0.6 * dt);
+      a.x += ex / e * push; a.z += ez / e * push;
+    }
+  }
+  // The body: on the rock's real slope, or swimming low in the live sea.
+  a.y = amphibiousBodyY(a.x, a.z, L, ctx.t, D);
   a.speed = step / Math.max(dt, 1e-3);
   // The body follows the heading (an amphibious has no sideways walk).
   const body = a.heading + sp.def.body.yawOffset;

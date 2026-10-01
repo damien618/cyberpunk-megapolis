@@ -16,7 +16,7 @@
 // Part ids read by SANDPIPER_GLSL: 0 body, 1 head + bill, 4 folded wings,
 // 10/11 legs left/right.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts, swashTick } from './wildlife.js?v=20261001-pass9';
+import { creaturePart, limbGeometry, mergeCreatureParts, swashTick } from './wildlife.js?v=20261001-sealion1';
 
 const COL = {
   back: 0xc2bdb3,        // pale grey back, finely scaled

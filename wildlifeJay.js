@@ -12,7 +12,7 @@
 // Part ids read by JAY_GLSL: 0 body, 1 head + bill + throat, 4 wings,
 // 5 tail, 10/11 legs.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass9';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-sealion1';
 
 const COL = {
   blue: 0x2c5fae,        // head, wings and tail

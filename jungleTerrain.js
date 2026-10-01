@@ -317,6 +317,7 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
     if (!clearOfFalls(x, y, z, r)) return null;
     buckets[gi][mi].push(it);
     rockSpots.push({ x, y, z, r });
+    put.last = it;                    // the shell, for a caller that needs its shape
     return r;
   };
   // The cliff face: stacked boulders from the foot to the lip, leaving the
@@ -404,7 +405,17 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
       // way they do on a real rock.
       const top = 0.5 + seaRng() * 0.6;
       const r = put(x, top - s * 0.42, z, s, 0.8, seaRng);
-      if (r !== null) hauloutSpots.push({ x, y: top, z, r });
+      // The shell's own shape, so a sea lion climbs the rock's real slope
+      // instead of a ramp guessed from its bounding radius: the rock
+      // geometry is a 0.5-radius icosahedron jittered 0.72–1.28 and squashed
+      // 0.8 in y, then scaled and turned by the instance — an ellipsoid of
+      // semi-axes 0.5·sx, 0.4·sy, 0.5·sz about its centre, taken at 0.95 so
+      // the body sits a touch into the facets rather than over them.
+      if (r !== null) {
+        const it = put.last;
+        hauloutSpots.push({ x, y: top, z, r, shell: {
+          cy: it.y, ax: 0.475 * it.sx, ay: 0.38 * it.sy, az: 0.475 * it.sz, ry: it.ry } });
+      }
     }
   }
   buckets.forEach((row, gi) => row.forEach((items, mi) =>

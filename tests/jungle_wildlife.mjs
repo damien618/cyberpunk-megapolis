@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { createJungleWildlife, jungleWildlifeLayout } from '/jungleWildlife.js';
 import { buildJungleTerrain } from '/jungleTerrain.js';
 import { buildJungleVegetation } from '/jungleVegetation.js';
-import { MOTION } from '/wildlifeMotion.js';
+import { MOTION, amphibiousFloor, amphFloor } from '/wildlifeMotion.js';
 import { createWildlife, spotIndex } from '/wildlife.js';
 import { CRAB } from '/wildlifeCrab.js';
 import { FOX } from '/wildlifeFox.js';
@@ -986,15 +986,18 @@ if (eag) {
     // rock and under the sea exactly when it is ashore. The walkable tops sit
     // at 0.5–1.1, so anything below 0.4 inside a spot is the blend diving.
     let minRockYL = Infinity;
+    const layoutL = jungleWildlifeLayout({ terrain, vegetation: veg });
     for (let k = 0; k < 30 * 75; k++) {
       t += 1 / 30; W.update(1 / 30, t, P, V);
       statesL.add(sl.state);
-      if (sl.state === S.HIDDEN) sawDiveL = true;
-      if (sl.state === S.EMERGE) sawEmergeL = true;
+      // The colony's cycle (any of them: each dives on its own clock).
+      if (sea.agents.some(b => b.state === S.HIDDEN)) sawDiveL = true;
+      if (sea.agents.some(b => b.state === S.EMERGE)) sawEmergeL = true;
       if (sl.z < -40) sawWaterL = true;   // off the rocks, out at sea
       if (terrain.hauloutSpots.some(s => Math.hypot(s.x - sl.x, s.z - sl.z) - s.r < 0.3)) sawRockL = true;
-      if (terrain.hauloutSpots.some(s => Math.hypot(s.x - sl.x, s.z - sl.z) - s.r < 0))
-        minRockYL = Math.min(minRockYL, sl.y);
+      // On the rock (by the shell's own measure), the body sits on it.
+      const floorL = amphibiousFloor(sl.x, sl.z, layoutL, t);
+      if (amphFloor.k > 0.6 && sl.sink === 0) minRockYL = Math.min(minRockYL, sl.y - floorL);
       minZL = Math.min(minZL, sl.z);
       flownL += Math.hypot(sl.x - lxL, sl.z - lzL); lxL = sl.x; lzL = sl.z;
       if (!Number.isFinite(sl.x + sl.y + sl.z)) { nanL = true; break; }
@@ -1005,8 +1008,8 @@ if (eag) {
     check(flownL > 10, `it covers ground (${flownL.toFixed(1)} m in 75 s)`);
     check(minZL > -70, `it stays inside its water (${minZL.toFixed(1)} m out at most)`);
     check(!nanL, 'no NaN positions');
-    check(minRockYL > 0.4,
-      `it holds the rock's top while ashore (${minRockYL === Infinity ? 'never ashore' : minRockYL.toFixed(2)} at worst)`);
+    check(minRockYL !== Infinity && minRockYL > -0.12,
+      `it sits on the rock while ashore, never sunk into it (${minRockYL === Infinity ? 'never ashore' : minRockYL.toFixed(2)} m at worst)`);
 
     // The sea lion shader compiles.
     const errorsL = [];

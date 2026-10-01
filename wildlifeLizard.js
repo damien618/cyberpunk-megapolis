@@ -15,7 +15,7 @@
 // ground. Part ids read by LIZARD_GLSL: 0 body (and flank blotches), 1 head
 // (and eyes), 10–11 legs front/rear, 20–23 tail sections root→tip.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass9';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-sealion1';
 
 // Palettes. The side-blotched is grey-brown, paler on the flanks where its
 // dark blotches sit; the alligator is a plainer brown, banded rather than
