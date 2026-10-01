@@ -862,6 +862,97 @@ function amphibiousStep(a, sp, dt, ctx, speed) {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// porpoise — the common dolphins (wildlifeDolphin.js). A pod travelling a
+// constant-speed oval over the open water its homes were sampled on (the
+// flock's loop, laid the same way), each dolphin at its own slot — a lag
+// along the track and an offset to one side — so the pod swims as one.
+// Each leaps on its own clock: a period, a phase, and for the first
+// def.swim.leap of each cycle an arc out of the water and back (the sea's
+// live surface, seaHeightAt), else it runs a little under it, where the
+// sea hides it. The body's pitch follows the arc (a.pitch, applied by
+// wildlife.js's writeInstances). Group: one simulation, woken whole;
+// smooth: stepped every frame. No allocation per call.
+//
+// Optional definition keys (def.swim; a species that leaves it out swims
+// on these defaults):
+//   loopX 40, loopZ 12   the oval's half-extents, metres
+//   period [2.4, 3.4]    seconds between one dolphin's leaps
+//   leap 0.3             the share of the period spent on the arc
+//   height 1.5           the arc's rise, from the running depth, metres
+//   depth 0.6            the running depth under the surface, metres
+//   spread 1.6           the pod's side spacing, metres
+// ---------------------------------------------------------------------------
+function porpoiseInit(sp, ctx) {
+  const F = sp.def.swim || EMPTY_FLY, rng = sp.rng;
+  let cx = 0, cz = 0, x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const b of sp.agents) {
+    cx += b.x; cz += b.z;
+    x0 = Math.min(x0, b.x); x1 = Math.max(x1, b.x); z0 = Math.min(z0, b.z); z1 = Math.max(z1, b.z);
+  }
+  cx /= sp.agents.length; cz /= sp.agents.length;
+  const rx = F.loopX ?? 40, rz = F.loopZ ?? 12;
+  // The loop held inside the homes' box where it fits (the flock's rule).
+  cx = Math.min(x1 - rx + 1, Math.max(cx, x0 + rx - 1));
+  cz = Math.min(z1 - rz + 1, Math.max(cz, z0 + rz - 1));
+  const s = sp.pod = {
+    cx, cz, rx, rz, th: rng() * Math.PI * 2, clock: 0, lastT: -1, guard: -1,
+    leap: F.leap ?? 0.3, height: F.height ?? 1.5, depth: F.depth ?? 0.6, spread: F.spread ?? 1.6,
+  };
+  const P = F.period ?? [2.4, 3.4];
+  sp.agents.forEach((a, i) => {
+    a.lag = i * 0.045 + rng() * 0.02;                       // along the track, radians
+    a.off = (i % 2 ? 1 : -1) * Math.ceil(i / 2) * s.spread;  // to either side
+    a.per = P[0] + rng() * (P[1] - P[0]);
+    a.ph = rng();
+  });
+  porpoisePlace(sp, ctx, 0);
+  return s;
+}
+
+// Every dolphin to its slot on the track, at its point of its leap.
+function porpoisePlace(sp, ctx, dt) {
+  const s = sp.pod, L = ctx.layout, speed = sp.def.speed.walk;
+  for (const a of sp.agents) {
+    const th = s.th - a.lag;
+    const tx = Math.cos(th) * s.rx, tz = -Math.sin(th) * s.rz;      // d/dθ of the oval
+    const tl = Math.hypot(tx, tz) || 1;
+    const nx = tz / tl, nz = -tx / tl;                              // the side
+    a.x = s.cx + Math.sin(th) * s.rx + nx * a.off;
+    a.z = s.cz + Math.cos(th) * s.rz + nz * a.off;
+    a.heading = Math.atan2(tx, tz);
+    a.yaw = a.heading + sp.def.body.yawOffset;
+    const u = ((s.clock / a.per + a.ph) % 1 + 1) % 1;
+    const surf = flockSeaY(a.x, a.z, L, ctx.t);
+    let y = -s.depth, vy = 0;
+    if (u < s.leap) {
+      const k = Math.PI / s.leap;
+      y += s.height * Math.sin(k * u);
+      vy = s.height * k * Math.cos(k * u) / a.per;
+    }
+    a.y = surf + y;
+    a.pitch = Math.max(-0.9, Math.min(0.9, Math.atan2(vy, speed)));
+    a.speed = speed;
+  }
+}
+
+function porpoiseStep(a, sp, dt, ctx, speed) {
+  const s = sp.pod || porpoiseInit(sp, ctx);
+  if (s.guard !== sp.frame) {
+    s.guard = sp.frame;
+    // The pod's own clock, as the flock's: real time, monotonic.
+    let raw = ctx.t - s.lastT;
+    if (raw <= 0) raw = Math.min(dt, 1 / 30);
+    const fdt = s.lastT < 0 ? 1 / 30 : Math.min(0.05, raw);
+    s.lastT = ctx.t;
+    s.clock += fdt;
+    const T = Math.hypot(Math.cos(s.th) * s.rx, Math.sin(s.th) * s.rz) || 1;
+    s.th += speed / T * fdt;
+    porpoisePlace(sp, ctx, fdt);
+  }
+  return false;   // a pod never arrives; `continuous` keeps it in MOVE
+}
+
 export const MOTION = {
   // walks: true — kept out of layout.obstacles (homes, targets, steps).
   ground: { step: groundStep, walks: true, brief: 'on the terrain, steering at speed.turn' },
@@ -917,5 +1008,13 @@ export const MOTION = {
   // dive is the species' own tick running the manager's own HIDDEN (the
   // body sinks by body.sinkDepth, out of the draw at full sink) and EMERGE
   // (its emergeAt surfaces it nearby).
+  // Common dolphins: a pod on a loop offshore, each leaping on its own
+  // clock, pitched along the arc (porpoiseStep above).
+  porpoise: {
+    step: porpoiseStep, smooth: true, group: true,
+    init(sp, ctx) { if (sp.agents.length) porpoiseInit(sp, ctx); },
+    brief: 'a pod on a loop over the sea, leaping clear in turn',
+  },
+
   amphibious: { step: amphibiousStep, brief: 'ground on the haul-out rocks, surface swim between them' },
 };

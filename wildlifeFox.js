@@ -19,7 +19,7 @@
 // 0 trunk (and throat), 1 head (and eyes, nose), 2 ears, 10–11 legs
 // front/rear, 20–24 tail sections root→tip (24 is the black tip).
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass6';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass8';
 
 const COL = {
   back: 0x8a857e,        // grizzled grey of the saddle

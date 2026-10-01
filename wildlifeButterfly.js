@@ -14,7 +14,7 @@
 // front (head), +X its right, y = 0 the body's underside. Part ids read by
 // BUTTERFLY_GLSL: 0 body, 2 antennae, 3 fore wings, 4 hind wings.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts, spotWander } from './wildlife.js?v=20261001-pass6';
+import { creaturePart, limbGeometry, mergeCreatureParts, spotWander } from './wildlife.js?v=20261001-pass8';
 
 const COL = {
   body: 0x1a1512,

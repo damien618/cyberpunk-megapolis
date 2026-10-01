@@ -18,7 +18,7 @@
 // Part ids read by SNAKE_GLSL: 1 head (and eyes), 20–27 body sections
 // neck→tail, dressed in alternating black and cream rings.
 import * as THREE from 'three';
-import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass6';
+import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass8';
 
 const COL = {
   black: 0x1c1b19,       // the black rings

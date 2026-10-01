@@ -54,7 +54,7 @@
 // it are not put on that map.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass6';
+import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass8';
 
 // ---------------------------------------------------------------------------
 // States. Every species runs the same machine and opts out of what it does
@@ -387,7 +387,7 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
 
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _qa = new THREE.Quaternion();
   const _p = new THREE.Vector3(), _s = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
-  const _fwd = new THREE.Vector3(0, 0, 1);
+  const _fwd = new THREE.Vector3(0, 0, 1), _right = new THREE.Vector3(1, 0, 0);
   const _n = new THREE.Vector3(), _c = new THREE.Color();
 
   const skipped = {};
@@ -634,6 +634,12 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
       // for everyone else the field is undefined and the branch never runs.
       if (a.roll) {
         _qa.setFromAxisAngle(_fwd, a.roll);
+        _q.multiply(_qa);
+      }
+      // A swimmer's or a diver's pitch, nose up positive (the porpoise
+      // motion writes it): a turn about the body's own right axis.
+      if (a.pitch) {
+        _qa.setFromAxisAngle(_right, -a.pitch);
         _q.multiply(_qa);
       }
       if (def.body.alignToGround) {

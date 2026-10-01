@@ -1123,6 +1123,35 @@ if (eag) {
   check(mean(rAlt) > 8 && Math.min(...rAlt) > 3, `ravens ride higher (${mean(rAlt).toFixed(1)} m mean above the ground)`);
 }
 
+// --- Dolphins -------------------------------------------------------------------
+// The pod: over the open sea, beyond the haul-outs; each leaps clear in
+// its own rhythm, nose up out of the water and down into it.
+{
+  const W = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
+  const LD = jungleWildlifeLayout({ terrain, vegetation: veg });
+  const ag = W.debug.species.dolphin.agents;
+  check(ag.length === 5, `5 dolphins placed (${ag.length})`);
+  const P = new THREE.Vector3(0, 0, -20), V = new THREE.Vector3();
+  let t = 0, n = 0, out = 0, sea = 0, inshore = 0, up = 0, down = 0, spread = 0;
+  for (let k = 0; k < 30 * 30; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V);
+    for (const a of ag) {
+      n++;
+      const w = LD.waterAt(a.x, a.z);
+      if (w && w.kind === 'sea') sea++;
+      if (w && a.y > w.y + 0.2) out++;
+      if (a.z > -72) inshore++;
+      if (a.pitch > 0.3) up++; if (a.pitch < -0.3) down++;
+    }
+    const cx = ag.reduce((s, a) => s + a.x, 0) / 5, cz = ag.reduce((s, a) => s + a.z, 0) / 5;
+    spread = Math.max(spread, ...ag.map(a => Math.hypot(a.x - cx, a.z - cz)));
+  }
+  check(sea === n && inshore === 0, `always over the open sea, beyond the haul-outs (${inshore} frames inshore)`);
+  check(out / n > 0.08 && out / n < 0.4, `each breaks the surface in turn (${(100 * out / n).toFixed(0)}% of the time clear of it)`);
+  check(up > 0 && down > 0, 'nose up out of the water, nose down into it');
+  check(spread < 12, `the pod swims together (${spread.toFixed(1)} m from its centre at most)`);
+}
+
 // --- Roster-wide invariants -------------------------------------------------
 // Held for EVERY species on the roster, the ones to come included: walk a
 // player in circles round one of its homes (close enough to scare it, far

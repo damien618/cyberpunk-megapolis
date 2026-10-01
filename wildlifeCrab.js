@@ -13,7 +13,7 @@
 // Local frame: +Z is the front (eyes, claws), +X its right, y = 0 the ground.
 // Part ids read by CRAB_GLSL: 0 body, 2 claws, 3 eyes, 10–13 legs front→back.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts, swashTick } from './wildlife.js?v=20261001-pass6';
+import { creaturePart, limbGeometry, mergeCreatureParts, swashTick } from './wildlife.js?v=20261001-pass8';
 
 const COL = {
   shell: 0x44522c,       // olive, darkening to the rim

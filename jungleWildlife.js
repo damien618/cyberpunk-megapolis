@@ -18,24 +18,26 @@
 //                frogs and dragonflies also down the stream     wildlifeDragonfly.js
 //   sky          the bald eagle over the ridges, ravens over    wildlifeEagle.js, wildlifeSoarer.js
 //                the cliff, gulls along the shore
-//   offshore     brown pelicans, sea lions on the haul-outs     wildlifePelican.js, wildlifeSeaLion.js
+//   offshore     brown pelicans, sea lions on the haul-outs,    wildlifePelican.js, wildlifeSeaLion.js,
+//                a dolphin pod beyond them                      wildlifeDolphin.js
 import * as L from './jungleLayout.js';   // bare, like every element module
-import { createWildlife, spotIndex } from './wildlife.js?v=20261001-pass6';
-import { CRAB } from './wildlifeCrab.js?v=20261001-pass6';
-import { LIZARD, ALLIGATOR } from './wildlifeLizard.js?v=20261001-pass6';
-import { FOX } from './wildlifeFox.js?v=20261001-pass6';
-import { SNAKE } from './wildlifeSnake.js?v=20261001-pass6';
-import { FROG } from './wildlifeFrog.js?v=20261001-pass6';
-import { FISH } from './wildlifeFish.js?v=20261001-pass6';
-import { DRAGONFLY } from './wildlifeDragonfly.js?v=20261001-pass6';
-import { HUMMINGBIRD } from './wildlifeHummingbird.js?v=20261001-pass6';
-import { PELICAN } from './wildlifePelican.js?v=20261001-pass6';
-import { EAGLE } from './wildlifeEagle.js?v=20261001-pass6';
-import { SEA_LION } from './wildlifeSeaLion.js?v=20261001-pass6';
-import { SANDPIPER } from './wildlifeSandpiper.js?v=20261001-pass6';
-import { BUTTERFLY } from './wildlifeButterfly.js?v=20261001-pass6';
-import { JAY } from './wildlifeJay.js?v=20261001-pass7';
-import { GULL, RAVEN } from './wildlifeSoarer.js?v=20261001-pass7';
+import { createWildlife, spotIndex } from './wildlife.js?v=20261001-pass8';
+import { CRAB } from './wildlifeCrab.js?v=20261001-pass8';
+import { LIZARD, ALLIGATOR } from './wildlifeLizard.js?v=20261001-pass8';
+import { FOX } from './wildlifeFox.js?v=20261001-pass8';
+import { SNAKE } from './wildlifeSnake.js?v=20261001-pass8';
+import { FROG } from './wildlifeFrog.js?v=20261001-pass8';
+import { FISH } from './wildlifeFish.js?v=20261001-pass8';
+import { DRAGONFLY } from './wildlifeDragonfly.js?v=20261001-pass8';
+import { HUMMINGBIRD } from './wildlifeHummingbird.js?v=20261001-pass8';
+import { PELICAN } from './wildlifePelican.js?v=20261001-pass8';
+import { EAGLE } from './wildlifeEagle.js?v=20261001-pass8';
+import { SEA_LION } from './wildlifeSeaLion.js?v=20261001-pass8';
+import { SANDPIPER } from './wildlifeSandpiper.js?v=20261001-pass8';
+import { BUTTERFLY } from './wildlifeButterfly.js?v=20261001-pass8';
+import { JAY } from './wildlifeJay.js?v=20261001-pass8';
+import { GULL, RAVEN } from './wildlifeSoarer.js?v=20261001-pass8';
+import { DOLPHIN } from './wildlifeDolphin.js?v=20261001-pass8';
 
 // The swash's edge along the beach, as the foam shader draws it
 // (jungleOcean's foam: uEdge plus two slow sines in x) — so a crab backs up
@@ -215,6 +217,9 @@ export function createJungleWildlife({ scene, ocean, terrain, vegetation, specie
       // The within-haulout habitat picks their homes; the region keeps the
       // sampling tries offshore, where the rocks are.
       { def: SEA_LION, count: 6, habitat: { ...SEA_LION.habitat, region: { x: [-45, 45], z: [-70, -38] } } },
+      // A pod of common dolphins travelling the channel beyond the rocks,
+      // breaking the surface each in its own rhythm.
+      { def: DOLPHIN, count: 5, habitat: { ...DOLPHIN.habitat, region: { x: [-60, 60], z: [-112, -84] } } },
     ],
   });
 }

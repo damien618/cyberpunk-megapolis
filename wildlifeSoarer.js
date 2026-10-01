@@ -11,7 +11,7 @@
 // belly — the air is a bird's ground. Part ids read by SOARER_GLSL: 0 body,
 // 1 head + bill, 3 eyes, 4 tail, 5/6 wings left/right.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass6';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass8';
 
 const GULL_COL = {
   body: 0xf2f1ec, belly: 0xe6e5e0, head: 0xf6f5f0,

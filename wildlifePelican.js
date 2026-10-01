@@ -16,7 +16,7 @@
 // the air is a bird's ground. Part ids read by PELICAN_GLSL: 0 body,
 // 1 neck + head, 2 bill + pouch, 3 eyes, 4 tail, 5/6 wings.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass6';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass8';
 
 const COL = {
   back: 0x5e554c,        // grey-brown back and mantle
