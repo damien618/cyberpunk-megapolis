@@ -1,3 +1,5 @@
+import { JUNGLE_RESORT_GATE, JUNGLE_RESORT_ARRIVAL, islandTime } from './islandGeography.js';
+import { createIslandTravel, createIslandSign, createIslandPath, pathDistanceTo } from './islandTravel.js';
 import * as THREE from 'three';
 import { Player } from './player.js?v=20260906-seam-fix';
 import { harmoniseHair } from './hair.js?v=8';
@@ -297,7 +299,14 @@ const terrain = buildJungleTerrain({ scene, addInstanced, rnd, maxAniso });
 // a change of sky hours changes the water's answer with it.
 const ocean = createJungleOcean({ scene, waterNormal, maxAniso, skyUniforms });
 const falls = createJungleWaterfall({ scene, waterNormal });
-const vegetation = buildJungleVegetation({ scene, rnd, maxAniso });
+const resortPathPoints = [[-16, 22], [-25, 20], [-34, 18]];
+const vegetation = buildJungleVegetation({ scene, rnd, maxAniso, rules: {
+  keepOffBuilt: (x, z) => !(Math.abs(x - JETTY.x) < JETTY.halfW + 2 && z < JETTY.z0 + 3)
+    && Math.hypot(x - POOL.x, z - POOL.z) >= POOL.r + 1
+    && pathDistanceTo(resortPathPoints, x, z) > 1.7,
+} });
+createIslandPath(scene, resortPathPoints, terrainHeight);
+createIslandSign(scene, { ...JUNGLE_RESORT_GATE, y: terrainHeight(JUNGLE_RESORT_GATE.x, JUNGLE_RESORT_GATE.z), label: '← Village touristique' });
 // Its own seeded RNGs, so the shared rnd() above is not drawn from: adding
 // an animal never moves a rock or a palm. The vegetation goes with it: its
 // flower tufts are the hummingbirds' anchors and habitat.
@@ -502,7 +511,8 @@ const travelParams = new URLSearchParams(location.search);
 // Coming ashore from the liner puts you on the jetty by the tender; a cold
 // start from the menu puts you on the sand at the foot of the path.
 const arrivedFromCruise = travelParams.get('arrival') === 'cruise';
-const arrival = arrivedFromCruise ? TENDER_SPOT : SPAWN;
+const arrivedFromResort = travelParams.get('arrival') === 'resort';
+const arrival = arrivedFromCruise ? TENDER_SPOT : arrivedFromResort ? JUNGLE_RESORT_ARRIVAL : SPAWN;
 const arrivalY = arrivedFromCruise ? JETTY.deckY : terrainHeight(arrival.x, arrival.z);
 const spawnPoint = new THREE.Vector3(arrival.x, arrivalY + 1.0, arrival.z);
 ctrl.rescueTo(spawnPoint);
@@ -758,7 +768,9 @@ const TIME_STATES = {
   },
 };
 let jungleTime = 'day';
+let islandTravelTime = islandTime(travelParams.get('time'));
 function setJungleTime(name) {
+  islandTravelTime = islandTime(name);
   const st = TIME_STATES[name] ?? TIME_STATES.day;
   jungleTime = TIME_STATES[name] ? name : 'day';
   const night = jungleTime === 'night';
@@ -885,6 +897,11 @@ function updateFireSeat(dt) {
   return false;
 }
 
+const resortTravel = createIslandTravel({gate:JUNGLE_RESORT_GATE,map:'resort',arrival:'jungle',getTime:()=>islandTravelTime,onLeave:()=>{leaving=true;}});
+const resortAction=document.createElement('button');resortAction.id='jungleResortAction';resortAction.className='resort-action';resortAction.textContent='E · Village touristique';resortAction.hidden=true;document.body.appendChild(resortAction);
+resortAction.addEventListener('click',()=>{if(started&&!paused&&!leaving&&!seated)resortTravel.go();});
+function updateResortTravel(){const active=!seated&&!tenderAskOpen&&!leaving&&resortTravel.near(ctrl.pos);resortAction.hidden=!active;if(active&&input.pressed('KeyE')){resortTravel.go();return true;}return false;}
+
 // ---------------------------------------------------------------------------
 // Loop.
 // ---------------------------------------------------------------------------
@@ -899,7 +916,7 @@ function animate() {
     input.updateLook(dt);
     const cp = Math.cos(input.pitch);
     forward.set(-Math.sin(input.yaw) * cp, Math.sin(input.pitch), -Math.cos(input.yaw) * cp).normalize();
-    if (!updateFireSeat(dt)) ctrl.update(dt, input, input.yaw, forward);
+    if (!updateResortTravel() && !updateFireSeat(dt)) ctrl.update(dt, input, input.yaw, forward);
     if (ctrl.pos.y < -40) ctrl.rescueTo(spawnPoint);
     updatePrompts();
   }
@@ -939,7 +956,7 @@ function startJungle() {
 }
 window.__startJungle = startJungle;
 startBtn?.addEventListener('click', startJungle);
-if (arrivedFromCruise || window.__startRequested) startJungle();
+if (arrivedFromCruise || arrivedFromResort || window.__startRequested) startJungle();
 
 document.addEventListener('pointerlockchange', () => {
   usedLock = usedLock || document.pointerLockElement !== null;
@@ -972,6 +989,8 @@ const hook = {
   THREE, scene, camera, renderer, world, ctrl, rig, input, spawnPoint, bw,
   terrainHeight, ocean, falls, vegetation, terrain, tender, tenderCtl, liner, wildlife,
   fireflies, campfire, blanket, setJungleTime, updateAtmosphere, nightFill, sitByFire, standFromFire,
+  resortTravel, resortAction, resortPathPoints,
+  get islandTravelTime() { return islandTravelTime; },
   get jungleTime() { return jungleTime; }, get seated() { return seated; },
   SEA_Y, SPAWN, TENDER_SPOT, JETTY, POOL, FALLS, WADE_Z,
   get player() { return player; },

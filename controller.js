@@ -26,11 +26,12 @@ const _rdir = new THREE.Vector3();  // ray direction scratch
 const DOWN = new THREE.Vector3(0, -1, 0);
 
 export class Controller {
-  constructor(boxWorld, groundFn, castFn, events = {}) {
+  constructor(boxWorld, groundFn, castFn, events = {}, options = {}) {
     this.bw = boxWorld;              // {aabbs, queryNearby}
     this.groundFn = groundFn;        // (x, z, yFrom, feetY, prevY) => groundY|null (raycast on real geometry)
     this.castFn = castFn;            // (origin, dir, far, verifyBox?) => {point, normal, distance}|null
     this.events = events;
+    this.options = options;
     this.pos = new THREE.Vector3();
     this.prevY = 0;
     this.vel = new THREE.Vector3();
@@ -107,6 +108,31 @@ export class Controller {
     this.steer = 0;
 
     _fwd.set(-Math.sin(camYaw), 0, -Math.cos(camYaw));
+
+    // Optional island swimming. Existing worlds never enter this branch.
+    const water = this.options.waterProbe?.(this.pos.x, this.pos.z);
+    if (water) {
+      this.waterY = water.surfaceY;
+      const support = this.groundFn(this.pos.x, this.pos.z, this.pos.y + 3, this.pos.y, this.prevY);
+      const bottom = support === null ? water.bottomY : Math.max(water.bottomY, support);
+      const depth = water.surfaceY - bottom;
+      if (this.mode !== 'swim' && depth > 1.2 && this.pos.y < water.surfaceY - .7 && this.vel.y <= 0) {
+        this.mode = 'swim'; this.webOn = false; this.vel.y = 0;
+      }
+      if (this.mode === 'swim') {
+        if (depth < .95) { this.mode = 'ground'; this.pos.y = bottom; this.prevY = bottom; }
+        else {
+          const k = 1 - Math.exp(-5 * dt);
+          this.vel.x += (_move.x * 2.2 - this.vel.x) * k;
+          this.vel.z += (_move.z * 2.2 - this.vel.z) * k;
+          this.vel.y = 0; this.prevY = this.pos.y;
+          this.pos.x += this.vel.x * dt; this.pos.z += this.vel.z * dt;
+          this.pos.y = water.surfaceY - 1.1;
+          this.resolveWalls(dt);
+          return;
+        }
+      }
+    } else if (this.mode === 'swim') { this.mode = 'air'; }
 
     // ------------------------------------------------ ground
     if (this.mode === 'ground') {
@@ -265,6 +291,7 @@ export class Controller {
   // ------------------------------------------------ attach / detach / zip
 
   tryAttach(camDir) {
+    if (this.options.allowWeb === false) return;
     const speed = this.vel.length();
     const aimUp = Math.max(0, camDir.y);   // vertical aim intent — captured BEFORE flattening
     _fwd.copy(camDir);
@@ -353,6 +380,7 @@ export class Controller {
   }
 
   tryZip(camDir) {
+    if (this.options.allowWeb === false) return;
     const { aabbs, queryNearby } = this.bw;
     const ids = queryNearby(this.pos.x, this.pos.z, 115);
     _o.copy(this.pos); _o.y += 1.5;
@@ -507,7 +535,7 @@ export class Controller {
           // instead of treating the riser as a wall. Rails still block —
           // groundFn refuses props, so the floor behind them is not a step.
           let stepped = false;
-          if (this.mode === 'ground') {
+          if (this.mode === 'ground' || this.mode === 'swim') {
             const into = hit.distance + 0.12;
             const sx = _o.x + _rdir.x * into;
             const sz = _o.z + _rdir.z * into;
@@ -558,6 +586,29 @@ export class Controller {
       if (b.ceiling && this.pos.y < b.y0) {
         this.pos.y = b.y0 - BODY_H;
         this.vel.y = Math.min(0, this.vel.y);
+        continue;
+      }
+
+      // Optional oriented kit primitives: curved resort rails must not become
+      // the solid rectangle enclosing their diagonal. Existing AABBs stay unchanged.
+      if (b.obb) {
+        const o = b.obb, c = Math.cos(o.yaw), s = Math.sin(o.yaw);
+        const dx = this.pos.x - o.x, dz = this.pos.z - o.z;
+        const lx = c*dx - s*dz, lz = s*dx + c*dz;
+        const hx=o.w/2, hz=o.d/2;
+        const ex=lx-THREE.MathUtils.clamp(lx,-hx,hx), ez=lz-THREE.MathUtils.clamp(lz,-hz,hz);
+        const distance=Math.hypot(ex,ez);
+        let ux,uz,push;
+        if (distance > 0) {
+          if (distance >= R) continue;
+          ux=ex/distance;uz=ez/distance;push=R-distance;
+        } else if(hx-Math.abs(lx)<hz-Math.abs(lz)) {
+          ux=lx<0?-1:1;uz=0;push=hx-Math.abs(lx)+R;
+        } else { ux=0;uz=lz<0?-1:1;push=hz-Math.abs(lz)+R; }
+        const nx=c*ux+s*uz,nz=-s*ux+c*uz;
+        this.pos.x+=nx*push;this.pos.z+=nz*push;
+        const vn=this.vel.x*nx+this.vel.z*nz;
+        if(vn<0){this.vel.x-=vn*nx;this.vel.z-=vn*nz;}
         continue;
       }
 

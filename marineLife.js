@@ -1,3 +1,4 @@
+import { islandHeight } from './islandRelief.js';
 // marineLife.js — Deserted mountainous island & oceanic fauna (dolphins & orcas)
 // for the luxury cruise map (main-CRUISE.js).
 import * as THREE from 'three';
@@ -181,66 +182,7 @@ export function buildDesertedIsland(scene) {
     const x = pos.getX(i);
     const z = pos.getZ(i);
 
-    const u = x / 390;
-    const v = z / 330;
-    const dist = Math.hypot(u, v);
-    const angle = Math.atan2(v, u);
-
-    // Natural perturbed coastline shape
-    const rCoast = 1.0
-      + 0.22 * Math.sin(3.0 * angle + 0.9)
-      + 0.15 * Math.cos(5.0 * angle - 1.2)
-      + 0.08 * Math.sin(7.0 * angle + 2.3);
-
-    const normDist = dist / rCoast;
-
-    // Volcanic massif components
-    // 1. Main soaring volcanic peak (west-center)
-    const d1 = Math.hypot(x + 45, z + 25);
-    const h1 = 240 * Math.exp(-Math.pow(d1 / 165, 1.85));
-
-    // 2. Secondary eastern craggy peak
-    const d2 = Math.hypot(x - 125, z - 20);
-    const h2 = 180 * Math.exp(-Math.pow(d2 / 135, 1.75));
-
-    // 3. Southern ridge spine
-    const d3 = Math.hypot(x + 20, z - 130);
-    const h3 = 135 * Math.exp(-Math.pow(d3 / 115, 1.65));
-
-    // 4. Northwest jagged shoulders
-    const d4 = Math.hypot(x + 150, z + 110);
-    const h4 = 115 * Math.exp(-Math.pow(d4 / 110, 1.6));
-
-    // 5. High-frequency ridges, erosion valleys and craggy details
-    const ridgeA = Math.abs(Math.sin(x * 0.027 + z * 0.022)) * 34;
-    const ridgeB = Math.sin(x * 0.054 - z * 0.038) * 16;
-    const micro = (Math.sin(x * 0.12 + 1.1) * Math.cos(z * 0.11 - 0.8)) * 6;
-
-    let rawH = h1 + h2 + h3 + h4 + ridgeA + ridgeB + micro;
-
-    // Gentle beach / bay on the south-east coast facing the ship
-    if (x > 30 && z > 20) {
-      const bayDist = Math.hypot(x - 120, z - 110);
-      if (bayDist < 160) {
-        rawH *= 0.45 + 0.55 * (bayDist / 160);
-      }
-    }
-
-    // Shoreline falloff into the ocean
-    const falloff = 1.0 - THREE.MathUtils.smoothstep(normDist, 0.62, 1.01);
-    let y = rawH * falloff;
-
-    // Submerged skirt. The falloff below is a power law with no floor, and the
-    // plane's corners sit close to three coast-radii out, so they ended up some
-    // ten kilometres down: a funnel whose near walls, read at a grazing angle
-    // through the 94 %-opaque sea, drew two pale vertical bands either side of
-    // the island right down to the ship's rail. Bottom it out well below
-    // anything the water actually shows.
-    if (normDist >= 0.96) {
-      y = Math.max(-45, (y - 1.0) - Math.pow((normDist - 0.96) / 0.05, 1.6) * 26);
-    } else {
-      y = Math.max(-10, y);
-    }
+    const y = islandHeight(x, z);
 
     heights[i] = y;
     pos.setY(i, y);

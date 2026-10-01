@@ -186,6 +186,7 @@ export class CameraRig {
     const boom = Math.max(0.05, this.dist * this.collT * 0.97);
     _desired.copy(this.smoothLook).addScaledVector(_camDir, -boom);
     if (_desired.y < 0.6) _desired.y = 0.6;
+    if (ctrl.mode === 'swim' && Number.isFinite(ctrl.waterY)) _desired.y = Math.max(_desired.y, ctrl.waterY + .35);
     cam.position.copy(_desired);
 
     cam.lookAt(this.smoothLook);

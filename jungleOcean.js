@@ -61,6 +61,7 @@ export function createJungleOcean({
   scene, waterNormal, maxAniso = 4,
   layout,       // another map's bed: { terrainHeight, shoreAt, SEA_Y, SHORE_Z, bedGLSL }
   preset,       // overrides on OCEAN_PRESET (waveScale, colours, foam, swash)
+  bounds,      // optional { sea: {width,depth,sx,sz,x,z}, foam: {x0,x1,z0,z1,sx,sz} }
   skyUniforms,  // the sky dome's uniforms — the reflection reads the same sky
 }) {
   const P = resolvePreset(preset);
@@ -228,9 +229,10 @@ export function createJungleOcean({
 
   // The plane is XY rotated -90° about X, so local +Z is world +Y. 7.1 m
   // cells resolve the shortest (34 m) swell component with room to spare.
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1000, 224, 140), mat);
+  const sb = { width: 1600, depth: 1000, sx: 224, sz: 140, x: 0, z: L.SHORE_Z + 30 - 500, ...bounds?.sea };
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(sb.width, sb.depth, sb.sx, sb.sz), mat);
   sea.rotation.x = -Math.PI / 2;
-  sea.position.set(0, seaY, L.SHORE_Z + 30 - 500);
+  sea.position.set(sb.x, seaY, sb.z);
   sea.name = 'jungle_sea';
   scene.add(sea);
 
@@ -250,7 +252,8 @@ export function createJungleOcean({
   // --- Foam strip, conformed to max(bed, sea) -----------------------------
   const foamTex = makeFoamTexture(maxAniso);
   uniforms.uFoamMap.value = foamTex;
-  const X0 = -130, X1 = 130, Z0 = -62, Z1 = 6, SX = 130, SZ = 34;
+  const fb = { x0: -130, x1: 130, z0: -62, z1: 6, sx: 130, sz: 34, ...bounds?.foam };
+  const {x0: X0, x1: X1, z0: Z0, z1: Z1, sx: SX, sz: SZ} = fb;
   const fg = new THREE.PlaneGeometry(X1 - X0, Z1 - Z0, SX, SZ);
   fg.rotateX(-Math.PI / 2);
   fg.translate((X0 + X1) / 2, 0, (Z0 + Z1) / 2);

@@ -2864,6 +2864,8 @@ export class Player {
       this.play('idle', 0.2);
     } else if (this.landTimer > 0) {
       this.landTimer -= dt;
+    } else if (mode === 'swim') {
+      this.play('idle', 0.2);
     } else if (mode === 'ground') {
       this.play(hsp < 0.6 ? 'idle' : hsp < 6 ? 'walk' : hsp < 11 ? 'run' : 'sprint');
     } else if (mode === 'air') {
@@ -2887,6 +2889,23 @@ export class Player {
       this.applyLyingPose(this.sleepPlush.visible);
     } else if (posture === 'kneel') {
       this.applyKneelingPose(ctx.floorY);
+    }
+    if (mode === 'swim') {
+      this.resetHeldPose();
+      this.poseRoot.rotation.x = Math.PI / 2;
+      this.poseRoot.position.y = 1.25;
+      const t = ctx.elapsedTime ?? 0;
+      for (const side of ['l','r']) {
+        const phase = t * 3 + (side === 'l' ? 0 : Math.PI);
+        for (const joint of ['upperarm','lowerarm']) {
+          const bone=this.bones[`${joint}_${side}`],rest=this.restRotation?.get(`${joint}_${side}`);
+          if(bone&&rest)bone.quaternion.copy(rest);
+        }
+        this.bones[`upperarm_${side}`]?.rotateZ((side === 'l' ? 1 : -1) * (1.3 + Math.sin(phase) * .7));
+        this.bones[`lowerarm_${side}`]?.rotateZ(.3 * Math.sin(phase));
+        this.bones[`thigh_${side}`]?.rotateZ(Math.sin(phase) * .16);
+        this.bones[`calf_${side}`]?.rotateZ(.12 + Math.max(0,Math.sin(phase)) * .2);
+      }
     }
     // The pack comes off when she sits: hidden off her back and set down on
     // the floor beside the seat (updateBackpackProp). After the pose, so it

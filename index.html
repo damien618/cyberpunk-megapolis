@@ -16,6 +16,7 @@
       shinto: { engine: 'world', title: 'Cyberpunk Megapolis — Visit to a Shinto shrine (Japan)' },
       beach: { engine: 'world', title: 'Cyberpunk Megapolis — Aller à la plage de L.A.' },
       cruise: { engine: 'world', title: 'Cyberpunk Megapolis — Croisière de luxe' },
+      resort: { engine: 'world', title: 'Cyberpunk Megapolis — Village touristique polynésien' },
       jungle: { engine: 'world', title: 'Cyberpunk Megapolis — Promenade tropicale — la cascade' },
     };
     const mode = new URLSearchParams(location.search).get('map');
@@ -779,7 +780,24 @@
   html:not([data-mode="shinto"]) .brief-shinto,
   html:not([data-mode="beach"]) .brief-beach,
   html:not([data-mode="cruise"]) .brief-cruise,
+  html:not([data-mode="resort"]) .brief-resort,
   html:not([data-mode="jungle"]) .brief-jungle { display: none !important; }
+
+  #panelResort { grid-column: 2 / 4; grid-row: 5; justify-self: end; }
+  .resort-panel { border-color: #59d9df66; background: linear-gradient(145deg,#153c42aa,#07141bcc); }
+  #enterBtnResort { color: #d9fbf7; text-shadow: none; border-color: #83edf099; }
+  .accent-resort { color: #83edf0; }
+  html[data-mode="resort"] #hud { bottom: 78px; left: 20px; font-size: 11px; }
+  .brief-resort .time-toggle { display: flex; margin-top: 18px; border: 1px solid #83edf055; border-radius: 6px; overflow: hidden; }
+  #resortTimeControls { position: fixed; left: 20px; bottom: 20px; z-index: 15; display: flex; gap: 8px; padding: 6px; background: #071b27bb; border: 1px solid #ffffff22; border-radius: 8px; }
+  #resortTimeControls button { padding: 9px 13px; color: #d6e9e8; font-size: 12px; border-radius: 4px; }
+  #resortTimeControls button.active { color: #073441; background: #b4ede7; }
+  .resort-action { position: fixed; left: 50%; bottom: 85px; transform: translateX(-50%); z-index: 16; padding: 15px 22px; border: 1px solid #e8d7b388; border-radius: 6px; color: #fff8df; background: #153c3ded; font-size: 13px; }
+  .resort-action[hidden] { display: none; }
+  html[data-mode="resort"] #overlay { background: radial-gradient(circle at 65% 25%,#16778355,#061722ee 65%); }
+  html[data-mode="resort"] #panel .tag { color: #83edf0; }
+  @media (max-width: 1000px) { #panelResort { grid-column: 1 / -1; grid-row: 9; justify-self: center; } }
+  @media (max-width: 600px) { #resortTimeControls { left: 8px; bottom: 10px; } #resortTimeControls button { padding: 8px; } }
 </style>
 <script type="importmap">
 { "imports": {
@@ -950,6 +968,12 @@
         </div>
         <button id="enterBtnJungle" class="enter-btn ready">Enter Game</button>
       </div>
+      <div class="la-panel resort-panel" id="panelResort" data-target="resort">
+        <div class="kicker">Satellite 08 · Lagon polynésien</div>
+        <h2>VILLAGE<br><span class="accent-resort">TOURISTIQUE</span></h2>
+        <div class="la-card"><span class="m-tag">L’île · Côte ouest</span><span class="m-name">Bungalows sur pilotis</span></div>
+        <button id="enterBtnResort" class="enter-btn ready">Explorer le village</button>
+      </div>
     </div>
   </div>
 
@@ -1034,6 +1058,14 @@
         <button class="tt-btn" data-time="night">🌙 Nuit</button>
       </div>
     </div>
+    <div class="brief-resort">
+      <span class="tag">L’île · Côte ouest</span>
+      <h1>Village touristique polynésien</h1>
+      <p>Un lagon turquoise, des bungalows sur pilotis sous leurs toits de chaume, des jardins d’hibiscus et un massif volcanique à l’horizon.</p>
+      <p>Explorez les pontons, entrez dans les bungalows, baignez-vous dans le lagon et les piscines privées, ou reposez-vous dans le hamac.</p>
+      <p><b>WASD</b> marcher / nager · <b>Souris ou flèches</b> regarder · <b>E</b> hamac / sentier vers la forêt · <b>Espace</b> sauter · <b>R</b> revenir à l’accueil · <b>Échap</b> pause.</p>
+      <div class="time-toggle tt-3"><button class="tt-btn active" data-time="day">☀ Jour</button><button class="tt-btn" data-time="sunset">◒ Coucher</button><button class="tt-btn" data-time="night">☾ Nuit</button></div>
+    </div>
     <div class="brief-jungle">
       <span class="tag">Nouvelle map</span>
       <h1>Promenade tropicale — la cascade</h1>
@@ -1060,7 +1092,7 @@
         <button class="tt-btn" data-time="night">🌙 Nuit</button>
       </div>
     </div>
-    <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span><span class="brief-airport">Entrer dans l'aéroport</span><span class="brief-shinto">Entrer dans le temple</span><span class="brief-beach">Descendre à la plage</span><span class="brief-cruise">Embarquer</span><span class="brief-jungle">Débarquer sur l'île</span></button>
+    <button id="startBtn"><span class="brief-la">Entrer dans la villa</span><span class="brief-zoo">Entrer dans le zoo</span><span class="brief-airport">Entrer dans l'aéroport</span><span class="brief-shinto">Entrer dans le temple</span><span class="brief-beach">Descendre à la plage</span><span class="brief-cruise">Embarquer</span><span class="brief-jungle">Débarquer sur l'île</span><span class="brief-resort">Explorer le village</span></button>
   </div>
 </div>
 <button id="furniturePrompt" type="button" aria-hidden="true"></button>
@@ -1145,7 +1177,7 @@
   // the same time, so it stands aside there rather than being generalised —
   // the other four maps genuinely are day/night.
   const syncLaTimeButtons = selectedNight => {
-    if (document.documentElement.dataset.mode === 'beach') return;
+    if (['beach', 'resort'].includes(document.documentElement.dataset.mode)) return;
     document.querySelectorAll('.tt-btn').forEach(btn => {
       const isNightBtn = btn.dataset.time === 'night';
       btn.classList.toggle('active', selectedNight ? isNightBtn : !isNightBtn);
@@ -1176,6 +1208,7 @@
   document.getElementById('enterBtnCruise')?.addEventListener('click', () => {
     location.href = 'index.html?map=cruise';
   });
+  document.getElementById('enterBtnResort')?.addEventListener('click', () => { location.href = 'index.html?map=resort'; });
   document.getElementById('enterBtnJungle')?.addEventListener('click', () => {
     location.href = 'index.html?map=jungle';
   });
@@ -1225,7 +1258,8 @@
       // Branch from satellite 05, not from the pivot.
       { id: 'panelCruise',  color: '#ffd98a', grad: 'grad-cruise', hub: 'panelBeach', hubColor: '#ffa85c' },
       // Branch from satellite 06: the island is reached from the liner.
-      { id: 'panelJungle',  color: '#7fe0a0', grad: 'grad-jungle', hub: 'panelCruise', hubColor: '#ffd98a' }
+      { id: 'panelJungle',  color: '#7fe0a0', grad: 'grad-jungle', hub: 'panelCruise', hubColor: '#ffd98a' },
+      { id: 'panelResort', color: '#83edf0', grad: 'grad-jungle', hub: 'panelJungle', hubColor: '#7fe0a0' }
     ];
 
     let tracksHTML = '';
@@ -1431,6 +1465,7 @@
     if (window.__startShinto) window.__startShinto();
     if (window.__startBeach) window.__startBeach();
     if (window.__startCruise) window.__startCruise();
+    if (window.__startResort) window.__startResort();
   }, true);
   window.addEventListener('error', e => {
     console.error('[Page Error]', e.error || e.message);
@@ -1447,13 +1482,14 @@
     shinto: './main-SHINTO.js?v=20260912-bridge-zfight3',
     beach: './main-BEACH.js?v=20260906-seam-fix',
     cruise: './main-CRUISE.js?v=20260927-island-landing',
+    resort: './main-RESORT.js?v=20261001-resort1',
     jungle: './main-JUNGLE.js?v=20261001-cloth1',
   };
   const mode = document.documentElement.dataset.mode;
   const cityEntrypoint = `./main.js?v=20260919-bedroom-v2-${Date.now()}`;
   import(ENGINES[mode] ?? cityEntrypoint).catch(error => {
     console.error('[Map loading failed]', error);
-    if (mode !== 'shinto' && mode !== 'cruise' && mode !== 'jungle') return;
+    if (mode !== 'shinto' && mode !== 'cruise' && mode !== 'jungle' && mode !== 'resort') return;
     const button = document.getElementById('startBtn');
     button.disabled = false;
     const label = button.querySelector(`.brief-${mode}`);

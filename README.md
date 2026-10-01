@@ -113,6 +113,42 @@ forêt ouverte ; captures et mesure par `tests/jungle_vegetation_shot.py` à
 sept poses.
 
 
+Village touristique polynésien : `index.html?map=resort`. Douze bungalows sur
+pilotis (dont trois suites avec piscine privée), six bungalows-jardin,
+accueil/restaurant/bar, deux pontons courbes, lagon corallien et hamac.
+Accès aussi depuis le sentier signalé à l'ouest de la plage de la jungle :
+**E** pour changer de map, avec fondu et conservation de l'heure. Les trois
+ambiances jour/coucher/nuit se choisissent dans l'écran d'accueil et les
+boutons en bas à gauche. **WASD** marche/nage, souris ou flèches pour regarder,
+**E** pour le hamac ou le retour à la forêt, **R** pour revenir à l'accueil.
+Les pirogues et les transats sont décoratifs ; la nage reste en surface.
+
+Architecture : `main-RESORT.js` assemble les modules `resort*` ;
+`resortLayout.js` est le contrat analytique partagé par sol/eau/collisions.
+Le chaume et les fleurs sont procéduraux ; le bois, l'eau, les plantes et le
+personnage réutilisent les ressources existantes. Les defaults des autres maps
+sont conservés. Aucun paquet supplémentaire n'est nécessaire.
+Plan et choix de construction : [PLAN_VILLAGE_TOURISTIQUE.md](PLAN_VILLAGE_TOURISTIQUE.md).
+
+Vérification locale (après `python3 serve.py 8000`) :
+
+```sh
+.venv/bin/python tests/resort_layout.py
+.venv/bin/python tests/resort_walk.py
+.venv/bin/python tests/resort_swim.py
+.venv/bin/python tests/resort_interactions.py
+.venv/bin/python tests/resort_ui.py
+.venv/bin/python tests/resort_visual.py
+```
+
+Les captures et mesures sont enregistrées dans `scratch/resort_*`.
+Le plafond vérifié est de 250 appels de rendu / 800 000 triangles par vue,
+ombres compris. Les FPS doivent être mesurés sur le GPU réel ; le navigateur
+logiciel utilisé par les tests ne constitue pas un benchmark matériel.
+Sur les sept vues aux trois ambiances, le maximum observé est de
+179 appels / 588 019 triangles (960 × 540, passes d'ombres comprises).
+
+
 
 ---
 

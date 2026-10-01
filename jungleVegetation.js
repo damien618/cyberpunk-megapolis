@@ -583,6 +583,7 @@ function jittered(rnd, x0, x1, z0, z1, cell, keep) {
 // Build.
 // ---------------------------------------------------------------------------
 export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules } = {}) {
+  if (rules?.region) return buildGardenVegetation({ scene, rnd, maxAniso, layout, rules });
   const L = { ...jungleLayout, ...(layout || {}) };
   const {
     terrainHeight, terrainSlope, soilAt, SOIL, forestDensity,
@@ -961,3 +962,38 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
 
 
 
+
+// The same island plant geometries and wind materials with configurable garden bounds.
+function buildGardenVegetation({scene,rnd,maxAniso,layout:L,rules:R}) {
+  const group=new THREE.Group();scene.add(group);const meshes=[],colliders=[],spots={palms:[],bushes:[],broads:[]};
+  const region=R.region, palms=[],crowns=[],bushes=[],broads=[],ferns=[];
+  const plant=(x,z,h,ry,rx=-.12)=> {
+    const y=L.terrainHeight(x,z)-.15,it={x,y,z,sx:1.05,sy:h,sz:1.05,ry,rx};palms.push(it);
+    const top=new THREE.Vector3(0,1,-PALM_BEND).applyMatrix4(matrixOf(it));crowns.push({x:top.x,y:top.y-.1,z:top.z,s:1.35,ry:ry+1});
+    colliders.push({x0:x-.35,x1:x+.35,z0:z-.35,z1:z+.35,y0:y,y1:y+3,tall:false});spots.palms.push(it);
+  };
+  for(const it of R.explicitPalms||[])plant(it.x,it.z,it.h,it.ry,it.rx);
+  for(let x=region.x0;x<region.x1;x+=9)for(let z=region.z0;z<region.z1;z+=8){
+    const px=x+rnd()*6,pz=z+rnd()*5;
+    if(!R.keepOffBuilt(px,pz)||L.terrainHeight(px,pz)<.5)continue;
+    const border=pz<30||pz>72;
+    if(rnd()<(border?.75:.2))plant(px,pz,8+rnd()*5,(rnd()-.5)*1.1,-.08-rnd()*.22);
+    else if(rnd()<.45){const it={x:px,y:L.terrainHeight(px,pz),z:pz,s:1.0+rnd(),ry:rnd()*6.28};broads.push(it);spots.broads.push(it);}
+    else {const it={x:px,y:L.terrainHeight(px,pz),z:pz,s:1+rnd()*1.1,ry:rnd()*6.28};bushes.push(it);spots.bushes.push(it);}
+  }
+  for(let x=region.x0;x<region.x1;x+=4)for(let z=30;z<region.z1;z+=5){const px=x+rnd()*2,pz=z+rnd()*2;if(R.keepOffBuilt(px,pz)&&rnd()<.25)ferns.push({x:px,y:L.terrainHeight(px,pz),z:pz,s:.65+rnd()*.5,ry:rnd()*6.28});}
+  for(const z of R.beds||[])for(let x=region.x0+8;x<region.x1-8;x+=2.8){
+    if(!R.keepOffBuilt(x,z))continue;
+    const it={x,y:L.terrainHeight(x,z),z,s:.65+rnd()*.2,ry:rnd()*6.28};bushes.push(it);spots.bushes.push(it);
+  }
+  const map=frondTexture(maxAniso),fm=makeLeafMaterial(map,.022),depth=leafDepth(map);
+  meshes.push(...tiled(group,'garden_palm_trunk',palmTrunkGeo(),new THREE.MeshStandardMaterial({color:0xffffff,roughness:1}),palms,{cast:true,tile:64,tint:{h:.09,s:.22,l:.29}}));
+  meshes.push(...tiled(group,'garden_palm_crown',palmCrownGeo(),fm,crowns,{cast:true,depth,tile:64,tint:{h:.24,s:.55,l:.32}}));
+  meshes.push(...tiled(group,'garden_bush',bushGeo(),makeSolidMaterial({},.02),bushes,{cast:false,tile:64,tint:{h:.28,s:.52,l:.24},far:110}));
+  const bm=broadLeafTexture(maxAniso),bmat=makeLeafMaterial(bm,.03);
+  meshes.push(...tiled(group,'garden_broad',broadPlantGeo(),bmat,broads,{depth:leafDepth(bm),tile:64,tint:{h:.27,s:.5,l:.32},far:100}));
+  const fernMap=fernTexture(maxAniso);
+  meshes.push(...tiled(group,'garden_fern',fernGeo(),makeLeafMaterial(fernMap,.03),ferns,{depth:leafDepth(fernMap),tile:64,tint:{h:.27,s:.5,l:.3},far:85}));
+  const cameraGround=new THREE.Vector3();function update(camera,dt=0){WIND.uWindTime.value+=dt;cameraGround.set(camera.x,0,camera.z);for(const im of meshes){const d=im.boundingSphere.center.distanceTo(cameraGround);im.visible=d<im.userData.far+im.boundingSphere.radius;}}
+  return {group,colliders,spots,counts:{palms:palms.length,bushes:bushes.length,broads:broads.length,ferns:ferns.length},update};
+}
