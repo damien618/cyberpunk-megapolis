@@ -492,6 +492,32 @@ function grassTuftGeo() {
   return mergeGeometries(parts);
 }
 
+// A nectar tuft: three tubular blooms nodding from the top of a thin stem —
+// the shape a hummingbird works. Vertex colours carry the split the instance
+// tint cannot: green for the stem, near-white for the blooms (the tint is
+// multiplied over them, so the blooms take the warm hue and the stem just
+// darkens under it). ~40 triangles; scattered by the hundred.
+function flowerGeo() {
+  const paint = (g, r, gr, b) => {
+    const n = g.attributes.position.count, c = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { c[i * 3] = r; c[i * 3 + 1] = gr; c[i * 3 + 2] = b; }
+    g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+    return g;
+  };
+  const parts = [paint(
+    new THREE.CylinderGeometry(0.004, 0.007, 0.3, 5, 1, true).translate(0, 0.15, 0),
+    0.24, 0.38, 0.18)];
+  for (let i = 0; i < 3; i++) {
+    const tube = new THREE.CylinderGeometry(0.02, 0.011, 0.08, 5, 1, true);
+    tube.translate(0, 0.04, 0);          // pivot at the stem top
+    tube.rotateX(0.95);                  // nodding outward
+    tube.rotateY((i / 3) * Math.PI * 2 + 0.5);
+    tube.translate(0, 0.285, 0);
+    parts.push(paint(tube, 1, 0.93, 0.9));
+  }
+  return mergeGeometries(parts);
+}
+
 // ---------------------------------------------------------------------------
 // Tiled instancing.
 // ---------------------------------------------------------------------------
@@ -607,6 +633,11 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     grass: applyWind(new THREE.MeshStandardMaterial({
       color: 0xffffff, side: THREE.DoubleSide, roughness: 0.85,
     }), 0.06),
+    // The nectar tuft: vertex-coloured (green stems, near-white blooms), the
+    // warm instance tint laid over both — see flowerGeo.
+    flower: applyWind(new THREE.MeshStandardMaterial({
+      color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, roughness: 0.85,
+    }), 0.02),
   };
   const geo = {
     palmTrunk: palmTrunkGeo(), palmCrown: palmCrownGeo(),
@@ -615,6 +646,7 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     trunk: trunkGeo(), lobeFar: crownLobeGeo(1),
     trunkFar: new THREE.CylinderGeometry(0.3, 0.5, 1, 7, 1, true).translate(0, 0.5, 0),
     lobe: crownLobeGeo(), bush: bushGeo(), grass: grassTuftGeo(),
+    flower: flowerGeo(),
     vine: new THREE.PlaneGeometry(0.5, 1, 1, 4).translate(0, -0.5, 0),
   };
 
@@ -836,6 +868,23 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
   }).map(([x, z]) => ({ x, y: terrainHeight(x, z) - 0.03, z, s: 0.7 + rnd() * 0.9,
     ry: rnd() * 6.28, hue: (rnd() - 0.5) * 0.05, light: (rnd() - 0.5) * 0.12 }));
 
+  // --- Flowers: tubular nectar blooms in the clearings and along the
+  // forest edge — what the hummingbirds (wildlifeHummingbird.js) work.
+  // Seeded LAST of the scatters so every rnd() draw above keeps its place:
+  // adding a plant must not move another.
+  const flowers = jittered(rnd, -PLAY_HALF_W - 6, PLAY_HALF_W + 6, SAND_END - 4, 152, 2.3, (x, z, r) => {
+    if (!R.keepOffBuilt(x, z) || terrainSlope(x, z) > 0.8) return false;
+    const soil = soilAt(x, z);
+    if (soil !== SOIL.FOREST && soil !== SOIL.DIRT) return false;
+    if (pathDistance(x, z) < PATH_HALF_W + 0.8) return false;
+    return r < (0.07 + 0.2 * clump(x, z, 9.1)) * dens('flowers')
+      * (0.3 + 0.7 * forestDensity(x, z));
+  }).map(([x, z]) => ({ x, y: terrainHeight(x, z) - 0.02, z, s: 0.9 + rnd() * 0.8,
+    ry: rnd() * 6.28, hue: (rnd() - 0.5) * 0.05, light: (rnd() - 0.5) * 0.1 }));
+  // The tufts' footprints, for the wildlife adapter's `spots.flowers` — the
+  // hummingbirds' anchors and habitat (`near`).
+  const flowerSpots = flowers.map(f => ({ x: f.x, y: f.y, z: f.z, r: 0.4 * f.s }));
+
   meshes.push(...tiled(group, 'palmTrunk', geo.palmTrunk, mat.palmBark, palmTrunks,
     { cast: true, tint: { h: 0.08, s: 0.26, l: 0.36 } }));
   meshes.push(...tiled(group, 'palmCrown', geo.palmCrown, mat.frond, palmCrowns,
@@ -867,6 +916,8 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     { cast: true, tint: { h: 0.29, s: 0.4, l: 0.2 } }));
   meshes.push(...tiled(group, 'grass', geo.grass, mat.grass, grass,
     { far: UNDERGROWTH_FAR, tint: { h: 0.26, s: 0.45, l: 0.3 } }));
+  meshes.push(...tiled(group, 'flower', geo.flower, mat.flower, flowers,
+    { far: UNDERGROWTH_FAR, tint: { h: 0.99, s: 0.7, l: 0.62 } }));
 
   // Distance culling of the undergrowth tiles, by tile centre — and the
   // wind's clock, which is the only per-frame CPU the plants cost.
@@ -891,12 +942,14 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     giants: trunks.length + backTrunks.length,
     lobes: lobes.length + understoryLobes.length + backLobes.length,
     vines: vines.length, ferns: fernsAll.length,
-    broads: broadsAll.length, bushes: bushes.length, grass: grass.length, meshes: meshes.length,
+    broads: broadsAll.length, bushes: bushes.length, grass: grass.length,
+    flowers: flowers.length, meshes: meshes.length,
   };
   // The scatter's raw positions, for the tests to hold the rules to.
   const spots = {
     palms: palmTrunks, saplings, understory, giants: trunks,
     ferns: fernsAll, broads: broadsAll, bushes, grass,
+    flowers: flowerSpots,
   };
   return { group, colliders, update, counts, spots, wind: WIND };
 }

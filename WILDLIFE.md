@@ -10,8 +10,19 @@ The reference species is the shore crab, `wildlifeCrab.js`. Copy its shape.
 | `wildlifeMotion.js` | Locomotion kinds (`ground`, `hop`, `flyFree`, …). Each unimplemented kind has a brief of what it should do. |
 | `wildlifeBoids.js` | Pure boids (no THREE), for schools and flocks. |
 | `wildlifeCrab.js` | Reference species: model, animation GLSL, behaviour hooks, definition. |
-| `jungleWildlife.js` | The cove's roster, plus the **layout adapter** (ground, water, rocks). |
+| `wildlifeLizard.js` | Side-blotched lizard + alligator lizard: two definitions over one model builder, one GLSL, two hooks. |
+| `wildlifeFox.js` | Island fox: the planned-roster fox, in — one hook (`fleeTarget` toward `forestDensity`, the name it asked the adapter to add) over the shared `ground` motion. |
+| `wildlifeSnake.js` | California kingsnake: the planned-roster snake, in — a banded body-wave over the shared `ground` motion; its one hook is a `fleeTarget` that does not flee (it freezes where it stands). |
+| `wildlifeFrog.js` | Pacific tree frog: the planned-roster frog, in — the first `hop` species (the stub's brief, implemented); its one hook is a `fleeTarget` that hops into `layout.waterAt`. |
+| `wildlifeFish.js` | The pool's silver fish: the planned-roster fish, in — the first `school` species (the stub's brief, implemented over `wildlifeBoids`); its one hook is a `tick` that never lets the state machine idle a fish. |
+| `wildlifeDragonfly.js` | The pool's blue emperors: the planned-roster dragonflies, in — the first `flyFree` species (the stub's brief, implemented in `wildlifeMotion.js`); its one hook is a `tick` that never lets the machine land one. |
+| `wildlifeHummingbird.js` | The clearings' Allen's hummingbirds: the planned-roster hummingbirds, in — the second `flyFree` species over the shared motion; its one hook is the dragonfly's never-land `tick`, pointed at the nearest flower (`layout.spots.flowers`). |
+| `wildlifePelican.js` | The cove's brown pelicans: the planned-roster pelicans, in — the first `flock` species (the stub's brief, implemented in `wildlifeMotion.js`); its one hook is the fish's never-idle `tick`. |
+| `wildlifeEagle.js` | The ridges' bald eagle: the planned-roster eagle, in — the first `glide` species (the stub's brief, implemented in `wildlifeMotion.js`); its one hook is the pelican's never-idle `tick`. |
+| `wildlifeSeaLion.js` | The haul-outs' California sea lions: the planned-roster sea lions, in — the first `amphibious` species (the stub's brief, implemented in `wildlifeMotion.js`); its hooks are a `tick` that runs the dive through the manager's own HIDDEN/EMERGE, a `pickWander` that mixes rock and water, and an `emergeAt` that surfaces it nearby. |
+| `jungleWildlife.js` | The cove's roster, plus the **layout adapter** (ground, water, rocks, flowers). |
 | `tests/jungle_wildlife.{mjs,py}` | Habitat, determinism, states, draw count, shader, cost and boids checks. |
+| `tests/jungle_wildlife_perf.py` | The headed pass in the running map: draw calls, triangles and `wildlife.stats` at the four reference spots, plus a screenshot each. |
 | `tests/wildlife_preview.py` | Renders one species alone on flat ground (idle, moving, alarmed) in about 15 s, without booting a map. |
 
 ## Budget
@@ -136,27 +147,27 @@ Normals need no work, because flat shading derives them per face. Some examples:
 | Motion | Species | Status |
 |---|---|---|
 | `ground` | crab, fox, lizards, snake | **implemented** |
-| `hop` | tree frogs | stub: ballistic hops; fleeing means a hop into `layout.waterAt` (the pool) |
-| `flyFree` | dragonflies, hummingbirds | stub: hover at anchors, darting zigzags, altitude band |
-| `glide` | bald eagle | stub: banked circles around a drifting centre |
-| `flock` | brown pelicans | stub: follow-the-leader line through `wildlifeBoids` |
-| `school` | pool fish | stub: 3-D `wildlifeBoids` between bed and surface (`boxBounds` or a custom bound) |
-| `amphibious` | sea lions | stub: `ground` on haul-out rocks, surface swim (`layout.seaHeightAt`), dives |
+| `hop` | tree frogs | **implemented** — ballistic sub-hops; fleeing hops into `layout.waterAt` (the pool) |
+| `flyFree` | dragonflies (**in**, `wildlifeDragonfly.js`), hummingbirds (**in**, `wildlifeHummingbird.js`) | **implemented** — hover on a figure-of-eight at an anchor, dart in sideways zigzags to the next, all inside a band above `waterAt`'s water or the terrain (band and zigzag on `def.fly`, defaulted in the motion) |
+| `glide` | bald eagle (**in**, `wildlifeEagle.js`) | **implemented** — slow banked circles round a centre that drifts on the wind inside `homeRange`, in a band (`fly.low/high`) above the water or the terrain; now and then a long glide to a fresh centre and the circles resume the other way round; the bank is `a.roll` from the turn rate, which `wildlife.js`'s `writeInstances` applies to any species that sets it |
+| `flock` | brown pelicans | **implemented** (`wildlifePelican.js`) — the leader rides a constant-speed oval over the sea; the file behind it chases a point `fly.delay` seconds back down the leader's own trail through `wildlifeBoids`, in a band (`fly.low/high`) above `seaHeightAt`'s water; the leader's plunge dive sweeps the line down the same curve |
+| `school` | pool fish | **implemented** (`wildlifeFish.js`) — 3-D `wildlifeBoids` between the waterline, the bed (`terrainHeight`) and the surface (`waterAt(x,z).y`); the wading player is the boids' threat: the school parts and closes again |
+| `amphibious` | sea lions (**in**, `wildlifeSeaLion.js`) | **implemented** — the crawl on the haul-outs' tops (`spots.haulouts`, whose spots carry the walkable top in `y`) and the surface swim between them (`seaHeightAt`'s live water), one steering with the floor blended across the rock's skirt (mind the trap both implementations clamp: the spots' `nearest` distance is **signed**, negative inside the rock, so the blend's ramp must clamp to [0, 1] or the cubic dives the body through the rock); the dive is the species' own `tick` running the manager's own HIDDEN (the body sinks by `body.sinkDepth`, out of the draw at full sink) and EMERGE (its `emergeAt` surfaces it nearby) |
 
 ## Planned roster (Channel Islands)
 
 | Species | Motion | Habitat, from layout | Still needed |
 |---|---|---|---|
-| Island fox (2–3, cat-sized, grey back, rust flanks) | ground | `soils: ['FOREST','DIRT']`, `avoid: { stream }`, bold (`fear.radius` about 5, no hiding; trots off into dense forest) | a `fleeTarget` toward high `forestDensity` |
-| Side-blotched lizard, alligator lizard | ground (fast darts, long idles) | `within: { rocks: 1.5 }`, soil ROCK or next to it | none (rock spots exist) |
-| King snake / rattlesnake (1–2) | ground + body-wave GLSL | `soils: ['FOREST']`, `avoid: { path: 2 }`, slow and shy | none |
-| Tree frogs | hop | wet rocks round the pool: `within: { pool: 2 }`, `soils: ['WET','ROCK']` | the `hop` motion |
-| Dragonflies | flyFree | over the pool and stream: `within: { pool: 6 }` | the `flyFree` motion |
-| Silver fish | school | inside the pool (`waterAt(x,z).kind === 'pool'`) | the `school` motion |
-| Brown pelicans | flock | over the sea, beyond the wade barrier; not frightened | the `flock` motion and a loop path |
-| Hummingbirds | flyFree | by flowers | a `flowers` spot list, from `jungleVegetation`'s `spots` |
-| Bald eagle (1) | glide | above the ridge and cliff; not frightened | the `glide` motion |
-| California sea lions | amphibious | offshore rocks | haul-out rocks offshore (in their module or in `jungleTerrain`), plus the `amphibious` motion |
+| Island fox — **in** (`wildlifeFox.js`) | ground (unhurried legs, sniff stands) | soils FOREST/DIRT, avoid path/stream/pool, bold (`fear.radius` 5, never hides; flees toward the densest forest via the adapter's `forestDensity`) | done |
+| Side-blotched lizard, alligator lizard — **in** (`wildlifeLizard.js`) | ground (fast darts, long idles) | soils DIRT/FOREST/ROCK, `near: { rocks: 5, share: 0.6 }` (rock spots exist) | done |
+| King snake — **in** (`wildlifeSnake.js`) | ground (slow body-wave; freezes instead of fleeing) | soils FOREST, `avoid: { path: 2 }`; 2 of them | done |
+| Tree frogs — **in** (`wildlifeFrog.js`) | hop (one kick per leap; hops into the pool to flee) | wet rocks round the pool: `within: { pool: 2 }`, `soils: ['WET','ROCK']`; 8 of them | done |
+| Dragonflies — **in** (`wildlifeDragonfly.js`) | flyFree (figure-of-eight hovers, zigzag darts) | over the pool and the foot of the falls: `within: { pool: 6 }`; 6 of them, skittish but back at once (`hideFor: null`) | done |
+| Silver fish — **in** (`wildlifeFish.js`) | school (3-D boids; the wading player scatters them, no engine fear) | inside the pool (`waterAt(x,z).kind === 'pool'`); 14 of them, bounded by bed and surface | done |
+| Brown pelicans — **in** (`wildlifePelican.js`) | flock (the leader's loop, the file on its trail, the cascade plunge) | over the sea, beyond the wade barrier (`waterAt(x,z).kind === 'sea'`); not frightened (`fear.radius` 0); 5 of them | done |
+| Hummingbirds — **in** (`wildlifeHummingbird.js`) | flyFree (hover at a bloom, fast darts between) | by the flowers: `near: { flowers: 4, share: 1 }` over the adapter's `spots.flowers` (the nectar tufts `jungleVegetation` scatters); 8 of them, skittish but back at once (`hideFor: null`) | done |
+| Bald eagle — **in** (`wildlifeEagle.js`) | glide (slow banked circles, long re-centre glides) | the high ground — ridge flanks and cliff top (`terrainHeight` 12 m and more, the one thing the keys cannot say); not frightened (`fear.radius` 0); 1 of them | done |
+| California sea lions — **in** (`wildlifeSeaLion.js`) | amphibious (loaf on the rock tops, slide off to swim and dive, surface nearby, climb back) | the offshore haul-outs (`jungleTerrain`'s `hauloutSpots`, a private-RNG scatter — the shared `rnd()` is untouched, so nothing else on the map moved); `within: { haulouts: 0.4 }`; not frightened (`fear.radius` 0 — the wade barrier keeps the player away); 6 of them | done |
 
 ## Rules that bite
 

@@ -79,6 +79,14 @@ if (veg) {
   check(bad === 0, 'grass never on the tread (' + bad + ' on it)');
 
   bad = 0;
+  for (const it of veg.spots.flowers) {
+    if (inWater(it.x, it.z) || onTread(it.x, it.z, 0.8)) bad++;
+  }
+  check(bad === 0, 'flowers: dry and off the tread (' + bad + ' bad)');
+  check(veg.spots.flowers.length > 40,
+    'the hummingbirds have nectar tufts (' + veg.spots.flowers.length + ')');
+
+  bad = 0;
   for (const it of veg.spots.ferns.concat(veg.spots.broads)) {
     if (inWater(it.x, it.z)) bad++;
   }

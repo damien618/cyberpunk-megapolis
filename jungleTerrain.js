@@ -304,19 +304,20 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
   // Every rock's footprint, for whatever wants to shelter by one (the
   // wildlife's crabs, later lizards and sea lions).
   const rockSpots = [];
-  const put = (x, y, z, s, squash = 0.8) => {
-    const gi = Math.floor(rnd() * 3), mi = Math.floor(rnd() * 3);
+  const put = (x, y, z, s, squash = 0.8, rngf = rnd) => {
+    const gi = Math.floor(rngf() * 3), mi = Math.floor(rngf() * 3);
     const it = {
-      x, y, z, sx: s * (0.8 + rnd() * 0.5), sy: s * squash * (0.7 + rnd() * 0.6),
-      sz: s * (0.8 + rnd() * 0.5), ry: rnd() * Math.PI * 2, rx: (rnd() - 0.5) * 0.4,
+      x, y, z, sx: s * (0.8 + rngf() * 0.5), sy: s * squash * (0.7 + rngf() * 0.6),
+      sz: s * (0.8 + rngf() * 0.5), ry: rngf() * Math.PI * 2, rx: (rngf() - 0.5) * 0.4,
     };
     // Bounding radius of the jittered shell (vertices reach 0.5 × 1.28).
     const r = Math.max(it.sx, it.sy, it.sz) * 0.64;
-    // Nothing through or in front of the falling sheet. The draw from rnd()
-    // is spent either way, so dropping a rock does not reshuffle the rest.
-    if (!clearOfFalls(x, y, z, r)) return;
+    // Nothing through or in front of the falling sheet. The draw is spent
+    // either way, so dropping a rock does not reshuffle the rest.
+    if (!clearOfFalls(x, y, z, r)) return null;
     buckets[gi][mi].push(it);
     rockSpots.push({ x, y, z, r });
+    return r;
   };
   // The cliff face: stacked boulders from the foot to the lip, leaving the
   // falls' own slot clear.
@@ -380,8 +381,34 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
     const x = px + s * (PATH_HALF_W + 1.8 + rnd() * 2), z = pz + (rnd() - 0.5) * 3;
     put(x, terrainHeight(x, z) - 0.3, z, 1 + rnd() * 1.4);
   }
+  // Haul-out rocks, offshore: the sea lions' (wildlifeSeaLion.js) spots.
+  // Their draws come from a private LCG, NOT the shared rnd() — the
+  // vegetation scatter reads the same stream after this, and nothing here
+  // may move a palm. Two clusters beyond the wade barrier (WADE_Z = -38),
+  // read from the beach and the jetty, their tops half a metre to a metre
+  // above the sea. Each is a `put` like any rock (so it lands in rockSpots
+  // too, where the crabs' and lizards' distances read it) plus a
+  // hauloutSpots entry whose y is the walkable top the species sits on.
+  const hauloutSpots = [];
+  let seaSeed = 0x5ea117 >>> 0;
+  const seaRng = () => {
+    seaSeed = (seaSeed * 1664525 + 1013904223) >>> 0;
+    return seaSeed / 4294967296;
+  };
+  for (const [hx, hz, n] of [[-18, -53, 3], [21, -49, 2]]) {
+    for (let i = 0; i < n; i++) {
+      const x = hx + (seaRng() - 0.5) * 8, z = hz + (seaRng() - 0.5) * 6;
+      const s = 2.2 + seaRng() * 1.8;
+      // The walkable top, and a centre low enough that the jittered shell's
+      // crown rises around it — the lions sit in the crown's hollow, the
+      // way they do on a real rock.
+      const top = 0.5 + seaRng() * 0.6;
+      const r = put(x, top - s * 0.42, z, s, 0.8, seaRng);
+      if (r !== null) hauloutSpots.push({ x, y: top, z, r });
+    }
+  }
   buckets.forEach((row, gi) => row.forEach((items, mi) =>
     addInstanced(rockGeos[gi], rockMats[mi], items, { prop: true })));
 
-  return { terrain, path, grain, rockSpots, update(t) { dappleTime.value = t; } };
+  return { terrain, path, grain, rockSpots, hauloutSpots, update(t) { dappleTime.value = t; } };
 }

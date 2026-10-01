@@ -4,17 +4,21 @@
 // .venv/bin/python tests/jungle_wildlife.py
 //
 // Builds the cove's wildlife against a throwaway scene (with the real
-// terrain's rocks) and holds it to what it claims: crabs only on the sand,
-// off the path and the jetty, a colony round the rocks, the same layout on
-// every load; asleep and undrawn far from the player; ALERT → FLEE → HIDDEN
-// when approached and back out once the player has gone; the hidden left out
-// of the draw; the crab shader compiling; and the frame cost.
+// terrain's rocks and the real vegetation's flower tufts) and holds it to
+// what it claims: crabs only on the sand, off the path and the jetty, a
+// colony round the rocks, the same layout on every load; asleep and undrawn
+// far from the player; ALERT → FLEE → HIDDEN when approached and back out
+// once the player has gone; the hidden left out of the draw; the crab shader
+// compiling; the lizards by their rocks, the frogs by their pool, the
+// dragonflies over the water and the hummingbirds by their flowers, all with
+// the same discipline; and the frame cost.
 import * as THREE from 'three';
 import { createJungleWildlife } from '/jungleWildlife.js';
 import { buildJungleTerrain } from '/jungleTerrain.js';
+import { buildJungleVegetation } from '/jungleVegetation.js';
 import { MOTION } from '/wildlifeMotion.js';
 import { stepBoids, boidParams, boxBounds } from '/wildlifeBoids.js';
-import { soilAt, SOIL, shoreAt, pathDistance, JETTY } from '/jungleLayout.js';
+import { soilAt, SOIL, shoreAt, pathDistance, streamDistance, JETTY, SAND_END, forestDensity, POOL, terrainHeight } from '/jungleLayout.js';
 
 let failed = 0;
 const check = (ok, msg) => { console.log((ok ? '  ok ' : 'FAIL ') + msg); if (!ok) failed++; };
@@ -28,9 +32,15 @@ const terrain = buildJungleTerrain({ scene, addInstanced, rnd, maxAniso: 1 });
 check(terrain.rockSpots.length === rockInstances,
   `terrain reports every rock it places (${terrain.rockSpots.length} / ${rockInstances})`);
 
+// The vegetation too, into a throwaway scene: its flower tufts are the
+// hummingbirds' anchors and habitat (only the scatter's spot lists are read).
+const veg = buildJungleVegetation({ scene: new THREE.Scene(), rnd, maxAniso: 1 });
+check(veg.spots.flowers.length > 40,
+  `the vegetation scatters nectar tufts (${veg.spots.flowers.length})`);
+
 let W = null;
 try {
-  W = createJungleWildlife({ scene, terrain });
+  W = createJungleWildlife({ scene, terrain, vegetation: veg });
   check(true, 'wildlife builds');
 } catch (e) {
   check(false, 'wildlife builds: ' + e.stack);
@@ -119,9 +129,15 @@ if (W) {
   V.set(0, 0, 0);
 
   // --- Motions ------------------------------------------------------------
-  let msg = '';
-  try { MOTION.hop.step(); } catch (e) { msg = String(e.message); }
-  check(/not implemented/.test(msg), 'undeclared motions fail loudly (' + msg.slice(0, 60) + '…)');
+  // hop, flyFree, glide and amphibious are implemented now (the frogs', the
+  // dragonflies', the eagle's, the sea lions'), and every declared motion
+  // takes the (agent, species, dt, ctx, speed) contract.
+  check(MOTION.hop.step.length === 5, 'the frogs\' hop motion is implemented');
+  check(MOTION.flyFree.step.length === 5, 'the dragonflies\' flyFree motion is implemented');
+  check(MOTION.glide.step.length === 5, 'the eagle\'s glide motion is implemented');
+  check(MOTION.amphibious.step.length === 5, 'the sea lions\' amphibious motion is implemented');
+  check(Object.values(MOTION).every(m => m && m.step && m.step.length === 5),
+    'every declared motion implements the step contract');
 
   // --- Shader -------------------------------------------------------------
   const errors = [];
@@ -149,10 +165,493 @@ if (W) {
   for (let k = 0; k < 300; k++) { t += 1 / 60; W.update(1 / 60, t, P, V); }
   const ms = (performance.now() - t0) / 300;
   check(ms < 0.4, `update costs ${ms.toFixed(3)} ms/frame with ${W.stats.active} awake`);
+
+  // --- Lizards ---------------------------------------------------------------
+  // The side-blotched and the alligator, up-valley by the rocks: same rules
+  // as the crabs, different soil.
+  const liz = W.debug.species.lizard, gat = W.debug.species.lizardAlligator;
+  if (liz && gat) {
+    check(liz.agents.length === 10, `10 lizards placed (${liz.agents.length})`);
+    check(gat.agents.length === 3, `3 alligator lizards placed (${gat.agents.length})`);
+    const lSoils = liz.agents.map(b => soilAt(b.home.x, b.home.z));
+    check(lSoils.every(s => s === SOIL.DIRT || s === SOIL.FOREST || s === SOIL.ROCK),
+      'every lizard lives on dirt, forest floor or rock');
+    check(liz.agents.every(b => pathDistance(b.home.x, b.home.z) >= 1.5),
+      'none of them on the path');
+    const lNear = liz.agents.filter(b =>
+      terrain.rockSpots.some(r => Math.hypot(r.x - b.home.x, r.z - b.home.z) - r.r < 5));
+    check(lNear.length >= 6, `a loose colony round the rocks (${lNear.length} / 10 within 5 m)`);
+    const sameL = W2.debug.species.lizard.agents.every((b, i) =>
+      b.home.x === liz.agents[i].home.x && b.home.z === liz.agents[i].home.z);
+    check(sameL, 'the same lizards in the same places on every load');
+
+    // Walk up to one: freeze, dart, hide.
+    const la = liz.agents[0];
+    la.state = STATE.IDLE; la.timer = 5; la.sink = 0;
+    P.set(la.x + 2, 0, la.z + 0.3);
+    const seenL = new Set();
+    for (let k = 0; k < 30 * 8; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); seenL.add(la.state); }
+    check(seenL.has(STATE.ALERT), 'an approached lizard freezes (ALERT)');
+    check(seenL.has(STATE.FLEE), 'then darts (FLEE)');
+    check(seenL.has(STATE.HIDDEN), 'then hides (HIDDEN)');
+
+    // The two lizard shaders compile.
+    const errors2 = [];
+    console.error = (...args) => { errors2.push(args.join(' ')); origError(...args); };
+    const renderer2 = new THREE.WebGLRenderer({ canvas: document.createElement('canvas') });
+    renderer2.setSize(64, 64);
+    const cam2 = new THREE.PerspectiveCamera(50, 1, 0.05, 100);
+    cam2.position.set(la.x, la.y + 1, la.z + 1.2); cam2.lookAt(la.x, la.y, la.z);
+    const s3 = new THREE.Scene();
+    s3.add(new THREE.AmbientLight(0xffffff, 1));
+    s3.add(W.group);
+    renderer2.compile(s3, cam2);
+    renderer2.render(s3, cam2);
+    console.error = origError;
+    const progs = renderer2.info.programs.map(p => p.cacheKey);
+    check(errors2.length === 0 && progs.some(k => k.includes('wildlife:lizard'))
+      && progs.some(k => k.includes('wildlife:lizardAlligator')),
+      'the lizard shaders compile' + (errors2.length ? ': ' + errors2[0].slice(0, 300) : ''));
+    renderer2.dispose();
+
+    // Frame cost with the lizards awake (they live where the player walks).
+    P.set(la.x, 0, la.z);
+    run(1, t);
+    const t1 = performance.now();
+    for (let k = 0; k < 300; k++) { t += 1 / 60; W.update(1 / 60, t, P, V); }
+    const ms2 = (performance.now() - t1) / 300;
+    check(ms2 < 0.5, `update costs ${ms2.toFixed(3)} ms/frame with the lizards awake`);
+  }
 }
 
 
-// --- Boids (pure; no species uses them yet) --------------------------------
+// --- Fox ---------------------------------------------------------------------
+// The island fox, in the undergrowth: the same discipline as the lizards,
+// bolder — it never hides, it trots toward the densest forest it can reach
+// without passing you, and picks its wandering back up when you have gone.
+const fox = W && W.debug.species.fox;
+if (fox) {
+  const S = W.STATE;
+  const P = new THREE.Vector3(), V = new THREE.Vector3();
+  let t = 0;
+  check(fox.agents.length === 3, `3 foxes placed (${fox.agents.length})`);
+  check(fox.agents.every(b => {
+    const s = soilAt(b.home.x, b.home.z);
+    return s === SOIL.DIRT || s === SOIL.FOREST;
+  }), 'every fox lives on dirt or forest floor');
+  check(fox.agents.every(b => pathDistance(b.home.x, b.home.z) >= 1.5
+    && streamDistance(b.home.x, b.home.z) >= 1.5),
+    'none on the path or in the stream');
+  check(fox.agents.every(b => b.home.z >= SAND_END), 'none down on the beach');
+  const W3 = createJungleWildlife({ scene: new THREE.Scene(), terrain });
+  const sameFox = W3.debug.species.fox.agents.every((b, i) =>
+    b.home.x === fox.agents[i].home.x && b.home.z === fox.agents[i].home.z);
+  check(sameFox, 'the same foxes in the same places on every load');
+
+  // Walk up to one: a beat of ALERT, a trot away toward thicker forest —
+  // and never a HIDDEN: a fox has no burrow.
+  const fa = fox.agents[0];
+  fa.state = S.IDLE; fa.timer = 5;
+  P.set(fa.x + 2.5, 0, fa.z + 0.5);
+  const seenFox = new Set();
+  let fled = null;
+  for (let k = 0; k < 30 * 10 && !(fled && fa.state !== S.FLEE); k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V);
+    seenFox.add(fa.state);
+    if (fa.state === S.FLEE && !fled)
+      fled = { from: { x: fa.x, z: fa.z }, to: { x: fa.tx, z: fa.tz } };
+  }
+  check(seenFox.has(S.ALERT), 'an approached fox freezes, looking at you (ALERT)');
+  check(seenFox.has(S.FLEE), 'then trots off (FLEE)');
+  check(!seenFox.has(S.HIDDEN), 'a fox never hides (no HIDDEN)');
+  if (fled) {
+    const ax = fled.from.x - P.x, az = fled.from.z - P.z;
+    const tx = fled.to.x - fled.from.x, tz = fled.to.z - fled.from.z;
+    const away = (tx * ax + tz * az) / (Math.hypot(tx, tz) * (Math.hypot(ax, az) || 1));
+    check(away > 0.35, `the flight heads away from you, not past you (${away.toFixed(2)})`);
+    check(forestDensity(fled.to.x, fled.to.z) >= forestDensity(fled.from.x, fled.from.z) - 0.2,
+      'the flight aims no thinner into the forest than where it started');
+  }
+
+  // Once you have drifted past calmDistance it picks its wandering back up.
+  P.set(fa.x + 16, 0, fa.z);
+  const seenCalm = new Set();
+  for (let k = 0; k < 30 * 14; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); seenCalm.add(fa.state); }
+  check(seenCalm.has(S.IDLE) || seenCalm.has(S.MOVE),
+    'it wanders again once you have gone');
+  check(!seenCalm.has(S.HIDDEN) && !seenCalm.has(S.EMERGE),
+    'no hide-and-emerge detour either');
+
+  // The fox shader compiles.
+  const errorsF = [];
+  const origErrorF = console.error;
+  console.error = (...args) => { errorsF.push(args.join(' ')); origErrorF(...args); };
+  const rendererF = new THREE.WebGLRenderer({ canvas: document.createElement('canvas') });
+  rendererF.setSize(64, 64);
+  const camF = new THREE.PerspectiveCamera(50, 1, 0.05, 100);
+  camF.position.set(fa.home.x, fa.y + 1, fa.home.z + 1.2); camF.lookAt(fa.home.x, fa.y, fa.home.z);
+  const sF = new THREE.Scene();
+  sF.add(new THREE.AmbientLight(0xffffff, 1));
+  sF.add(W.group);
+  rendererF.compile(sF, camF);
+  rendererF.render(sF, camF);
+  console.error = origErrorF;
+  const progsF = rendererF.info.programs.map(p => p.cacheKey);
+  check(errorsF.length === 0 && progsF.some(k => k.includes('wildlife:fox')),
+    'the fox shader compiles' + (errorsF.length ? ': ' + errorsF[0].slice(0, 300) : ''));
+  rendererF.dispose();
+
+  // Frame cost with the foxes awake.
+  const tF1 = performance.now();
+  for (let k = 0; k < 300; k++) { t += 1 / 60; W.update(1 / 60, t, P, V); }
+  const msF = (performance.now() - tF1) / 300;
+  check(msF < 0.5, `update costs ${msF.toFixed(3)} ms/frame with the foxes awake`);
+}
+
+
+// --- Snake -------------------------------------------------------------------
+// The California kingsnake, in the forest: the same discipline as the fox —
+// FOREST soil only, off the path, the same two snakes on every load — and
+// the one behaviour that is its own: approached, it stops. No HIDDEN, no run
+// to speak of; it holds where it stands until you have gone.
+const snake = W && W.debug.species.snake;
+if (snake) {
+  const S = W.STATE;
+  const P = new THREE.Vector3(), V = new THREE.Vector3();
+  let t = 0;
+  check(snake.agents.length === 2, `2 kingsnakes placed (${snake.agents.length})`);
+  check(snake.agents.every(b => soilAt(b.home.x, b.home.z) === SOIL.FOREST),
+    'every snake lives on forest floor');
+  check(snake.agents.every(b => pathDistance(b.home.x, b.home.z) >= 2),
+    'none of them on the path');
+  check(snake.agents.every(b => b.home.z >= SAND_END), 'none down on the beach');
+  check(snake.agents.length < 2
+    || Math.hypot(snake.agents[0].home.x - snake.agents[1].home.x,
+      snake.agents[0].home.z - snake.agents[1].home.z) >= 4,
+    'the two of them live apart');
+  const W4 = createJungleWildlife({ scene: new THREE.Scene(), terrain });
+  const sameSnake = W4.debug.species.snake.agents.every((b, i) =>
+    b.home.x === snake.agents[i].home.x && b.home.z === snake.agents[i].home.z);
+  check(sameSnake, 'the same snakes in the same places on every load');
+
+  // Walk up to one: it stops where it stands — a beat of ALERT, a "flight"
+  // that ends at its own feet, then stillness until you are gone.
+  const sa = snake.agents[0];
+  sa.state = S.IDLE; sa.timer = 5;
+  P.set(sa.x + 2, 0, sa.z + 0.3);
+  const seenS = new Set();
+  const x0 = sa.x, z0 = sa.z;
+  for (let k = 0; k < 30 * 10; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V);
+    seenS.add(sa.state);
+  }
+  check(seenS.has(S.ALERT), 'an approached snake stops (ALERT)');
+  check(seenS.has(S.FLEE), 'its flight is entered');
+  check(!seenS.has(S.HIDDEN) && !seenS.has(S.EMERGE), 'a snake never hides');
+  const drift = Math.hypot(sa.x - x0, sa.z - z0);
+  check(drift < 0.1, `it holds where it stands (${drift.toFixed(3)} m of drift)`);
+  check(sa.mood > 0, 'mood was raised — the body wave stills');
+  check(snake.mesh.count === snake.agents.filter(b => b.awake).length,
+    'drawn count = awake (a frozen snake is still drawn)');
+
+  // Once you have drifted past fear.radius it picks its wandering back up.
+  P.set(sa.x + 16, 0, sa.z);
+  const seenCalmS = new Set();
+  for (let k = 0; k < 30 * 16; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V); seenCalmS.add(sa.state);
+  }
+  check(seenCalmS.has(S.MOVE), 'it wanders again once you have gone');
+
+  // The snake shader compiles.
+  const errorsS = [];
+  const origErrorS = console.error;
+  console.error = (...args) => { errorsS.push(args.join(' ')); origErrorS(...args); };
+  const rendererS = new THREE.WebGLRenderer({ canvas: document.createElement('canvas') });
+  rendererS.setSize(64, 64);
+  const camS = new THREE.PerspectiveCamera(50, 1, 0.05, 100);
+  camS.position.set(sa.x, sa.y + 1, sa.z + 1.2); camS.lookAt(sa.x, sa.y, sa.z);
+  const sS = new THREE.Scene();
+  sS.add(new THREE.AmbientLight(0xffffff, 1));
+  sS.add(W.group);
+  rendererS.compile(sS, camS);
+  rendererS.render(sS, camS);
+  console.error = origErrorS;
+  const progsS = rendererS.info.programs.map(p => p.cacheKey);
+  check(errorsS.length === 0 && progsS.some(k => k.includes('wildlife:snake')),
+    'the snake shader compiles' + (errorsS.length ? ': ' + errorsS[0].slice(0, 300) : ''));
+  rendererS.dispose();
+
+  // Frame cost with the snakes awake.
+  const tS1 = performance.now();
+  for (let k = 0; k < 300; k++) { t += 1 / 60; W.update(1 / 60, t, P, V); }
+  const msS = (performance.now() - tS1) / 300;
+  check(msS < 0.5, `update costs ${msS.toFixed(3)} ms/frame with the snakes awake`);
+}
+
+
+// --- Frogs -------------------------------------------------------------------
+// The Pacific tree frogs on the wet rock ring round the pool: the same
+// discipline as the others — the ring only, off the path, the same eight on
+// every load — and the one behaviour of their own: approached, they hop for
+// the pool and stay under it until you have gone.
+const frog = W && W.debug.species.frog;
+if (frog) {
+  const S = W.STATE;
+  const P = new THREE.Vector3(), V = new THREE.Vector3();
+  let t = 0;
+  check(frog.agents.length === 8, `8 tree frogs placed (${frog.agents.length})`);
+  check(frog.agents.every(b => Math.hypot(b.home.x - POOL.x, b.home.z - POOL.z) - POOL.r <= 2),
+    'every frog lives within 2 m of the pool');
+  check(frog.agents.every(b => {
+    const s = soilAt(b.home.x, b.home.z);
+    return s === SOIL.WET || s === SOIL.ROCK;
+  }), 'every frog on wet ground or rock, none in the water');
+  check(frog.agents.every(b => pathDistance(b.home.x, b.home.z) >= 1.2), 'none of them on the path');
+  const W5 = createJungleWildlife({ scene: new THREE.Scene(), terrain });
+  const sameFrogs = W5.debug.species.frog.agents.every((b, i) =>
+    b.home.x === frog.agents[i].home.x && b.home.z === frog.agents[i].home.z);
+  check(sameFrogs, 'the same frogs in the same places on every load');
+
+  // The hop: a calm frog crosses ground in leaps and lands on the terrain.
+  const fa = frog.agents[0];
+  P.set(fa.x + 12, 0, fa.z + 12);
+  fa.state = S.MOVE; fa.timer = 6; fa.sink = 0; fa.hopPhase = 2;
+  fa.tx = fa.home.x + 1.5; fa.tz = fa.home.z + 0.4;
+  let hops = 0, wasAir = false, badLanding = false, nan = false;
+  for (let k = 0; k < 30 * 6 && fa.state === S.MOVE; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V);
+    if (fa.hopPhase === 1) wasAir = true;
+    else if (wasAir && fa.hopPhase === 2) {
+      hops++; wasAir = false;
+      if (Math.abs(fa.y - terrainHeight(fa.x, fa.z)) > 0.02) badLanding = true;
+    }
+    if (!Number.isFinite(fa.x + fa.y + fa.z)) { nan = true; break; }
+  }
+  check(hops >= 2 && !badLanding && !nan, `hop: ${hops} chained leap(s), each landing on the terrain, no NaN`);
+
+  // Fright: approached from the path side, the way out is the pool.
+  fa.state = S.IDLE; fa.timer = 5; fa.sink = 0; fa.hopPhase = 2;
+  const toPool = Math.atan2(POOL.x - fa.x, POOL.z - fa.z);
+  P.set(fa.x - Math.sin(toPool) * 1.8, 0, fa.z - Math.cos(toPool) * 1.8);
+  const seenF = new Set();
+  let hidAt = -1, inPool = false;
+  for (let k = 0; k < 30 * 10; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V);
+    seenF.add(fa.state);
+    if (fa.state === S.HIDDEN && fa.sink >= 1 && hidAt < 0) hidAt = k;
+    if (fa.hopPhase === 2 && Math.hypot(fa.x - POOL.x, fa.z - POOL.z) < POOL.r) inPool = true;
+  }
+  check(seenF.has(S.ALERT) && seenF.has(S.FLEE), 'an approached frog freezes flat, then hops for it');
+  check(inPool, 'the flight hops INTO the pool');
+  check(hidAt >= 0, `then stays under (HIDDEN, sunk after ${(hidAt / 30).toFixed(1)} s)`);
+  check(frog.mesh.count === frog.agents.filter(b => b.awake && b.sink < 1).length,
+    'the sunken frog is left out of the draw');
+
+  // Calm returns: past calmDistance it hops back out and wanders the ring.
+  P.set(fa.x + 16, 0, fa.z);
+  const seenCalmF = new Set();
+  for (let k = 0; k < 30 * 22; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); seenCalmF.add(fa.state); }
+  check(seenCalmF.has(S.EMERGE) && fa.sink === 0, 'it hops back out of the pool once you have gone');
+
+  // The frog shader compiles.
+  const errorsFr = [];
+  const origErrorFr = console.error;
+  console.error = (...args) => { errorsFr.push(args.join(' ')); origErrorFr(...args); };
+  const rendererFr = new THREE.WebGLRenderer({ canvas: document.createElement('canvas') });
+  rendererFr.setSize(64, 64);
+  const camFr = new THREE.PerspectiveCamera(50, 1, 0.05, 100);
+  camFr.position.set(fa.x, fa.y + 1, fa.z + 1.2); camFr.lookAt(fa.x, fa.y, fa.z);
+  const sFr = new THREE.Scene();
+  sFr.add(new THREE.AmbientLight(0xffffff, 1));
+  sFr.add(W.group);
+  rendererFr.compile(sFr, camFr);
+  rendererFr.render(sFr, camFr);
+  console.error = origErrorFr;
+  const progsFr = rendererFr.info.programs.map(p => p.cacheKey);
+  check(errorsFr.length === 0 && progsFr.some(k => k.includes('wildlife:frog')),
+    'the frog shader compiles' + (errorsFr.length ? ': ' + errorsFr[0].slice(0, 300) : ''));
+  rendererFr.dispose();
+
+  // Frame cost with the frogs awake.
+  const tFr1 = performance.now();
+  for (let k = 0; k < 300; k++) { t += 1 / 60; W.update(1 / 60, t, P, V); }
+  const msFr = (performance.now() - tFr1) / 300;
+  check(msFr < 0.5, `update costs ${msFr.toFixed(3)} ms/frame with the frogs awake`);
+}
+
+
+// --- Fish --------------------------------------------------------------------
+// The pool's silver school: the first `school` species. All of them live in
+// the pool's water, the school holds together at mid-depth, scatters from
+// the player who wades in and closes again once they are out — and it never
+// stops swimming.
+const fish = W && W.debug.species.fish;
+if (fish) {
+  const P = new THREE.Vector3(), V = new THREE.Vector3();
+  let t = 0;
+  const inPool = (x, z) => Math.hypot(x - POOL.x, z - POOL.z) < POOL.r - 0.5
+    && terrainHeight(x, z) < POOL.waterY;
+  const spread = bs => {   // farthest fish from the school's centroid
+    const c = bs.reduce((s, b) => ({ x: s.x + b.x / bs.length, z: s.z + b.z / bs.length }), { x: 0, z: 0 });
+    return Math.max(...bs.map(b => Math.hypot(b.x - c.x, b.z - c.z)));
+  };
+  check(fish.agents.length === 14, `14 fish placed (${fish.agents.length})`);
+  check(fish.agents.every(b => inPool(b.home.x, b.home.z)), 'every fish lives in the pool\'s water');
+  const W6 = createJungleWildlife({ scene: new THREE.Scene(), terrain });
+  check(W6.debug.species.fish.agents.every((b, i) =>
+    b.home.x === fish.agents[i].home.x && b.home.z === fish.agents[i].home.z),
+    'the same fish in the same places on every load');
+
+  // Swimming: by the pool the whole school is awake, up off the bed, under
+  // the surface, together, moving, and drawn.
+  P.set(POOL.x - 6, 0, POOL.z - 6);
+  for (let k = 0; k < 30 * 6; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); }
+  const swim = fish.agents.filter(b => b.awake);
+  check(swim.length === 14, `the whole school is awake by the pool (${swim.length})`);
+  check(swim.every(b => b.y > terrainHeight(b.x, b.z) + 0.04 && b.y < POOL.waterY - 0.03),
+    'the school swims between the bed and the surface');
+  const sp0 = spread(swim);
+  check(sp0 < 6, `the school holds together (spread ${sp0.toFixed(2)} m)`);
+  check(swim.every(b => b.state === W.STATE.MOVE), 'no fish ever idles — the tick keeps them swimming');
+  const moving = swim.filter(b => b.speed > 0.1).length;
+  check(moving >= 12, `the school is moving (${moving} / 14 over 0.1 m/s)`);
+  check(fish.mesh.count === 14, 'the whole school is drawn (one instanced draw)');
+
+  // A player wading in scatters them; wading out lets them close up again.
+  P.set(POOL.x - 2, 0, POOL.z - 2);
+  for (let k = 0; k < 30 * 4; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); }
+  let dNear = 0;
+  for (const b of swim) dNear += Math.hypot(b.x - P.x, b.z - P.z);
+  dNear /= swim.length;
+  check(dNear > 2.0, `the wading player clears the water around them (mean ${dNear.toFixed(2)} m)`);
+  P.set(POOL.x - 16, 0, POOL.z - 12);
+  for (let k = 0; k < 30 * 6; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); }
+  const sp1 = spread(swim);
+  check(sp1 < 6, `the school closes again once they have gone (spread ${sp1.toFixed(2)} m)`);
+  check(swim.every(b => Math.hypot(b.x - POOL.x, b.z - POOL.z) < POOL.r),
+    'nobody beached themselves in all that');
+
+  // The fish shader compiles.
+  const errorsFi = [];
+  const origErrorFi = console.error;
+  console.error = (...args) => { errorsFi.push(args.join(' ')); origErrorFi(...args); };
+  const rendererFi = new THREE.WebGLRenderer({ canvas: document.createElement('canvas') });
+  rendererFi.setSize(64, 64);
+  const camFi = new THREE.PerspectiveCamera(50, 1, 0.05, 100);
+  camFi.position.set(swim[0].x, POOL.waterY + 1.2, swim[0].z + 1.4);
+  camFi.lookAt(swim[0].x, swim[0].y, swim[0].z);
+  const sFi = new THREE.Scene();
+  sFi.add(new THREE.AmbientLight(0xffffff, 1));
+  sFi.add(W.group);
+  rendererFi.compile(sFi, camFi);
+  rendererFi.render(sFi, camFi);
+  console.error = origErrorFi;
+  const progsFi = rendererFi.info.programs.map(p => p.cacheKey);
+  check(errorsFi.length === 0 && progsFi.some(k => k.includes('wildlife:fish')),
+    'the fish shader compiles' + (errorsFi.length ? ': ' + errorsFi[0].slice(0, 300) : ''));
+  rendererFi.dispose();
+
+  // Frame cost with the whole school awake.
+  P.set(POOL.x - 6, 0, POOL.z - 6);
+  const tFi = performance.now();
+  for (let k = 0; k < 300; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); }
+  const msFi = (performance.now() - tFi) / 300;
+  check(msFi < 0.5, `update costs ${msFi.toFixed(3)} ms/frame with the school awake`);
+}
+
+
+// --- Dragonflies --------------------------------------------------------------
+// The pool's blue emperors: the first `flyFree` species. All of them live
+// within 6 m of the pool, never land, hang on figure-of-eights between fast
+// zigzag darts, ride their band above the water or the ground — and are back
+// on patrol one hard sidestep after you walk in.
+const dfly = W && W.debug.species.dragonfly;
+if (dfly) {
+  const S = W.STATE;
+  const P = new THREE.Vector3(), V = new THREE.Vector3();
+  let t = 0;
+  // The surface the band rides over: the pool's water where it is water,
+  // the terrain everywhere else (the narrow stream reads close enough).
+  const over = (x, z) => (Math.hypot(x - POOL.x, z - POOL.z) < POOL.r - 0.5
+    && terrainHeight(x, z) < POOL.waterY) ? POOL.waterY : terrainHeight(x, z);
+  check(dfly.agents.length === 6, `6 dragonflies placed (${dfly.agents.length})`);
+  check(dfly.agents.every(b => Math.hypot(b.home.x - POOL.x, b.home.z - POOL.z) - POOL.r <= 6),
+    'every dragonfly lives within 6 m of the pool');
+  const W7 = createJungleWildlife({ scene: new THREE.Scene(), terrain });
+  check(W7.debug.species.dragonfly.agents.every((b, i) =>
+    b.home.x === dfly.agents[i].home.x && b.home.z === dfly.agents[i].home.z),
+    'the same dragonflies in the same places on every load');
+
+  // The flight: by the pool they are all awake, airborne, in their band
+  // (below it only while the spawn climb catches up), and alternating
+  // hovers — a hang of half a second and more — with fast zigzag darts.
+  P.set(POOL.x - 5, 0, POOL.z - 5);
+  const da = dfly.agents[0];
+  let hoverRun = 0, sawHover = false, sawDart = false, bandBreak = 0, nan = false;
+  let idleRun = 0, maxIdleRun = 0, path = 0, lx = da.x, lz = da.z;
+  for (let k = 0; k < 30 * 24; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V);
+    if (da.state === S.IDLE) { idleRun++; maxIdleRun = Math.max(maxIdleRun, idleRun); }
+    else idleRun = 0;
+    const surf = over(da.x, da.z);
+    if (k > 45 && (da.y < surf - 0.25 || da.y > surf + 2.6)) bandBreak++;
+    if (da.speed < 0.55) { hoverRun++; if (hoverRun >= 15) sawHover = true; } else hoverRun = 0;
+    if (da.speed > 1.0) sawDart = true;
+    path += Math.hypot(da.x - lx, da.z - lz); lx = da.x; lz = da.z;
+    if (!Number.isFinite(da.x + da.y + da.z)) { nan = true; break; }
+  }
+  check(maxIdleRun <= 1, `the tick never lands one (an IDLE of ${maxIdleRun} frame at most)`);
+  check(bandBreak === 0, `the flight stays on its band (${bandBreak} breaks)`);
+  check(sawHover, 'it hangs at its anchors (hovers of half a second and more)');
+  check(sawDart, 'and darts between them at over 1 m/s');
+  check(path > 12, `it covers ground (${path.toFixed(1)} m in 24 s)`);
+  check(!nan, 'no NaN positions');
+
+  // Fright: walk within fear.radius — a beat of ALERT, a hard FLEE, then it
+  // hangs again nearby (hideFor is null: a dragonfly never hides).
+  da.state = S.MOVE; da.timer = 5;
+  P.set(da.x + 1.8, 0, da.z);
+  const seenD = new Set();
+  for (let k = 0; k < 30 * 8; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); seenD.add(da.state); }
+  check(seenD.has(S.ALERT) && seenD.has(S.FLEE), 'an approached dragonfly skips aside (ALERT, then FLEE)');
+  check(!seenD.has(S.HIDDEN), 'a dragonfly never hides');
+  P.set(da.x + 16, 0, da.z);
+  let backToWork = false;
+  for (let k = 0; k < 30 * 12 && !backToWork; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V);
+    if (da.state === S.MOVE && da.speed > 1.0) backToWork = true;
+  }
+  check(backToWork, 'it is back on patrol once you have gone');
+
+  // The dragonfly shader compiles.
+  const errorsD = [];
+  const origErrorD = console.error;
+  console.error = (...args) => { errorsD.push(args.join(' ')); origErrorD(...args); };
+  const rendererD = new THREE.WebGLRenderer({ canvas: document.createElement('canvas') });
+  rendererD.setSize(64, 64);
+  const camD = new THREE.PerspectiveCamera(50, 1, 0.05, 100);
+  camD.position.set(da.x, da.y + 0.8, da.z + 1.1); camD.lookAt(da.x, da.y, da.z);
+  const sD = new THREE.Scene();
+  sD.add(new THREE.AmbientLight(0xffffff, 1));
+  sD.add(W.group);
+  rendererD.compile(sD, camD);
+  rendererD.render(sD, camD);
+  console.error = origErrorD;
+  const progsD = rendererD.info.programs.map(p => p.cacheKey);
+  check(errorsD.length === 0 && progsD.some(k => k.includes('wildlife:dragonfly')),
+    'the dragonfly shader compiles' + (errorsD.length ? ': ' + errorsD[0].slice(0, 300) : ''));
+  rendererD.dispose();
+
+  // Frame cost with the patrol awake.
+  P.set(POOL.x - 5, 0, POOL.z - 5);
+  const tD1 = performance.now();
+  for (let k = 0; k < 300; k++) { t += 1 / 60; W.update(1 / 60, t, P, V); }
+  const msD = (performance.now() - tD1) / 300;
+  check(msD < 0.5, `update costs ${msD.toFixed(3)} ms/frame with the patrol awake`);
+}
+
+
+// --- Boids (pure; the fish's school motion drives them) ----------------------
 {
   let bs = 7;
   const r = () => ((bs = (bs * 1664525 + 1013904223) >>> 0) / 4294967296);
@@ -184,6 +683,332 @@ if (W) {
   for (let k = 0; k < 20; k++) stepBoids(fish, P, 1 / 30, bounds);
   const d1 = fish.reduce((a, f) => a + Math.hypot(f.x - c.x, f.z - c.z), 0) / 20;
   check(d1 > d0 + 0.1, `boids: a threat scatters the school (${d0.toFixed(2)} → ${d1.toFixed(2)} m)`);
+}
+
+// --- Hummingbirds -----------------------------------------------------------
+// The clearings' Allen's hummingbirds: the second `flyFree` species. All of
+// them live within 4 m of a flower tuft, never land, hang at a bloom between
+// fast darts, ride their band above the ground — and are back at the nectar
+// one hard sidestep after you walk in.
+const hb = W && W.debug.species.hummingbird;
+if (hb) {
+  const S = W.STATE;
+  const P = new THREE.Vector3(), V = new THREE.Vector3();
+  let t = 0;
+  const tufts = veg.spots.flowers;
+  check(hb.agents.length === 8, `8 hummingbirds placed (${hb.agents.length})`);
+  check(hb.agents.every(b => tufts.some(f => Math.hypot(b.home.x - f.x, b.home.z - f.z) - f.r <= 4)),
+    'every hummingbird lives within 4 m of a flower tuft');
+  const W8 = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
+  check(W8.debug.species.hummingbird.agents.every((b, i) =>
+    b.home.x === hb.agents[i].home.x && b.home.z === hb.agents[i].home.z),
+    'the same hummingbirds in the same places on every load');
+
+  // The flight: by the flowers they are all awake, airborne, in their band,
+  // alternating hangs at a bloom with fast darts.
+  const da = hb.agents[0];
+  P.set(da.home.x + 5, 0, da.home.z + 5);
+  let hoverRun = 0, sawHover = false, sawDart = false, bandBreak = 0, nan = false;
+  let idleRun = 0, maxIdleRun = 0, path = 0, lx = da.x, lz = da.z;
+  for (let k = 0; k < 30 * 24; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V);
+    if (da.state === S.IDLE) { idleRun++; maxIdleRun = Math.max(maxIdleRun, idleRun); }
+    else idleRun = 0;
+    const surf = terrainHeight(da.x, da.z);
+    if (k > 60 && (da.y < surf - 0.25 || da.y > surf + 1.7)) bandBreak++;
+    if (da.speed < 0.55) { hoverRun++; if (hoverRun >= 15) sawHover = true; } else hoverRun = 0;
+    if (da.speed > 1.0) sawDart = true;
+    path += Math.hypot(da.x - lx, da.z - lz); lx = da.x; lz = da.z;
+    if (!Number.isFinite(da.x + da.y + da.z)) { nan = true; break; }
+  }
+  check(maxIdleRun <= 1, `the tick never lands one (an IDLE of ${maxIdleRun} frame at most)`);
+  check(bandBreak === 0, `the flight stays on its band (${bandBreak} breaks)`);
+  check(sawHover, 'it hangs at the blooms (hovers of half a second and more)');
+  check(sawDart, 'and darts between them at over 1 m/s');
+  check(path > 12, `it covers ground (${path.toFixed(1)} m in 24 s)`);
+  check(!nan, 'no NaN positions');
+
+  // Fright: walk within fear.radius — a beat of ALERT, a hard FLEE, then it
+  // hangs again nearby (hideFor is null: a hummingbird never hides).
+  da.state = S.MOVE; da.timer = 5;
+  P.set(da.x + 1.8, 0, da.z);
+  const seenH = new Set();
+  for (let k = 0; k < 30 * 8; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); seenH.add(da.state); }
+  check(seenH.has(S.ALERT) && seenH.has(S.FLEE), 'an approached hummingbird skips aside (ALERT, then FLEE)');
+  check(!seenH.has(S.HIDDEN), 'a hummingbird never hides');
+  P.set(da.x + 16, 0, da.z);
+  let backToNectar = false;
+  for (let k = 0; k < 30 * 12 && !backToNectar; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V);
+    if (da.state === S.MOVE && da.speed > 1.0) backToNectar = true;
+  }
+  check(backToNectar, 'it is back at the nectar once you have gone');
+
+  // The hummingbird shader compiles.
+  const errorsH = [];
+  const origErrorH = console.error;
+  console.error = (...args) => { errorsH.push(args.join(' ')); origErrorH(...args); };
+  const rendererH = new THREE.WebGLRenderer({ canvas: document.createElement('canvas') });
+  rendererH.setSize(64, 64);
+  const camH = new THREE.PerspectiveCamera(50, 1, 0.05, 100);
+  camH.position.set(da.x, da.y + 0.8, da.z + 1.1); camH.lookAt(da.x, da.y, da.z);
+  const sH = new THREE.Scene();
+  sH.add(new THREE.AmbientLight(0xffffff, 1));
+  sH.add(W.group);
+  rendererH.compile(sH, camH);
+  rendererH.render(sH, camH);
+  console.error = origErrorH;
+  const progsH = rendererH.info.programs.map(p => p.cacheKey);
+  check(errorsH.length === 0 && progsH.some(k => k.includes('wildlife:hummingbird')),
+    'the hummingbird shader compiles' + (errorsH.length ? ': ' + errorsH[0].slice(0, 300) : ''));
+  rendererH.dispose();
+
+  // Frame cost with the patrol awake.
+  P.set(da.home.x + 5, 0, da.home.z + 5);
+  const tH1 = performance.now();
+  for (let k = 0; k < 300; k++) { t += 1 / 60; W.update(1 / 60, t, P, V); }
+  const msH = (performance.now() - tH1) / 300;
+  check(msH < 0.5, `update costs ${msH.toFixed(3)} ms/frame with the patrol awake`);
+}
+
+// --- Pelicans -----------------------------------------------------------------
+// The open sea's brown file: the first `flock` species. All five live over
+// water beyond the wade barrier, hold a file behind their leader a few
+// metres above the sea, never idle, never fear — and every so often the
+// leader folds into a plunge the whole line follows down.
+const pel = W && W.debug.species.pelican;
+if (pel) {
+  const PP = new THREE.Vector3(), VV = new THREE.Vector3();
+  let tp = 0;
+  check(pel.agents.length === 5, `5 pelicans placed (${pel.agents.length})`);
+  check(pel.agents.every(b => b.home.z < shoreAt(b.home.x)), 'every pelican lives over the sea');
+  const W8 = createJungleWildlife({ scene: new THREE.Scene(), terrain });
+  check(W8.debug.species.pelican.agents.every((b, i) =>
+    b.home.x === pel.agents[i].home.x && b.home.z === pel.agents[i].home.z),
+    'the same pelicans in the same places on every load');
+
+  // The flight: from the beach the whole line is awake and airborne — a
+  // band above the sea (flat SEA_Y here: no ocean in the harness) —
+  // streaming behind the leader and never idling. Fifty seconds sees a
+  // plunge: the leader under a metre of the surface, wings folded (gait 1).
+  PP.set(0, 0, -6);
+  const lead = pel.agents[0];
+  let idleRun = 0, maxIdleRun = 0, bandBreak = 0, nan = false, awakeAll = false;
+  let maxGap = 0, sawDive = false, minLeadY = Infinity, maxGait = 0;
+  for (let k = 0; k < 30 * 50; k++) {
+    tp += 1 / 30; W.update(1 / 30, tp, PP, VV);
+    let all = true;
+    for (const b of pel.agents) {
+      if (!b.awake) all = false;
+      if (b.state === W.STATE.IDLE) { idleRun++; maxIdleRun = Math.max(maxIdleRun, idleRun); }
+      else idleRun = 0;
+      if (k > 90 && (b.y < 0.15 || b.y > 6.5)) bandBreak++;
+      if (!Number.isFinite(b.x + b.y + b.z)) nan = true;
+    }
+    if (all) awakeAll = true;
+    if (nan) break;
+    let gap = 0;
+    for (const b of pel.agents) gap = Math.max(gap, Math.hypot(b.x - lead.x, b.z - lead.z));
+    if (k > 90) maxGap = Math.max(maxGap, gap);
+    if (lead.y < 1.0) sawDive = true;
+    minLeadY = Math.min(minLeadY, lead.y);
+    maxGait = Math.max(maxGait, lead.gait);
+  }
+  check(awakeAll, 'the whole line is awake from the beach');
+  check(maxIdleRun <= 1, `the tick never idles one (an IDLE of ${maxIdleRun} frame at most)`);
+  check(bandBreak === 0, `the line holds its band above the sea (${bandBreak} breaks)`);
+  check(maxGap < 14, `the file stays a file (max gap ${maxGap.toFixed(1)} m)`);
+  check(sawDive, `the leader plunges (lowest ${minLeadY.toFixed(2)} m in 50 s)`);
+  check(maxGait > 0.95, `the plunge folds the wings (gait ${maxGait.toFixed(2)})`);
+  check(pel.agents.every(b => b.z < -38), 'nobody crossed the wade barrier in all that');
+  check(!nan, 'no NaN positions');
+
+  // The pelican shader compiles.
+  const errorsP = [];
+  const origErrorP = console.error;
+  console.error = (...args) => { errorsP.push(args.join(' ')); origErrorP(...args); };
+  const rendererP = new THREE.WebGLRenderer({ canvas: document.createElement('canvas') });
+  rendererP.setSize(64, 64);
+  const camP = new THREE.PerspectiveCamera(50, 1, 0.05, 300);
+  camP.position.set(lead.x, lead.y + 2, lead.z + 3); camP.lookAt(lead.x, lead.y, lead.z);
+  const sP = new THREE.Scene();
+  sP.add(new THREE.AmbientLight(0xffffff, 1));
+  sP.add(W.group);
+  rendererP.compile(sP, camP);
+  rendererP.render(sP, camP);
+  console.error = origErrorP;
+  const progsP = rendererP.info.programs.map(p => p.cacheKey);
+  check(errorsP.length === 0 && progsP.some(k => k.includes('wildlife:pelican')),
+    'the pelican shader compiles' + (errorsP.length ? ': ' + errorsP[0].slice(0, 300) : ''));
+  rendererP.dispose();
+
+  // The one-draw rule, and the frame cost with the whole line awake.
+  check(pel.mesh.count === 5, 'the whole line is drawn (one instanced draw)');
+  const tP1 = performance.now();
+  for (let k = 0; k < 300; k++) { tp += 1 / 30; W.update(1 / 30, tp, PP, VV); }
+  const msP = (performance.now() - tP1) / 300;
+  check(msP < 0.5, `update costs ${msP.toFixed(3)} ms/frame with the line awake`);
+}
+
+
+// --- Bald eagle ----------------------------------------------------------------
+// The ridge's bald eagle: the first `glide` species. One bird over the high
+// ground, riding slow banked circles round a centre that drifts on the wind,
+// now and then gliding on to a fresh circle the other way round — never
+// landing, never hiding, never idling, awake from anywhere in the cove.
+const eag = W && W.debug.species.eagle;
+if (eag) {
+  const S = W.STATE;
+  const P = new THREE.Vector3(), V = new THREE.Vector3();
+  let t = 0;
+  check(eag.agents.length === 1, `1 eagle placed (${eag.agents.length})`);
+  check(eag.agents.every(b => terrainHeight(b.home.x, b.home.z) >= 12),
+    'the eagle lives over the high ground (12 m and more)');
+  const W9 = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
+  check(W9.debug.species.eagle.agents.every((b, i) =>
+    b.home.x === eag.agents[i].home.x && b.home.z === eag.agents[i].home.z),
+    'the same eagle in the same place on every load');
+
+  // The flight: from the valley floor it is awake, airborne on its band well
+  // above the ridge line, leaning into its circles at a steady soaring pace.
+  const ea = eag.agents[0];
+  P.set(-8, 0, -4); V.set(0, 0, 0);
+  let idleRun = 0, maxIdleRun = 0, bandBreak = 0, nan = false, awake = false;
+  let rollSeen = 0, speedMin = Infinity, speedMax = 0, alt = 0, flown = 0;
+  let lx = ea.x, lz = ea.z;
+  for (let k = 0; k < 30 * 40; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V);
+    if (ea.awake) awake = true;
+    if (ea.state === S.IDLE) { idleRun++; maxIdleRun = Math.max(maxIdleRun, idleRun); }
+    else idleRun = 0;
+    const surf = terrainHeight(ea.x, ea.z);
+    if (k > 60 && ea.y < surf + 14) bandBreak++;
+    rollSeen = Math.max(rollSeen, Math.abs(ea.roll || 0));
+    if (ea.speed > 0.1) {
+      speedMin = Math.min(speedMin, ea.speed);
+      speedMax = Math.max(speedMax, ea.speed);
+    }
+    alt = Math.max(alt, ea.y - surf);
+    flown += Math.hypot(ea.x - lx, ea.z - lz); lx = ea.x; lz = ea.z;
+    if (!Number.isFinite(ea.x + ea.y + ea.z)) { nan = true; break; }
+  }
+  check(awake, 'the eagle is awake from the valley floor');
+  // It flies past the near tier (> 25 m), so it thinks one frame in 4 and an
+  // IDLE can only ever be seen inside one skip window — the tick flips it at
+  // the very next think. An IDLE longer than that would mean a landed bird.
+  check(maxIdleRun <= 4, `the tick never lands it (an IDLE of ${maxIdleRun} frames, one skip window, at most)`);
+  check(bandBreak === 0, `it rides its band above the ground (${bandBreak} breaks)`);
+  check(rollSeen > 0.25, `it banks into its circles (roll up to ${rollSeen.toFixed(2)} rad)`);
+  check(Number.isFinite(speedMin) && speedMin > 2.5 && speedMax < 7,
+    `it soars at a steady pace (${speedMin.toFixed(1)}–${speedMax.toFixed(1)} m/s)`);
+  check(alt > 15, `it keeps its height (${alt.toFixed(0)} m above the ground at best)`);
+  check(flown > 150, `it covers ground (${flown.toFixed(0)} m in 40 s)`);
+  check(!nan, 'no NaN positions');
+
+  // The eagle shader compiles.
+  const errorsE = [];
+  const origErrorE = console.error;
+  console.error = (...args) => { errorsE.push(args.join(' ')); origErrorE(...args); };
+  const rendererE = new THREE.WebGLRenderer({ canvas: document.createElement('canvas') });
+  rendererE.setSize(64, 64);
+  const camE = new THREE.PerspectiveCamera(50, 1, 0.05, 300);
+  camE.position.set(ea.x, ea.y + 1.5, ea.z + 2.5); camE.lookAt(ea.x, ea.y, ea.z);
+  const sE = new THREE.Scene();
+  sE.add(new THREE.AmbientLight(0xffffff, 1));
+  sE.add(W.group);
+  rendererE.compile(sE, camE);
+  rendererE.render(sE, camE);
+  console.error = origErrorE;
+  const progsE = rendererE.info.programs.map(p => p.cacheKey);
+  check(errorsE.length === 0 && progsE.some(k => k.includes('wildlife:eagle')),
+    'the eagle shader compiles' + (errorsE.length ? ': ' + errorsE[0].slice(0, 300) : ''));
+  rendererE.dispose();
+
+  // The one-draw rule, and the frame cost with the eagle awake.
+  check(eag.mesh.count === 1, 'the eagle is drawn (one instanced draw)');
+  const tE1 = performance.now();
+  for (let k = 0; k < 300; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); }
+  const msE = (performance.now() - tE1) / 300;
+  check(msE < 0.5, `update costs ${msE.toFixed(3)} ms/frame with the eagle awake`);
+
+  // --- Sea lions -----------------------------------------------------------
+  // The offshore haul-outs: six loafing, sliding, diving, returning sea
+  // lions. The wade barrier keeps the player at the show's distance, so
+  // fear never fires — the dive is the species' own: a slide off the rock,
+  // HIDDEN under the swell (out of the draw at full sink), an EMERGE
+  // somewhere nearby, then the swim home.
+  const sea = W.debug.species.seaLion;
+  if (sea) {
+    check(sea.agents.length === 6, `6 sea lions placed (${sea.agents.length})`);
+    const onHaul = sea.agents.filter(b =>
+      terrain.hauloutSpots.some(s => Math.hypot(s.x - b.home.x, s.z - b.home.z) - s.r < 0.45));
+    check(onHaul.length === 6, `every sea lion lives on a haul-out (${onHaul.length} / 6)`);
+
+    const W9 = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
+    check(W9.debug.species.seaLion.agents.every((b, i) =>
+      b.home.x === sea.agents[i].home.x && b.home.z === sea.agents[i].home.z),
+      'the same sea lions in the same places on every load');
+
+    // A minute and a quarter of a sea lion watched from the beach: it mixes
+    // rock and water, dives, surfaces again, and stays out at sea.
+    const sl = sea.agents[0];
+    P.set(0, 0, -8); V.set(0, 0, 0);
+    const statesL = new Set();
+    let sawRockL = false, sawWaterL = false, sawDiveL = false, sawEmergeL = false, nanL = false;
+    let minZL = Infinity, flownL = 0, lxL = sl.x, lzL = sl.z;
+    // The floor regression: inside a spot the nearest() distance is signed
+    // (negative), so an unclamped rock blend would dive the body THROUGH the
+    // rock and under the sea exactly when it is ashore. The walkable tops sit
+    // at 0.5–1.1, so anything below 0.4 inside a spot is the blend diving.
+    let minRockYL = Infinity;
+    for (let k = 0; k < 30 * 75; k++) {
+      t += 1 / 30; W.update(1 / 30, t, P, V);
+      statesL.add(sl.state);
+      if (sl.state === S.HIDDEN) sawDiveL = true;
+      if (sl.state === S.EMERGE) sawEmergeL = true;
+      if (sl.z < -40) sawWaterL = true;   // off the rocks, out at sea
+      if (terrain.hauloutSpots.some(s => Math.hypot(s.x - sl.x, s.z - sl.z) - s.r < 0.3)) sawRockL = true;
+      if (terrain.hauloutSpots.some(s => Math.hypot(s.x - sl.x, s.z - sl.z) - s.r < 0))
+        minRockYL = Math.min(minRockYL, sl.y);
+      minZL = Math.min(minZL, sl.z);
+      flownL += Math.hypot(sl.x - lxL, sl.z - lzL); lxL = sl.x; lzL = sl.z;
+      if (!Number.isFinite(sl.x + sl.y + sl.z)) { nanL = true; break; }
+    }
+    check(sawRockL && sawWaterL, 'it mixes rock and water');
+    check(sawDiveL, 'it dives (HIDDEN under the swell)');
+    check(sawEmergeL, 'it surfaces again (EMERGE)');
+    check(flownL > 10, `it covers ground (${flownL.toFixed(1)} m in 75 s)`);
+    check(minZL > -70, `it stays inside its water (${minZL.toFixed(1)} m out at most)`);
+    check(!nanL, 'no NaN positions');
+    check(minRockYL > 0.4,
+      `it holds the rock's top while ashore (${minRockYL === Infinity ? 'never ashore' : minRockYL.toFixed(2)} at worst)`);
+
+    // The sea lion shader compiles.
+    const errorsL = [];
+    const origErrorL = console.error;
+    console.error = (...args) => { errorsL.push(args.join(' ')); origErrorL(...args); };
+    const rendererL = new THREE.WebGLRenderer({ canvas: document.createElement('canvas') });
+    rendererL.setSize(64, 64);
+    const camL = new THREE.PerspectiveCamera(50, 1, 0.05, 100);
+    camL.position.set(sl.x, sl.y + 1.2, sl.z + 2); camL.lookAt(sl.x, sl.y, sl.z);
+    const sL = new THREE.Scene();
+    sL.add(new THREE.AmbientLight(0xffffff, 1));
+    sL.add(W.group);
+    rendererL.compile(sL, camL);
+    rendererL.render(sL, camL);
+    console.error = origErrorL;
+    const progsL = rendererL.info.programs.map(p => p.cacheKey);
+    check(errorsL.length === 0 && progsL.some(k => k.includes('wildlife:seaLion')),
+      'the sea lion shader compiles' + (errorsL.length ? ': ' + errorsL[0].slice(0, 300) : ''));
+    rendererL.dispose();
+
+    // The frame cost with the colony awake (the player on the beach).
+    P.set(0, 0, -8);
+    const tL1 = performance.now();
+    for (let k = 0; k < 300; k++) { t += 1 / 30; W.update(1 / 30, t, P, V); }
+    const msL = (performance.now() - tL1) / 300;
+    check(msL < 0.5, `update costs ${msL.toFixed(3)} ms/frame with the colony awake`);
+  }
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');

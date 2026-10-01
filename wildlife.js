@@ -49,7 +49,7 @@
 // it are not put on that map.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20260928-wild1';
+import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20260930-amph1';
 
 // ---------------------------------------------------------------------------
 // States. Every species runs the same machine and opts out of what it does
@@ -302,6 +302,7 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
 
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _qa = new THREE.Quaternion();
   const _p = new THREE.Vector3(), _s = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
+  const _fwd = new THREE.Vector3(0, 0, 1);
   const _n = new THREE.Vector3(), _c = new THREE.Color();
 
   const runtimes = species.map(entry => {
@@ -481,6 +482,13 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
       if (!a.awake || a.sink >= 1) continue;
       _p.set(a.x, a.y + def.body.lift - a.sink * def.body.sinkDepth, a.z);
       _q.setFromAxisAngle(_up, a.yaw);
+      // A flyer's bank: a roll about the body's own forward axis, written by
+      // the glide motion. Only a species that sets a.roll pays for this —
+      // for everyone else the field is undefined and the branch never runs.
+      if (a.roll) {
+        _qa.setFromAxisAngle(_fwd, a.roll);
+        _q.multiply(_qa);
+      }
       if (def.body.alignToGround) {
         _qa.setFromUnitVectors(_up, _n.set(a.nx, a.ny, a.nz));
         _q.premultiply(_qa);

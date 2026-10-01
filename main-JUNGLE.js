@@ -10,13 +10,13 @@ import {
   POOL, FALLS, SAND_END, WADE_Z,
 } from './jungleLayout.js';   // no ?v: the element modules import it bare, and
                                   // two URLs would be two module instances
-import { buildJungleTerrain } from './jungleTerrain.js?v=20260928-rockspots';
+import { buildJungleTerrain } from './jungleTerrain.js?v=20260930-amph1';
 import { createJungleOcean } from './jungleOcean.js?v=20260927-ocean3';
 import { createJungleWaterfall } from './jungleWaterfall.js?v=20260927-falls8';
-import { buildJungleVegetation } from './jungleVegetation.js?v=20260927-veg2';
+import { buildJungleVegetation } from './jungleVegetation.js?v=20260930-veg3';
 import { createJungleTender } from './jungleTender.js?v=20260928-tender3';
 import { createJungleLiner } from './jungleLiner.js?v=20260928-liner1';
-import { createJungleWildlife } from './jungleWildlife.js?v=20260928-wild1';
+import { createJungleWildlife } from './jungleWildlife.js?v=20260930-amph1';
 
 // ---------------------------------------------------------------------------
 // Promenade tropicale — la cascade. SKELETON.
@@ -213,8 +213,9 @@ const ocean = createJungleOcean({ scene, waterNormal, maxAniso, skyUniforms });
 const falls = createJungleWaterfall({ scene, waterNormal });
 const vegetation = buildJungleVegetation({ scene, rnd, maxAniso });
 // Its own seeded RNGs, so the shared rnd() above is not drawn from: adding
-// an animal never moves a rock or a palm.
-const wildlife = createJungleWildlife({ scene, ocean, terrain });
+// an animal never moves a rock or a palm. The vegetation goes with it: its
+// flower tufts are the hummingbirds' anchors and habitat.
+const wildlife = createJungleWildlife({ scene, ocean, terrain, vegetation });
 
 // ---------------------------------------------------------------------------
 // The jetty: a plank deck on pilings, walkable, from the sand out to where
