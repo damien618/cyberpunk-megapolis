@@ -598,8 +598,10 @@ function flyFreeStep(a, sp, dt, ctx, speed) {
       a.dartT += dt;
       const p = Math.min(1, a.dartT / a.hT);
       const bx = a.hx + (a.tx - a.hx) * p, bz = a.hz + (a.tz - a.hz) * p;
+      // The swing's reach shrinks with a short dart (a third of its length
+      // at most): a hop of a few centimetres is not a half-metre jink.
       const swing = Math.sin(a.dartT * (F.zigFreq ?? 9) + a.phase)
-        * (F.zigzag ?? 0.38) * Math.sin(p * Math.PI);
+        * Math.min(F.zigzag ?? 0.38, a.dartLen * 0.3) * Math.sin(p * Math.PI);
       const nx = bx + a.px * swing, nz = bz + a.pz * swing;
       // Climb/dive on an ease toward a.ty, then the band guard for ground
       // that rises under the chord — the skim up over a bank or the cliff.

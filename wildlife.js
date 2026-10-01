@@ -54,7 +54,7 @@
 // it are not put on that map.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass5';
+import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass6';
 
 // ---------------------------------------------------------------------------
 // States. Every species runs the same machine and opts out of what it does
@@ -206,6 +206,48 @@ export function sampleHomes(h, L, rng, count, { spacing = 0 } = {}) {
     homes.push({ x, z });
   }
   return homes;
+}
+
+// ---------------------------------------------------------------------------
+// Shared behaviours: hook factories a species plugs in as-is.
+// ---------------------------------------------------------------------------
+// tick — keep ahead of the swash: a calm animal caught below the water's
+// edge (layout.waterlineZ, live with the swash; the beach rises along +z)
+// hurries `up` metres up the beach at `speedK` × its flight speed, then
+// resumes. The crab's habit, and the sanderlings' whole life.
+export function swashTick({ margin = 0.3, up = [1.2, 2.7], speedK = 0.6, jitter = 0.8 } = {}) {
+  return function tick(a, sp, ctx, dt, api, threat) {
+    const S = ctx.STATE;
+    if (threat || (a.state !== S.IDLE && a.state !== S.MOVE)) { a.retreat = false; return false; }
+    const wl = ctx.layout.waterlineZ(a.x);
+    if (!a.retreat && a.z < wl + margin) {
+      a.retreat = true;
+      api.setTarget(a, sp, a.x + (sp.rng() - 0.5) * jitter, wl + up[0] + sp.rng() * (up[1] - up[0]));
+      a.state = S.MOVE;
+    }
+    if (!a.retreat) return false;
+    if (sp.motion.step(a, sp, dt, ctx, sp.def.speed.flee * speedK)) {
+      a.retreat = false;
+      a.state = S.IDLE;
+      a.timer = sp.rng.range(sp.def.timings.idle);
+    }
+    return true;
+  };
+}
+
+// pickWander — work a trap-line of spots (layout.spots[name]: flowers…):
+// the nearest within `reach`, or, if that one lies beyond homeRange of
+// home, the nearest to home; the stop jittered round the spot so two
+// visitors rarely queue on one. No spot in reach: the default wander.
+export function spotWander(name, { reach = 4.5, jitter = 0.7 } = {}) {
+  return function pickWander(a, sp, ctx, api) {
+    const F = ctx.layout.spots[name];
+    let f = F.nearest(a.x, a.z, reach).spot;
+    if (f && Math.hypot(f.x - a.home.x, f.z - a.home.z) > sp.def.homeRange)
+      f = F.nearest(a.home.x, a.home.z, reach).spot;
+    if (f) api.setTarget(a, sp, f.x + (sp.rng() - 0.5) * jitter, f.z + (sp.rng() - 0.5) * jitter);
+    else api.defaultWander(a, sp);
+  };
 }
 
 // ---------------------------------------------------------------------------

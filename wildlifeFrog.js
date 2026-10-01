@@ -13,7 +13,7 @@
 // Part ids read by FROG_GLSL: 0 body, 1 throat sac, 2 eyes, 10–11 forelegs,
 // 12–13 hind legs.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass5';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass6';
 
 const COL = {
   back: 0x5c8f3e,        // rainette green (tint swings individuals brown)

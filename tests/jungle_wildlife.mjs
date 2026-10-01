@@ -1025,6 +1025,55 @@ if (eag) {
   }
 }
 
+// --- Sanderlings ----------------------------------------------------------------
+// The swash's flock: on the wet sand by the water, working the strip just
+// above the waterline — down and up with it — and never long under it.
+{
+  const W = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
+  const LS = jungleWildlifeLayout({ terrain, vegetation: veg });
+  const sd = W.debug.species.sandpiper, ag = sd.agents;
+  check(ag.length === 9, `9 sanderlings placed (${ag.length})`);
+  check(ag.every(a => { const d = LS.shoreDistance(a.home.x, a.home.z); return d >= -0.5 && d <= 5; }),
+    'every sanderling lives in the swash zone');
+  const P = new THREE.Vector3(ag[0].home.x + 14, 0, ag[0].home.z + 6), V = new THREE.Vector3();
+  let t = 0, inBand = 0, under = 0, n = 0, path = 0;
+  const last = ag.map(a => [a.x, a.z]);
+  for (let k = 0; k < 30 * 40; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V);
+    ag.forEach((a, i) => {
+      if (!a.awake) return;
+      const d = a.z - LS.waterlineZ(a.x);
+      n++; if (d > -0.3 && d < 2.6) inBand++; if (d < -0.3) under++;
+      path += Math.hypot(a.x - last[i][0], a.z - last[i][1]); last[i] = [a.x, a.z];
+    });
+  }
+  check(n > 0 && inBand / n > 0.85, `they work the strip by the water (${(100 * inBand / n).toFixed(0)}% of the time within 2.6 m of it)`);
+  check(under / n < 0.02, `and never stand in the sea (${(100 * under / n).toFixed(1)}% under)`);
+  check(path / ag.length > 8, `busy: ${(path / ag.length).toFixed(1)} m each in 40 s`);
+}
+
+// --- Monarchs ---------------------------------------------------------------
+{
+  const W = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
+  const LB = jungleWildlifeLayout({ terrain, vegetation: veg });
+  const ag = W.debug.species.butterfly.agents;
+  check(ag.length === 10, `10 monarchs placed (${ag.length})`);
+  check(ag.every(a => LB.distances.flowers(a.home.x, a.home.z) <= 5), 'every monarch lives within 5 m of a flower tuft');
+  const P = new THREE.Vector3(ag[0].home.x + 8, 0, ag[0].home.z), V = new THREE.Vector3();
+  let t = 0, low = 0, n = 0, atBloom = 0;
+  for (let k = 0; k < 30 * 30; k++) {
+    t += 1 / 30; W.update(1 / 30, t, P, V);
+    for (const a of ag) {
+      if (!a.awake) continue;
+      n++;
+      if (a.y < terrainHeight(a.x, a.z) + 0.03) low++;
+      if (a.flyPhase === 0 && LB.distances.flowers(a.x, a.z) < 0.8) atBloom++;
+    }
+  }
+  check(n > 0 && low === 0, `they fly over the ground, never through it (${low} frames low)`);
+  check(atBloom / n > 0.2, `and sip at the blooms (${(100 * atBloom / n).toFixed(0)}% of the time hovering at one)`);
+}
+
 // --- Roster-wide invariants -------------------------------------------------
 // Held for EVERY species on the roster, the ones to come included: walk a
 // player in circles round one of its homes (close enough to scare it, far

@@ -20,7 +20,7 @@
 // the air is a hummingbird's ground. Part ids read by HUMMINGBIRD_GLSL:
 // 0 torso, 1 head + throat + bill, 3 tail, 4 wings.
 import * as THREE from 'three';
-import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass5';
+import { creaturePart, mergeCreatureParts, spotWander } from './wildlife.js?v=20261001-pass6';
 
 const COL = {
   back: 0x2f9e5f,        // the emerald of the crown and back
@@ -128,24 +128,9 @@ export const HUMMINGBIRD_GLSL = `
 // ---------------------------------------------------------------------------
 // Behaviour hooks (the flyFree motion does the rest).
 // ---------------------------------------------------------------------------
-// How far a tuft may sit from the bird it feeds — the reach the tick asks
-// the flower index over. Beyond it, the default wander takes the frame.
-const FLOWER_REACH = 4.5;
-
 // The next bloom: whenever the machine asks for a wander (and, being
-// `continuous`, it asks the moment a hover ends) the target is the nearest
-// tuft, sided at random and a little short of its centre so two birds rarely
-// queue on one bloom. The round is a trap-line: a tuft farther than homeRange
-// from home is passed over for the nearest tuft at home, so a day of darts
-// works the bird's own flowers instead of walking it across the valley.
-function pickWander(a, sp, ctx, api) {
-  const F = ctx.layout.spots.flowers;
-  let f = F.nearest(a.x, a.z, FLOWER_REACH).spot;
-  if (f && Math.hypot(f.x - a.home.x, f.z - a.home.z) > sp.def.homeRange)
-    f = F.nearest(a.home.x, a.home.z, FLOWER_REACH).spot;
-  if (f) api.setTarget(a, sp, f.x + (sp.rng() - 0.5) * 0.7, f.z + (sp.rng() - 0.5) * 0.7);
-  else api.defaultWander(a, sp);
-}
+// `continuous`, it asks the moment a hover ends) the target is a tuft on the
+// bird's trap-line — wildlife.js's spotWander over the adapter's flowers.
 
 // ---------------------------------------------------------------------------
 // The species definition. Every key is documented in WILDLIFE.md; anything
@@ -191,5 +176,5 @@ export const HUMMINGBIRD = {
   },
   continuous: true,
   needs: ['spots.flowers'],
-  hooks: { pickWander },
+  hooks: { pickWander: spotWander('flowers', { reach: 4.5, jitter: 0.7 }) },
 };

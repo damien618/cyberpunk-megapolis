@@ -9,26 +9,29 @@
 // unchanged.
 //
 // Roster (Channel Islands fauna), by zone:
-//   beach        crabs round the rocks                         wildlifeCrab.js
+//   beach        crabs round the rocks, sanderlings in the swash  wildlifeCrab.js, wildlifeSandpiper.js
 //   undergrowth  lizards by the rocks, fox, kingsnake,          wildlifeLizard.js, wildlifeFox.js,
-//                hummingbirds at the flowers                    wildlifeSnake.js, wildlifeHummingbird.js
+//                hummingbirds and monarchs at the flowers       wildlifeSnake.js, wildlifeHummingbird.js,
+//                                                               wildlifeButterfly.js
 //   waterfall    tree frogs, the pool's fish, dragonflies —     wildlifeFrog.js, wildlifeFish.js,
 //                frogs and dragonflies also down the stream     wildlifeDragonfly.js
 //   sky          the bald eagle over the ridges                 wildlifeEagle.js
 //   offshore     brown pelicans, sea lions on the haul-outs     wildlifePelican.js, wildlifeSeaLion.js
 import * as L from './jungleLayout.js';   // bare, like every element module
-import { createWildlife, spotIndex } from './wildlife.js?v=20261001-pass5';
-import { CRAB } from './wildlifeCrab.js?v=20261001-pass5';
-import { LIZARD, ALLIGATOR } from './wildlifeLizard.js?v=20261001-pass5';
-import { FOX } from './wildlifeFox.js?v=20261001-pass5';
-import { SNAKE } from './wildlifeSnake.js?v=20261001-pass5';
-import { FROG } from './wildlifeFrog.js?v=20261001-pass5';
-import { FISH } from './wildlifeFish.js?v=20261001-pass5';
-import { DRAGONFLY } from './wildlifeDragonfly.js?v=20261001-pass5';
-import { HUMMINGBIRD } from './wildlifeHummingbird.js?v=20261001-pass5';
-import { PELICAN } from './wildlifePelican.js?v=20261001-pass5';
-import { EAGLE } from './wildlifeEagle.js?v=20261001-pass5';
-import { SEA_LION } from './wildlifeSeaLion.js?v=20261001-pass5';
+import { createWildlife, spotIndex } from './wildlife.js?v=20261001-pass6';
+import { CRAB } from './wildlifeCrab.js?v=20261001-pass6';
+import { LIZARD, ALLIGATOR } from './wildlifeLizard.js?v=20261001-pass6';
+import { FOX } from './wildlifeFox.js?v=20261001-pass6';
+import { SNAKE } from './wildlifeSnake.js?v=20261001-pass6';
+import { FROG } from './wildlifeFrog.js?v=20261001-pass6';
+import { FISH } from './wildlifeFish.js?v=20261001-pass6';
+import { DRAGONFLY } from './wildlifeDragonfly.js?v=20261001-pass6';
+import { HUMMINGBIRD } from './wildlifeHummingbird.js?v=20261001-pass6';
+import { PELICAN } from './wildlifePelican.js?v=20261001-pass6';
+import { EAGLE } from './wildlifeEagle.js?v=20261001-pass6';
+import { SEA_LION } from './wildlifeSeaLion.js?v=20261001-pass6';
+import { SANDPIPER } from './wildlifeSandpiper.js?v=20261001-pass6';
+import { BUTTERFLY } from './wildlifeButterfly.js?v=20261001-pass6';
 
 // The swash's edge along the beach, as the foam shader draws it
 // (jungleOcean's foam: uEdge plus two slow sines in x) — so a crab backs up
@@ -116,6 +119,9 @@ export function createJungleWildlife({ scene, ocean, terrain, vegetation, specie
     species: species || [
       // Beach only: sampling the whole valley for them would waste the tries.
       { def: CRAB, count: 30, habitat: { ...CRAB.habitat, region: { x: WIDE, z: [-32, L.SAND_END] } } },
+      // The swash: a loose flock of sanderlings on one stretch of the beach,
+      // west of the spawn, chasing each wave down and racing the next up.
+      { def: SANDPIPER, count: 9, habitat: { ...SANDPIPER.habitat, region: { x: [-36, -12], z: [-32, L.SAND_END] } } },
       // Up-valley, against the rocks: the path's boulders, the headlands',
       // the cliff foot. Off the sand — that is the crabs' beach.
       { def: LIZARD, count: 10, habitat: { ...LIZARD.habitat, region: { x: WIDE, z: [L.SAND_END, L.CLIFF_Z + 8] } } },
@@ -169,6 +175,9 @@ export function createJungleWildlife({ scene, ocean, terrain, vegetation, specie
       // tick picks. Skittish, back at once (hideFor is null). The region
       // keeps the sampling tries inland, where the blooms are.
       { def: HUMMINGBIRD, count: 8, habitat: { ...HUMMINGBIRD.habitat, region: { x: WIDE, z: [L.SAND_END, L.CLIFF_Z + 6] } } },
+      // Monarchs at the same blooms: a lazy, jinking flutter from tuft to
+      // tuft through the undergrowth's clearings.
+      { def: BUTTERFLY, count: 10, habitat: { ...BUTTERFLY.habitat, region: { x: WIDE, z: [L.SAND_END, L.CLIFF_Z + 6] } } },
       // Over the open sea, beyond the wade barrier: the planned-roster
       // brown pelicans, the first `flock` species. The leader rides a slow
       // loop over the cove, the file streams out behind it a body apart,

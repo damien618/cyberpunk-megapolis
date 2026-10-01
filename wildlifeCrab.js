@@ -13,7 +13,7 @@
 // Local frame: +Z is the front (eyes, claws), +X its right, y = 0 the ground.
 // Part ids read by CRAB_GLSL: 0 body, 2 claws, 3 eyes, 10–13 legs front→back.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass5';
+import { creaturePart, limbGeometry, mergeCreatureParts, swashTick } from './wildlife.js?v=20261001-pass6';
 
 const COL = {
   shell: 0x44522c,       // olive, darkening to the rim
@@ -119,26 +119,6 @@ export const CRAB_GLSL = `
 const WATER_REACH = 8;     // m: farther than this, the sea is no refuge
 const ROCK_REACH = 5;      // m: a rock within this is
 
-// Keep ahead of the swash: a crab caught below the water's edge while calm
-// hurries a metre or two up the beach before anything else.
-function tick(a, sp, ctx, dt, api, threat) {
-  const S = ctx.STATE;
-  if (threat || (a.state !== S.IDLE && a.state !== S.MOVE)) { a.retreat = false; return false; }
-  const wl = ctx.layout.waterlineZ(a.x);
-  if (!a.retreat && a.z < wl + 0.3) {
-    a.retreat = true;
-    api.setTarget(a, sp, a.x + (sp.rng() - 0.5) * 0.8, wl + 1.2 + sp.rng() * 1.5);
-    a.state = S.MOVE;
-  }
-  if (!a.retreat) return false;
-  if (sp.motion.step(a, sp, dt, ctx, sp.def.speed.flee * 0.6)) {
-    a.retreat = false;
-    a.state = S.IDLE;
-    a.timer = sp.rng.range(sp.def.timings.idle);
-  }
-  return true;
-}
-
 // The nearest refuge that does not mean running at the player: under a
 // rock, into the sea, or — neither in reach — a short dash and dig in.
 function fleeTarget(a, sp, ctx, api) {
@@ -194,5 +174,7 @@ export const CRAB = {
     c.setRGB(k * (1 + h), k, k * (1 - h));
   },
   needs: ['waterlineZ'],
-  hooks: { tick, fleeTarget },
+  // Keep ahead of the swash: a crab caught below the water's edge while calm
+  // hurries a metre or two up the beach before anything else.
+  hooks: { tick: swashTick({ margin: 0.3, up: [1.2, 2.7], speedK: 0.6 }), fleeTarget },
 };
