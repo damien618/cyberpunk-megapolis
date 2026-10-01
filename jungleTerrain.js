@@ -226,6 +226,8 @@ export function buildJungleTerrain({ scene, addInstanced, rnd, maxAniso = 4 }) {
   // Canopy dapple: the clock the shader below wanders pools of light by.
   // update(t) advances it — the only per-frame cost of the ground's light.
   const dappleTime = { value: 0 };
+  // How strong the pools are: sunlight by day, a faint moon shimmer by night.
+  const dappleAmp = { value: 0.55 };
   const groundMat = new THREE.MeshStandardMaterial({
     vertexColors: true, map: grain, roughness: 0.96, metalness: 0,
   });
@@ -236,13 +238,14 @@ export function buildJungleTerrain({ scene, addInstanced, rnd, maxAniso = 4 }) {
     sh.uniforms.uDetail = { value: detail };
     sh.uniforms.uRockDetail = { value: rockDetail };
     sh.uniforms.uDappleTime = dappleTime;
+    sh.uniforms.uDappleAmp = dappleAmp;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 aMask;\nvarying vec4 vMask;\nvarying vec2 vGroundUv;\nvarying vec3 vGroundPos;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMask = aMask;\nvGroundUv = uv;\nvGroundPos = (modelMatrix * vec4(position, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 uniform sampler2D uDetail, uRockDetail;
-uniform float uDappleTime;
+uniform float uDappleTime, uDappleAmp;
 varying vec4 vMask;
 varying vec2 vGroundUv;
 varying vec3 vGroundPos;`)
@@ -270,7 +273,7 @@ diffuseColor.rgb *= mix(1.0, 0.66, vMask.w);
 float dapple = smoothstep(0.12, 0.9,
   sin(vGroundPos.x * 0.47 + uDappleTime * 0.31) * cos(vGroundPos.z * 0.43 - uDappleTime * 0.23) * 0.72
   + sin((vGroundPos.x + vGroundPos.z) * 0.23 - uDappleTime * 0.17) * 0.28 + 0.2);
-diffuseColor.rgb *= 1.0 + dapple * vMask.x * 0.55;`)
+diffuseColor.rgb *= 1.0 + dapple * vMask.x * uDappleAmp;`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
   };
@@ -409,5 +412,6 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - 0.35 * vMask.w), 0.05, 1.0);`);
   buckets.forEach((row, gi) => row.forEach((items, mi) =>
     addInstanced(rockGeos[gi], rockMats[mi], items, { prop: true })));
 
-  return { terrain, path, grain, rockSpots, hauloutSpots, update(t) { dappleTime.value = t; } };
+  return { terrain, path, grain, rockSpots, hauloutSpots, update(t) { dappleTime.value = t; },
+    setNight(on) { dappleAmp.value = on ? 0.18 : 0.55; } };
 }

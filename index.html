@@ -1039,8 +1039,13 @@
       <h1>Promenade tropicale — la cascade</h1>
       <p>L'île que longe le paquebot. La chaloupe vous dépose au ponton d'une anse de sable blanc; derrière les cocotiers, un sentier monte à travers la forêt tropicale jusqu'à une cascade qui tombe d'une falaise dans un bassin.</p>
       <p>On entre dans le lagon et dans le bassin jusqu'à la taille. Pour rentrer à bord, retournez au bout du ponton: la chaloupe vous attend.</p>
+      <p>La nuit, un feu de camp brûle sur la plage: approchez du rondin et appuyez sur <b>E</b> pour vous asseoir près du feu, une couverture sur les épaules.</p>
       <p>Contrôles: <b>WASD</b> se déplacer, <b>Souris</b> ou <b>flèches</b> pour regarder, <b>Space</b> sauter / tenir pour tirer la toile, <b>E</b> zip, <b>Shift</b> sprint, <b>R</b> reset.</p>
       <p class="credit">L'île — Cyberpunk Megapolis</p>
+      <div id="timeToggle">
+        <button class="tt-btn active" data-time="day">☀ Jour</button>
+        <button class="tt-btn" data-time="night">🌙 Nuit</button>
+      </div>
     </div>
     <div class="brief-cruise">
       <span class="tag">Nouvelle map</span>
@@ -1442,7 +1447,7 @@
     shinto: './main-SHINTO.js?v=20260912-bridge-zfight3',
     beach: './main-BEACH.js?v=20260906-seam-fix',
     cruise: './main-CRUISE.js?v=20260927-island-landing',
-    jungle: './main-JUNGLE.js?v=20261001-sealion1',
+    jungle: './main-JUNGLE.js?v=20261001-cloth1',
   };
   const mode = document.documentElement.dataset.mode;
   const cityEntrypoint = `./main.js?v=20260919-bedroom-v2-${Date.now()}`;

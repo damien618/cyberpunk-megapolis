@@ -357,8 +357,15 @@ export function createJungleOcean({
     uniforms.uEdge.value = swash.edge;
   }
 
+  // The foam strip is unlit: by night it is dimmed to moonlit grey-blue.
+  const foamDay = foamUniforms.uColor.value.clone();
+  function setNight(on) {
+    if (on) foamUniforms.uColor.value.setRGB(0.26, 0.32, 0.42);
+    else foamUniforms.uColor.value.copy(foamDay);
+  }
+
   return {
-    sea, foam, uniforms, swash, update,
+    sea, foam, uniforms, swash, update, setNight,
     waterHeightAt,
     swellAt: waterHeightAt,   // the old name — the swell died at a hard line
     preset: P,

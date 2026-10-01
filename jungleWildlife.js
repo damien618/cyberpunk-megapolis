@@ -122,9 +122,15 @@ export function jungleWildlifeLayout({ ocean = null, terrain = null, vegetation 
 const WIDE = [-L.PLAY_HALF_W + 2, L.PLAY_HALF_W - 2];
 
 // `species` overrides the roster (the tests pass a small one).
+// Asleep after dark: the birds, the butterflies, the dragonflies and the
+// lizards. The crabs (ghost crabs), frogs, fox, snake and alligator are the
+// night shift; fish, sea lions and dolphins are about at every hour.
+export const DIURNAL = ['sandpiper', 'lizard', 'dragonfly', 'hummingbird', 'jay',
+  'butterfly', 'pelican', 'eagle', 'gull', 'raven'];
+
 export function createJungleWildlife({ scene, ocean, terrain, vegetation, species } = {}) {
   const layout = jungleWildlifeLayout({ ocean, terrain, vegetation });
-  return createWildlife({
+  const api = createWildlife({
     scene, layout, seed: 'jungle',
     species: species || [
       // Beach only: sampling the whole valley for them would waste the tries.
@@ -222,4 +228,15 @@ export function createJungleWildlife({ scene, ocean, terrain, vegetation, specie
       { def: DOLPHIN, count: 5, habitat: { ...DOLPHIN.habitat, region: { x: [-60, 60], z: [-112, -84] } } },
     ],
   });
+  // A species sleeps by having no waking radius: the engine neither thinks
+  // for an agent that is not awake nor draws it, so the night costs nothing.
+  api.setNight = on => {
+    for (const id of DIURNAL) {
+      const sp = api.debug.species[id];
+      if (!sp) continue;
+      sp.dayRadius ??= sp.def.activeRadius;
+      sp.def.activeRadius = on ? -1 : sp.dayRadius;
+    }
+  };
+  return api;
 }

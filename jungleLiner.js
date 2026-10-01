@@ -75,6 +75,24 @@ const bridgeTex = () => canvasTex(64, 96, (g, w, h) => {
   g.fillStyle = '#10181f'; g.fillRect(w * 0.48, h * 0.18, w * 0.04, h * 0.46);
 });
 
+// The same bay after dark, as an EMISSIVE map: black plating, the pane lit
+// warm from inside. At 600 m the rows mip down to the bands of light a liner
+// at anchor is at night.
+const bayGlowTex = () => canvasTex(128, 96, (g, w, h) => {
+  g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+  const top = h * (1 - 2.35 / DECK_H), bot = h * (1 - 0.75 / DECK_H);
+  const grad = g.createLinearGradient(0, top, 0, bot);
+  grad.addColorStop(0, '#ffd79a'); grad.addColorStop(1, '#e09a52');
+  g.fillStyle = grad; g.fillRect(w * 0.07, top, w * 0.86, bot - top);
+  g.fillStyle = '#000'; g.fillRect(w * 0.49, top, w * 0.02, bot - top);
+});
+
+// The bridge's band by night: dim, cool instrument light.
+const bridgeGlowTex = () => canvasTex(64, 96, (g, w, h) => {
+  g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#5f8fa6'; g.fillRect(0, h * 0.26, w, h * 0.36);
+});
+
 // Hull portholes, as EMISSIVE dots: v spans y in [0, DECK_Y], u one metre
 // per 2 m pitch. Two rows; black elsewhere, and clamped in v so nothing
 // leaks onto the boot-topping or the deck.
@@ -244,10 +262,26 @@ export function createJungleLiner({ scene, position, yaw }) {
     }
   }
 
+  // Night: cabins and bridge lit from inside, portholes warm instead of the
+  // pale sky they catch by day. Emissive only — not a single real light.
+  const glow = { cabins: bayGlowTex(), bridge: bridgeGlowTex() };
+  cabins.emissive.setHex(0xffffff);
+  bridge.emissive.setHex(0xffffff);
+  function setNight(on) {
+    cabins.emissiveMap = on ? glow.cabins : null;
+    cabins.emissiveIntensity = on ? 1.6 : 0;
+    bridge.emissiveMap = on ? glow.bridge : null;
+    bridge.emissiveIntensity = on ? 1.0 : 0;
+    hullMat.emissive.setHex(on ? 0xffc98a : 0xb8cde0);
+    hullMat.emissiveIntensity = on ? 1.5 : 0.55;
+    cabins.needsUpdate = bridge.needsUpdate = true;
+  }
+  setNight(false);
+
   // Far scenery: never in the shadow map's reach, never worth a shadow pass.
   group.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
   group.position.copy(position);
   group.rotation.y = yaw;
   scene.add(group);
-  return { group };
+  return { group, setNight };
 }

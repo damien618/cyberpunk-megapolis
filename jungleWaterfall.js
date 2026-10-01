@@ -72,7 +72,10 @@ const NOISE_GLSL = `
 // the falls glowed through 150 m of haze as if pasted on the fog.
 function fogShader({ uniforms, vertex, fragment, ...opts }) {
   return new THREE.ShaderMaterial({
-    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, uniforms]),
+    // uLight: the hour's light on water that lights itself. These shaders are
+    // unlit, so by night the white water would glow as if it were noon.
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, uniforms,
+      { uLight: { value: new THREE.Color(1, 1, 1) } }]),
     fog: true,
     vertexShader: `
       #include <fog_pars_vertex>
@@ -88,8 +91,10 @@ function fogShader({ uniforms, vertex, fragment, ...opts }) {
       #include <fog_pars_fragment>
       ${NOISE_GLSL}
       ${fragment.head || ''}
+      uniform vec3 uLight;
       void main() {
         ${fragment.body}
+        gl_FragColor.rgb *= uLight;
         #include <fog_fragment>
       }`,
     ...opts,
@@ -690,6 +695,12 @@ export function createJungleWaterfall({ scene, waterNormal, preset }) {
     resize(heightPx) {
       mist.material.uniforms.uScale.value = heightPx * 0.45;
       splash.material.uniforms.uScale.value = heightPx * 0.45;
+    },
+    // Night: the unlit white water is trimmed to moonlight — still the
+    // palest thing in the forest, which is how falls read after dark.
+    setNight(on) {
+      for (const o of [crest, falls, foam, splash, mist])
+        o.material.uniforms.uLight.value.setRGB(...(on ? [0.30, 0.36, 0.46] : [1, 1, 1]));
     },
     update(t) {
       for (const u of timed) u.value = t;
