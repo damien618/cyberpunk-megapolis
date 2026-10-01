@@ -11,7 +11,7 @@
 // axis — the sea is its ground. Part ids read by DOLPHIN_GLSL: 0 body,
 // 1 tail stock + flukes, 2 flippers.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass8';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass9';
 
 const COL = {
   back: 0x353b43,        // the dark cape

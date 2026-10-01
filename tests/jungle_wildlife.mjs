@@ -17,6 +17,17 @@ import { createJungleWildlife, jungleWildlifeLayout } from '/jungleWildlife.js';
 import { buildJungleTerrain } from '/jungleTerrain.js';
 import { buildJungleVegetation } from '/jungleVegetation.js';
 import { MOTION } from '/wildlifeMotion.js';
+import { createWildlife, spotIndex } from '/wildlife.js';
+import { CRAB } from '/wildlifeCrab.js';
+import { FOX } from '/wildlifeFox.js';
+import { LIZARD } from '/wildlifeLizard.js';
+import { JAY } from '/wildlifeJay.js';
+import { BUTTERFLY } from '/wildlifeButterfly.js';
+import { HUMMINGBIRD } from '/wildlifeHummingbird.js';
+import { PELICAN } from '/wildlifePelican.js';
+import { SANDPIPER } from '/wildlifeSandpiper.js';
+import { FROG } from '/wildlifeFrog.js';
+import { GULL } from '/wildlifeSoarer.js';
 import { stepBoids, boidParams, boxBounds } from '/wildlifeBoids.js';
 import { soilAt, SOIL, shoreAt, pathDistance, streamDistance, JETTY, SAND_END, forestDensity, POOL, terrainHeight } from '/jungleLayout.js';
 
@@ -1150,6 +1161,77 @@ if (eag) {
   check(out / n > 0.08 && out / n < 0.4, `each breaks the surface in turn (${(100 * out / n).toFixed(0)}% of the time clear of it)`);
   check(up > 0 && down > 0, 'nose up out of the water, nose down into it');
   check(spread < 12, `the pod swims together (${spread.toFixed(1)} m from its centre at most)`);
+}
+
+// --- A village that is not the cove -------------------------------------------
+// The engine and the species are map-agnostic: a made-up village — flat
+// ground, a street, four houses (their walls as obstacles, their floors
+// kept off by keepOffBuilt), planters, hedges, a few stones, no sea — runs
+// the land species unchanged, leaves the sea's off with a warning instead
+// of throwing, and its walkers frighten animals as the player does.
+{
+  const HOUSES = [[-12, -10], [12, -10], [-12, 10], [12, 10]].map(([x, z]) => ({ x, z, hw: 4, hd: 3 }));
+  const inHouse = (x, z, m = 0) => HOUSES.some(h => Math.abs(x - h.x) < h.hw + m && Math.abs(z - h.z) < h.hd + m);
+  const walls = [];
+  for (const h of HOUSES) {
+    for (let u = -h.hw; u <= h.hw; u += 0.9) { walls.push({ x: h.x + u, z: h.z - h.hd, r: 0.5 }, { x: h.x + u, z: h.z + h.hd, r: 0.5 }); }
+    for (let v = -h.hd; v <= h.hd; v += 0.9) { walls.push({ x: h.x - h.hw, z: h.z + v, r: 0.5 }, { x: h.x + h.hw, z: h.z + v, r: 0.5 }); }
+  }
+  const pts = (n, f) => Array.from({ length: n }, (_, i) => f(i));
+  const flowers = spotIndex(pts(24, i => ({ x: -24 + (i % 12) * 4.2, z: i < 12 ? -2.6 : 2.6, r: 0.3 })), 4);
+  const bushes = spotIndex(pts(16, i => ({ x: -26 + i * 3.5, z: i % 2 ? 19 : -19, r: 0.8 })), 6);
+  const stones = spotIndex(pts(8, i => ({ x: -21 + i * 6, z: i % 2 ? 24 : -24, r: 0.4 })), 8);
+  const village = {
+    terrainHeight: () => 2, terrainSlope: () => 0, terrainNormal: () => ({ x: 0, y: 1, z: 0 }),
+    SOIL: { DIRT: 0, FOREST: 1 }, soilAt: (x, z) => (Math.abs(z) > 16 ? 1 : 0),
+    bounds: { x: [-28, 28], z: [-28, 28] },
+    keepOffBuilt: (x, z) => !inHouse(x, z, 0.8),
+    distances: {
+      path: (x, z) => Math.abs(z) - 1.5,
+      flowers: (x, z) => flowers.nearest(x, z, 12).d,
+      bushes: (x, z) => bushes.nearest(x, z, 12).d,
+      rocks: (x, z) => stones.nearest(x, z, 16).d,
+    },
+    spots: { flowers, bushes, rocks: stones },
+    obstacles: spotIndex(walls, 8),
+  };
+  const warn = console.warn; let warned = 0; console.warn = () => { warned++; };
+  let V9 = null;
+  try {
+    V9 = createWildlife({ scene: new THREE.Scene(), layout: village, seed: 'village', species: [
+      { def: CRAB }, { def: PELICAN }, { def: SANDPIPER }, { def: FROG }, { def: GULL },
+      { def: FOX, count: 2 }, { def: LIZARD, count: 4 }, { def: JAY, count: 3 },
+      { def: BUTTERFLY, count: 6 }, { def: HUMMINGBIRD, count: 3 },
+    ] });
+  } catch (e) { check(false, 'the village builds: ' + e.message); }
+  console.warn = warn;
+  if (V9) {
+    check(true, 'the village builds');
+    const off = Object.keys(V9.skipped).sort().join(',');
+    check(off === 'crab,frog,gull,pelican,sandpiper' && warned === 5,
+      `the sea's species are left off with a warning (${off})`);
+    const land = ['fox', 'lizard', 'jay', 'butterfly', 'hummingbird'];
+    check(land.every(id => V9.counts[id] > 0), `the land species live there (${land.map(id => id + ' ' + V9.counts[id]).join(', ')})`);
+    // The player well clear of it (but near enough to keep it awake); a
+    // walker comes down the street past a lizard.
+    const liz = V9.debug.species.lizard.agents[0];
+    const P = new THREE.Vector3(liz.x, 0, liz.z + (liz.z > 0 ? -14 : 14)), V = new THREE.Vector3();
+    const walker = { x: liz.x - 8, z: liz.z, speed: 1.3 };
+    let t = 0, inside = 0, nan = false; const seen = new Set();
+    for (let k = 0; k < 30 * 30; k++) {
+      t += 1 / 30;
+      walker.x = Math.min(liz.home.x + 6, walker.x + 1.3 / 30);
+      V9.update(1 / 30, t, P, V, [walker]);
+      seen.add(liz.state);
+      for (const sp of Object.values(V9.debug.species)) for (const a of sp.agents) {
+        if (!Number.isFinite(a.x + a.y + a.z)) nan = true;
+        if (sp.motion.walks && inHouse(a.x, a.z)) inside++;
+      }
+    }
+    check(!nan, 'no NaN in the village');
+    check(inside === 0, `no animal ever inside a house (${inside} frames)`);
+    check(seen.has(V9.STATE.FLEE), 'a walker frightens a lizard as the player would');
+  }
 }
 
 // --- Roster-wide invariants -------------------------------------------------

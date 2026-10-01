@@ -54,7 +54,7 @@
 // it are not put on that map.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass8';
+import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass9';
 
 // ---------------------------------------------------------------------------
 // States. Every species runs the same machine and opts out of what it does
@@ -173,7 +173,9 @@ export function habitatTest(h, L, x, z) {
     const d = L.shoreDistance(x, z);
     if (d < h.shore[0] || d > h.shore[1]) return false;
   }
-  if (h.avoid) for (const k in h.avoid) if (L.distances[k](x, z) < h.avoid[k]) return false;
+  // avoid: a feature the map does not have is avoided by default (no stream
+  // on a village square); within/near need theirs (missingLayout).
+  if (h.avoid) for (const k in h.avoid) { const f = L.distances?.[k]; if (f && f(x, z) < h.avoid[k]) return false; }
   if (h.within) for (const k in h.within) if (L.distances[k](x, z) > h.within[k]) return false;
   if (h.height) {
     const y = L.terrainHeight(x, z);
@@ -357,17 +359,19 @@ const DEFAULTS = {
 const MERGED = ['habitat', 'fear', 'speed', 'body', 'timings', 'hooks'];
 // What a species asks of the layout that this map does not have: its
 // declared `needs` (dotted names: 'waterlineZ', 'spots.flowers') and every
-// name its habitat reads (distances, soils). A species with a gap is left
+// name its habitat requires (within/near distances, at least one of its
+// soils — an `avoid` of a feature the map lacks is simply met). A species with a gap is left
 // off the map with a warning, rather than throwing mid-game.
 export function missingLayout(def, L) {
   const miss = [];
   const has = path => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), L) !== undefined;
   for (const n of def.needs || []) if (!has(n)) miss.push(n);
   const h = def.habitat || {};
-  for (const key of ['avoid', 'within', 'near']) {
+  for (const key of ['within', 'near']) {
     for (const k in h[key] || {}) if (k !== 'share' && !L.distances?.[k]) miss.push('distances.' + k);
   }
-  for (const n of h.soils || []) if (!L.SOIL || !(n in L.SOIL)) miss.push('SOIL.' + n);
+  // soils are a whitelist: the map needs at least one of them.
+  if (h.soils && !h.soils.some(n => L.SOIL && n in L.SOIL)) miss.push('SOIL.' + h.soils.join('|'));
   return miss;
 }
 
@@ -422,7 +426,7 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
         tx: h.x, tz: h.z, state: STATE.IDLE, timer: rng.range(def.timings.idle),
         acc: 0, sink: 0, gait: 0, mood: 0, stride: rng() * 6.283, phase: rng() * 6.283,
         scale: rng.range(def.body.scale), nx: 0, ny: 1, nz: 0, normalAge: 99,
-        dist: Infinity, color: new THREE.Color(1, 1, 1), awake: false,
+        dist: Infinity, tdist: Infinity, color: new THREE.Color(1, 1, 1), awake: false,
       };
       a.yaw = a.heading + def.body.yawOffset;
       def.tint?.(rng, a.color);
@@ -532,7 +536,7 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
     const { def, rng } = sp;
     const H = def.hooks;
     const threat = def.fear.radius > 0
-      && a.dist < (ctx.pSpeed > RUN_SPEED ? def.fear.runRadius : def.fear.radius);
+      && a.tdist < (ctx.pSpeed > RUN_SPEED ? def.fear.runRadius : def.fear.radius);
     a.timer -= dt;
     // A species may take the frame over (the crab steps back from the swash).
     if (H.tick && H.tick(a, sp, ctx, dt, api, threat)) return;
@@ -572,7 +576,7 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
         break;
       case STATE.HIDDEN:
         a.sink = Math.min(1, a.sink + dt / def.body.sinkTime);
-        if (a.timer <= 0 && a.dist > def.fear.calmDistance) {
+        if (a.timer <= 0 && a.tdist > def.fear.calmDistance) {
           (H.emergeAt || (() => {}))(a, sp, ctx, api);
           enter(a, sp, STATE.EMERGE);
         }
@@ -666,11 +670,17 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
   // Per frame.
   // -------------------------------------------------------------------------
   const stats = { ms: 0, active: 0, visible: 0, species: {} };
-  function update(dt, t, playerPos, playerVel) {
+  // others: optional [{ x, z, speed }] — whatever else frightens animals on
+  // this map (a village's walkers, a dog). Each animal reacts to the nearest
+  // threat, the player included: while it thinks, ctx.px/pz/pSpeed are THAT
+  // threat, so every hook's "away from the player" means away from it.
+  // Waking and the near tier stay measured from the player alone.
+  function update(dt, t, playerPos, playerVel, others = null) {
     const t0 = performance.now();
     WL_TIME.value = t;
-    ctx.t = t; ctx.px = playerPos.x; ctx.pz = playerPos.z;
-    ctx.pSpeed = playerVel ? Math.hypot(playerVel.x, playerVel.z) : 0;
+    ctx.t = t;
+    const plX = playerPos.x, plZ = playerPos.z;
+    const plS = playerVel ? Math.hypot(playerVel.x, playerVel.z) : 0;
     stats.active = 0; stats.visible = 0;
     for (const sp of runtimes) {
       sp.frame++;
@@ -681,7 +691,7 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
       // never half a school drawn and half frozen.
       let groupAwake = false;
       for (const a of sp.agents) {
-        a.dist = Math.hypot(a.x - ctx.px, a.z - ctx.pz);
+        a.dist = Math.hypot(a.x - plX, a.z - plZ);
         if (a.dist < R) groupAwake = true;
       }
       // Past the near tier an agent thinks one frame in four — unless its
@@ -695,6 +705,14 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
         if (a.dist > tier && (sp.frame + a.i) % 4 !== 0) continue;
         const step = Math.min(a.acc, 0.15);
         a.acc = 0;
+        let qx = plX, qz = plZ, qs = plS, qd = a.dist;
+        if (others) {
+          for (const o of others) {
+            const d = Math.hypot(a.x - o.x, a.z - o.z);
+            if (d < qd) { qd = d; qx = o.x; qz = o.z; qs = o.speed || 0; }
+          }
+        }
+        a.tdist = qd; ctx.px = qx; ctx.pz = qz; ctx.pSpeed = qs;
         think(a, sp, step);
         animate(a, sp, step);
         groundNormal(a, sp, step);

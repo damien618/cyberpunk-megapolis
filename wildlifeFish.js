@@ -18,7 +18,7 @@
 // Part ids read by FISH_GLSL: 0 body + back cap, 1 tail fin, 2 dorsal fin,
 // 3 pectoral fins, 4 eyes.
 import * as THREE from 'three';
-import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass8';
+import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass9';
 
 const COL = {
   top: 0xd0dce2,         // the bright silver of the flanks and body
