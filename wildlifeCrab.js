@@ -13,7 +13,7 @@
 // Local frame: +Z is the front (eyes, claws), +X its right, y = 0 the ground.
 // Part ids read by CRAB_GLSL: 0 body, 2 claws, 3 eyes, 10–13 legs front→back.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass2';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
 
 const COL = {
   shell: 0x44522c,       // olive, darkening to the rim
@@ -143,29 +143,16 @@ function tick(a, sp, ctx, dt, api, threat) {
 // rock, into the sea, or — neither in reach — a short dash and dig in.
 function fleeTarget(a, sp, ctx, api) {
   const L = ctx.layout;
-  let ax = a.x - ctx.px, az = a.z - ctx.pz;
-  const al = Math.hypot(ax, az) || 1;
-  ax /= al; az /= al;
-  // Is the way to (x, z) clear of the player? (Not heading back past them.)
-  const clear = (x, z) => {
-    const dx = x - a.x, dz = z - a.z, d = Math.hypot(dx, dz) || 1;
-    return (dx * ax + dz * az) / d > -0.25;
-  };
   let bx = 0, bz = 0, best = Infinity;
-  const rock = L.spots.rocks?.nearest(a.x, a.z, ROCK_REACH).spot;
-  if (rock) {
-    const dx = a.x - rock.x, dz = a.z - rock.z, d = Math.hypot(dx, dz) || 1;
-    // Under its lee edge, a third of the way in: the rock hides the dig.
-    const x = rock.x + dx / d * rock.r * 0.35, z = rock.z + dz / d * rock.r * 0.35;
-    const run = Math.hypot(x - a.x, z - a.z);
-    if (clear(x, z) && run < best) { best = run; bx = x; bz = z; }
-  }
-  const x = a.x + ax * 0.8, z = L.waterlineZ(x) - 0.7;
+  // Under its lee edge, a third of the way in: the rock hides the dig (the
+  // obstacle stops the crab at the stone's foot, where it sinks).
+  const rock = api.refugeAt(a, L.spots.rocks, ROCK_REACH, 0.35);
+  if (rock) { best = Math.hypot(rock.x - a.x, rock.z - a.z); bx = rock.x; bz = rock.z; }
+  const ax = a.x - ctx.px, az = a.z - ctx.pz, al = Math.hypot(ax, az) || 1;
+  const x = a.x + ax / al * 0.8, z = L.waterlineZ(x) - 0.7;
   const run = Math.hypot(x - a.x, z - a.z);
-  if (run < WATER_REACH && clear(x, z) && run < best) { best = run; bx = x; bz = z; }
-  if (best === Infinity) {
-    bx = a.x + ax * 2.5; bz = a.z + az * 2.5;
-  }
+  if (run < WATER_REACH && api.clearOfPlayer(a, x, z) && run < best) { best = run; bx = x; bz = z; }
+  if (best === Infinity) { bx = a.x + ax / al * 2.5; bz = a.z + az / al * 2.5; }
   api.setTarget(a, sp, bx, bz);
 }
 
@@ -205,5 +192,6 @@ export const CRAB = {
     const k = 0.82 + rng() * 0.36, h = (rng() - 0.5) * 0.16;
     c.setRGB(k * (1 + h), k, k * (1 - h));
   },
+  needs: ['waterlineZ'],
   hooks: { tick, fleeTarget },
 };

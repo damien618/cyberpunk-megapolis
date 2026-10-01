@@ -20,7 +20,7 @@
 // the air is a hummingbird's ground. Part ids read by HUMMINGBIRD_GLSL:
 // 0 torso, 1 head + throat + bill, 3 tail, 4 wings.
 import * as THREE from 'three';
-import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass2';
+import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
 
 const COL = {
   back: 0x2f9e5f,        // the emerald of the crown and back
@@ -132,31 +132,19 @@ export const HUMMINGBIRD_GLSL = `
 // the flower index over. Beyond it, the default wander takes the frame.
 const FLOWER_REACH = 4.5;
 
-// Keep them airborne and on the nectar: the moment the machine would land
-// one, hand it straight back to MOVE — the next bloom as the target, a fresh
-// timer. (This is the species' whole hook set; the flyFree motion owns
-// where the flight actually goes.) The stop is sided at random and a little
-// short of the tuft's centre, so two birds rarely queue on one bloom.
-// The round is a trap-line: a tuft farther than homeRange from home is
-// passed over for the nearest tuft at home, so a day of darts works the
-// bird's own flowers instead of walking it across the valley.
-function tick(a, sp, ctx, dt, api) {
-  const S = ctx.STATE;
-  if (a.state === S.IDLE) {
-    const F = ctx.layout.spots.flowers;
-    let f = F?.nearest(a.x, a.z, FLOWER_REACH).spot;
-    if (f && Math.hypot(f.x - a.home.x, f.z - a.home.z) > sp.def.homeRange)
-      f = F.nearest(a.home.x, a.home.z, FLOWER_REACH).spot;
-    if (f) api.setTarget(a, sp, f.x + (sp.rng() - 0.5) * 0.7, f.z + (sp.rng() - 0.5) * 0.7);
-    else api.defaultWander(a, sp);
-    a.state = S.MOVE;
-    a.timer = sp.rng.range(sp.def.timings.move);
-    // A stale hover can expire this same frame (the motion would report
-    // "arrived" and bounce the machine straight back to IDLE for another
-    // pause). Re-arm the dart, so the flight leaves for the bloom at once.
-    a.flyPhase = 1; a.dartOn = false;
-  }
-  return false;   // let the machine run on into MOVE this same frame
+// The next bloom: whenever the machine asks for a wander (and, being
+// `continuous`, it asks the moment a hover ends) the target is the nearest
+// tuft, sided at random and a little short of its centre so two birds rarely
+// queue on one bloom. The round is a trap-line: a tuft farther than homeRange
+// from home is passed over for the nearest tuft at home, so a day of darts
+// works the bird's own flowers instead of walking it across the valley.
+function pickWander(a, sp, ctx, api) {
+  const F = ctx.layout.spots.flowers;
+  let f = F.nearest(a.x, a.z, FLOWER_REACH).spot;
+  if (f && Math.hypot(f.x - a.home.x, f.z - a.home.z) > sp.def.homeRange)
+    f = F.nearest(a.home.x, a.home.z, FLOWER_REACH).spot;
+  if (f) api.setTarget(a, sp, f.x + (sp.rng() - 0.5) * 0.7, f.z + (sp.rng() - 0.5) * 0.7);
+  else api.defaultWander(a, sp);
 }
 
 // ---------------------------------------------------------------------------
@@ -201,5 +189,7 @@ export const HUMMINGBIRD = {
     const k = 0.85 + rng() * 0.3, g = (rng() - 0.5) * 0.12;
     c.setRGB(k * (1 - g * 0.4), k * (1 + g), k * (1 - g * 0.6));
   },
-  hooks: { tick },
+  continuous: true,
+  needs: ['spots.flowers'],
+  hooks: { pickWander },
 };

@@ -316,6 +316,7 @@ function schoolStep(a, sp, dt, ctx, speed) {
 //   delay 1.15           how far back down the trail the file flies, seconds
 //   diveEvery [16, 34]   seconds between plunge dives
 //   diveDur 6.5          how long a plunge takes, seconds
+//   water 'sea'          the waterAt kind the file must stay over
 // ---------------------------------------------------------------------------
 const FLOCK_TRAIL = 128;   // trail samples, about 4 s at the 30 Hz pace
 
@@ -383,13 +384,14 @@ function flockInit(sp, ctx) {
         minSpeed: 4.2, maxSpeed: 5.8, maxForce: 9,
       }),
       zIn: cz + rz + 4,       // nobody inshore of the loop's near edge
+      water: F.water ?? 'sea',
       guard: -1,
       // bounds(b, out) — the band above the sea and the file offshore. The
       // plunge punches through the band, so the floor is the surface itself.
       bound(b, out) {
         out.x = 0; out.y = 0; out.z = 0;
         const w = L.waterAt ? L.waterAt(b.x, b.z) : null;
-        if (!w || w.kind !== 'sea') {
+        if (!w || w.kind !== s.water) {
           const dx = s.cx - b.x, dz = s.cz - b.z, d = Math.hypot(dx, dz) || 1;
           out.x += dx / d * 10; out.z += dz / d * 10;
         }

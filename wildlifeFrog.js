@@ -13,7 +13,7 @@
 // Part ids read by FROG_GLSL: 0 body, 1 throat sac, 2 eyes, 10–11 forelegs,
 // 12–13 hind legs.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass2';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
 
 const COL = {
   back: 0x5c8f3e,        // rainette green (tint swings individuals brown)
@@ -128,22 +128,17 @@ const FLEE_LOOK = [1.6, 3, 4.5];    // m
 
 function fleeTarget(a, sp, ctx, api) {
   const L = ctx.layout;
-  let ax = a.x - ctx.px, az = a.z - ctx.pz;
-  const al = Math.hypot(ax, az) || 1;
-  ax /= al; az /= al;
-  const base = Math.atan2(ax, az);
-  for (const spread of FLEE_CONE) {
-    const h = base + spread, sx = Math.sin(h), cz = Math.cos(h);
-    for (const d of FLEE_LOOK) {
-      const x = a.x + sx * d, z = a.z + cz * d;
-      const w = L.waterAt ? L.waterAt(x, z) : null;
-      if (w && (w.kind === 'pool' || w.kind === 'stream')) {
-        api.setTarget(a, sp, x, z);
-        return;
-      }
-    }
-  }
-  api.setTarget(a, sp, a.x + ax * 2.5, a.z + az * 2.5);
+  const p = api.fleeScan(a, {
+    angles: FLEE_CONE, dists: FLEE_LOOK,
+    // Fresh water only; straight away first, then the nearer leap.
+    score: (x, z, off, d) => {
+      const w = L.waterAt(x, z);
+      return w && (w.kind === 'pool' || w.kind === 'stream') ? -(Math.abs(off) * 10 + d) : -Infinity;
+    },
+  });
+  if (p) { api.setTarget(a, sp, p.x, p.z); return; }
+  const ax = a.x - ctx.px, az = a.z - ctx.pz, al = Math.hypot(ax, az) || 1;
+  api.setTarget(a, sp, a.x + ax / al * 2.5, a.z + az / al * 2.5);
 }
 
 // Back out on the bank, not up through the pool's floor: while it is still
@@ -202,5 +197,6 @@ export const FROG = {
     const k = 0.85 + rng() * 0.3, b = rng();   // b: 0 green → 1 brown
     c.setRGB(k * (1 + 0.28 * b), k * (1 - 0.10 * b), k * (1 - 0.28 * b));
   },
+  needs: ['waterAt'],
   hooks: { fleeTarget, emergeAt },
 };

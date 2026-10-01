@@ -23,8 +23,8 @@
 // Part ids read by SEA_LION_GLSL: 0 torso, 1 neck + head + muzzle, 3 eyes,
 // 5/6 fore flippers, 10/11 hind flippers, 12 tail.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass2';
-import { amphibiousFloor, amphFloor } from './wildlifeMotion.js?v=20261001-pass2';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
+import { amphibiousFloor, amphFloor } from './wildlifeMotion.js?v=20261001-pass3';
 
 const COL = {
   coat: 0x4a3626,        // the dark brown coat, dull on the flanks
@@ -283,5 +283,6 @@ export const SEA_LION = {
     const k = 0.78 + rng() * 0.44, w = (rng() - 0.5) * 0.1;
     c.setRGB(k * (1 + w * 0.5), k * (1 + w * 0.1), k * (1 - w * 0.6));
   },
+  needs: ['spots.haulouts'],
   hooks: { tick, pickWander, emergeAt },
 };

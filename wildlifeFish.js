@@ -18,7 +18,7 @@
 // Part ids read by FISH_GLSL: 0 body + back cap, 1 tail fin, 2 dorsal fin,
 // 3 pectoral fins, 4 eyes.
 import * as THREE from 'three';
-import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass2';
+import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
 
 const COL = {
   top: 0xd0dce2,         // the bright silver of the flanks and body
@@ -105,21 +105,10 @@ export const FISH_GLSL = `
 `;
 
 // ---------------------------------------------------------------------------
-// Behaviour hooks (the school motion does the rest).
+// Behaviour: no hooks. `continuous: true` keeps it moving — the moment the
+// machine would idle it, it is handed straight back to MOVE — and the
+// school motion owns where it actually goes.
 // ---------------------------------------------------------------------------
-// Keep them swimming: the moment the machine would idle a fish, hand it
-// straight back to MOVE — a target the boids ignore, a fresh timer, and the
-// tail never stops. (This is the species' whole hook set; the school motion
-// owns where the fish actually go.)
-function tick(a, sp, ctx, dt, api) {
-  const S = ctx.STATE;
-  if (a.state === S.IDLE) {
-    api.defaultWander(a, sp);
-    a.state = S.MOVE;
-    a.timer = sp.rng.range(sp.def.timings.move);
-  }
-  return false;   // let the machine run on into MOVE this same frame
-}
 
 // ---------------------------------------------------------------------------
 // The species definition. Every key is documented in WILDLIFE.md; anything
@@ -160,5 +149,6 @@ export const FISH = {
     const k = 0.86 + rng() * 0.28, b = (rng() - 0.5) * 0.1;
     c.setRGB(k * (1 + b), k * (1 + b * 0.4), k * (1 - b * 0.6));
   },
-  hooks: { tick },
+  continuous: true,
+  needs: ['waterAt'],
 };

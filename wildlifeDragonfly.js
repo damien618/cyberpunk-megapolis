@@ -20,7 +20,7 @@
 // Part ids read by DRAGONFLY_GLSL: 0 thorax (+ its dorsal plate), 1 abdomen,
 // 2 head + eyes, 3 fore wings, 4 hind wings.
 import * as THREE from 'three';
-import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass2';
+import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
 
 const COL = {
   thorax: 0x2e8ba8,      // the emperor's turquoise
@@ -125,20 +125,10 @@ export const DRAGONFLY_GLSL = `
 `;
 
 // ---------------------------------------------------------------------------
-// Behaviour hooks (the flyFree motion does the rest).
+// Behaviour: no hooks. `continuous: true` keeps it moving — the moment the
+// machine would idle it, it is handed straight back to MOVE — and the
+// flyFree motion owns where it actually goes.
 // ---------------------------------------------------------------------------
-// Keep them airborne: the moment the machine would land one, hand it
-// straight back to MOVE — a fresh target, a fresh timer. (This is the
-// species' whole hook set; the flyFree motion owns where it actually goes.)
-function tick(a, sp, ctx, dt, api) {
-  const S = ctx.STATE;
-  if (a.state === S.IDLE) {
-    api.defaultWander(a, sp);
-    a.state = S.MOVE;
-    a.timer = sp.rng.range(sp.def.timings.move);
-  }
-  return false;   // let the machine run on into MOVE this same frame
-}
 
 // ---------------------------------------------------------------------------
 // The species definition. Every key is documented in WILDLIFE.md; anything
@@ -178,5 +168,5 @@ export const DRAGONFLY = {
     const k = 0.85 + rng() * 0.3, b = (rng() - 0.5) * 0.14;
     c.setRGB(k * (1 - b * 0.4), k * (1 + b * 0.2), k * (1 + b));
   },
-  hooks: { tick },
+  continuous: true,
 };

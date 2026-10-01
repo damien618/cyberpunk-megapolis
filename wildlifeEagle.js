@@ -16,7 +16,7 @@
 // the air is a bird's ground. Part ids read by EAGLE_GLSL: 0 body,
 // 1 neck + head, 2 bill, 3 eyes, 4 tail, 5/6 wings.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass2';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
 
 const COL = {
   body: 0x3b2a1b,        // the dark brown of the body and mantle
@@ -116,21 +116,10 @@ export const EAGLE_GLSL = `
 `;
 
 // ---------------------------------------------------------------------------
-// Behaviour hooks (the glide motion does the rest).
+// Behaviour: no hooks. `continuous: true` keeps it moving — the moment the
+// machine would idle it, it is handed straight back to MOVE — and the
+// glide motion owns where it actually goes.
 // ---------------------------------------------------------------------------
-// Keep it flying: the moment the machine would idle the eagle, hand it
-// straight back to MOVE — a fresh wander target and a fresh timer (the glide
-// motion ignores targets; it rides its own drifting circle). The pelican's
-// never-idle tick, word for word — this is the species' whole hook set.
-function tick(a, sp, ctx, dt, api) {
-  const S = ctx.STATE;
-  if (a.state === S.IDLE) {
-    api.defaultWander(a, sp);
-    a.state = S.MOVE;
-    a.timer = sp.rng.range(sp.def.timings.move);
-  }
-  return false;   // let the machine run on into MOVE this same frame
-}
 
 // ---------------------------------------------------------------------------
 // The species definition. Every key is documented in WILDLIFE.md; anything
@@ -172,5 +161,5 @@ export const EAGLE = {
     const k = 0.88 + rng() * 0.22, w = (rng() - 0.5) * 0.06;
     c.setRGB(k * (1 + w * 0.5), k * (1 + w * 0.2), k * (1 - w));
   },
-  hooks: { tick },
+  continuous: true,
 };

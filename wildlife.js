@@ -54,7 +54,7 @@
 // it are not put on that map.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass2';
+import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass3';
 
 // ---------------------------------------------------------------------------
 // States. Every species runs the same machine and opts out of what it does
@@ -307,10 +307,28 @@ const DEFAULTS = {
   body: { yawOffset: 0, sideways: false, alignToGround: true, lift: 0, sinkDepth: 0, sinkTime: 0.4, scale: [1, 1] },
   timings: { idle: [2, 5], move: [1, 3], alert: 0 },
   tint: null,             // (rng, color) → void: per-instance colour variation
+  continuous: false,      // true: never idles (fish, birds on the wing)
+  needs: [],              // layout names it cannot do without (missingLayout)
   hooks: {},
   castShadow: false,
 };
 const MERGED = ['habitat', 'fear', 'speed', 'body', 'timings', 'hooks'];
+// What a species asks of the layout that this map does not have: its
+// declared `needs` (dotted names: 'waterlineZ', 'spots.flowers') and every
+// name its habitat reads (distances, soils). A species with a gap is left
+// off the map with a warning, rather than throwing mid-game.
+export function missingLayout(def, L) {
+  const miss = [];
+  const has = path => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), L) !== undefined;
+  for (const n of def.needs || []) if (!has(n)) miss.push(n);
+  const h = def.habitat || {};
+  for (const key of ['avoid', 'within', 'near']) {
+    for (const k in h[key] || {}) if (k !== 'share' && !L.distances?.[k]) miss.push('distances.' + k);
+  }
+  for (const n of h.soils || []) if (!L.SOIL || !(n in L.SOIL)) miss.push('SOIL.' + n);
+  return miss;
+}
+
 export function resolveSpecies(def, over = {}) {
   const s = { ...DEFAULTS, ...def, ...over };
   for (const k of MERGED) s[k] = { ...DEFAULTS[k], ...(def[k] || {}), ...(over[k] || {}) };
@@ -330,7 +348,14 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
   const _fwd = new THREE.Vector3(0, 0, 1);
   const _n = new THREE.Vector3(), _c = new THREE.Color();
 
-  const runtimes = species.map(entry => {
+  const skipped = {};
+  const runtimes = species.filter(entry => {
+    const miss = missingLayout(resolveSpecies(entry.def, entry), L);
+    if (!miss.length) return true;
+    skipped[entry.def.id] = miss;
+    console.warn(`[wildlife] ${entry.def.id} left off this map: the layout has no ${miss.join(', ')}`);
+    return false;
+  }).map(entry => {
     const def = resolveSpecies(entry.def, entry);
     const motion = MOTION[def.motion];
     if (!motion) throw new Error(`[wildlife] ${def.id}: unknown motion "${def.motion}"`);
@@ -418,7 +443,44 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
   }
   // Is (x, z) a place this species may live — its habitat, its clearance?
   const habitatOk = (sp, x, z) => habitatTest(sp.def.habitat, L, x, z);
-  const api = { setTarget, defaultWander, defaultFlee, habitatOk };
+  // Is the way from the agent to (x, z) clear of the player — not back
+  // toward or past them? minCos: the cosine allowed between that way and
+  // straight-away (-0.25 lets a refuge sit a little to the player's side).
+  function clearOfPlayer(a, x, z, minCos = -0.25) {
+    const ax = a.x - ctx.px, az = a.z - ctx.pz, al = Math.hypot(ax, az) || 1;
+    const dx = x - a.x, dz = z - a.z, d = Math.hypot(dx, dz) || 1;
+    return (dx * ax + dz * az) / (d * al) > minCos;
+  }
+  // A refuge at the nearest spot of `spots` (a spotIndex: rocks, logs…)
+  // within reach, whose way is clear of the player: `depth` of its radius
+  // in from its near edge — inside an obstacle, a walker stops at its foot.
+  // Returns a shared { x, z } (copy what you keep) or null.
+  const _ref = { x: 0, z: 0 };
+  function refugeAt(a, spots, reach, depth = 0.5) {
+    const s = spots?.nearest(a.x, a.z, reach).spot;
+    if (!s) return null;
+    const dx = a.x - s.x, dz = a.z - s.z, d = Math.hypot(dx, dz) || 1;
+    _ref.x = s.x + dx / d * s.r * depth; _ref.z = s.z + dz / d * s.r * depth;
+    return clearOfPlayer(a, _ref.x, _ref.z) ? _ref : null;
+  }
+  // Scan the ways away from the player — `angles` (radians off straight-
+  // away) × `dists` (metres) — and keep the best `score(x, z, off, dist)`;
+  // -Infinity rejects a point. Returns a shared { x, z } or null.
+  const _scan = { x: 0, z: 0 };
+  function fleeScan(a, { angles, dists, score }) {
+    const base = Math.atan2(a.x - ctx.px, a.z - ctx.pz);
+    let best = -Infinity;
+    for (const off of angles) {
+      const sx = Math.sin(base + off), sz = Math.cos(base + off);
+      for (const d of dists) {
+        const x = a.x + sx * d, z = a.z + sz * d;
+        const v = score(x, z, off, d);
+        if (v > best) { best = v; _scan.x = x; _scan.z = z; }
+      }
+    }
+    return best > -Infinity ? _scan : null;
+  }
+  const api = { setTarget, defaultWander, defaultFlee, habitatOk, clearOfPlayer, refugeAt, fleeScan };
 
   function enter(a, sp, state, timer = 0) {
     a.state = state; a.timer = timer; a.speed = 0;
@@ -436,11 +498,13 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
     switch (a.state) {
       case STATE.IDLE:
         if (threat) { startAlarm(a, sp); break; }
-        if (a.timer <= 0) {
-          (H.pickWander || defaultWander)(a, sp, ctx, api);
-          enter(a, sp, STATE.MOVE, rng.range(def.timings.move));
-        }
-        break;
+        if (a.timer > 0 && !def.continuous) break;
+        (H.pickWander || defaultWander)(a, sp, ctx, api);
+        enter(a, sp, STATE.MOVE, rng.range(def.timings.move));
+        // A continuous mover (a fish, a bird on the wing) never stops: it
+        // goes on into MOVE this same frame.
+        if (!def.continuous) break;
+        // falls through
       case STATE.MOVE:
         if (threat) { startAlarm(a, sp); break; }
         if (sp.motion.step(a, sp, dt, ctx, def.speed.walk) || a.timer <= 0) {
@@ -596,7 +660,7 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
 
   const counts = Object.fromEntries(runtimes.map(sp => [sp.def.id, sp.agents.length]));
   return {
-    group, update, stats, counts, STATE, STATE_NAME,
+    group, update, stats, counts, skipped, STATE, STATE_NAME,
     // For the tests and the capture tooling: every agent, by species id.
     debug: { species: Object.fromEntries(runtimes.map(sp => [sp.def.id, sp])) },
   };

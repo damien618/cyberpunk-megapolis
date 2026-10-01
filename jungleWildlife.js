@@ -31,18 +31,18 @@
 //              the offshore rocks — the first `amphibious`
 //              species
 import * as L from './jungleLayout.js';   // bare, like every element module
-import { createWildlife, spotIndex } from './wildlife.js?v=20261001-pass2';
-import { CRAB } from './wildlifeCrab.js?v=20261001-pass2';
-import { LIZARD, ALLIGATOR } from './wildlifeLizard.js?v=20261001-pass2';
-import { FOX } from './wildlifeFox.js?v=20261001-pass2';
-import { SNAKE } from './wildlifeSnake.js?v=20261001-pass2';
-import { FROG } from './wildlifeFrog.js?v=20261001-pass2';
-import { FISH } from './wildlifeFish.js?v=20261001-pass2';
-import { DRAGONFLY } from './wildlifeDragonfly.js?v=20261001-pass2';
-import { HUMMINGBIRD } from './wildlifeHummingbird.js?v=20261001-pass2';
-import { PELICAN } from './wildlifePelican.js?v=20261001-pass2';
-import { EAGLE } from './wildlifeEagle.js?v=20261001-pass2';
-import { SEA_LION } from './wildlifeSeaLion.js?v=20261001-pass2';
+import { createWildlife, spotIndex } from './wildlife.js?v=20261001-pass3';
+import { CRAB } from './wildlifeCrab.js?v=20261001-pass3';
+import { LIZARD, ALLIGATOR } from './wildlifeLizard.js?v=20261001-pass3';
+import { FOX } from './wildlifeFox.js?v=20261001-pass3';
+import { SNAKE } from './wildlifeSnake.js?v=20261001-pass3';
+import { FROG } from './wildlifeFrog.js?v=20261001-pass3';
+import { FISH } from './wildlifeFish.js?v=20261001-pass3';
+import { DRAGONFLY } from './wildlifeDragonfly.js?v=20261001-pass3';
+import { HUMMINGBIRD } from './wildlifeHummingbird.js?v=20261001-pass3';
+import { PELICAN } from './wildlifePelican.js?v=20261001-pass3';
+import { EAGLE } from './wildlifeEagle.js?v=20261001-pass3';
+import { SEA_LION } from './wildlifeSeaLion.js?v=20261001-pass3';
 
 // The swash's edge along the beach, as the foam shader draws it
 // (jungleOcean's foam: uEdge plus two slow sines in x) — so a crab backs up

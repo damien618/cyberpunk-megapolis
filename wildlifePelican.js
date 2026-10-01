@@ -16,7 +16,7 @@
 // the air is a bird's ground. Part ids read by PELICAN_GLSL: 0 body,
 // 1 neck + head, 2 bill + pouch, 3 eyes, 4 tail, 5/6 wings.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass2';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
 
 const COL = {
   back: 0x4a3a2c,        // dark brown-grey of the back and mantle
@@ -104,21 +104,10 @@ export const PELICAN_GLSL = `
 `;
 
 // ---------------------------------------------------------------------------
-// Behaviour hooks (the flock motion does the rest).
+// Behaviour: no hooks. `continuous: true` keeps it moving — the moment the
+// machine would idle it, it is handed straight back to MOVE — and the
+// flock motion owns where it actually goes.
 // ---------------------------------------------------------------------------
-// Keep them flying: the moment the machine would idle a pelican, hand it
-// straight back to MOVE — a fresh wander target inside its home water and a
-// fresh timer (the flock motion ignores targets; the boids follow the
-// leader's trail). This is the species' whole hook set.
-function tick(a, sp, ctx, dt, api) {
-  const S = ctx.STATE;
-  if (a.state === S.IDLE) {
-    api.defaultWander(a, sp);
-    a.state = S.MOVE;
-    a.timer = sp.rng.range(sp.def.timings.move);
-  }
-  return false;   // let the machine run on into MOVE this same frame
-}
 
 // ---------------------------------------------------------------------------
 // The species definition. Every key is documented in WILDLIFE.md; anything
@@ -161,5 +150,6 @@ export const PELICAN = {
     const k = 0.85 + rng() * 0.3, w = (rng() - 0.5) * 0.08;
     c.setRGB(k * (1 + w * 0.4), k * (1 + w * 0.2), k * (1 - w));
   },
-  hooks: { tick },
+  continuous: true,
+  needs: ['waterAt'],
 };

@@ -19,7 +19,7 @@
 // 0 trunk (and throat), 1 head (and eyes, nose), 2 ears, 10–11 legs
 // front/rear, 20–24 tail sections root→tip (24 is the black tip).
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass2';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
 
 const COL = {
   back: 0x8a857e,        // grizzled grey of the saddle
@@ -184,36 +184,26 @@ export const FOX_GLSL = `
 // flights in IDLE, never HIDDEN).
 // ---------------------------------------------------------------------------
 const FLEE_RUN = 1.1;      // × runRadius: how far a flight aims
-const FLEE_ARC = 1.1;      // rad: how far either side of straight-away it scans
-const FLEE_TRIES = 7;      // candidates on the arc
+const FLEE_ARC = [-1.1, -0.73, -0.37, 0, 0.37, 0.73, 1.1];   // rad off straight-away
 
 // A fox has no burrow: it trots off into the thickest undergrowth it can
-// reach without passing you. Sample the arc away from the player and keep
-// the point with the densest forest — the adapter's `forestDensity`, the one
+// reach without passing you. Scan the arc away from the player and keep the
+// point with the densest forest — the adapter's `forestDensity`, the one
 // name this species asked the layout to add — with straight-away winning
 // ties and stream banks penalised. Runs once per alarm, never per frame.
 function fleeTarget(a, sp, ctx, api) {
   const L = ctx.layout;
-  let ax = a.x - ctx.px, az = a.z - ctx.pz;
-  const al = Math.hypot(ax, az) || 1;
-  ax /= al; az /= al;
-  const base = Math.atan2(ax, az);
-  const run = sp.def.fear.runRadius * FLEE_RUN;
-  let bx = 0, bz = 0, best = -Infinity;
-  for (let i = 0; i < FLEE_TRIES; i++) {
-    const th = base + (i / (FLEE_TRIES - 1) - 0.5) * 2 * FLEE_ARC;
-    const x = a.x + Math.sin(th) * run, z = a.z + Math.cos(th) * run;
-    const dx = x - a.x, dz = z - a.z, d = Math.hypot(dx, dz) || 1;
-    // Never a refuge reached by running at or past the player.
-    if ((dx * ax + dz * az) / d < 0.4) continue;
-    let s = L.forestDensity
-      ? L.forestDensity(x, z) - Math.abs(th - base) * 0.05
-      : -Math.abs(th - base);
-    s += Math.min(0, L.distances.stream(x, z) - 1.2) * 0.3;
-    if (s > best) { best = s; bx = x; bz = z; }
-  }
-  if (best === -Infinity) return api.defaultFlee(a, sp);
-  api.setTarget(a, sp, bx, bz);
+  const p = api.fleeScan(a, {
+    angles: FLEE_ARC, dists: [sp.def.fear.runRadius * FLEE_RUN],
+    score: (x, z, off) => {
+      if (!api.clearOfPlayer(a, x, z, 0.4)) return -Infinity;
+      let s = L.forestDensity ? L.forestDensity(x, z) - Math.abs(off) * 0.05 : -Math.abs(off);
+      if (L.distances.stream) s += Math.min(0, L.distances.stream(x, z) - 1.2) * 0.3;
+      return s;
+    },
+  });
+  if (p) api.setTarget(a, sp, p.x, p.z);
+  else api.defaultFlee(a, sp);
 }
 
 // ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@
 // ground. Part ids read by LIZARD_GLSL: 0 body (and flank blotches), 1 head
 // (and eyes), 10–11 legs front/rear, 20–23 tail sections root→tip.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass2';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass3';
 
 // Palettes. The side-blotched is grey-brown, paler on the flanks where its
 // dark blotches sit; the alligator is a plainer brown, banded rather than
@@ -195,20 +195,9 @@ function pickWander(a, sp, ctx, api) {
 // halfway to its heart — the stone stands between the lizard and you — or,
 // none in reach, a short dash and flatten where it stands.
 function fleeTarget(a, sp, ctx, api) {
-  const ax = a.x - ctx.px, az = a.z - ctx.pz;
-  const al = Math.hypot(ax, az) || 1;
-  const rock = ctx.layout.spots.rocks?.nearest(a.x, a.z, ROCK_REACH).spot;
-  if (rock) {
-    const dx = a.x - rock.x, dz = a.z - rock.z, d = Math.hypot(dx, dz) || 1;
-    const x = rock.x + dx / d * rock.r * 0.5, z = rock.z + dz / d * rock.r * 0.5;
-    const run = Math.hypot(x - a.x, z - a.z) || 1;
-    // Not a refuge you reach by running past the player.
-    if ((x - a.x) * ax / run + (z - a.z) * az / run > -0.25) {
-      api.setTarget(a, sp, x, z);
-      return;
-    }
-  }
-  api.defaultFlee(a, sp);
+  const rock = api.refugeAt(a, ctx.layout.spots.rocks, ROCK_REACH, 0.5);
+  if (rock) api.setTarget(a, sp, rock.x, rock.z);
+  else api.defaultFlee(a, sp);
 }
 
 // ---------------------------------------------------------------------------
