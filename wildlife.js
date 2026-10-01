@@ -24,8 +24,10 @@
 //    idle phase, gait, mood, stride) and the species' own GLSL swings the
 //    parts about their joints in the vertex shader (makeCreatureMaterial).
 // 3. Only what is near is alive. Beyond `activeRadius` of the player an
-//    agent is frozen and not drawn; past NEAR_TIER it thinks one frame in
-//    four. No physics, no raycasts — only the layout's analytic functions.
+//    agent is frozen and not drawn (a group motion's agents wake and sleep
+//    together); past NEAR_TIER it thinks one frame in four, unless its
+//    motion is `smooth`. No physics, no raycasts — only the layout's
+//    analytic functions.
 // 4. Nothing here goes on the map's `world`: cityBoxes would turn every crab
 //    into a wall and a camera occluder (jungleVegetation's rule 3).
 // 5. Each species draws from its OWN seeded RNG, hashed from the map seed
@@ -49,7 +51,7 @@
 // it are not put on that map.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20260930-amph1';
+import { MOTION, wrapAngle } from './wildlifeMotion.js?v=20261001-pass1';
 
 // ---------------------------------------------------------------------------
 // States. Every species runs the same machine and opts out of what it does
@@ -123,6 +125,23 @@ export function spotIndex(spots, cell = 8) {
         }
       }
       return hit;
+    },
+    // Calls fn(spot, d) for every spot whose surface lies within maxR (d is
+    // signed, negative inside). fn should be a hoisted function: the call
+    // itself allocates nothing.
+    each(x, z, maxR, fn) {
+      const n = Math.ceil(maxR / cell);
+      const ci = Math.floor(x / cell), cj = Math.floor(z / cell);
+      for (let i = ci - n; i <= ci + n; i++) {
+        for (let j = cj - n; j <= cj + n; j++) {
+          const list = grid.get(key(i, j));
+          if (!list) continue;
+          for (const s of list) {
+            const d = Math.hypot(s.x - x, s.z - z) - (s.r || 0);
+            if (d <= maxR) fn(s, d);
+          }
+        }
+      }
     },
   };
 }
@@ -350,6 +369,9 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
   // Behaviour.
   // -------------------------------------------------------------------------
   const ctx = { t: 0, px: 0, pz: 0, pSpeed: 0, layout: L, STATE };
+  // The motion places its agents where it keeps them (a flock formed on its
+  // loop, an eagle on its circle), so the first frame drawn is not a jump.
+  for (const sp of runtimes) sp.motion.init?.(sp, ctx);
 
   // Default wander: a point inside homeRange, re-drawn until it is in the
   // habitat (a few tries — the home itself is always a valid fallback).
@@ -522,16 +544,24 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
     for (const sp of runtimes) {
       sp.frame++;
       sp.active = 0;
-      const R = sp.def.activeRadius;
+      const R = sp.def.activeRadius, M = sp.motion;
+      // Asleep beyond activeRadius. A group motion (a school, a flock) runs
+      // one simulation for all: it wakes whole when any of it is in reach,
+      // never half a school drawn and half frozen.
+      let groupAwake = false;
       for (const a of sp.agents) {
         a.dist = Math.hypot(a.x - ctx.px, a.z - ctx.pz);
-        // Asleep beyond activeRadius — measured from home too, so an animal
-        // that wandered to the edge does not flicker.
-        a.awake = a.dist < R;
+        if (a.dist < R) groupAwake = true;
+      }
+      // Past the near tier an agent thinks one frame in four — unless its
+      // motion is `smooth` (a bird across the sky would judder at 15 Hz).
+      const tier = M.smooth ? Infinity : NEAR_TIER;
+      for (const a of sp.agents) {
+        a.awake = M.group ? groupAwake : a.dist < R;
         if (!a.awake) { a.acc = 0; continue; }
         sp.active++;
         a.acc += dt;
-        if (a.dist > NEAR_TIER && (sp.frame + a.i) % 4 !== 0) continue;
+        if (a.dist > tier && (sp.frame + a.i) % 4 !== 0) continue;
         const step = Math.min(a.acc, 0.15);
         a.acc = 0;
         think(a, sp, step);
@@ -541,7 +571,8 @@ export function createWildlife({ scene, layout: L, species = [], seed = 'map' })
       writeInstances(sp);
       stats.active += sp.active;
       stats.visible += sp.visible;
-      stats.species[sp.def.id] = { active: sp.active, visible: sp.visible, total: sp.agents.length };
+      const st = stats.species[sp.def.id] || (stats.species[sp.def.id] = { active: 0, visible: 0, total: sp.agents.length });
+      st.active = sp.active; st.visible = sp.visible;
     }
     const ms = performance.now() - t0;
     stats.ms += (ms - stats.ms) * 0.1;

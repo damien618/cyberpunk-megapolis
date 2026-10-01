@@ -23,7 +23,8 @@
 // Part ids read by SEA_LION_GLSL: 0 torso, 1 neck + head + muzzle, 3 eyes,
 // 5/6 fore flippers, 10/11 hind flippers, 12 tail.
 import * as THREE from 'three';
-import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20260930-amph1';
+import { creaturePart, limbGeometry, mergeCreatureParts } from './wildlife.js?v=20261001-pass1';
+import { amphibiousFloor, amphFloor } from './wildlifeMotion.js?v=20261001-pass1';
 
 const COL = {
   coat: 0x4a3626,        // the dark brown coat, dull on the flanks
@@ -127,36 +128,37 @@ export const SEA_LION_GLSL = `
 
 // ---------------------------------------------------------------------------
 // Behaviour hooks (the manager's fear never fires — radius 0 — so the whole
-// loaf-dive-surface cycle is this file's). The floor question is asked here
-// too: rocks hold, the sea buoys, and this is what floats a freshly emerged
-// sea lion at the surface. Same constants as the motion's (AMPH_ROCK_REACH,
-// dive.swim) — see wildlifeMotion.js.
+// loaf-dive-surface cycle is this file's). The floor and "ashore?" are the
+// amphibious motion's own answer (amphibiousFloor), so the step and the dive
+// never disagree about where the rock ends.
+//
+// Nothing here knows the cove: the water it may use is its habitat's
+// sampling region (the roster sets it — the cove's keeps it out past the
+// wade barrier), and "off the rock" means away from the player.
 // ---------------------------------------------------------------------------
-const ROCK_REACH = 2.2;    // m: how far off a haul-out's edge the climb starts
+const ASHORE = 0.95;       // amphFloor.k from which the body is on a top
+const MARGIN = 4;          // m: kept inside the region's edges
+const anchorsOf = sp => (sp.def.dive && sp.def.dive.anchors) || 'haulouts';
 
-// The floor under an agent: a haul-out's top blended into the live sea
-// across the rock's skirt, else the sea alone.
-function floorY(a, L, t) {
-  const haul = L.spots && L.spots.haulouts;
-  if (haul) {
-    const hit = haul.nearest(a.x, a.z, ROCK_REACH);
-    if (hit.spot && hit.d < ROCK_REACH) {
-      // d is signed (negative inside the spot), so the ramp must clamp —
-      // deep inside a rock k would run past 1 and the cubic would dive.
-      const k = Math.min(1, Math.max(0, 1 - hit.d / ROCK_REACH));
-      const s = k * k * (3 - 2 * k);
-      const seaY = L.seaHeightAt ? L.seaHeightAt(a.x, a.z, t) : 0;
-      return hit.spot.y * s + seaY * (1 - s);
+// A point of open water round rock s, between r0 and r1 from its centre,
+// biased away from the player and kept inside the region. Module scratch.
+const _w = { x: 0, z: 0 };
+function openWater(sp, ctx, s, r0, r1) {
+  const L = ctx.layout, rng = sp.rng, reg = sp.def.habitat.region;
+  const away = Math.atan2(s.x - ctx.px, s.z - ctx.pz);
+  for (let k = 0; k < 8; k++) {
+    const th = away + (rng() - 0.5) * 2.2, r = r0 + rng() * (r1 - r0);
+    let x = s.x + Math.sin(th) * r, z = s.z + Math.cos(th) * r;
+    if (reg) {
+      x = Math.min(reg.x[1] - MARGIN, Math.max(reg.x[0] + MARGIN, x));
+      z = Math.min(reg.z[1] - MARGIN, Math.max(reg.z[0] + MARGIN, z));
     }
+    _w.x = x; _w.z = z;
+    amphibiousFloor(x, z, L, ctx.t, anchorsOf(sp));
+    if (amphFloor.k === 0) return _w;
   }
-  return L.seaHeightAt ? L.seaHeightAt(a.x, a.z, t) : 0;
+  return _w;   // the last try: a skirt at worst, never land
 }
-
-// Ashore? (Inside a haul-out's own radius.)
-const onRock = (a, L) => {
-  const haul = L.spots && L.spots.haulouts;
-  return haul ? haul.nearest(a.x, a.z, ROCK_REACH).d <= 0.3 : false;
-};
 
 // The dive. Loafing ashore, the timer runs out: bound for the water just
 // off the rock (dive 1); once that walk ends in the sea, HIDDEN — the body
@@ -166,18 +168,18 @@ const onRock = (a, L) => {
 // slide is re-phased. Never takes the frame — the machine runs on.
 function tick(a, sp, ctx, dt, api, threat) {
   const S = ctx.STATE, L = ctx.layout;
-  a.y = floorY(a, L, ctx.t);
+  a.y = amphibiousFloor(a.x, a.z, L, ctx.t, anchorsOf(sp));
+  const ashore = amphFloor.k > ASHORE;
   if (a.dive === undefined) { a.dive = 0; a.diveT = 8 + sp.rng() * 22; }
-  const ashore = onRock(a, L);
 
   if (a.dive === 0) {
     if (a.state === S.IDLE && ashore) {
       a.diveT -= dt;
       if (a.diveT <= 0) {
-        const s = L.spots.haulouts.nearest(a.x, a.z, 40).spot;
+        const s = L.spots[anchorsOf(sp)].nearest(a.x, a.z, 40).spot;
         if (s) {
-          // Off the seaward side, a few body-lengths out.
-          api.setTarget(a, sp, s.x + (sp.rng() - 0.5) * 7, Math.min(-44, s.z) - 2.5 - sp.rng() * 4);
+          const w = openWater(sp, ctx, s, s.r + 2.5, s.r + 6.5);
+          api.setTarget(a, sp, w.x, w.z);
           a.state = S.MOVE;
           a.timer = sp.rng.range(sp.def.timings.move);
           a.dive = 1;
@@ -204,37 +206,34 @@ function tick(a, sp, ctx, dt, api, threat) {
 }
 
 // IDLE → MOVE: ashore, a stroll across the rock toward its far side; in the
-// water, a lazy circle a little outside the rock's skirt, never inshore of
-// the wade barrier. The dive's own slide is the tick's, not this.
+// water, a lazy circle a little outside the rock's skirt. The dive's own
+// slide is the tick's, not this.
 function pickWander(a, sp, ctx, api) {
   const L = ctx.layout;
-  const haul = L.spots && L.spots.haulouts;
-  const near = haul ? haul.nearest(a.x, a.z, 40) : { spot: null };
-  if (!near.spot) { api.defaultWander(a, sp); return; }
-  const s = near.spot, rng = sp.rng;
-  if (onRock(a, L)) {
-    const th = rng() * Math.PI * 2, r = s.r * (0.15 + rng() * 0.55);
+  const rocks = L.spots[anchorsOf(sp)];
+  const s = rocks ? rocks.nearest(a.x, a.z, 40).spot : null;
+  if (!s) { api.defaultWander(a, sp); return; }
+  amphibiousFloor(a.x, a.z, L, ctx.t, anchorsOf(sp));
+  if (amphFloor.k > ASHORE) {
+    const th = sp.rng() * Math.PI * 2, r = s.r * (0.15 + sp.rng() * 0.55);
     api.setTarget(a, sp, s.x + Math.sin(th) * r, s.z + Math.cos(th) * r);
   } else {
-    const th = rng() * Math.PI * 2, r = s.r + 1.2 + rng() * 3.5;
-    api.setTarget(a, sp, s.x + Math.sin(th) * r, Math.min(-42, s.z + Math.cos(th) * r));
+    const w = openWater(sp, ctx, s, s.r + 1.2, s.r + 4.7);
+    api.setTarget(a, sp, w.x, w.z);
   }
 }
 
-// EMERGE: surface somewhere else nearby — a few metres off the rock, always
-// out at sea, while the body is still under (sink 1: the draw leaves it out,
-// so the reposition never shows).
+// EMERGE: surface somewhere else nearby, in open water off the rock, while
+// the body is still under (sink 1: the draw leaves it out, so the
+// reposition never shows).
 function emergeAt(a, sp, ctx, api) {
   const L = ctx.layout;
-  const haul = L.spots && L.spots.haulouts;
-  const s = haul ? haul.nearest(a.x, a.z, 40).spot : null;
-  const bx = s ? s.x : a.x, bz = s ? s.z : a.z, br = s ? s.r : 2;
-  const th = Math.PI + (sp.rng() - 0.5) * 2.0;   // biased offshore (-Z)
-  const r = br + 1.5 + sp.rng() * 5;
-  a.x = bx + Math.sin(th) * r;
-  a.z = Math.min(-42, bz + Math.cos(th) * r);
-  a.y = L.seaHeightAt ? L.seaHeightAt(a.x, a.z, ctx.t) : 0;
-  a.heading = Math.atan2(bx - a.x, bz - a.z);
+  const rocks = L.spots[anchorsOf(sp)];
+  const s = (rocks && rocks.nearest(a.x, a.z, 40).spot) || { x: a.x, z: a.z, r: 2 };
+  const w = openWater(sp, ctx, s, s.r + 1.5, s.r + 6.5);
+  a.x = w.x; a.z = w.z;
+  a.y = amphibiousFloor(a.x, a.z, L, ctx.t, anchorsOf(sp));
+  a.heading = Math.atan2(s.x - a.x, s.z - a.z);
   a.tx = a.x; a.tz = a.z;
 }
 
@@ -273,7 +272,7 @@ export const SEA_LION = {
     // as the surfacing.
     sinkDepth: 1.35, sinkTime: 1.6, scale: [1.15, 1.5],
   },
-  dive: { swim: 2.4 },              // the swim: walk * 2.4 ≈ 1.3 m/s
+  dive: { swim: 2.4, anchors: 'haulouts' },   // the swim: walk * 2.4 ≈ 1.3 m/s
   timings: { idle: [6, 16], move: [4, 10], alert: 0 },
   build: buildSeaLion,
   animGLSL: SEA_LION_GLSL,

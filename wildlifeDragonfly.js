@@ -20,7 +20,7 @@
 // Part ids read by DRAGONFLY_GLSL: 0 thorax (+ its dorsal plate), 1 abdomen,
 // 2 head + eyes, 3 fore wings, 4 hind wings.
 import * as THREE from 'three';
-import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20260930-amph1';
+import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass1';
 
 const COL = {
   thorax: 0x2e8ba8,      // the emperor's turquoise
@@ -153,6 +153,8 @@ export const DRAGONFLY = {
     // Over the pool and the foot of the falls — the planned-roster line's
     // `within: { pool: 6 }`: the water and its rim, on the wing above it.
     within: { pool: 6 },
+    // Never an anchor on the cliff's face: its eight would graze the rock.
+    slope: [0, 0.8],
   },
   spacing: 2.5,
   homeRange: 3.5,

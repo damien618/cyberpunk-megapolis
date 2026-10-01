@@ -13,10 +13,18 @@
 // Return true once the target is reached. The manager owns the state
 // machine; a motion only moves. It must not allocate per call.
 //
-// ground, hop, school and flyFree were the first implemented; glide, flock
-// and amphibious followed, so every kind the roster needs now has its step.
-// A kind that is only declared still finds its brief here and throws a
-// clear error (notYet, below) until written.
+// Optional, beside step:
+//   init(sp, ctx)  once, at creation, after the homes are placed: put the
+//                  agents where the motion keeps them (a flock formed on its
+//                  loop, an eagle on its circle), so frame one is not a jump.
+//   smooth: true   step every frame at any distance: past the near tier the
+//                  manager otherwise thinks one frame in four, which a big or
+//                  fast body (a bird crossing the sky) shows as a judder.
+//   group: true    one simulation for the whole species (a school, a flock):
+//                  woken and put to sleep together, never half a school.
+//
+// Kinds: ground, hop, flyFree, glide, flock, school, amphibious (MOTION, at
+// the bottom). A new kind starts as a brief there and its step here.
 import { stepBoids, boidParams } from './wildlifeBoids.js';
 
 export const wrapAngle = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -50,12 +58,6 @@ function groundStep(a, sp, dt, ctx, speed) {
   return false;
 }
 
-const notYet = (name, brief) => ({
-  brief,
-  step() {
-    throw new Error(`[wildlife] motion "${name}" is declared but not implemented yet — ${brief}`);
-  },
-});
 
 // ---------------------------------------------------------------------------
 // hop — tree frogs. Ballistic sub-hops toward the target: crouch, leap,
@@ -137,23 +139,25 @@ function hopStep(a, sp, dt, ctx, speed) {
 // boids' threat — the school parts around them at double speed and closes
 // again when they wade out. No allocation per call.
 // ---------------------------------------------------------------------------
-function schoolStep(a, sp, dt, ctx, speed) {
+function schoolInit(sp, ctx) {
   const L = ctx.layout;
-  let s = sp.school;
-  if (!s) {
-    // One-time: the pool read off its own agents — centre from their mean,
-    // surface from the water there, waterline by probing eight rays out.
+  let s;
+  {
+    // One-time: the water read off its own agents — centre from their mean,
+    // surface and kind (pool, stream, lagoon…) from the water there,
+    // waterline by probing eight rays out.
     let cx = 0, cz = 0;
     for (const b of sp.agents) { cx += b.x; cz += b.z; }
     cx /= sp.agents.length; cz /= sp.agents.length;
     const w0 = L.waterAt ? L.waterAt(cx, cz) : null;
-    const surf = w0 ? w0.y : a.y + 0.3;
+    const surf = w0 ? w0.y : sp.agents[0].y + 0.3;
+    const kind = w0 ? w0.kind : null;
     let r = 2;
     for (let i = 0; i < 8; i++) {
       const th = i * 0.7853981633974483 + 0.4, sx = Math.sin(th), sz = Math.cos(th);
       for (let d = 1; d < 20; d += 0.5) {
         const w = L.waterAt(cx + sx * d, cz + sz * d);
-        if (!w || w.kind !== 'pool') break;
+        if (!w || w.kind !== kind) break;
         if (d > r) r = d;
       }
     }
@@ -161,9 +165,12 @@ function schoolStep(a, sp, dt, ctx, speed) {
       x: b.x, y: surf - 0.35, z: b.z,
       vx: Math.sin(b.heading) * 0.35, vy: 0, vz: Math.cos(b.heading) * 0.35,
     }));
-    for (const b of sp.agents) b.y = surf - 0.35;
+    for (const b of sp.agents) {
+      b.y = surf - 0.35;
+      b.yaw = b.heading + sp.def.body.yawOffset;
+    }
     s = sp.school = {
-      cx, cz, r: Math.max(2, r - 1.2), surf,
+      cx, cz, r: Math.max(2, r - 1.2), surf, kind,
       guard: -1,
       threat: { x: 0, y: surf - 0.3, z: 0 },
       target: { x: cx, y: surf - 0.35, z: cz },
@@ -185,7 +192,7 @@ function schoolStep(a, sp, dt, ctx, speed) {
           out.x = dx / d * k; out.z = dz / d * k;
         } else {
           const w = L.waterAt(b.x, b.z);
-          if (!w || w.kind !== 'pool') {     // out of the water: hard pull home
+          if (!w || w.kind !== s.kind) {     // out of the water: hard pull home
             out.x = -dx / d * 10; out.z = -dz / d * 10;
           }
         }
@@ -199,8 +206,14 @@ function schoolStep(a, sp, dt, ctx, speed) {
       },
     };
   }
+  return s;
+}
+
+function schoolStep(a, sp, dt, ctx, speed) {
+  const s = sp.school || schoolInit(sp, ctx);
   // The group steps once per frame; the first agent to think this frame
-  // integrates it, everyone reads their own boid after.
+  // integrates it, everyone reads their own boid after. (A group motion is
+  // woken whole and thinks every frame — wildlife.js — so dt is the frame's.)
   if (s.guard !== sp.frame) {
     s.guard = sp.frame;
     const P = s.params;
@@ -279,10 +292,10 @@ const flockArc = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 
-function flockStep(a, sp, dt, ctx, speed) {
-  const L = ctx.layout;
-  let s = sp.flock;
-  if (!s) {
+function flockInit(sp, ctx) {
+  const L = ctx.layout, speed = sp.def.speed.walk;
+  let s;
+  {
     let cx = 0, cz = 0, x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (const b of sp.agents) {
       cx += b.x; cz += b.z;
@@ -318,12 +331,13 @@ function flockStep(a, sp, dt, ctx, speed) {
         const th = th0 - i * 0.16;
         const x = cx + Math.sin(th) * rx, z = cz + Math.cos(th) * rz;
         const y = flockSeaY(x, z, L, ctx.t) + mid;
-        b.y = y;
         const tl = Math.hypot(Math.cos(th) * rx, Math.sin(th) * rz) || 1;
-        return {
-          x, y, z,
-          vx: Math.cos(th) * rx / tl * speed, vy: 0, vz: -Math.sin(th) * rz / tl * speed,
-        };
+        const vx = Math.cos(th) * rx / tl * speed, vz = -Math.sin(th) * rz / tl * speed;
+        // The agent starts where its boid does, so the first frame drawn
+        // is already the formed line, not the scattered homes.
+        b.x = x; b.y = y; b.z = z;
+        b.heading = Math.atan2(vx, vz); b.yaw = b.heading;
+        return { x, y, z, vx, vy: 0, vz };
       }),
       params: boidParams({
         sepDist: 2.4, viewDist: 9,
@@ -349,6 +363,12 @@ function flockStep(a, sp, dt, ctx, speed) {
       },
     };
   }
+  return s;
+}
+
+function flockStep(a, sp, dt, ctx, speed) {
+  const L = ctx.layout;
+  const s = sp.flock || flockInit(sp, ctx);
   // The flight steps once per frame; the first agent to think this frame
   // flies the leader on, samples the trail and integrates the boids. The
   // group has its own clock — the real time since the last integration —
@@ -472,7 +492,9 @@ function flockStep(a, sp, dt, ctx, speed) {
 // nothing skirts into a bank or the cliff. Arrived, it hangs at the anchor
 // on a small figure-of-eight (a Lissajous pair, velocity carried into the
 // heading) until the hover runs out, then reports in: the machine idles for
-// a frame and the tick retargets. No allocation per call.
+// a frame and the tick retargets. A target the machine changes mid-dart or
+// mid-hover (a.ftx/a.ftz hold the one the flight was planned for) restarts
+// the dart from where the body is. No allocation per call.
 //
 // Optional definition keys (def.fly; a species that leaves it out flies on
 // these defaults):
@@ -499,12 +521,18 @@ function flyFreeStep(a, sp, dt, ctx, speed) {
   const turn = sp.def.speed.turn * dt;
 
   if (a.flyPhase !== 0 && a.flyPhase !== 1) { a.flyPhase = 1; a.dartOn = false; }
+  // The machine moved the target (a fresh wander, a flight from the player):
+  // whatever the dart or the hover was doing, leave for it from HERE. The
+  // dart walks a chord planned from its start, so carrying on with a new end
+  // would teleport the body down the new chord.
+  if (a.tx !== a.ftx || a.tz !== a.ftz) { a.flyPhase = 1; a.dartOn = false; }
 
   // --- the dart: the zigzag chord to the target ----------------------------
   if (a.flyPhase === 1) {
     if (!a.dartOn) {
       const dx = a.tx - a.x, dz = a.tz - a.z;
       const d = Math.hypot(dx, dz);
+      a.ftx = a.tx; a.ftz = a.tz;
       a.dartOn = true; a.dartT = 0;
       a.hx = a.x; a.hy = a.y; a.hz = a.z;
       if (d < ARRIVE) {
@@ -561,10 +589,13 @@ function flyFreeStep(a, sp, dt, ctx, speed) {
     a.heading = Math.atan2(vx, vz);
     a.yaw += Math.max(-turn, Math.min(turn, wrapAngle(a.heading - a.yaw)));
   }
+  // The anchor's height with a breath of bob, held over the band's floor —
+  // and eased toward, 3 m/s at most, like the dart's guard: an eight that
+  // brushes a bank climbs over it and settles back instead of snapping.
   let y = a.ay + Math.sin(ctx.t * 2.1 + a.phase) * 0.04;
   const minY = flySurfaceY(a.x, a.z, L) + LOW;
   if (y < minY) y = minY;
-  a.y = y;
+  a.y += Math.max(-3 * dt, Math.min(3 * dt, y - a.y));
   a.speed = Math.min(Math.hypot(vx, vz), 0.5);
   if (a.hoverT <= 0) { a.flyPhase = 1; a.dartOn = false; return true; }
   return false;
@@ -582,7 +613,7 @@ function flyFreeStep(a, sp, dt, ctx, speed) {
 // State lives on the agent, like the hop's a.hopPhase:
 //   a.gPh     0 circling, 1 the re-centre glide
 //   a.cx/cz   the circle's centre, drifting on the wind inside homeRange
-//   a.cR      the circle's radius, per individual
+//   a.cR      the circle's radius, per individual (a.cRad, the one flown)
 //   a.cTh     the angle round the circle
 //   a.cDir    which way round (flips at each re-centre)
 //   a.cT      seconds to the next re-centre
@@ -601,6 +632,39 @@ function flyFreeStep(a, sp, dt, ctx, speed) {
 // ---------------------------------------------------------------------------
 const GLIDE_G = 9.8;   // m/s², for the lean of a steady turn
 
+// The band's middle over the ground here and GLIDE_LOOK metres ahead — so
+// the bird is already rising when a cliff comes under it — reached at a
+// soaring bird's pace: up to 2.5 m/s climbing, 1.5 m/s sinking.
+const GLIDE_LOOK = 12;
+function glideAltitude(a, L, dt, mid) {
+  const ahead = flySurfaceY(a.x + Math.sin(a.yaw) * GLIDE_LOOK, a.z + Math.cos(a.yaw) * GLIDE_LOOK, L);
+  const want = Math.max(flySurfaceY(a.x, a.z, L), ahead) + mid;
+  const v = (want - a.y) * (want > a.y ? 2 : 0.35);
+  a.y += Math.max(-1.5, Math.min(2.5, v)) * dt;
+}
+
+// First flight: take up a circle over the home, already at altitude and
+// already on its rim (the motion's init runs this for every agent at
+// creation, so the first frame drawn is the bird in its circle).
+function glideJoin(a, sp, ctx) {
+  const F = sp.def.fly || EMPTY_FLY;
+  const low = F.low ?? 18, high = F.high ?? 32;
+  a.gPh = 0;
+  a.cx = a.home.x; a.cz = a.home.z;
+  const R = F.circleR ?? [11, 16];
+  a.cR = R[0] + sp.rng() * (R[1] - R[0]);
+  a.cRad = a.cR;                          // the radius flown, eased to cR
+  a.cTh = sp.rng() * Math.PI * 2;
+  a.cDir = sp.rng() < 0.5 ? -1 : 1;
+  a.cT = sp.rng.range(F.recenter ?? [38, 80]);
+  a.roll = 0;
+  a.x = a.cx + Math.sin(a.cTh) * a.cR;
+  a.z = a.cz + Math.cos(a.cTh) * a.cR;
+  a.y = flySurfaceY(a.x, a.z, ctx.layout) + low + 0.5 * (high - low);
+  a.heading = Math.atan2(a.cDir * Math.cos(a.cTh), -a.cDir * Math.sin(a.cTh));
+  a.yaw = a.heading;
+}
+
 function glideStep(a, sp, dt, ctx, speed) {
   const L = ctx.layout;
   const F = sp.def.fly || EMPTY_FLY;
@@ -608,17 +672,7 @@ function glideStep(a, sp, dt, ctx, speed) {
   const low = F.low ?? 18, high = F.high ?? 32;
   const mid = low + 0.5 * (high - low);
 
-  // First flight: take up a circle over the home, already at altitude.
-  if (a.gPh !== 0 && a.gPh !== 1) {
-    a.gPh = 0;
-    a.cx = a.home.x; a.cz = a.home.z;
-    const R = F.circleR ?? [11, 16];
-    a.cR = R[0] + sp.rng() * (R[1] - R[0]);
-    a.cTh = sp.rng() * Math.PI * 2;
-    a.cDir = sp.rng() < 0.5 ? -1 : 1;
-    a.cT = sp.rng.range(F.recenter ?? [38, 80]);
-    a.roll = 0;
-  }
+  if (a.gPh !== 0 && a.gPh !== 1) glideJoin(a, sp, ctx);
 
   // --- the long glide to a fresh centre: wings level, ground keeping pace ---
   if (a.gPh === 1) {
@@ -629,12 +683,14 @@ function glideStep(a, sp, dt, ctx, speed) {
     a.roll += (0 - a.roll) * Math.min(1, dt * 1.5);
     const step = Math.min(speed * dt, d);
     a.x += Math.sin(a.yaw) * step; a.z += Math.cos(a.yaw) * step;
-    const want = flySurfaceY(a.x, a.z, L) + mid;
-    a.y += (want - a.y) * Math.min(1, dt * (want > a.y ? 2 : 0.35));
+    glideAltitude(a, L, dt, mid);
     a.speed = step / Math.max(dt, 1e-3);
-    if (d - step < 0.05) {
+    // It joins the fresh circle where it meets the rim, not at the centre:
+    // from the centre the circle's first point would be a radius away.
+    if (d - step <= a.cR) {
       a.gPh = 0; a.cx = a.tx; a.cz = a.tz;
       a.cTh = Math.atan2(a.x - a.cx, a.z - a.cz);
+      a.cRad = Math.hypot(a.x - a.cx, a.z - a.cz);   // eased out to cR below
     }
     return false;
   }
@@ -663,13 +719,14 @@ function glideStep(a, sp, dt, ctx, speed) {
   }
   a.cx = ncx; a.cz = ncz;
 
-  a.cTh += a.cDir * speed / a.cR * dt;      // one m/s on the rim, any radius
-  a.x = a.cx + Math.sin(a.cTh) * a.cR;
-  a.z = a.cz + Math.cos(a.cTh) * a.cR;
+  // A circle joined inside its rim spirals out to it.
+  a.cRad += (a.cR - a.cRad) * Math.min(1, dt * 0.25);
+  a.cTh += a.cDir * speed / Math.max(a.cRad, 2) * dt;   // the pace on the rim, any radius
+  a.x = a.cx + Math.sin(a.cTh) * a.cRad;
+  a.z = a.cz + Math.cos(a.cTh) * a.cRad;
   a.heading = Math.atan2(a.cDir * Math.cos(a.cTh), -a.cDir * Math.sin(a.cTh));
   a.yaw += Math.max(-turn, Math.min(turn, wrapAngle(a.heading - a.yaw)));
-  const want = flySurfaceY(a.x, a.z, L) + mid;
-  a.y += (want - a.y) * Math.min(1, dt * (want > a.y ? 2 : 0.35));
+  glideAltitude(a, L, dt, mid);
   a.speed = speed;
   // The bank: a steady turn at v round R leans atan(v²/gR), read from the
   // turn's direction and scaled to read at a distance; eased, so a flip of
@@ -694,26 +751,35 @@ function glideStep(a, sp, dt, ctx, speed) {
 //
 // Optional definition keys (def.dive; a species that leaves it out swims on
 // these defaults):
-//   swim 2.4   the swim's speed as a multiple of the crawl
+//   swim 2.4             the swim's speed as a multiple of the crawl
+//   anchors 'haulouts'   the layout.spots index of the rocks it hauls out on
 // ---------------------------------------------------------------------------
 const AMPH_ROCK_REACH = 2.2;   // m: how far off a haul-out's edge the climb starts
 const AMPH_SWIM = 2.4;         // the swim's default multiple of the crawl
 
-// The floor under an agent, in module scratch (no allocation per call):
-// _amphK is how far up the rock we are (0 water, 1 on the top), _amphY the top.
-let _amphK = 0, _amphY = 0;
-function amphFloor(a, L) {
-  _amphK = 0; _amphY = 0;
-  const haul = L.spots && L.spots.haulouts;
-  if (!haul) return false;
-  const hit = haul.nearest(a.x, a.z, AMPH_ROCK_REACH);
-  if (!hit.spot || hit.d >= AMPH_ROCK_REACH) return false;
+// The floor under (x, z): every haul-out within reach lifts it, the highest
+// lift wins — so the floor stays continuous between two rocks, where "the
+// nearest rock" would flip and jump the body from one top to the other.
+// Module scratch, no allocation per call: amphK is how far up a rock the
+// point is (0 open water, 1 on a top). Exported for a species' own hooks
+// (the sea lion's dive asks the same question as its motion).
+export const amphFloor = { k: 0, y: 0 };
+let _amphSea = 0, _amphBest = 0;
+function amphVisit(s, d) {
   // d is signed (negative inside the spot), so the ramp clamps — deep inside
   // a rock k would run past 1 and the cubic would dive below the sea.
-  const k = Math.min(1, Math.max(0, 1 - hit.d / AMPH_ROCK_REACH));
-  _amphK = k * k * (3 - 2 * k);
-  _amphY = hit.spot.y;
-  return true;
+  const k = Math.min(1, Math.max(0, 1 - d / AMPH_ROCK_REACH));
+  const sk = k * k * (3 - 2 * k);
+  const lift = (s.y - _amphSea) * sk;
+  if (lift > _amphBest) { _amphBest = lift; amphFloor.k = sk; }
+}
+export function amphibiousFloor(x, z, L, t, anchors = 'haulouts') {
+  _amphSea = flockSeaY(x, z, L, t);
+  _amphBest = 0; amphFloor.k = 0;
+  const rocks = L.spots && L.spots[anchors];
+  if (rocks) rocks.each(x, z, AMPH_ROCK_REACH, amphVisit);
+  amphFloor.y = _amphSea + _amphBest;
+  return amphFloor.y;
 }
 
 function amphibiousStep(a, sp, dt, ctx, speed) {
@@ -724,17 +790,18 @@ function amphibiousStep(a, sp, dt, ctx, speed) {
   const want = Math.atan2(dx, dz);
   const turn = sp.def.speed.turn * dt;
   a.heading += Math.max(-turn, Math.min(turn, wrapAngle(want - a.heading)));
-  // The crawl is what the state asked for; the swim rides dive.swim times it.
-  const onRock = amphFloor(a, L);
-  const swimK = onRock ? 1 : ((sp.def.dive && sp.def.dive.swim) || AMPH_SWIM);
+  // The crawl is what the state asked for; the swim rides dive.swim times it,
+  // blended across the rock's skirt as the floor is.
+  const D = sp.def.dive || EMPTY_FLY;
+  amphibiousFloor(a.x, a.z, L, ctx.t, D.anchors);
+  const swimK = 1 + ((D.swim || AMPH_SWIM) - 1) * (1 - amphFloor.k);
   // Slow into the last few centimetres so nothing overshoots and circles.
   const v = Math.min(speed * swimK, d / Math.max(dt, 1e-3), speed * swimK * (0.35 + d * 2));
   const step = Math.min(v * dt, d);
   a.x += Math.sin(a.heading) * step;
   a.z += Math.cos(a.heading) * step;
-  // The floor: the rock's top blended into the live sea across its skirt.
-  const seaY = flockSeaY(a.x, a.z, L, ctx.t);
-  a.y = onRock ? _amphY * _amphK + seaY * (1 - _amphK) : seaY;
+  // The floor: the rocks' tops blended into the live sea across their skirts.
+  a.y = amphibiousFloor(a.x, a.z, L, ctx.t, D.anchors);
   a.speed = step / Math.max(dt, 1e-3);
   // The body follows the heading (an amphibious has no sideways walk).
   const body = a.heading + sp.def.body.yawOffset;
@@ -751,14 +818,18 @@ export const MOTION = {
   // reeds) with a small figure-of-eight, then dart in straight zigzags to the
   // next one inside an altitude band above the ground or the water. Reads
   // layout.spots.* for anchors; a.ty is the height.
-  flyFree: { step: flyFreeStep, brief: 'hover at anchors, straight darting hops, altitude band' },
+  flyFree: { step: flyFreeStep, smooth: true, brief: 'hover at anchors, straight darting hops, altitude band' },
 
   // Bald eagle. — implemented for wildlifeEagle.js, the roster's planned
   // glide species: slow banked circles round a centre that drifts on the
   // wind inside homeRange, in a band above the ground or the water (glideStep
   // above); now and then a long glide to a fresh centre and the circles
   // resume the other way round. The bank is a.roll, applied by the engine.
-  glide: { step: glideStep, brief: 'soaring circles round a drifting centre, banked' },
+  glide: {
+    step: glideStep, smooth: true,
+    init(sp, ctx) { for (const a of sp.agents) glideJoin(a, sp, ctx); },
+    brief: 'soaring circles round a drifting centre, banked',
+  },
 
   // Brown pelicans. A line abreast of the sea: the leader follows a loop over
   // the cove, the rest keep a slot behind and to one side through
@@ -769,13 +840,21 @@ export const MOTION = {
   // the file behind it chases a point fly.delay seconds back down the
   // leader's own trail through wildlifeBoids; the band rides seaHeightAt's
   // water; now and then the leader plunges and the line follows it down.
-  flock: { step: flockStep, brief: 'follow-the-leader line via wildlifeBoids, over the sea' },
+  flock: {
+    step: flockStep, smooth: true, group: true,
+    init(sp, ctx) { if (sp.agents.length) flockInit(sp, ctx); },
+    brief: 'follow-the-leader line via wildlifeBoids, over the sea',
+  },
 
   // Silver fish in the pool. wildlifeBoids in 3-D, bounded by the bed
   // (terrainHeight) and the surface (waterAt(x, z).y); scatter from the
   // player when they wade in, regroup after. — implemented for
   // wildlifeFish.js, the roster's planned school species.
-  school: { step: schoolStep, brief: '3-D boids bounded by bed and surface (wildlifeBoids)' },
+  school: {
+    step: schoolStep, smooth: true, group: true,
+    init(sp, ctx) { if (sp.agents.length) schoolInit(sp, ctx); },
+    brief: '3-D boids bounded by bed and surface (wildlifeBoids)',
+  },
 
   // California sea lions. — implemented for wildlifeSeaLion.js, the roster's
   // planned amphibious species: the crawl on the haul-out rocks' tops

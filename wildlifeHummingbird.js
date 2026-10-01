@@ -20,7 +20,7 @@
 // the air is a hummingbird's ground. Part ids read by HUMMINGBIRD_GLSL:
 // 0 torso, 1 head + throat + bill, 3 tail, 4 wings.
 import * as THREE from 'three';
-import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20260930-amph1';
+import { creaturePart, mergeCreatureParts } from './wildlife.js?v=20261001-pass1';
 
 const COL = {
   back: 0x2f9e5f,        // the emerald of the crown and back

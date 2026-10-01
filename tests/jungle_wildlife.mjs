@@ -1011,5 +1011,68 @@ if (eag) {
   }
 }
 
+// --- Roster-wide invariants -------------------------------------------------
+// Held for EVERY species on the roster, the ones to come included: walk a
+// player in circles round one of its homes (close enough to scare it, far
+// enough to let it settle) and watch every drawn individual frame to frame.
+{
+  const W = createJungleWildlife({ scene: new THREE.Scene(), terrain, vegetation: veg });
+  const P = new THREE.Vector3(), V = new THREE.Vector3();
+  for (const sp of Object.values(W.debug.species)) {
+    const id = sp.def.id, ag = sp.agents;
+    if (!ag.length) { check(false, `${id}: no homes found`); continue; }
+    const h = ag[0].home;
+    // The fastest a body may honestly cover in a frame: its flight, with
+    // room for a boids burst or a zigzag swing, at 30 fps.
+    const lim = (Math.max(sp.def.speed.flee, sp.def.speed.walk) * 1.5 + 2) / 30 + 0.15;
+    let t = 0, worst = 0, nan = false, why = '';
+    const last = new Map();
+    for (let k = 0; k < 30 * 40; k++) {
+      t += 1 / 30;
+      const th = t * 0.2;
+      P.set(h.x + Math.sin(th) * 6, 0, h.z + Math.cos(th) * 6);
+      V.set(Math.cos(th) * 1.2, 0, -Math.sin(th) * 1.2);
+      W.update(1 / 30, t, P, V);
+      for (const a of ag) {
+        if (!Number.isFinite(a.x + a.y + a.z)) nan = true;
+        const drawn = a.awake && a.sink < 1;
+        const l = last.get(a.i);
+        if (drawn && l) {
+          const d = Math.hypot(a.x - l[0], a.y - l[1], a.z - l[2]);
+          if (d > worst) { worst = d; why = `#${a.i} frame ${k} ${W.STATE_NAME[l[3]]}→${W.STATE_NAME[a.state]}, ${a.dist.toFixed(1)} m off`; }
+        }
+        if (drawn) last.set(a.i, [a.x, a.y, a.z, a.state]); else last.delete(a.i);
+      }
+    }
+    check(!nan, `${id}: no NaN in 40 s round a home`);
+    check(worst <= lim, `${id}: no jump — at most ${worst.toFixed(2)} m in a frame (limit ${lim.toFixed(2)})${worst > lim ? ': ' + why : ''}`);
+
+    // Seen from afar (most of its activeRadius away): a group wakes and
+    // sleeps whole, and a smooth motion moves every frame — no 15 Hz judder.
+    const M = sp.motion, far = sp.def.activeRadius * 0.85;
+    if (M.group || M.smooth) {
+      let split = 0, still = 0, seen = 0;
+      const prev = new Map();
+      // From where the animals are now (a school drifts off its homes).
+      const cx = ag.reduce((s, a) => s + a.x, 0) / ag.length, cz = ag.reduce((s, a) => s + a.z, 0) / ag.length;
+      for (let k = 0; k < 30 * 12; k++) {
+        t += 1 / 30;
+        P.set(cx + far, 0, cz); V.set(0, 0, 0);
+        W.update(1 / 30, t, P, V);
+        const awake = ag.filter(a => a.awake).length;
+        if (M.group && awake !== 0 && awake !== ag.length) split++;
+        for (const a of ag) {
+          const l = prev.get(a.i);
+          if (a.awake && a.sink < 1 && l) { seen++; if (l[0] === a.x && l[1] === a.y && l[2] === a.z) still++; }
+          prev.set(a.i, [a.x, a.y, a.z]);
+        }
+      }
+      if (M.group) check(split === 0, `${id}: the group wakes and sleeps whole (${split} split frames at ${far.toFixed(0)} m)`);
+      if (M.smooth) check(seen > 0 && still / seen < 0.05,
+        `${id}: moves every frame from ${far.toFixed(0)} m (${seen ? (100 * still / seen).toFixed(0) : '–'}% still frames)`);
+    }
+  }
+}
+
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 globalThis.__jungleWildlifeFailed = failed;
