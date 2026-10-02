@@ -51,3 +51,13 @@ with resort_page(viewport={'width':1280,'height':800}) as (page, errors):
         print(time,stats)
         check('reception frame within graphics budgets',stats['calls']<=250 and stats['triangles']<=800000)
         page.screenshot(path=str(ROOT/'scratch'/f'resort_reception_{time}.png'))
+    for view,x,z in [('souvenirs',-5.3,2.4),('swim_gear',5.4,3.4)]:
+        page.evaluate('''([x,z,view])=>{
+          const v=window.__resort,b=v.layout.CENTRAL_BUILDINGS.find(b=>b.kind==='reception');
+          v.setResortTime('day',true);v.camera.position.set(b.x+x+(view==='swim_gear'?-.65:1),b.y+1.8,b.z+z+2.5);
+          v.camera.lookAt(b.x+x,b.y+1.1,b.z+z);
+          v.vegetation.update(v.camera.position,0);v.atmosphere.update(0,v.camera.position);
+          v.architecture.update(v.camera.position);v.batch.update(v.camera.position);
+          v.guests.update(.016,2,v.camera.position);v.renderer.render(v.scene,v.camera);
+        }''',[x,z,view])
+        page.screenshot(path=str(ROOT/'scratch'/f'resort_reception_{view}.png'))

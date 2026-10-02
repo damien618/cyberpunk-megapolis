@@ -903,14 +903,14 @@ export function buildBareLowerLegs(root, material) {
  * Weights are rewritten onto the thigh so the stump follows the hem instead
  * of swinging with the calf bone.
  */
-export function hideAuthoredLowerLegs(root) {
+export function hideAuthoredLowerLegs(root, { cutU = LOWER_LEG_CUT_U } = {}) {
   const found = findLegRig(root);
   if (!found) return;
   const { rig, scheme } = found;
   const { pos, indexOf } = restReader(rig);
   const hem = {
-    l: pos(scheme.l.thigh).clone().lerp(pos(scheme.l.calf), LOWER_LEG_CUT_U),
-    r: pos(scheme.r.thigh).clone().lerp(pos(scheme.r.calf), LOWER_LEG_CUT_U),
+    l: pos(scheme.l.thigh).clone().lerp(pos(scheme.l.calf), cutU),
+    r: pos(scheme.r.thigh).clone().lerp(pos(scheme.r.calf), cutU),
   };
   const hemY = { l: hem.l.y, r: hem.r.y };
   const thighIdx = { l: indexOf(scheme.l.thigh), r: indexOf(scheme.r.thigh) };

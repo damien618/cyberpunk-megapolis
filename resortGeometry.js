@@ -20,8 +20,12 @@ export function createResortBatch(scene,materials,collision) {
     }
     bins.clear();return meshes;
   }
-  function update(camera){for(const im of meshes)if(im.userData.detail)im.visible=im.boundingSphere.center.distanceTo(camera)<55+im.boundingSphere.radius;}
-  return {box,post,finish,update,meshes};
+  function addDetailMesh(mesh,far=55){
+    mesh.geometry.computeBoundingSphere();mesh.boundingSphere=mesh.geometry.boundingSphere.clone();
+    mesh.userData.detail=true;mesh.userData.detailDistance=far;meshes.push(mesh);
+  }
+  function update(camera){for(const im of meshes)if(im.userData.detail)im.visible=im.boundingSphere.center.distanceTo(camera)<(im.userData.detailDistance??55)+im.boundingSphere.radius;}
+  return {box,post,finish,update,addDetailMesh,meshes};
 }
 // Hip roof laid as overlapping thatch courses: each band thickens toward a ragged
 // butt edge that shades the course below, and straw rolls cover the four hips.

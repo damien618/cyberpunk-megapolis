@@ -990,7 +990,7 @@ function buildGardenVegetation({scene,rnd,maxAniso,layout:L,rules:R}) {
   meshes.push(...tiled(group,'garden_palm_trunk',palmTrunkGeo(),new THREE.MeshStandardMaterial({color:0xffffff,roughness:1}),palms,{cast:true,tile:64,tint:{h:.09,s:.22,l:.29}}));
   meshes.push(...tiled(group,'garden_palm_crown',palmCrownGeo(),fm,crowns,{cast:true,depth,tile:64,tint:{h:.24,s:.55,l:.32}}));
   meshes.push(...tiled(group,'garden_bush',R.shrubs?.geometry??bushGeo(),R.shrubs?.material??makeSolidMaterial({},.02),bushes,{cast:false,tile:64,tint:{h:.28,s:.52,l:R.shrubs ? .31 : .24},far:110}));
-  if(R.shrubs)meshes.push(...tiled(group,'garden_bush_leaves',R.shrubs.leavesGeometry,R.shrubs.leavesMaterial,bushes,{cast:false,tile:64,tint:{h:.28,s:.52,l:.31},far:110}));
+  if(R.shrubs)meshes.push(...tiled(group,'garden_bush_leaves',R.shrubs.leavesGeometry,R.shrubs.leavesMaterial,bushes,{cast:false,tile:64,tint:{h:.28,s:.52,l:.31},far:65}));
   const bm=broadLeafTexture(maxAniso),bmat=makeLeafMaterial(bm,.03);
   meshes.push(...tiled(group,'garden_broad',broadPlantGeo(),bmat,broads,{depth:leafDepth(bm),tile:64,tint:{h:.27,s:.5,l:.32},far:100}));
   const fernMap=fernTexture(maxAniso);

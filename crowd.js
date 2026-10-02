@@ -440,7 +440,7 @@ function beachBoneKind(name) {
  * + bone weights, not from a rectangle — the eye lives in the same
  * quadrant as the sneaker.
  */
-function buildBeachMask(root) {
+function buildBeachMask(root, hem = .80) {
   let mesh = null;
   root.traverse(o => { if (!mesh && o.isSkinnedMesh) mesh = o; });
   if (!mesh?.skeleton || !mesh.geometry) return null;
@@ -471,7 +471,7 @@ function buildBeachMask(root) {
   // Mid-thigh in bind pose. Painting the UV by interpolated Y (not by a
   // majority vote on the triangle) is what keeps the hem a ring instead of
   // a sawtooth.
-  const HEM = 0.80;
+  const HEM = hem;
   const W = 1024, H = 1024;
   const data = new Uint8Array(W * H);
   const fillTri = (i0, i1, i2, foot) => {
@@ -611,7 +611,7 @@ function paintShirtRegion(p, w, h, shirtHex, dark) {
 }
 
 function dressGuestBeach(map, mask, { shirtHex, shortsHex, shoeHex, darkShirt = false,
-  barefoot = false } = {}) {
+  barefoot = false, floral = false } = {}) {
   const atlas = atlasToCanvas(map);
   if (!atlas) return map;
   const { c, ctx, w, h, data } = atlas;
@@ -664,7 +664,48 @@ function dressGuestBeach(map, mask, { shirtHex, shortsHex, shoeHex, darkShirt = 
     }
   }
   ctx.putImageData(data, 0, 0);
+  if (floral) drawHolidayShirt(ctx, w, h, shirtHex);
   return canvasTexture(c, map);
+}
+
+// Artwork stays inside the shirt's UV quadrant. Small woven threads, botanical
+// sprays and a button placket follow the same skinned surface as the fabric.
+function drawHolidayShirt(ctx, w, h, shirtHex) {
+  const u = w / 1024, v = h / 1024;
+  ctx.save(); ctx.scale(u, v);
+  ctx.beginPath(); ctx.rect(0, 512, 512, 512); ctx.clip();
+  const light = new THREE.Color(shirtHex).getHSL({}).l > .5;
+  ctx.strokeStyle = light ? '#42695c' : '#a9d3ae';
+  ctx.lineWidth = 1.6;
+  for (let row = 0; row < 9; row++) for (let col = 0; col < 9; col++) {
+    const x = col * 63 + (row % 2) * 27 + 12, y = 527 + row * 61;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(row * 3 + col) * .9);
+    ctx.beginPath(); ctx.moveTo(-16, 18); ctx.quadraticCurveTo(-8, 3, 8, -16); ctx.stroke();
+    for (const [lx, ly, a] of [[-9, 9, -.7],[3, -9, .7],[10, 12, 1]]) {
+      ctx.save(); ctx.translate(lx, ly); ctx.rotate(a);
+      ctx.fillStyle = light ? '#577f68' : '#7da788';
+      ctx.beginPath(); ctx.ellipse(0, 0, 3.5, 10, .4, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    }
+    ctx.fillStyle = (row + col) % 2 ? '#f2c8a4' : '#f5e6ca';
+    for (let petal = 0; petal < 5; petal++) {
+      const a = petal * Math.PI * 2 / 5;
+      ctx.beginPath(); ctx.ellipse(Math.cos(a) * 6, Math.sin(a) * 6, 5, 3.7, a, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = '#d79654'; ctx.beginPath(); ctx.arc(0, 0, 2.3, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // Front opening, stitch lines, pale shell buttons and a small folded collar.
+  ctx.fillStyle = 'rgba(20,32,30,.18)'; ctx.fillRect(185, 683, 7, 175);
+  ctx.strokeStyle = 'rgba(255,245,222,.4)'; ctx.lineWidth = 1;
+  for (const x of [185, 192]) { ctx.beginPath(); ctx.moveTo(x, 688); ctx.lineTo(x, 858); ctx.stroke(); }
+  ctx.fillStyle = '#eee0c6';
+  for (let y = 700; y < 855; y += 30) { ctx.beginPath(); ctx.arc(188, y, 2.1, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = 'rgba(240,230,205,.35)';
+  for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(188, 685); ctx.lineTo(188 + side * 20, 673); ctx.lineTo(188 + side * 13, 700); ctx.closePath(); ctx.fill(); }
+  ctx.globalAlpha = .055; ctx.fillStyle = '#fff7dd';
+  for (let y = 513; y < 1024; y += 3) ctx.fillRect(0, y, 512, .7);
+  for (let x = 0; x < 512; x += 3) ctx.fillRect(x, 512, .7, 512);
+  ctx.restore();
 }
 
 function isSkinByte(r, g, b, a) {
@@ -795,7 +836,7 @@ function attachBeachShades(group, rng) {
 const clipCache = new Map();
 export async function loadGuestRig({
   model, walk, idle, height = 1.68, recolor = 'atlas',
-  walkClipName, idleClipName, retarget = false, lit = false,
+  walkClipName, idleClipName, retarget = false, lit = false, shortsHem = .80,
 } = {}) {
   const loader = new GLTFLoader().setDRACOLoader(dracoLoader);
   const gltf = await loader.loadAsync(model);
@@ -852,7 +893,7 @@ export async function loadGuestRig({
   const walkClip = fit(rawWalk, walkGltf);
   const idleClip = fit(rawIdle, idleGltf);
   const { height: measured } = skinnedExtents(scene);
-  const beachMask = buildBeachMask(scene);
+  const beachMask = buildBeachMask(scene, shortsHem);
   return { scene, walkClip, idleClip, kind: 'guest', recolor, measured, fitHeight: height, stride, beachMask };
 }
 
@@ -1367,7 +1408,7 @@ export function customRig(group) {
 export function makeVisitor(base, walkClip, rng,
   { uniform = null, seated = false, still = false, playIdle = false,
     idleClip = null, guest = null, look = null, barefoot = false,
-    authoredBody = false, authoredBeach = false } = {}) {
+    authoredBody = false, authoredBeach = false, floral = false, shortsCut = undefined } = {}) {
   const group = cloneSkinned(base);
   const isGuest = Boolean(guest) || Boolean(group.getObjectByName('Hips') && !group.getObjectByName('pelvis'));
 
@@ -1474,7 +1515,7 @@ export function makeVisitor(base, walkClip, rng,
             shortsHex: chosen.shorts ?? pick(BEACH_SHORTS),
             shoeHex: chosen.shoes ?? pick(BEACH_SHOES),
             darkShirt: guest?.recolor === 'atlas-dark',
-            barefoot,
+            barefoot, floral,
           });
         } else if (guest?.recolor === 'atlas-dark' && c.map) {
           c.map = dressGuestAtlasDark(c.map, chosen.tshirt, shirtStyle, shirtAccent);
@@ -1484,7 +1525,7 @@ export function makeVisitor(base, walkClip, rng,
           c.color.lerp(new THREE.Color(chosen.tshirt), 0.42);
         }
         c.metalness = Math.min(c.metalness ?? 0, 0.06);
-        c.roughness = Math.max(c.roughness ?? 0.5, 0.6);
+        c.roughness = Math.max(c.roughness ?? 0.5, floral ? .86 : .6);
         c.envMapIntensity = 0.7;
         c.needsUpdate = true;
         return c;
@@ -1607,7 +1648,7 @@ export function makeVisitor(base, walkClip, rng,
   // onto the same Mixamo bones — the tables are the player's. Authored beach
   // GLBs already ship real legs; leave those.
   if (barefoot && isGuest && !authoredBeach) {
-    hideAuthoredLowerLegs(group);
+    hideAuthoredLowerLegs(group, { cutU: shortsCut });
     let skinRough = 0.72, skinEnv = 0.7;
     group.traverse(o => {
       if (!o.isSkinnedMesh || String(o.name).startsWith('Wardrobe_')) return;
@@ -1669,7 +1710,7 @@ export function makeVisitor(base, walkClip, rng,
     ? guest.stride / Math.max(clip.duration, 0.01)
     : 1.05;
   if (beachLook && isGuest && rng() < 0.55) attachBeachShades(group, rng);
-  return { group, mixer, pose, height,
+  return { group, mixer, pose, height, walkAction: action,
     speed: (still && !playIdle) ? 0 : pace * height * action.timeScale };
 }
 

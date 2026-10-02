@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { buildResortBar } from './resortBar.js';
 import { createResortFurniture } from './resortFurniture.js';
+import { buildReceptionDecor } from './resortReceptionDecor.js';
 import { BUILDINGS,HAMMOCK,localPoint,terrainHeight,BOUNDS } from './resortLayout.js';
 export function buildResortProps({scene,batch,materials}) {
   const lanterns=[],group=new THREE.Group();scene.add(group);
@@ -29,6 +30,7 @@ export function buildResortProps({scene,batch,materials}) {
           box(b,'brass',x+.65,1.34,-.18,.035,.38,.035);
           box(b,'linen',x+.65,1.55,-.18,.26,.16,.20);
         }
+        buildReceptionDecor({b,batch,materials,group});
       }else box(b,'wood',0,.65,0,4,1.3,1,{solid:true});
       if(b.kind==='restaurant')for(const x of [-6,-2,2,6]){
         box(b,'wood',x,.72,3,1.8,.12,1.8,{solid:true});box(b,'wood',x,.35,3,.15,.7,.15);
