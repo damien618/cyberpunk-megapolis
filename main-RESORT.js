@@ -15,6 +15,7 @@ import { buildResortCorals } from './resortCorals.js';
 import { buildResortArchitecture } from './resortArchitecture.js';
 import { buildResortBoardwalks } from './resortBoardwalks.js';
 import { buildResortPools } from './resortPools.js';
+import { createResortGuests } from './resortGuests.js';
 import { buildResortProps } from './resortProps.js';
 import { buildResortVegetation } from './resortVegetation.js';
 import { createResortAtmosphere } from './resortAtmosphere.js';
@@ -63,6 +64,8 @@ const playerReady=loadingPlayer.load('girl',avatarMaterial,undefined,{deferAnima
   const [scalp,strands,strandsAO]=await Promise.all([img(records.MAT_SurvGirl_Head.tex),img(records.MAT_SurvGirl_Hair.tex),img(records.MAT_SurvGirl_Hair.aoTex)]);
   player.addWardrobePart('hairCrown',harmoniseHair(player,{scalp,strands,strandsAO}));return player;
 }).catch(e=>{console.error('[resort avatar]',e);return null;});
+const guests=createResortGuests(scene);
+const guestsReady=guests.ready.catch(e=>{console.error('[resort guests]',e);return [];});
 const interactions=createResortInteractions({ctrl,input,playerReady:()=>player,getTime:()=>atmosphere.time,onLeave:()=>{leaving=true;}});
 const controls=document.createElement('nav');controls.id='resortTimeControls';controls.setAttribute('aria-label','Ambiance du village');
 controls.innerHTML='<button data-resort-time="day">☀ Jour</button><button data-resort-time="sunset">◒ Coucher</button><button data-resort-time="night">☾ Nuit</button>';document.body.appendChild(controls);
@@ -80,7 +83,7 @@ document.addEventListener('keydown',e=>{if(e.code==='Escape'&&started&&!input.lo
 const forward=new THREE.Vector3();
 function animate(){if(disposed)return;frameId=requestAnimationFrame(animate);const dt=Math.min(.033,clock.getDelta()),t=clock.elapsedTime;
   if(started&&!paused&&!leaving){input.updateLook(dt);rig.forward(forward,input);if(!interactions.update())ctrl.update(dt,input,input.yaw,forward);if(ctrl.pos.y < -30)ctrl.rescueTo(spawnPoint);}
-  ocean.update(t);terrain.update(t);corals.update(t);pools.update(t);props.update(t,ocean);
+  ocean.update(t);terrain.update(t);corals.update(t);pools.update(t);props.update(t,ocean);guests.update(dt,t,camera.position);
   if(player){player.setOutfit({hat:false,backpack:false,pants:false,shoes:false,longSleeves:false,swim:true});player.update({dt,mode:ctrl.mode,pos:ctrl.pos,vel:ctrl.vel,webOn:false,anchor:ctrl.anchor,posture:interactions.resting?'lie':undefined,facingYaw:interactions.resting?layout.HAMMOCK.yaw:undefined,elapsedTime:t});}
   if(player)player.group.rotation.x=interactions.resting?props.hammock.rotation.x:0;
   rig.update(dt,input,ctrl);atmosphere.update(dt,ctrl.pos);vegetation.update(camera.position,dt);architecture.update(camera.position);batch.update(camera.position);
@@ -95,7 +98,7 @@ function dispose(){
   textures.forEach(t=>t.dispose());geometries.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());environmentTarget?.dispose();renderer.dispose();
 }
 window.addEventListener('pagehide',event=>{if(!event.persisted)dispose();});
-window.__resort={THREE,scene,camera,renderer,ctrl,input,rig,collision,bw:collision.bw,world:collision.world,layout,terrainHeight:layout.terrainHeight,waterProbe,ocean,terrain,backdrop,architecture,boardwalks,pools,props,vegetation,corals,atmosphere,interactions,spawnPoint,setResortTime,playerReady,dispose,get player(){return player;},get time(){return atmosphere.time;}};
+window.__resort={THREE,scene,camera,renderer,ctrl,input,rig,collision,batch,bw:collision.bw,world:collision.world,layout,terrainHeight:layout.terrainHeight,waterProbe,ocean,terrain,backdrop,architecture,boardwalks,pools,props,vegetation,corals,atmosphere,interactions,spawnPoint,setResortTime,playerReady,guests,guestsReady,dispose,get player(){return player;},get time(){return atmosphere.time;}};
 window.__villa=window.__resort;
 if(params.get('arrival')==='jungle'||window.__startRequested)start();
 animate();

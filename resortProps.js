@@ -1,37 +1,48 @@
 import * as THREE from 'three';
+import { buildResortBar } from './resortBar.js';
+import { createResortFurniture } from './resortFurniture.js';
 import { BUILDINGS,HAMMOCK,localPoint,terrainHeight,BOUNDS } from './resortLayout.js';
 export function buildResortProps({scene,batch,materials}) {
   const lanterns=[],group=new THREE.Group();scene.add(group);
+  const furniture=createResortFurniture({group,batch,materials});let roomIndex=0;
   function box(b,mat,x,y,z,w,h,d,flags={}){const p=localPoint(b,x,z);batch.box(mat,p.x,b.y+y,p.z,w,h,d,b.yaw,{detail:true,...flags});}
   function lantern(x,y,z){batch.post('metal',x,y,z,.17,.38,.17);batch.post('lantern',x,y+.02,z,.13,.25,.13);lanterns.push({x,y:y+.02,z});}
   for(const b of BUILDINGS){
     const room=['water','garden'].includes(b.kind);
     if(room){
-      box(b,'wood',0,.23,-.8,2.6,.45,3.1,{solid:true});box(b,'linen',0,.54,-.8,2.6,.24,3.1);
-      box(b,'linen',-.65,.72,-1.75,.8,.2,.48);box(b,'linen',.65,.72,-1.75,.8,.2,.48);
-      const tx=-b.w/2+1.25;
-      box(b,'wood',tx,.28,b.d/2+.8,2.3,.45,.9,{solid:true});box(b,'linen',tx,.56,b.d/2+.8,2.25,.16,.85);
-      box(b,'linen',tx,.86,b.d/2+.45,2.25,.65,.18);box(b,'blue',tx+.7,.85,b.d/2+.7,.42,.42,.16);
-      const chairs=b.premium?[-2.6,-.9]:[-1.45,1.45];
-      for(const x of chairs){box(b,'wood',x,.28,b.d/2+b.terrace-1.2,.7,.12,1.75,{solid:true});box(b,'linen',x,.38,b.d/2+b.terrace-1.2,.66,.1,1.65);
-        box(b,'linen',x,.62,b.d/2+b.terrace-1.85,.66,.12,.65,{rx:.55});}
+      furniture.room(b,roomIndex++);
       // Garden terraces lead directly to the front door: keep their centre clear.
       const tableX=b.kind==='garden'?2:b.premium?-1.7:0,tableZ=b.kind==='garden'?2.2:b.d/2+b.terrace-1.4;
       box(b,'wood',tableX,.35,tableZ,.65,.09,.65,{solid:true});box(b,'wood',tableX,.18,tableZ,.1,.36,.1);
       box(b,'wood',tableX,.42,tableZ,.45,.035,.38);
       for(let i=0;i<4;i++)box(b,i%2?'pink':'fruit',tableX-.14+i*.09,.5,tableZ+.07*Math.sin(i),.13,.13,.13);
+    }else if(b.kind==='bar'){
+      buildResortBar({b,batch,materials,group,lantern});
     }else{
-      box(b,'wood',0,.65,0,b.kind==='restaurant'?4:b.w*.6,1.3,1,{solid:true});
+      if(b.kind==='reception'){
+        box(b,'barFrame',0,.53,0,b.w*.6,1.06,1,{solid:true});
+        box(b,'barStone',0,1.12,0,b.w*.6+.18,.12,1.12,{solid:true});
+        // Registration books and two small desk lamps for the welcome team.
+        for(const x of [-2.2,2.2]){
+          box(b,'barShelf',x,1.2,.10,.42,.045,.32);
+          box(b,'linen',x,1.23,.10,.36,.018,.26);
+          box(b,'brass',x+.65,1.34,-.18,.035,.38,.035);
+          box(b,'linen',x+.65,1.55,-.18,.26,.16,.20);
+        }
+      }else box(b,'wood',0,.65,0,4,1.3,1,{solid:true});
       if(b.kind==='restaurant')for(const x of [-6,-2,2,6]){
         box(b,'wood',x,.72,3,1.8,.12,1.8,{solid:true});box(b,'wood',x,.35,3,.15,.7,.15);
-        for(const s of [-1,1])box(b,'linen',x+s*1.1,.48,3,.6,.16,.6,{solid:true});
+        for(const s of [-1,1]){box(b,'wood',x+s*1.1,.37,3,.6,.10,.6,{solid:true});furniture.chair(b,x+s*1.1,3);}
       }
       const canvas=Object.assign(document.createElement('canvas'),{width:512,height:128}),ctx=canvas.getContext('2d');ctx.fillStyle='#ded0ae';ctx.fillRect(0,0,512,128);ctx.fillStyle='#463722';ctx.font='40px serif';ctx.textAlign='center';ctx.fillText({reception:'MAEVA · Accueil',restaurant:'FARE · Restaurant',bar:'LAGON · Bar'}[b.kind],256,80);
       const tex=new THREE.CanvasTexture(canvas);tex.colorSpace=THREE.SRGBColorSpace;
-      const sign=new THREE.Mesh(new THREE.PlaneGeometry(b.w*.65,1.2),new THREE.MeshStandardMaterial({map:tex,side:THREE.DoubleSide}));const p=localPoint(b,0,b.d/2+.11);sign.position.set(p.x,b.y+2,p.z);sign.rotation.y=b.yaw;group.add(sign);
+      const reception=b.kind==='reception';
+      const sign=new THREE.Mesh(new THREE.PlaneGeometry(reception?4.6:b.w*.65,reception?.65:1.2),new THREE.MeshStandardMaterial({map:tex,side:THREE.DoubleSide}));const p=localPoint(b,0,b.d/2+.11);sign.position.set(p.x,b.y+(reception?3.12:2),p.z);sign.rotation.y=b.yaw;sign.name=`${b.kind}-sign`;group.add(sign);
+      if(reception)for(const x of [-1.9,1.9])box(b,'brass',x,3.49,b.d/2+.11,.035,.28,.035);
     }
     const p=localPoint(b,b.w/2-.35,b.d/2);lantern(p.x,b.y+1.8,p.z);
   }
+  const furnitureRecords=furniture.finish();
   for(let x=-110;x<=125;x+=15){const z=45,y=terrainHeight(x,z);batch.post('wood',x,y+.55,z,.09,1.1,.09);lantern(x,y+1.2,z);}
   for(let x of [-65,65])for(let z=-20;z>-145;z-=22)lantern(x,2.25,z);
   // A discreet buoy line makes the offshore swimming limit readable.
@@ -51,5 +62,5 @@ export function buildResortProps({scene,batch,materials}) {
     const float=new THREE.Mesh(new THREE.SphereGeometry(1,12,6),materials.wood);float.scale.set(.16,.14,2.8);float.position.set(1.8,-.05,0);boat.add(float);
     boat.position.set(x,0,z);boat.rotation.y=yaw;scene.add(boat);boats.push(boat);
   }
-  return {group,lanterns,hammock,boats,update(t,ocean){hammock.rotation.x=Math.sin(t*.75)*.012;boats.forEach(b=>{b.position.y=ocean.waterHeightAt(b.position.x,b.position.z,t)+.16;b.rotation.z=Math.sin(t*.65+b.position.x)*.018;});}};
+  return {group,lanterns,hammock,boats,furniture:furnitureRecords,update(t,ocean){hammock.rotation.x=Math.sin(t*.75)*.012;boats.forEach(b=>{b.position.y=ocean.waterHeightAt(b.position.x,b.position.z,t)+.16;b.rotation.z=Math.sin(t*.65+b.position.x)*.018;});}};
 }

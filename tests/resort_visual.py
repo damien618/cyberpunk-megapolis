@@ -6,9 +6,12 @@ POSES = [
     ('lagoon', [0, 4, -95], [-10, 12, 45]),
     ('mountain', [0, 10, -145], [-150, 90, 600]),
     ('gardens', [-90, 4, 48], [70, 4, 48]),
+    ('bar', [101,4.8,40], [101,3.1,23]),
+    ('reception', [17,4.8,48], [12,3.7,34]),
     ('hamac', [-24, 4, 20], [-24, 2, 14]),
 ]
 with resort_page() as (page, errors):
+    page.evaluate('async()=>{await window.__resort.guestsReady;}')
     (ROOT / 'scratch').mkdir(exist_ok=True)
     buildings = page.evaluate('''() => {
       const v=window.__resort,L=v.layout;
@@ -26,7 +29,8 @@ with resort_page() as (page, errors):
               v.ctrl.pos.set(pos[0],v.layout.terrainHeight(pos[0],pos[2]),pos[2]);
               v.camera.position.set(...pos);v.camera.lookAt(...target);
               v.atmosphere.update(0,v.ctrl.pos);v.vegetation.update(v.camera.position,0);
-              v.architecture.update(v.camera.position);v.renderer.render(v.scene,v.camera);
+              v.architecture.update(v.camera.position);v.batch.update(v.camera.position);
+              v.guests.update(.016,2,v.camera.position);v.renderer.render(v.scene,v.camera);
               return {calls:v.renderer.info.render.calls,triangles:v.renderer.info.render.triangles};
             }''', [time, pos, target])
             results.append({'view': name, 'time': time, **result})

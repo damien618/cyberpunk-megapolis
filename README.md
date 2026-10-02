@@ -123,6 +123,16 @@ boutons en bas à gauche. **WASD** marche/nage, souris ou flèches pour regarder
 **E** pour le hamac ou le retour à la forêt, **R** pour revenir à l'accueil.
 Les pirogues et les transats sont décoratifs ; la nage reste en surface.
 
+Le bar LAGON dispose d'une façade ouverte, de poteaux ancrés sous le sable,
+d'une enseigne compacte au-dessus du passage, d'un comptoir en pierre claire
+et bois peint vert lagon, d'étagères garnies et de deux tables hautes.
+Deux serveurs et trois clients jouent des animations d'attente avec des gestes
+discrets ; les personnages sont masqués au-delà de 55 m. Le mobilier et les
+bouteilles sont regroupés en instances. `resortBar.js` construit le décor et
+`resortGuests.js` réutilise les modèles et animations de visiteurs existants.
+Vérification dédiée : `.venv/bin/python tests/resort_bar.py` (poteaux,
+hauteur de l'enseigne, population, captures des trois ambiances et budget GPU).
+
 Architecture : `main-RESORT.js` assemble les modules `resort*` ;
 `resortLayout.js` est le contrat analytique partagé par sol/eau/collisions.
 Le chaume et les fleurs sont procéduraux ; le bois, l'eau, les plantes et le
