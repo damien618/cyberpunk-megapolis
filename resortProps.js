@@ -4,7 +4,7 @@ import { createResortFurniture } from './resortFurniture.js';
 import { buildResortRestaurant } from './resortRestaurant.js';
 import { buildReceptionDecor } from './resortReceptionDecor.js';
 import { buildResortGallery } from './resortGallery.js';
-import { BUILDINGS,HAMMOCK,PLAYER_BUNGALOW,localPoint,terrainHeight,BOUNDS } from './resortLayout.js';
+import { BUILDINGS,BUNGALOWS,BOARDWALKS,DECK_Y,HAMMOCK,PLAYER_BUNGALOW,localPoint,terrainHeight,BOUNDS } from './resortLayout.js';
 export function buildResortProps({scene,batch,materials}) {
   const restaurantEffects=[],lanterns=[],group=new THREE.Group();scene.add(group);
   const furniture=createResortFurniture({group,batch,materials});let roomIndex=0,gallery=null;
@@ -62,7 +62,13 @@ export function buildResortProps({scene,batch,materials}) {
   const arrowNearby=pos=>arrow.position.distanceToSquared(pos)<100*100;
   for(const mesh of arrow.children){mesh.userData.visibleAt=arrowNearby;batch.addDetailMesh(mesh,100);}
   for(let x=-110;x<=125;x+=15){const z=45,y=terrainHeight(x,z);batch.post('wood',x,y+.55,z,.09,1.1,.09);lantern(x,y+1.2,z);}
-  for(let x of [-65,65])for(let z=-20;z>-145;z-=22)lantern(x,2.25,z);
+  // Pier lanterns sit on the outer handrail of the curved boardwalks, clear of the bungalow branches.
+  for(const p of BOARDWALKS){let along=0,next=null;
+    for(let i=1;i<p.length;i++){const [ax,az]=p[i-1],[bx,bz]=p[i],len=Math.hypot(bx-ax,bz-az);along+=len;
+      if(bz>-20)continue;if(next===null)next=along;if(along<next)continue;
+      if(BUNGALOWS.some(b=>Math.hypot(b.branch.x-bx,b.branch.z-bz)<2.5))continue;
+      let nx=-(bz-az)/len,nz=(bx-ax)/len;if(nx*bx<0){nx=-nx;nz=-nz;}
+      lantern(bx+nx*1.34,DECK_Y+.9,bz+nz*1.34);next=along+22;}}
   // A discreet buoy line makes the offshore swimming limit readable.
   const buoyPoints=[];
   for(let x=BOUNDS.x0+10;x<BOUNDS.x1;x+=22){batch.post('fruit',x,.12,BOUNDS.z0+8,.22,.25,.22);buoyPoints.push(new THREE.Vector3(x,.08,BOUNDS.z0+8));}
