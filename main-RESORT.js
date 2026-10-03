@@ -16,6 +16,7 @@ import { buildResortArchitecture } from './resortArchitecture.js';
 import { buildResortBoardwalks } from './resortBoardwalks.js';
 import { buildResortPools } from './resortPools.js';
 import { createResortGuests } from './resortGuests.js';
+import { createResortWildlife } from './resortWildlife.js';
 import { buildResortProps } from './resortProps.js';
 import { buildResortVegetation } from './resortVegetation.js';
 import { createResortAtmosphere } from './resortAtmosphere.js';
@@ -40,6 +41,7 @@ const architecture=buildResortArchitecture({scene,batch,materials});
 const boardwalks=buildResortBoardwalks({batch,collision}),pools=buildResortPools({scene,batch});
 const props=buildResortProps({scene,batch,materials}),vegetation=buildResortVegetation({scene,maxAniso,collision});
 batch.finish();collision.boundaries();
+const wildlife=createResortWildlife({scene,ocean,corals,collision});
 createIslandSign(scene,{...layout.FOREST_GATE,y:layout.terrainHeight(layout.FOREST_GATE.x,layout.FOREST_GATE.z),label:'→ Forêt · La cascade',yaw:-Math.PI/2});
 atmosphere.connect({materials,terrain,corals,props,ocean});
 const params=new URLSearchParams(location.search),arrival=params.get('arrival')==='jungle'?layout.FOREST_ARRIVAL:layout.SPAWN;
@@ -52,7 +54,7 @@ const input=new Input(renderer.domElement);input.yaw=arrival.yaw;
 const rig=new CameraRig(camera,collision.bw);
 const overlay=document.getElementById('overlay');
 function lock(){try{renderer.domElement.requestPointerLock?.()?.catch?.(()=>{});}catch{}}
-function setResortTime(name,immediate=false){atmosphere.setTime(islandTime(name),immediate);}
+function setResortTime(name,immediate=false){const time=islandTime(name);atmosphere.setTime(time,immediate);wildlife.setTime(time);}
 const initialTime=islandTime(params.get('time')??'day');setResortTime(initialTime,true);
 // Reuse the avatar and wardrobe, with the same material records as the jungle.
 const records=await fetch('./chars/data/materials.json').then(r=>r.json());
@@ -104,6 +106,7 @@ function animate(){if(disposed)return;frameId=requestAnimationFrame(animate);con
   const inArtModal=galleryInteraction?.update(camera)??false;
   if(started&&!paused&&!leaving&&!inArtModal){input.updateLook(dt);rig.forward(forward,input);if(!interactions.update())ctrl.update(dt,input,input.yaw,forward);if(ctrl.pos.y < -30)ctrl.rescueTo(spawnPoint);}
   ocean.update(t);terrain.update(t);corals.update(t);pools.update(t);props.update(t,ocean);guests.update(dt,t,camera.position);
+  wildlife.update(dt,t,ctrl.pos,ctrl.vel);
   if(player){
     const target=interactions.restTarget;
     player.group.rotation.order='XYZ';
@@ -129,7 +132,7 @@ function dispose(){
   textures.forEach(t=>t.dispose());geometries.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());environmentTarget?.dispose();renderer.dispose();
 }
 window.addEventListener('pagehide',event=>{if(!event.persisted)dispose();});
-window.__resort={THREE,scene,camera,renderer,ctrl,input,rig,collision,batch,bw:collision.bw,world:collision.world,layout,terrainHeight:layout.terrainHeight,waterProbe,ocean,terrain,backdrop,architecture,boardwalks,pools,props,vegetation,corals,atmosphere,interactions,galleryInteraction,spawnPoint,setResortTime,playerReady,galleryReady:props.gallery.ready,guests,guestsReady,dispose,get player(){return player;},get time(){return atmosphere.time;}};
+window.__resort={THREE,scene,camera,renderer,ctrl,input,rig,collision,batch,bw:collision.bw,world:collision.world,layout,terrainHeight:layout.terrainHeight,waterProbe,ocean,terrain,backdrop,architecture,boardwalks,pools,props,vegetation,corals,atmosphere,wildlife,interactions,galleryInteraction,spawnPoint,setResortTime,playerReady,galleryReady:props.gallery.ready,guests,guestsReady,dispose,get player(){return player;},get time(){return atmosphere.time;}};
 window.__villa=window.__resort;
 if(params.get('arrival')==='jungle'||window.__startRequested)start();
 animate();

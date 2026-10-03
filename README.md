@@ -132,6 +132,16 @@ le lit ou sur la banquette. Les mêmes commandes de réveil ramènent sur le
 plancher, à côté du lit ou devant l'assise. Les meubles des autres bungalows
 et les pirogues restent décoratifs ; la nage reste en surface.
 
+Une faune discrète anime le lagon : six oiseaux marins blancs alternent vol
+plané et battements d'ailes le jour et au coucher (masqués la nuit), et trois
+bancs de huit poissons tropicaux de 20–30 cm nagent près du bungalow réservé
+et des récifs centraux. Les poissons s'écartent du nageur puis se regroupent,
+restent sous les vagues et évitent le fond, les coraux et les pilotis. Aucun
+son ni commande supplémentaire. `resortWildlife.js` réutilise les modèles,
+animations et boids existants dans deux maillages instanciés sans ombres
+supplémentaires ; `window.__resort.wildlife` expose les effectifs et les états.
+Validation : `.venv/bin/python tests/resort_wildlife.py` ; captures dans `scratch/`.
+
 Le bar LAGON dispose d'une façade ouverte, de poteaux ancrés sous le sable,
 d'une enseigne compacte au-dessus du passage, d'un comptoir en pierre claire
 et bois peint vert lagon, d'étagères garnies et de deux tables hautes.

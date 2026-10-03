@@ -30,7 +30,7 @@ with resort_page() as (page, errors):
               v.camera.position.set(...pos);v.camera.lookAt(...target);
               v.atmosphere.update(0,v.ctrl.pos);v.vegetation.update(v.camera.position,0);
               v.architecture.update(v.camera.position);v.batch.update(v.camera.position);
-              v.guests.update(.016,2,v.camera.position);v.renderer.render(v.scene,v.camera);
+              v.guests.update(.016,2,v.camera.position);v.wildlife.update(.016,2,v.ctrl.pos,v.ctrl.vel);v.renderer.render(v.scene,v.camera);
               return {calls:v.renderer.info.render.calls,triangles:v.renderer.info.render.triangles};
             }''', [time, pos, target])
             results.append({'view': name, 'time': time, **result})

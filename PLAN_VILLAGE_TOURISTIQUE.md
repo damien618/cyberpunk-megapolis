@@ -135,6 +135,31 @@ limite sa position à la chambre, sous le toit et au-dessus du plancher.
 Les captures `scratch/resort_indoor_*.png` couvrent les deux poses, plusieurs
 angles, les sorties et la nuit ; elles restent hors du suivi Git.
 
+Faune du lagon : `resortWildlife.js` ajoute six oiseaux marins blancs à
+12–18 m, visibles le jour et au coucher, et 24 poissons tropicaux de 20–30 cm
+en trois bancs indépendants de huit. Les ancrages proviennent du bungalow
+réservé et des coraux centraux ouest/est. Les boids partagés assurent cohésion,
+dispersion devant le nageur et regroupement ; une enveloppe conservatrice
+maintient chaque poisson entre le fond/récif et la surface animée. Les
+colliders immergés rejettent un déplacement invalide et conservent la dernière
+position sûre. Au-delà de 35 m, les bancs sont masqués et leur simulation
+dort ; les oiseaux utilisent le culling existant à 80 m. Deux maillages
+instanciés, sans nouvelles ombres, sons, assets ni boucle de rendu.
+`tests/resort_wildlife.py` couvre le placement déterministe, les déplacements,
+la fuite et le regroupement, le confinement, les obstacles, le culling,
+l'intégration à la boucle et le budget. Douze captures plage/ponton/bungalow/
+sous-marin aux trois ambiances restent dans `scratch/`.
+
+Validation de la faune (3 octobre 2026) : tests faune, visuel, marche,
+interactions, interface et layout réussis ; aucune erreur JavaScript, shader
+ou ressource manquante. Les douze captures ciblées ont été inspectées ; le
+cadrage depuis le ponton a été déplacé pour dégager la vue du lagon.
+Deux appels supplémentaires mesurés au même point de vue. Sur les 27 vues
+globales : maximum de **250 appels / 781 351 triangles** (maxima sur deux
+vues différentes), ombres comprises. Le test de nage conserve l'échec
+préexistant `pileBlocks` décrit ci-dessous ; ses autres vérifications sont
+positives. Aucun module partagé de faune n'a été modifié.
+
 Validation du repos intérieur (3 octobre 2026) : les tests interactions,
 mobilier, layout, marche et interface réussissent, y compris le transat,
 le hamac et l'aller-retour jungle. Les huit captures intérieures ont été
