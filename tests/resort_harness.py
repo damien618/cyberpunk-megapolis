@@ -7,9 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', str(ROOT / '.venv/pw-browsers'))
 
 @contextmanager
-def resort_page(viewport=None, url='index.html?map=resort'):
+def resort_page(viewport=None, url='index.html?map=resort', headless=True):
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(args=['--enable-unsafe-swiftshader', '--use-angle=swiftshader'])
+        browser = pw.chromium.launch(headless=headless, args=['--enable-unsafe-swiftshader', '--use-angle=swiftshader'] if headless else [])
         page = browser.new_page(viewport=viewport or {'width': 960, 'height': 540})
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))

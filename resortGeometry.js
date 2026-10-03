@@ -16,7 +16,7 @@ export function createResortBatch(scene,materials,collision) {
   function finish(){
     for(const [key,b] of bins){const im=new THREE.InstancedMesh(b.shape==='post'?unitPost:unitBox,materials[b.mat],b.list.length);
       b.list.forEach((a,i)=>{q.setFromEuler(new THREE.Euler(a.rx,a.yaw,a.rz,'YXZ'));im.setMatrixAt(i,new THREE.Matrix4().compose(v.set(a.x,a.y,a.z),q,sc.set(a.w,a.h,a.d)));});
-      im.instanceMatrix.needsUpdate=true;im.computeBoundingSphere();im.name=key;im.castShadow=!b.detail&&b.mat!=='pool';im.receiveShadow=true;im.userData.detail=b.detail;scene.add(im);meshes.push(im);
+      im.instanceMatrix.needsUpdate=true;im.computeBoundingSphere();im.name=key;im.castShadow=!b.detail&&!['pool','galleryFloor'].includes(b.mat);im.receiveShadow=true;im.userData.detail=b.detail;scene.add(im);meshes.push(im);
     }
     bins.clear();return meshes;
   }
@@ -24,8 +24,8 @@ export function createResortBatch(scene,materials,collision) {
     mesh.geometry.computeBoundingSphere();mesh.boundingSphere=mesh.geometry.boundingSphere.clone();
     mesh.userData.detail=true;mesh.userData.detailDistance=far;meshes.push(mesh);
   }
-  function update(camera){for(const im of meshes)if(im.userData.detail)im.visible=im.boundingSphere.center.distanceTo(camera)<(im.userData.detailDistance??55)+im.boundingSphere.radius;}
-  return {box,post,finish,update,addDetailMesh,meshes};
+  function update(camera){for(const im of meshes)if(im.userData.detail)im.visible=im.userData.visibleAt?im.userData.visibleAt(camera):im.boundingSphere.center.distanceTo(camera)<(im.userData.detailDistance??55)+im.boundingSphere.radius;}
+  return {box,post,finish,update,addDetailMesh,meshes,addObstacle:(...args)=>collision?.addBox(...args)};
 }
 // Hip roof laid as overlapping thatch courses: each band thickens toward a ragged
 // butt edge that shades the course below, and straw rolls cover the four hips.

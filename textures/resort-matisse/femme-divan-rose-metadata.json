@@ -1,0 +1,335 @@
+{
+  "downloadedAt": "2026-10-03T11:11:02.018013+02:00",
+  "commons": {
+    "batchcomplete": "",
+    "query": {
+      "pages": {
+        "157243395": {
+          "pageid": 157243395,
+          "ns": 6,
+          "title": "File:Femme au divan rose, par Henri Matisse.jpg",
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "url": "https://upload.wikimedia.org/wikipedia/commons/d/d2/Femme_au_divan_rose%2C_par_Henri_Matisse.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Femme_au_divan_rose,_par_Henri_Matisse.jpg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=157243395",
+              "sha1": "8e4c0342e9699968c32be21e2708a47d7f143dd0",
+              "extmetadata": {
+                "DateTime": {
+                  "value": "2024-12-29 03:16:00",
+                  "source": "mediawiki-metadata",
+                  "hidden": ""
+                },
+                "ObjectName": {
+                  "value": "Femme au divan rose, par Henri Matisse",
+                  "source": "mediawiki-metadata"
+                },
+                "CommonsMetadataExtension": {
+                  "value": 1.2,
+                  "source": "extension",
+                  "hidden": ""
+                },
+                "Categories": {
+                  "value": "Author died more than 70 years ago public domain images|CC-PD-Mark|Media uploaded for Public Domain Day 2025 (Henri Matisse)|Woman on Rose Divan by Henri Matisse",
+                  "source": "commons-categories",
+                  "hidden": ""
+                },
+                "Assessments": {
+                  "value": "",
+                  "source": "commons-categories",
+                  "hidden": ""
+                },
+                "ImageDescription": {
+                  "value": "Femme au divan rose, par Henri Matisse",
+                  "source": "commons-desc-page"
+                },
+                "DateTimeOriginal": {
+                  "value": "1921",
+                  "source": "commons-desc-page"
+                },
+                "Credit": {
+                  "value": "<a rel=\"nofollow\" class=\"external free\" href=\"https://www.artic.edu/iiif/2/65e58fc4-4dd1-7149-b76b-94547745bece/full/843,/0/default.jpg\">https://www.artic.edu/iiif/2/65e58fc4-4dd1-7149-b76b-94547745bece/full/843,/0/default.jpg</a>",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "Henri Matisse",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "UsageTerms": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page"
+                },
+                "AttributionRequired": {
+                  "value": "false",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "Copyrighted": {
+                  "value": "False",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "Restrictions": {
+                  "value": "",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "License": {
+                  "value": "pd",
+                  "source": "commons-templates",
+                  "hidden": ""
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "museum": {
+    "data": {
+      "id": 27980,
+      "api_model": "artworks",
+      "api_link": "https://api.artic.edu/api/v1/artworks/27980",
+      "is_boosted": false,
+      "title": "Woman on Rose Divan",
+      "alt_titles": null,
+      "thumbnail": {
+        "lqip": "data:image/gif;base64,R0lGODlhBgAFAPQAAFIrL2g2M2k3P2xENW5GN2dEOHBEO3ZFPnVIOnRLPWQ/RGw/QGpAR2ZCSWxBSG9FTG9MTHBHR3pTTXpfS29WVXRRUXhtXWtiZHxuY4BWWIdwZId9bH2AeIyJfwAAAAAAACH5BAAAAAAALAAAAAAGAAUAAAUYIGdNBJJc3VYYA4VpRyY1QCAskaNAzFOFADs=",
+        "width": 6143,
+        "height": 5055,
+        "alt_text": "A work made of oil on canvas."
+      },
+      "main_reference_number": "1926.219",
+      "has_not_been_viewed_much": false,
+      "boost_rank": null,
+      "date_start": 1921,
+      "date_end": 1921,
+      "date_display": "1921",
+      "date_qualifier_title": "",
+      "date_qualifier_id": null,
+      "artist_display": "Henri Matisse\nFrench, 1869–1954",
+      "place_of_origin": "France",
+      "description": null,
+      "short_description": null,
+      "dimensions": "38 × 46 cm (15 1/4 × 18 1/8 in.)",
+      "dimensions_detail": [
+        {
+          "depth": null,
+          "width": 46,
+          "height": 38,
+          "diameter": null,
+          "clarification": null
+        }
+      ],
+      "medium_display": "Oil on canvas",
+      "inscriptions": "Signed, l.r.: Henri-Matisse",
+      "credit_line": "Helen Birch Bartlett Memorial Collection",
+      "catalogue_display": null,
+      "publication_history": "Art Institute of Chicago, A Guide to the Paintings in the Permanent Collection (Art Institute of Chicago, 1925), p. 169, cat. 2290, as Femme au Divan Rose.\n\nBoston Art Club, Birch-Bartlett Collection of Modern French Paintings, exh. cat. (Boston Art Club, 1925), cat. 22, as Femme au divan.\n\nMinneapolis Institute of Arts, Exhibition of Modern French Paintings from the Birch-Bartlett Collection Lent by Frederick C. Bartlett of Chicago, exh. cat. (Minneapolis Institute of Arts, 1925), cat. 19, as Woman on a Divan.\n\nArt Institute of Chicago, Modern Paintings in the Helen Birch Bartlett Memorial from the Birch-Bartlett Collection (Art Institute of Chicago, 1926), n. pag., pp. 24, 25 (ill.), 55, as Femme au Divan Rose.\n\nForbes Watson, “A Note on the Birch-Bartlett Collection,” Arts9, no. 6 (June 1926), p. 310 (ill.), as Woman on a Rose Divan.\n\nMorton Dauwen Zabel, “An American Gallery of Modern Painting: The Helen Birch-Bartlett Memorial in the \n\nArt Institute of Chicago,” Art and Archaeology 26 (Dec. 1928), p. 233, as Femme au Divan Rose.\n\nArt Institute of Chicago, Modern Paintings in the Helen Birch Bartlett Memorial from the Birch-Bartlett Collection, 2nd ed. (Art Institute of Chicago, 1929), n. pag., pp. 32–33 (ill.), 61, as Femme au Divan Rose.\n\nArt Institute of Chicago, A Guide to the Paintings in the Permanent Collection (Art Institute of Chicago, 1932), p. 162, as Femme au Divan Rose.\n\nJames Johnson Sweeney, “La peinture française moderne a l’Institut des beaux-arts de Chicago,” Cahiers d’art 7, nos. 8–10 (1932), p. 336, as la Femme au divan rouge, vers 1922.\n\nWalter J. Sherwood, “The Famous Birch-Bartlett Collection,” Chicago Visitor (Oct. 1932), p. 40, as Woman on Divan.\n\nArt Institute of Chicago, Catalogue of “A Century of Progress”: Exhibition of Paintings and Sculpture; Lent from American Collections, ed. Daniel Catton Rich, exh. cat. (Art Institute of Chicago, 1933), cat. 389, as Woman on Red Divan.\n\nArt Institute of Chicago, Catalogue of “A Century of Progress”: Exhibition of Paintings and Sculpture; Lent from American Collections, ed. Daniel Catton Rich, exh. cat. (Art Institute of Chicago, 1933), p. 55, cat. 389, as Woman on Rose Divan.\n\nArt Institute of Chicago, Catalogue of “A Century of Progress”: Exhibition of Paintings and Sculpture, 1934, ed. Daniel Catton Rich, exh. cat. (Art Institute of Chicago, 1934), p. 52, cat. 353, as Woman on Rose Divan.\n\nArt Institute of Chicago, Modern Paintings in the Helen Birch Bartlett Memorial from the Birch Bartlett Collection, 3rd ed. (Art Institute of Chicago, 1946), pp. 34, 35 (ill.), 57–58, 63, as Woman on Rose Divan (Femme au Divan Rose).\n\nAlfred H. Barr, Jr., Matisse: His Art and His Public (Museum of Modern Art, New York, 1951), p. 558, as Woman on Rose Divan, c. 1921.\n\nArt Institute of Chicago, addendum (Art Institute of Chicago, 1952), now bound into Museum of Modern Art, Henri Matisse, exh. cat., introduction by Alfred H. Barr, Jr. (Museum of Modern Art, New York, 1951), n.pag., as Woman on Rose Divan (c. 1920).37\n\nR. H. Wilenski, “Introduction and Notes on the Illustrations,” in Raymond Escholier, Matisse: From the Life, trans. Geraldine Colvile and H. M. Colvile (Faber & Faber, 1960), pp. 10, no. 30; 13; pl. 30, as Odalisque au divan rose. Published in the United States as R. H. Wilenski, “Introduction and Notes on the Illustrations,” in Raymond Escholier, Matisse: A Portrait of the Artist and the Man, trans. Geraldine Colvile and H. M. Colvile (Frederick A. Praeger, 1960), pp. 10, no. 30; 13; pl. 30, as Odalisque au divan rose.\n\nArt Institute of Chicago, Paintings in the Art Institute of Chicago: A Catalogue of the Picture Collection (Art Institute of Chicago, 1961, repr., 1968), p. 305, as Woman on Rose Divan, 1921.\n\nJean Guichard-Meili, Matisse, trans. Caroline Moorehead, Praeger World of Art Profile (Frederick A. Praeger, 1967), p. 231, as Woman on a Rose Divan.\n\nKenjirō Okamoto, Bonnard/Matisse, L’Art du Monde 16 (Kawade Shobō, 1968), n.pag.; pp. [60], pl. 56; 112, no. 56, as Akai neisu no on’na [Woman on a red couch]/Femme sur un divan rose, 1921.\n\nMassimo Carrà, “Catalogo delle opera,” in Mario Luzi and Massimo Carrà, L’opera di Matisse: Dalla rivolta ‘fauve’ all’intimismo, 1904–1928, Classici dell’Arte 49 (Rizzoli Editore, 1971), p. 100, cat. 343 (ill.), as Donna su un divano rosa, 1921. Translated as “Documentation: Catalogue des oeuvres,” in Tout l’oeuvre peint de Matisse, 1904–1928, ed. Xavier Deryng, Les Classiques de l’Art (Flammarion, 1982), p. 100, cat. 343 (ill.), as Odalisque sur un divan rose, 1921.\n\nA. James Speyer and Courtney Graham Donnell, Twentieth-Century European Paintings (University of Chicago Press, 1980), p. 55, no. 2G1; microfiche 2, no. G1 (ill.), as Woman on Rose Divan, 1921.\n\n“The Helen Birch Bartlett Memorial Collection,” special issue, Art Institute of Chicago Museum Studies 12, no. 2 (1986), p. 223, no. 16, as Woman on a Rose Divan, 1921.\n\nCatherine C. Bock, “Woman Before an Aquarium and Woman on a Rose Divan: Matisse in the Helen Birch Bartlett Memorial Collection,” in “The Helen Birch Bartlett Memorial Collection,” special issue, Art Institute of Chicago Museum Studies 12, no. 2 (1986), pp. 201; 202, fig. 2; 211–14; 216; 218; 220, n. 10; 221, n. 26, as Woman on a Rose Divan, 1921.\n\nMargrit Hahnloser-Ingold, “Collecting Matisses of the 1920s in the 1920s,” in Jack Cowart and Dominique Fourcade, Henri Matisse: The Early Years in Nice, 1916–1930, exh. cat. (National Gallery of Art/Harry N. Abrams, 1986), p. 257, as Woman on a Rose Divan, 1921. \n\nJacqueline Guillaud and Maurice Guillaud, Matisse: Le rythme et la ligne (Guillaud Éditions, 1987), pp. 150, no. 171; 174, fig. 171, as Odalisque sur un divan rose, 1921.\n\nGuy-Patrice Dauberville and Michel Dauberville, Matisse: Henri Matisse chez Bernheim-Jeune, vol. 2 (Éditions Bernheim-Jeune, 1995), pp. 1018, cat. 482; 1019 (ill.); 1440; 1460; 1464, as Femme au divan rouge, 1921.\n\nCatherine C. Bock-Weiss, Henri Matisse: A Guide to Research, Artist Resource Manuals 1, ed. Wolfgang M. Freitag, Garland Reference Library of the Humanities 1424 (Garland Publishing, 1996), pp. 315, no. 980; 681; 690, as Woman on a Rose Divan, Odalique [sic] sur un divan rose (Woman on a Rose Divan), and Woman on a Rose Divan, (Odalique [sic] sur un divan rose), 1920.\n\nCatherine Bock-Weiss, Henri Matisse: Modernist Against the Grain (Pennsylvania State University Press, 2009), pp. ix; xiii; 6; pl. 5; 83; 84; 94–96; 98; 172; 190, n. 1; 191, n. 10; 193, n. 26, as Woman on a Rose Divan, 1921.\n\n“Woman on a Rose Divan,” in Matisse Paintings, Works on Paper, Sculpture, and Textiles at the Art Institute of Chicago, ed. Stephanie D’Alessandro (Chicago: Art Institute of Chicago, 2019), cat. 33, <a href=\"https://publications.artic.edu/matisse/reader/works/section/70/70_anchor\">https://publications.artic.edu/matisse/reader/works/section/70/70_anchor</a>.",
+      "exhibition_history": "Art Institute of Chicago, Group of Modern Paintings from the Birch-Bartlett Collection, Sept. 8–Oct. 22, 1923, no cat.\n\nArt Institute of Chicago, Birch-Bartlett Collection of Modern European Paintings, Sept. 3–Oct. 22, 1924, no cat.\n\nMinneapolis Institute of Arts, Exhibition of Modern French Paintings from the Birch-Bartlett Collection Lent by Frederick C. Bartlett of Chicago, Apr. 1925, cat. 19, as Woman on a Divan.\n\nArt Institute of Chicago, Birch-Bartlett Collection of Modern European Paintings, Sept. 8–Oct. 8, 1925, no cat.\n\nBoston Art Club, Birch-Bartlett Collection of Modern French Paintings, Dec. 9–26, 1925, cat. 22, as Femme au divan.\n\nArt Institute of Chicago, “A Century of Progress”: Loan Exhibition of Paintings and Sculpture, June 1–Nov. 1, 1933, cat. 389, as Woman on Rose Divan. \n\nArt Institute of Chicago, “A Century of Progress”: Loan Exhibition of Paintings and Sculpture for 1934, June 1–Nov. 1, 1934, cat. 353, as Woman on Rose Divan. \n\nNew York, Museum of Modern Art, Henri Matisse, Nov. 13, 1951–Jan. 13, 1952; Cleveland Museum of Art, Feb. 5–Mar. 16, 1952; Art Institute of Chicago, Apr. 1–May 4, 1952, addendum to catalogue, no cat. no., as Woman on Rose Divan (c. 1920); San Francisco Museum of Art, May 22–July 6, 1952 (probably Chicago only).\n\nOrdrup, Denmark, Ordrupgaardsamlingen, Matisse and the Eskimos, Aug. 21–Nov. 29, 2015.\n\nThe Art Institute of Chicago, Matisse’s Jazz: Rhythms in Color, Mar. 7–June 1, 2026, no cat.",
+      "provenance_text": "The artist; sold to Galerie Bernheim-Jeune, Paris, Apr. 19, 1921; sold to Frederick Clay Bartlett (1873–1953), Chicago, June 25, 1923; given to the Art Institute of Chicago, Jan. 27, 1926.",
+      "edition": null,
+      "publishing_verification_level": "Web Cataloged",
+      "internal_department_id": 246,
+      "fiscal_year": 1926,
+      "fiscal_year_deaccession": null,
+      "is_public_domain": true,
+      "is_zoomable": true,
+      "max_zoom_window_size": -1,
+      "copyright_notice": null,
+      "has_multimedia_resources": true,
+      "has_educational_resources": false,
+      "has_advanced_imaging": false,
+      "colorfulness": 33.4415,
+      "color": {
+        "h": 3,
+        "l": 45,
+        "s": 21,
+        "percentage": 0.2155400808830819,
+        "population": 1261
+      },
+      "latitude": null,
+      "longitude": null,
+      "latlon": null,
+      "is_on_view": false,
+      "on_loan_display": null,
+      "gallery_title": null,
+      "gallery_id": null,
+      "nomisma_id": null,
+      "artwork_type_title": "Painting",
+      "artwork_type_id": 1,
+      "department_title": "Modern Art",
+      "department_id": "PC-11",
+      "artist_id": 35670,
+      "artist_title": "Henri Matisse",
+      "alt_artist_ids": [],
+      "artist_ids": [
+        35670
+      ],
+      "artist_titles": [
+        "Henri Matisse"
+      ],
+      "category_ids": [
+        "PC-11"
+      ],
+      "category_titles": [
+        "Modern Art"
+      ],
+      "term_titles": [
+        "oil on canvas",
+        "Century of Progress",
+        "painting",
+        "modern and contemporary art",
+        "world's fairs",
+        "Chicago World's Fairs",
+        "furniture",
+        "interiors",
+        "women",
+        "reclining",
+        "textile pattern",
+        "floral patterns"
+      ],
+      "style_id": null,
+      "style_title": null,
+      "alt_style_ids": [],
+      "style_ids": [],
+      "style_titles": [],
+      "classification_id": "TM-66",
+      "classification_title": "oil on canvas",
+      "alt_classification_ids": [
+        "TM-9",
+        "TM-155"
+      ],
+      "classification_ids": [
+        "TM-66",
+        "TM-9",
+        "TM-155"
+      ],
+      "classification_titles": [
+        "oil on canvas",
+        "painting",
+        "modern and contemporary art"
+      ],
+      "subject_id": "TM-12169",
+      "alt_subject_ids": [
+        "TM-11299",
+        "TM-12176",
+        "TM-9132",
+        "TM-12285",
+        "TM-8735",
+        "TM-12334",
+        "TM-13003",
+        "TM-12448"
+      ],
+      "subject_ids": [
+        "TM-12169",
+        "TM-11299",
+        "TM-12176",
+        "TM-9132",
+        "TM-12285",
+        "TM-8735",
+        "TM-12334",
+        "TM-13003",
+        "TM-12448"
+      ],
+      "subject_titles": [
+        "Century of Progress",
+        "world's fairs",
+        "Chicago World's Fairs",
+        "furniture",
+        "interiors",
+        "women",
+        "reclining",
+        "textile pattern",
+        "floral patterns"
+      ],
+      "material_id": null,
+      "alt_material_ids": [],
+      "material_ids": [],
+      "material_titles": [],
+      "technique_id": null,
+      "alt_technique_ids": [],
+      "technique_ids": [],
+      "technique_titles": [],
+      "theme_titles": [],
+      "image_id": "65e58fc4-4dd1-7149-b76b-94547745bece",
+      "alt_image_ids": [
+        "99f3b027-0eb0-45b3-c993-c546cfb2ead4"
+      ],
+      "document_ids": [],
+      "sound_ids": [],
+      "video_ids": [],
+      "text_ids": [],
+      "section_ids": [
+        4441
+      ],
+      "section_titles": [
+        "Cat. 33  Woman on a Rose Divan, 1921"
+      ],
+      "site_ids": [],
+      "suggest_autocomplete_all": [
+        {
+          "input": [
+            "1926.219"
+          ],
+          "contexts": {
+            "groupings": [
+              "accession"
+            ]
+          }
+        },
+        {
+          "input": [
+            "Woman on Rose Divan"
+          ],
+          "weight": 3624,
+          "contexts": {
+            "groupings": [
+              "title"
+            ]
+          }
+        }
+      ],
+      "source_updated_at": "2026-08-17T12:42:28-05:00",
+      "updated_at": "2026-10-01T20:39:27-05:00",
+      "timestamp": "2026-10-03T04:11:01-05:00"
+    },
+    "info": {
+      "license_text": "The `description` field in this response is licensed under a Creative Commons Attribution 4.0 Generic License (CC-By) and the Terms and Conditions of artic.edu. All other data in this response is licensed under a Creative Commons Zero (CC0) 1.0 designation and the Terms and Conditions of artic.edu.",
+      "license_links": [
+        "https://creativecommons.org/publicdomain/zero/1.0/",
+        "https://www.artic.edu/terms"
+      ],
+      "version": "1.16"
+    },
+    "config": {
+      "iiif_url": "https://www.artic.edu/iiif/2",
+      "website_url": "http://www.artic.edu"
+    }
+  },
+  "work": {
+    "id": "femme-divan-rose",
+    "artist": "Henri Matisse",
+    "file": "femme-divan-rose.jpg",
+    "title": "Femme au divan rose",
+    "date": "1921",
+    "museum": "Art Institute of Chicago",
+    "width": 843,
+    "height": 694,
+    "source": "https://www.artic.edu/artworks/27980",
+    "image": "https://upload.wikimedia.org/wikipedia/commons/d/d2/Femme_au_divan_rose%2C_par_Henri_Matisse.jpg",
+    "reproductionSource": "https://commons.wikimedia.org/wiki/File:Femme_au_divan_rose,_par_Henri_Matisse.jpg",
+    "license": "Public domain",
+    "licenseUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+    "credit": "Helen Birch Bartlett Memorial Collection",
+    "physicalWidthCm": 46,
+    "displayWidth": 0.644
+  }
+}

@@ -1,0 +1,326 @@
+{
+  "downloadedAt": "2026-10-03T11:10:45.190710+02:00",
+  "commons": {
+    "batchcomplete": "",
+    "query": {
+      "pages": {
+        "157246801": {
+          "pageid": 157246801,
+          "ns": 6,
+          "title": "File:Les Pommes, par Henri Matisse.jpg",
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "url": "https://upload.wikimedia.org/wikipedia/commons/7/75/Les_Pommes%2C_par_Henri_Matisse.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Les_Pommes,_par_Henri_Matisse.jpg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=157246801",
+              "sha1": "a108450b4ff0470bb92f280087b4b0398134d84f",
+              "extmetadata": {
+                "DateTime": {
+                  "value": "2024-12-29 06:09:36",
+                  "source": "mediawiki-metadata",
+                  "hidden": ""
+                },
+                "ObjectName": {
+                  "value": "Les Pommes, par Henri Matisse",
+                  "source": "mediawiki-metadata"
+                },
+                "CommonsMetadataExtension": {
+                  "value": 1.2,
+                  "source": "extension",
+                  "hidden": ""
+                },
+                "Categories": {
+                  "value": "Author died more than 70 years ago public domain images|CC-PD-Mark|PD-old missing SDC copyright status|Apples by Henri Matisse|Media uploaded for Public Domain Day 2025 (Henri Matisse)",
+                  "source": "commons-categories",
+                  "hidden": ""
+                },
+                "Assessments": {
+                  "value": "",
+                  "source": "commons-categories",
+                  "hidden": ""
+                },
+                "ImageDescription": {
+                  "value": "Les Pommes, par Henri Matisse",
+                  "source": "commons-desc-page"
+                },
+                "DateTimeOriginal": {
+                  "value": "1916",
+                  "source": "commons-desc-page"
+                },
+                "Credit": {
+                  "value": "<a rel=\"nofollow\" class=\"external free\" href=\"https://www.artic.edu/iiif/2/b2bc0fc2-8d17-1fcd-8cae-8626421c11ef/full/843,/0/default.jpg\">https://www.artic.edu/iiif/2/b2bc0fc2-8d17-1fcd-8cae-8626421c11ef/full/843,/0/default.jpg</a>",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "Henri Matisse",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "UsageTerms": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page"
+                },
+                "AttributionRequired": {
+                  "value": "false",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "Copyrighted": {
+                  "value": "False",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "Restrictions": {
+                  "value": "",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "License": {
+                  "value": "pd",
+                  "source": "commons-templates",
+                  "hidden": ""
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "museum": {
+    "data": {
+      "id": 64001,
+      "api_model": "artworks",
+      "api_link": "https://api.artic.edu/api/v1/artworks/64001",
+      "is_boosted": false,
+      "title": "Apples",
+      "alt_titles": null,
+      "thumbnail": {
+        "lqip": "data:image/gif;base64,R0lGODlhBAAFAPQAACwWBiAfHzAkITw8OnlYPF9SSWZQQZZJGptaMqJfNqhfOapkN7ZtQLV8SLOSTaeCUqOBVaeFWNejWNaqaQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACH5BAAAAAAALAAAAAAEAAUAAAURoPFARYMwEbEkTgAc0iAoUwgAOw==",
+        "width": 10886,
+        "height": 14564,
+        "alt_text": "A work made of oil on canvas."
+      },
+      "main_reference_number": "1948.563",
+      "has_not_been_viewed_much": false,
+      "boost_rank": null,
+      "date_start": 1916,
+      "date_end": 1916,
+      "date_display": "1916",
+      "date_qualifier_title": "",
+      "date_qualifier_id": null,
+      "artist_display": "Henri Matisse\nFrench, 1869–1954",
+      "place_of_origin": "France",
+      "description": "<p>When the 45-year-old Henri Matisse was rejected from military service at the outbreak of World War I, a friend encouraged him to contribute to the war effort the best way he could: by continuing to paint well. This led to a productive period of compositional and material experimentation that Matisse hoped would sustain the tradition of French painting in the face of a cultural and national threat.</p> \n<p>Matisse painted this still-life composition twice—in the abstract work seen here and also in a more traditionally representational version. A hidden light source bathes the scene in warm tones, which are offset by a swath of green. Luminous black consumes the background, reflecting Matisse’s challenge to himself to use black as a “color of light, not darkness.”</p>\n",
+      "short_description": "When the 45-year-old Henri Matisse was rejected from military service at the outbreak of World War I, a friend encouraged him to contribute to the war effort the best way he could: by continuing to paint well. This led to a productive period of compositional and material experimentation—including this canvas—that Matisse hoped would sustain the tradition of French painting in the face of a cultural and national threat.",
+      "dimensions": "116.5 × 89.5 cm (45 7/8 × 35 3/16 in.)",
+      "dimensions_detail": [
+        {
+          "depth": null,
+          "width": 89,
+          "height": 116,
+          "diameter": null,
+          "clarification": null
+        }
+      ],
+      "medium_display": "Oil on canvas",
+      "inscriptions": "Signed, l.r.: Henri-Matisse",
+      "credit_line": "Gift of Florene May Schoenborn and Samuel A. Marx",
+      "catalogue_display": null,
+      "publication_history": "Marius de Zayas, Exhibition of Paintings by Courbet, Manet, Degas, Renoir, Cézanne, Seurat, Matisse, exh. cat. (M. de Zayas, 1919), cat. 21, as Apples.\n\nHenry McBride, “News and Comment in the World of Art,” Sun, Nov. 23, 1919, sec. 7, p. 12.\n\nFrederick James Gregg, “From Courbet to Matisse in One Art Exhibition,” New York Herald, Nov. 23, 1919, sec. 3, p. 10, as Still Life.\n\nSociety of Independent Artists, Catalogue of the Fourth Annual Exhibition of the Society of Independent Artists, exh. cat. (Society of Independent Artists, 1920), n. pag., cat. 508, as Still-Life, Apples.\n\nCatalogue of an Exhibition of Paintings and Drawings by Representative Modern Artists, exh. cat., with an introduction by Leopold Stokowski (Pennsylvania Academy of the Fine Arts, 1920), p. 16, cat. 150, as Apples.\n\nHenry McBride, “New Matisse Art on Exhibition,” New York Herald, Dec. 12, 1920, sec. 3, p. 4.\n\nCharles Lewis Hind, Art and I (John Lane Company, 1921), pp. 153, 157–58, as Apples and Still Life, Apples.\n\nSculptors' Gallery, Exhibition: Contemporary French Art, exh. cat. (Sculptors' Gallery, 1921), cat. 84, as Apples, 1919.\n\nJoseph Brummer, Exhibition of Works by Henri Matisse, exh. cat. (Joseph Brummer, 1924), cat. 7, as Apples.\n\nJohn Quinn, 1870–1925: Collection of Paintings, Water Colors, Drawings, and Sculpture, with a foreword by Forbes Watson (Pidgeon Hill Press, 1926), pp. 5, 11, 73 (ill.), as Still Life.\n\n“Quinn Art in Five Session Sale,” Art News 25, no. 15 (Jan. 15, 1927), p. 2.\n\n“Last of Quinn Art to Go at Auction,” New York Times, Jan. 16, 1927, p. E20.\n\nAmerican Art Association, The John Quinn Collection: Paintings and Sculptures of the Moderns, sale cat. (American Art Association, Feb. 9–12, 1927), pp. 56–57, lot 126 (ill.), as The Bowl of Apples.\n\n“Modern Art Brings $16,235 at Auction,” New York Times, Feb. 10, 1927, p. 26.\n\n“Quinn Art Sale Nets $16,235 in First Session,” New York Herald Tribune, Feb. 10, 1927, p. 15, as Bowl of Apples.\n\n“Big Prices Keep Up in Quinn Sale,” New York American, Feb. 11, 1927, p. 15, no. 126, as Bowl of Apples.\n\n“Sale of the Quinn Collection is Completed,” Art News 25, no. 20 (Feb. 19, 1927), p. 7, no. 126, as The Bowl of Apples.\n\n“Paintings, Drawings and Sculpture, the Modern Art Collection of the Late John Quinn,” American Art Sales 7, no. 4 (Mar. 1927), p. 6, no. 126, as The Bowl of Apples.\n\n“Modern French Masters at the Valentine Galleries,” New York Sun, Mar. 12, 1927, p. 5.\n\n“Modern Paintings,” Art News 25, no. 25 (Mar. 26, 1927), p. 9, as Bowl of Apples.\n\nChristian Zervos, “De l’importance de l’objet dans la peinture d’aujourd’hui,” Cahiers d’art 5, no. 3 (1930), p. 118 (ill.), as Le plateau a pommes [sic], 1916.\n\nRoger Fry, “Henri-Matisse,” Cahiers d’art 6, no. 5–6, L’œuvre de Henri Matisse (1931), p. 284, fig. 52, as Le plateau a pommes [sic], 1916.\n\nGaleries Georges Petit, Henri-Matisse, exh. cat. (Galeries Georges Petit, 1931), p. 23, cat. 46, as Les Pommes, 1918.\n\nKunsthalle Basel, Henri-Matisse, exh. cat. (Kunsthalle Basel, 1931), p. 13, cat. 48, as Les Pommes, 1918.\n\nSan Francisco Museum of Art, Henri-Matisse: Paintings, Drawings, Sculpture, exh. cat. (San Francisco Museum of Art, 1936), cat. 15, as Bowl of Apples, 1916.\n\nHenry Clifford and Henri Matisse, Henri Matisse: Retrospective Exhibition of Paintings, Drawings, and Sculpture, Organized in Collaboration with the Artist, exh. cat. (Philadelphia Museum of Art, 1948), pp. 39, cat. 38; n. pag., no. 38 (ill.), as Bowl of Apples, 1916.\n\nFiske Kimball, “Matisse: Recognition, Patronage, Collecting,” Philadelphia Museum Bulletin 43, no. 217 (Mar. 1948), p. 45, as Bowl of Apples.\n\nMuseum of Modern Art, Henri Matisse, exh. cat., introduction by Alfred H. Barr, Jr. (Museum of Modern Art, New York, 1951), pp. 10, cat. 38; 24 (ill.), as Apples, (1916).\n\nAlfred H. Barr, Jr., Matisse: His Art and His Public (Museum of Modern Art, New York, 1951), pp. [3], 180, 189, 194, 263, 406 (ill.), 529, 558, as Apples (Les pommes), (1916) and Bowl of Apples, 1916.\n\nArt Institute of Chicago, Paintings in the Art Institute of Chicago: A Catalogue of the Picture Collection (Art Institute of Chicago, 1961, repr., 1968), pp. 304, 466 (ill.), as Apples, 1916.\n\nArt Institute of Chicago, Art Institute of Chicago Quarterly 58, no. 1 (1964), cover (ill.), copyright page, as Apples, 1916.\n\nAlfred H. Barr, Jr., James Thrall Soby, and Lucy Lippard, The School of Paris: Paintings from the Florene May Schoenborn and Samuel A. Marx Collection, exh. cat. (Museum of Modern Art, New York, 1965), pp. 10, 11 (ill.), 12, as Apples, (1916).\n\nArt Institute of Chicago, “School of Paris: Paintings from the Florene May Schoenborn and Samuel A. Marx Collection,” Calendar of the Art Institute of Chicago 60, no. 1 (Jan. 1966), n. pag. (ill.), as Apples, 1916.\n\nA. James Speyer, “Twentieth-Century European Paintings and Sculpture,” Apollo, n.s., 84, no. 55 (Sept. 1966), p. 224, fig. 3, as Apples, 1916.\n\nJean Guichard-Meili, Matisse, trans. Caroline Moorehead, Praeger World of Art Profile (Frederick A. Praeger, 1967), p. 231, as Apples.\n\nCharles C. Cunningham, John Maxon, and Anselmo Carini, Instituto de arte de Chicago, El Mundo de los museos (Editorial Codex, 1967), p. 38 (ill.).\n\nMatisse, 1869–1954: A Retrospective Exhibition at the Hayward Gallery, exh. cat., with a foreword by Gabriel White and an introduction by Lawrence Gowing (Arts Council of Great Britain, 1968), pp. 102 (ill); 164, cat. 67, as Apples/Les Pommes, 1916.\n\nKenjirō Okamoto, Bonnard/Matisse, L’Art du Monde 16 (Kawade Shobō, 1968), n. pag.; pp. [52], pl. 48; 110, no. 48, as Ringo [Apples]/Les Pommes, 1916.\n\nB. L. Reid, The Man from New York: John Quinn and His Friends (Oxford University Press, 1968), pp. 398, 499, 660, as Apples and Still Life with Apples.\n\nJohn Maxon, The Art Institute of Chicago (Harry N. Abrams, 1970), pp. 116 (ill.), 117, 283, as Apples, 1916.\n\nPierre Schneider, Henri Matisse: Exposition du Centenaire, with the collaboration of Tamara Préaud, exh. cat., revised and corrected 2nd ed. (Réunion des Musées Nationaux, 1970), pp. 84, cat. 141; 210, no. 141 (ill.), as Les pommes sur la table, sur fond noir et jaune, Issy, 1916.\n\nMassimo Carrà, “Catalogo delle opera,” in Mario Luzi and Massimo Carrà, L’opera di Matisse dalla rivolta ‘fauve’ all’intimismo, 1904–1928, Classici dell’Arte 49 (Rizzoli Editore, 1971), pp. 94–95, cat. 210 (ill.), as Mele su un tavolo con fondo nero e giallo, 1916.\n\nMike Samuels and Nancy Samuels, Seeing with the Mind’s Eye: The History, Techniques, and Uses of Visualization (Random House/Bookworks, 1975), p. 117 (ill.), as Apples, 1916.\n\nJanice J. Feldstein and Maureen Smith, eds., The Art Institute of Chicago: 100 Masterpieces (Art Institute of Chicago, 1978), pp. 138–39, fig. 87, as Apples, 1916.\n\nJudith Zilczer, “The Noble Buyer:” John Quinn, Patron of the Avant-Garde, exh. cat. (Smithsonian Institution, 1978), pp. 50; 56, fig. 44; 121–22, cat. 50 (ill.); 172, as Apples, 1916.\n\nJudith Zilczer, “The Dispersal of the John Quinn Collection,” Archives of American Art Journal 19, no. 3 (1979), pp. 18; 19, fig. 7, as Apples, 1916.\n\nA. James Speyer and Courtney Graham Donnell, Twentieth-Century European Paintings (University of Chicago Press, 1980), pp. 14; 54, no. 2F8; microfiche 2, no. F8 (ill.), as Apples, 1916.\n\nFelix Baumann, Henri Matisse, exh. cat. (Kunsthaus Zürich/Städtische Kunsthalle Düsseldorf, 1982), p. 60, as Les pommes, 1916.\n\nMichael P. Mezzatesta, Henri Matisse, Sculptor/Painter: A Formal Analysis of Painted Works, exh. cat. (Kimbell Art Museum, 1984), pp. 104; 105, fig. 69, as Apples, 1916.\n\nPierre Schneider, Matisse (Flammarion, 1984), pp. 372, 386 (ill.), 387, as Les Pommes, 1916.\n\nPierre Schneider, Matisse, trans. Michael Taylor and Bridget Strevens Romer (Rizzoli, 1984), pp. 372, 386 (ill.), 387, as Apples on a Table, Black and Yellow Background and Apples, 1916.\n\nCatherine C. Bock, “Woman before an Aquarium and Woman on a Rose Divan: Matisse in the Helen Birch Bartlett Memorial Collection,” in “The Helen Birch Bartlett Memorial Collection,” special issue, Art Institute of Chicago Museum Studies12, no. 2 (1986), pp. 203; 218, n. 2, as Apples, 1916.\n\nJack Flam, Matisse: The Man and His Art, 1869–1918 (Cornell University Press, 1986), pp. 423; 430, fig. 434; 504, n. 31, as Apples, 1916.\n\nJean Guichard-Meili, Matisse (Somogy, 1986), p. 129, as Les pommes sur la table, 1916.\n\nJefferson C. Harrison, French Paintings from the Chrysler Museum, exh. cat. (Chrysler Museum, 1986), p. 87, fig. 42, as Apples.\n\nJacqueline Guillaud and Maurice Guillaud, Matisse: Le rythme et la ligne (Guillaud Editions, 1987), pp. 71, no. 67; [81] fig. 67, as Les pommes sur la table sur fond noir et jaune, 1916.\n\nBernard Noël, Matisse, revised and corrected edition (Hazan, 1987), cover (ill.), p. 106, as les Pommes, 1916.\n\nLeningrad (now Saint Petersburg), State Hermitage Museum, Ot Delakrua do Matissa: Shedevry frantsuzskoi zhivopisi XIX–nachala XX veka, iz Muzeia Metropoliten v N’iu-Iorke i Khudozhestvennogo Instituta v Chikago [From Delacroix to Matisse: Masterpieces of French painting of the nineteenth to the beginning of the twentieth century from the Metropolitan Museum of Art, New York, and the Art Institute of Chicago] exh. cat. (Avrora, 1988), n. pag., cat. 51 (ill.), as Iabloki [Apples], 1916.\n\nJohn Elderfield, Henri Matisse: A Retrospective, exh. cat. (Museum of Modern Art, 1992), p. 261, cat. 186 (ill.), as Apples/Les pommes, Issy-les-Moulineaux, [summer–autumn] 1916.\n\nDominique Fourcade and Isabelle Monod- Fontaine, eds., Henri Matisse 1904–1917, exh. cat. (Éditions du Centre Georges Pompidou, 1993), pp. 372–73, cat. 129 (ill.); 506, no. 129 (ill.), as Les pommes, Issy-les-Moulineaux, été–automne 1916.\n\nColette Giraudon, Paul Guillaume et les peintres du XXe siècle: De l’art nègre à l’avant-garde (La Bibliothèque des arts, 1993), p. 51 (ill.), as Nature morte aux pommes, 1916.\n\nEric de Chassey, “Les quatre leçons de Cézanne,” Beaux Arts 111 (Apr. 1993), p. 81 (ill.), as Pommes, 1916.\nGuy-Patrice Dauberville and Michel Dauberville, Matisse: Henri Matisse chez Bernheim-Jeune (Éditions Bernheim-Jeune, 1995), vol. 1, pp. 558, cat. 160; 559 (ill.); vol. 2: pp. 1433, 1459, 1463, as Nature morte aux pommes sur fond noir et jaune, 1916.\n\nCatherine C. Bock-Weiss, Henri Matisse: A Guide to Research, Artist Resource Manuals 1, ed. Wolfgang M. Freitag, Garland Reference Library of the Humanities 1424 (Garland Publishing, 1996), pp. 267, no. 790; 682; 684, as Apples (Still Life), Les Pommes (Apples), and Apples (Les Pommes), 1916.\n\nFrédéric Sorbier et al., Henri Matisse, Mes Premières Découvertes de l’art (Gallimard, 1996), n. pag. (ill.), as Les Pommes, 1916.\n\nJames N. Wood and Teri J. Edelstein, The Art Institute of Chicago: Twentieth-Century Painting and Sculpture (Art Institute of Chicago, 1996), pp. 37 (ill.), 159, as Apples, 1916.\n\nJulia May Boddewyn, “The Valentine Gallery: Valentine Dudensing and the Temple of European Modernism” (M.A. thesis, Hunter College of the City University of New York, 1997), p. 133, as Bowl of Apples.\n\nMargit Rowell, Objects of Desire: The Modern Still Life, exh. cat. (Museum of Modern Art, New York, 1997), pp. 50–51; 55, pl. 21; 223, as Apples/Les Pommes, 1916.\n\nTherese Southgate, The Art of JAMA: One Hundred Covers and Essays from the Journal of the American Medical Association (American Medical Association, 1997), pp. 34, 35 (ill.), as Apples, 1916.\n\nBjörn Uwe Rahlwes, ed., Weniger–aber mehr: Das Fastenlesebuch (GEP-Buch, 1998), cover (ill.), [4], 10, 12, 222, as Die Äpfel, Les Pommes, 1916.\n\nImants Krumins and Michael Thomas, Art Starts: Art and Design for Upper Secondary (Oxford University Press, 1999), pp. 37, 38 (ill.), as Apples, 1916.\n\nJohn H. Cauman, “Matisse and America, 1905–1933” (Ph.D. diss., City University of New York, 2000), pp. xv, no. 2.19; 330; 339; 347; 358; 359; 378; 396, as Apples, 1916.\n\nRebecca A. Rabinow, “Modern Art Comes to the Metropolitan: The 1921 Exhibition of ‘Impressionist and Post-Impressionist Paintings,’” Apollo, n.s., 152, 464 (Oct. 2000), pp. 5; 9, nn. 19, 21, as Apples.\n\nJohn Elderfield, “Catalogue: 24,” in Elizabeth Cowling, et. al., Matisse Picasso, exh. cat. (Tate Publishing, 2002), pp. 233; 355, fig. 62, as Apples, 1916.\n\nSarah Whitaker Peters, “Georgia O’Keeffe: Unsubmissive Modernist,” American Art Review 15, no. 2 (2003), pp. 108, 109 (ill.), as Les Pommes (Apples), 1916.\n\nMasayuki Tanaka, Chika Amano, and Département des Affaires Culturelles du Yomiuri Shimbun, eds., Matisu-ten [Matisse Exhibition]/Henri Matisse: Processus/Variation, exh. cat. (Musée National d’Art Occidental/Le Yomiuri Shimbun/NHK, 2004), pp. 48, fig. 35; 261, as Ringo [Apples]/Les Pommes, 1916.\n\nGotthard Jedlicka, Mit Henri Matisse in Paris, 1931 (Piet Meyer, 2008), p. [7], fig. 2, as Les pommes/Die Äpfel, Sommer–Herbst, 1916.\n\nAnn Slavick, Hour Chicago: Twenty-Five Self-Guided 60-Minute Tours of Chicago’s Great Architecture and Art (Ivan R. Dee, 2008), p. 167, as Apples, 1916.\n\nStephanie D’Alessandro and John Elderfield, Matisse: Radical Invention, 1913–1917, exh. cat. (Art Institute of Chicago/Yale University Press, 2010), pp. 220; 264; 276, cat. 39.1 (ill.); 277; 278, cat. 39a; 279; 281; 285, as Apples, late July– Nov. 1916.\n\nStephanie D’Alessandro, “Surface and Depth,” in Matisse: In Search of True Painting, exh. cat. ed. Dorthe Aagesen and Rebecca Rabinow (Metropolitan Museum of Art, New York, 2012), pp. 95; 97, cat. 34 (ill.); 98; 99; 100; 189, n. 2, as Apples, 1916.\n\nChristel Hollevoet-Force and Mary Chan, “Works in the Exhibition,” in Matisse: In Search of True Painting, exh. cat., ed. Dorthe Aagesen and Rebecca Rabinow (Metropolitan Museum of Art, New York, 2012), p. 212, as Apples, 1916.\n\nStephanie D’Alessandro, with contributions by Renée DeVoe Mertz, The Age of Picasso and Matisse: Modern Masters from the Art Institute of Chicago, exh. cat. (Art Institute of Chicago/Kimbell Art Museum, 2013), pp. 14, 74 (ill.), as Apples, 1916.\n\nStephanie D’Alessandro, with contributions by Renée DeVoe Mertz, The Age of Picasso and Matisse: Modern Art at the Art Institute of Chicago (Art Institute of Chicago/Yale University Press, 2014), pp. 12, 74 (ill.), as Apples, 1916.\n\n“Apples,” in Matisse Paintings, Works on Paper, Sculpture, and Textiles at the Art Institute of Chicago, ed. Stephanie D’Alessandro (Chicago: Art Institute of Chicago, 2019), cat. 24, <a href=\"https://publications.artic.edu/matisse/reader/works/section/60/60_anchor\">https://publications.artic.edu/matisse/reader/works/section/60/60_anchor</a>.\n\nJulia May Boddewyn, The Valentine Gallery: The Forgotten Story of Valentine Dudensing, Matisse, Picasso, and the U.S. Market for Modern Art (1926-1947) (London and New York: Bloomsbury, 2026), 63, 64, fig. 3.5 (color ill.).",
+      "exhibition_history": "New York, M. de Zayas, Exhibition of Paintings by Courbet, Manet, Degas, Renoir, Cézanne, Seurat, Matisse, Nov. 17–Dec. 6, 1919, cat. 21, as Apples.\n\nNew York, Waldorf Astoria, Fourth Annual Exhibition of the Society of Independent Artists, Mar. 11–Apr. 1, 1920, cat. 508, as Still- Life, Apples.\n\nPossibly Philadelphia, Pennsylvania Academy of the Fine Arts, Exhibition of Paintings and Drawings by Representative Modern Masters, Apr. 17–May 9, 1920, cat. 150, as Apples.\n\nNew York, Marius de Zayas Galleries, Paintings by Matisse, Dec. 6–25, 1920, no cat.\n\nNew York, Sculptors' Gallery, Exhibition: Contemporary French Art, Mar. 24–Apr. 10, 1921, cat. 84, as Apples, 1919.\n\nNew York, Galleries of Joseph Brummer, Exhibition of Works by Henri Matisse, Feb. 25–Mar. 22, 1924, cat. 7, as Apples.\n\nNew York, F. Valentine Dudensing Galleries, Group Exhibition [of] Modern French Painters, Mar. 8–Apr. 1927, no cat.\n\nParis, Galeries Georges Petit, Henri-Matisse, June 16–July 25, 1931, cat. 46, as Les Pommes, 1918.\n\nBasel, Kunsthalle, Henri-Matisse, Aug. 9–Sept. 15, 1931, cat. 48, as Les Pommes, 1918.\n\nSan Francisco Museum of Art, Henri-Matisse: Paintings, Drawings, Sculpture, Jan. 11–Feb. 24, 1936, cat. 15, as Bowl of Apples, 1916.\n\nPhiladelphia Museum of Art, Henri Matisse: Retrospective Exhibition of Paintings, Drawings, and Sculpture, Apr. 3–May 10, 1948, cat. 38 (ill.), as Bowl of Apples, 1916.\n\nNew York, Museum of Modern Art, Henri Matisse, Nov. 13, 1951–Jan. 13, 1952, cat. 38 (ill.), as Apples, (1916); Cleveland Museum of Art, Feb. 5–Mar. 16, 1952; Art Institute of Chicago, Apr. 1–May 4, 1952; San Francisco Museum of Art, May 22–July 6, 1952.\n\nNew York, Museum of Modern Art, The School of Paris: Paintings from the Florene May Schoenborn and Samuel A. Marx Collection, Nov. 1, 1965–Jan. 2, 1966, no cat. no. (ill.), as Apples, (1916); Art Institute of Chicago, Feb. 11–Mar. 27, 1966; City Art Museum of Saint Louis, Apr. 26–June 13, 1966; Mexico City, Museo de Arte Moderno, July 2–Aug. 7, 1966; San Francisco, Museum of Art, Sept. 2–Oct. 2, 1966.\n\nLondon, Hayward Gallery, Matisse, 1869–1954: A Retrospective Exhibition at the Hayward Gallery, July 11–Sept. 8, 1968, cat. 67 (ill.), as Apples/Les Pommes, 1916.\n\nParis, Grand Palais, Henri Matisse: Exposition du Centenaire, Apr. 21–Sept. 21, 1970, cat. 141 (ill.), as Les pommes sur la table, sur fond noir et jaune, Issy, 1916.\n\nWashington, DC, Hirshhorn Museum and Sculpture Garden, “The Noble Buyer:” John Quinn, Patron of the Avant-Garde, June 15–Sept. 4, 1978, cat. 50 (ill.), as Apples, 1916.\n\nLeningrad (now Saint Petersburg), State Hermitage Museum, Ot Delakrua do Matissa: Shedevry frantsuzskoi zhivopisi XIX–nachala XX veka, iz Muzeia Metropoliten v N’iu-Iorke i Khudozhestvennogo Instituta v Chikago [From Delacroix to Matisse: Masterpieces of French painting of the nineteenth to the beginning of the twentieth century from the Metropolitan Museum of Art, New York, and the Art Institute of Chicago], Mar. 15–May 10, 1988, cat. 51 (ill.), as Iabloki [Apples], 1916; Moscow, Pushkin State Museum of Fine Arts, June 10–July 30, 1988.\n\nNew York, Museum of Modern Art, Henri Matisse: A Retrospective, Sept. 24, 1992–Jan. 12, 1993, cat. 186 (ill.), as Apples/Les pommes, Issy-les-Moulineaux, [summer–autumn] 1916.\n\nParis, Centre Georges Pompidou, Henri Matisse 1904–1917, Feb. 25–June 21, 1993, cat. 129 (ill.), as Les pommes, Issy-les-Moulineaux, été–automne 1916.\n\nNew York, Museum of Modern Art, Objects of Desire: The Modern Still Life, May 25–Aug. 26, 1997, pl. 21, as Apples/Les Pommes, 1916; London, Hayward Gallery, Oct. 9, 1997–Jan. 4, 1998 (New York only).\n\nArt Institute of Chicago, Matisse: Radical Invention, 1913–1917, Mar. 20–June 20, 2010, cats. 39.1 and 39a (ill.), as Apples, late July–Nov. 1916; New York, Museum of Modern Art, July 18–Oct. 11, 2010.\n\nParis, Centre Pompidou, Musée National d’Art Moderne, Matisse: In Search of True Painting, Mar. 7–June 18, 2012, cat. 34 (ill.), as Apples, 1916; Copenhagen, Statens Museum for Kunst, July 14–Oct. 28, 2012; New York, Metropolitan Museum of Art, Dec. 4, 2012–Mar. 17, 2013.\n\nFort Worth, Kimbell Art Museum, The Age of Picasso and Matisse: Modern Masters from the Art Institute of Chicago, Oct. 6, 2013–Feb. 16, 2014, no cat. no. (ill.), as Apples, 1916.",
+      "provenance_text": "The artist; sold to Galerie Bernheim-Jeune, Paris, Nov. 13, 1916 [Dauberville 1995]; sold to Henry Bernstein, Jan. 15, 1917 [Paris 1993]; sold to Galerie Bernheim-Jeune, Paris, from Dec. 13, 1917 [Paris 1993]. Marius de Zayas, New York, by May 1919 [Marius de Zayas to John Quinn, invoice dated Dec. 26, 1919, John Quinn Papers, Manuscripts and Archives Division, New York Public Library; photocopy in curatorial file]; sold to John Quinn (Apr. 24, 1870–July 28, 1924), New York, after Dec. 26, 1919 [invoice mentioned above]; by descent to John Quinn Estate, New York, July 28, 1924 [American Art Association, New York sale catalogue, Feb. 9–12, 1927, lot 126]; sold to F. Valentine Dudensing, New York, through American Art Association sale, lot 126, Feb. 9, 1927; sold to Pierre Matisse (June 13, 1900–Aug. 10, 1989), New York, by June 16, 1931 [this and the following according to letter from Pierre Matisse, Oct. 21, 1974; photocopy in curatorial file]; sold to Samuel A. Marx (1885–1964) and Florene May Schoenborn (c. 1903–Aug. 25, 1995), Chicago, Dec. 1940; given to the Art Institute of Chicago, Dec. 29, 1948.",
+      "edition": null,
+      "publishing_verification_level": "Web Cataloged",
+      "internal_department_id": 246,
+      "fiscal_year": null,
+      "fiscal_year_deaccession": null,
+      "is_public_domain": true,
+      "is_zoomable": true,
+      "max_zoom_window_size": -1,
+      "copyright_notice": null,
+      "has_multimedia_resources": true,
+      "has_educational_resources": false,
+      "has_advanced_imaging": false,
+      "colorfulness": 77.0118,
+      "color": {
+        "h": 41,
+        "l": 49,
+        "s": 61,
+        "percentage": 0.06334498063622451,
+        "population": 589
+      },
+      "latitude": null,
+      "longitude": null,
+      "latlon": null,
+      "is_on_view": true,
+      "on_loan_display": null,
+      "gallery_title": "Gallery 391",
+      "gallery_id": 25474,
+      "nomisma_id": null,
+      "artwork_type_title": "Painting",
+      "artwork_type_id": 1,
+      "department_title": "Modern Art",
+      "department_id": "PC-11",
+      "artist_id": 35670,
+      "artist_title": "Henri Matisse",
+      "alt_artist_ids": [],
+      "artist_ids": [
+        35670
+      ],
+      "artist_titles": [
+        "Henri Matisse"
+      ],
+      "category_ids": [
+        "PC-11"
+      ],
+      "category_titles": [
+        "Modern Art"
+      ],
+      "term_titles": [
+        "oil on canvas",
+        "apples",
+        "aerial perspective",
+        "tables",
+        "painting",
+        "modern and contemporary art",
+        "food",
+        "fruit",
+        "still life",
+        "yellow (color)"
+      ],
+      "style_id": null,
+      "style_title": null,
+      "alt_style_ids": [],
+      "style_ids": [],
+      "style_titles": [],
+      "classification_id": "TM-66",
+      "classification_title": "oil on canvas",
+      "alt_classification_ids": [
+        "TM-9",
+        "TM-155"
+      ],
+      "classification_ids": [
+        "TM-66",
+        "TM-9",
+        "TM-155"
+      ],
+      "classification_titles": [
+        "oil on canvas",
+        "painting",
+        "modern and contemporary art"
+      ],
+      "subject_id": "TM-12885",
+      "alt_subject_ids": [
+        "TM-12896",
+        "TM-8673",
+        "TM-11204",
+        "TM-8937",
+        "TM-11842"
+      ],
+      "subject_ids": [
+        "TM-12885",
+        "TM-12896",
+        "TM-8673",
+        "TM-11204",
+        "TM-8937",
+        "TM-11842"
+      ],
+      "subject_titles": [
+        "apples",
+        "tables",
+        "food",
+        "fruit",
+        "still life",
+        "yellow (color)"
+      ],
+      "material_id": null,
+      "alt_material_ids": [],
+      "material_ids": [],
+      "material_titles": [],
+      "technique_id": "TM-14301",
+      "alt_technique_ids": [],
+      "technique_ids": [
+        "TM-14301"
+      ],
+      "technique_titles": [
+        "aerial perspective"
+      ],
+      "theme_titles": [],
+      "image_id": "b2bc0fc2-8d17-1fcd-8cae-8626421c11ef",
+      "alt_image_ids": [],
+      "document_ids": [],
+      "sound_ids": [],
+      "video_ids": [],
+      "text_ids": [],
+      "section_ids": [
+        3546
+      ],
+      "section_titles": [
+        "Cat. 24  Apples, 1916"
+      ],
+      "site_ids": [],
+      "suggest_autocomplete_all": [
+        {
+          "input": [
+            "1948.563"
+          ],
+          "contexts": {
+            "groupings": [
+              "accession"
+            ]
+          }
+        },
+        {
+          "input": [
+            "Apples"
+          ],
+          "weight": 9170,
+          "contexts": {
+            "groupings": [
+              "title"
+            ]
+          }
+        }
+      ],
+      "source_updated_at": "2026-07-13T10:50:00-05:00",
+      "updated_at": "2026-10-01T20:35:53-05:00",
+      "timestamp": "2026-10-03T04:10:44-05:00"
+    },
+    "info": {
+      "license_text": "The `description` field in this response is licensed under a Creative Commons Attribution 4.0 Generic License (CC-By) and the Terms and Conditions of artic.edu. All other data in this response is licensed under a Creative Commons Zero (CC0) 1.0 designation and the Terms and Conditions of artic.edu.",
+      "license_links": [
+        "https://creativecommons.org/publicdomain/zero/1.0/",
+        "https://www.artic.edu/terms"
+      ],
+      "version": "1.16"
+    },
+    "config": {
+      "iiif_url": "https://www.artic.edu/iiif/2",
+      "website_url": "http://www.artic.edu"
+    }
+  },
+  "work": {
+    "id": "pommes",
+    "artist": "Henri Matisse",
+    "file": "pommes.jpg",
+    "title": "Les Pommes",
+    "date": "1916",
+    "museum": "Art Institute of Chicago",
+    "width": 843,
+    "height": 1103,
+    "source": "https://www.artic.edu/artworks/64001",
+    "image": "https://upload.wikimedia.org/wikipedia/commons/7/75/Les_Pommes%2C_par_Henri_Matisse.jpg",
+    "reproductionSource": "https://commons.wikimedia.org/wiki/File:Les_Pommes,_par_Henri_Matisse.jpg",
+    "license": "Public domain",
+    "licenseUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+    "credit": "Gift of Florene May Schoenborn and Samuel A. Marx",
+    "physicalWidthCm": 89.5,
+    "displayWidth": 1.1082
+  }
+}

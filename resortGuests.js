@@ -1,5 +1,7 @@
 import * as THREE from 'three';
+import { addRestaurantGuestLOD } from './resortGuestLOD.js';
 import { loadGuestRig, makeVisitor, armReach, rootBoneOf } from './crowd.js?v=68';
+import { RESTAURANT_SEATS, TEPPAN_SEATS } from './resortRestaurant.js';
 import { CENTRAL_BUILDINGS, BUNGALOWS, GARDEN_BUNGALOWS, localPoint, seededRandom, terrainHeight } from './resortLayout.js';
 
 export function createResortGuests(scene) {
@@ -10,9 +12,9 @@ export function createResortGuests(scene) {
     loadGuestRig({model:'./glb/visitors/man.glb',walk:'./glb/visitors/walk_m.glb',idle:'./glb/visitors/idle_m.glb',height:1.80,recolor:'atlas-dark',lit:true,shortsHem:.64}),
   ]).then(rigs=>{
     function addGuest({b,x,z,yaw=0,staff=false,seated=false,route=null,venue=b?.kind,name}){
-      const i=people.length,rig=rigs[i%2];
+      const i=people.length,rig=rigs[i%2],holiday=!!route||(venue==='restaurant'&&!staff);
       const v=makeVisitor(rig.scene,rig.walkClip,rnd,{guest:rig,idleClip:rig.idleClip,playIdle:!route,seated,
-        uniform:staff?{shirt:0xf7efdb,pants:0x176d70,hat:false}:null,look:staff?null:'beach',authoredBody:!route,barefoot:!!route,floral:!!route,shortsCut:route ? .82 : undefined});
+        uniform:staff?{shirt:0xf7efdb,pants:0x176d70,hat:false}:null,look:staff?null:'beach',authoredBody:!holiday,barefoot:holiday,floral:holiday,shortsCut:holiday ? .82 : undefined});
       const p=b?localPoint(b,x,z):{x,z};v.group.position.set(p.x,b?b.y:terrainHeight(p.x,p.z),p.z);
       v.group.rotation.y=(b?.yaw??0)+yaw;v.group.name=name;
       v.shadowMeshes=[];v.group.traverse(o=>{if(o.isMesh){o.castShadow=true;v.shadowMeshes.push(o);}});
@@ -34,6 +36,7 @@ export function createResortGuests(scene) {
           v.soleSamples=sole.filter((_,j)=>j%Math.max(1,Math.ceil(sole.length/32))===0);
         }
       }
+      if(venue==='restaurant'){v.mixer.update(0);v.pose?.();}
       scene.add(v.group);v.group.updateMatrixWorld(true);
       // The imported rigs disable frustum culling. Give each mesh a generous
       // whole-person bound, so off-screen tourists no longer cost full draws.
@@ -67,6 +70,25 @@ export function createResortGuests(scene) {
     for(const [x0,x1] of [[-96,-66],[-64,-34],[-32,-2],[0,30],[32,62],[64,98]]){
       addGuest({x:x0,z:47.3,route:[[x0,47.3],[x1,48.7]],venue:'street',name:'resort-strolling-tourist'});
     }
+    const restaurant=CENTRAL_BUILDINGS.find(b=>b.kind==='restaurant');
+    addGuest({b:restaurant,x:2.3,z:2.4,yaw:-.45,staff:true,venue:'restaurant',name:'fare-waiter'});
+    const chef=addGuest({b:restaurant,x:0,z:-4.65,yaw:0,staff:true,venue:'restaurant',name:'fare-chef'});
+    const head=chef.group.getObjectByName('Head');
+    if(head){
+      const toque=new THREE.Group();toque.name='fare-chef-toque';
+      for(const [r,h,y] of [[.095,.065,.16],[.115,.16,.25]]){
+        const hat=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,12),new THREE.MeshStandardMaterial({color:0xf5eddc,roughness:.95}));hat.position.y=y;toque.add(hat);
+      }
+      head.add(toque);
+    }
+    const diners=[...RESTAURANT_SEATS.filter((_,i)=>i%2===0),...TEPPAN_SEATS];
+    for(const seat of diners){
+      const v=addGuest({b:restaurant,...seat,seated:true,venue:'restaurant',name:'fare-diner'});
+      v.mixer.update(0);v.pose?.();v.group.updateMatrixWorld(true);
+      const hips=rootBoneOf(v.group),pos=new THREE.Vector3();
+      if(hips){hips.getWorldPosition(pos);v.group.position.y+=restaurant.y+.56-pos.y;}
+    }
+    for(const v of people)if(v.venue==='restaurant')v.lod=addRestaurantGuestLOD(v);
     return people;
   });
   return {people,ready,update(dt,t,camera){
@@ -85,8 +107,11 @@ export function createResortGuests(scene) {
 
       }
       const distance=v.group.position.distanceTo(camera);
+      v.lod?.update(distance);
       const tourist=v.venue==='street'||v.venue==='bungalow';
-      v.group.visible=distance<(v.venue==='street'?24:tourist?30:55);
+      // The open restaurant must never look empty from the beach. Its guests
+      // remain visible; individual meshes still use normal frustum culling.
+      v.group.visible=v.venue==='restaurant'||distance<(v.venue==='street'?24:tourist?30:55);
       // Keep gait phase continuous while culled, so reappearing feet don't jump.
       if(v.route){
         v.mixer.update(Math.max(0,dt));
@@ -103,11 +128,11 @@ export function createResortGuests(scene) {
         }
       }
       if(!v.group.visible)continue;
-      for(const mesh of v.shadowMeshes)mesh.castShadow=distance<(v.venue==='street'?7:tourist?12:20);
-      if(!v.route)v.mixer.update(dt);v.pose?.();
+      for(const mesh of v.shadowMeshes)mesh.castShadow=distance<(v.venue==='restaurant'?4:v.venue==='street'?7:tourist?12:20);
+      if(!v.route&&(v.venue!=='restaurant'||distance<36))v.mixer.update(dt);v.pose?.();
       // Gentle serving gestures and conversations over the authored idle clip.
-      if(v.reach){
-        const angle=.12+.06*Math.sin(t*.8+v.phase);
+      if(v.reach&&(v.venue!=='restaurant'||distance<36)){
+        const angle=(v.group.name==='fare-chef' ? .42 : .12)+.06*Math.sin(t*.8+v.phase);
         v.reach.lower[1]?.rotateX(-angle);
         v.reach.upper[1]?.rotateX(-angle*.4);
       }

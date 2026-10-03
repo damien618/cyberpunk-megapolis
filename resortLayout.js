@@ -41,7 +41,8 @@ export function pathDistance(x,z) {
   // Garden avenue, reception forecourt and the route back to the forest.
   const avenue=Math.hypot(Math.max(-100-x,0,x-100),z-48);
   const forest=Math.hypot(Math.max(100-x,0,x-FOREST_GATE.x),z-48);
-  return Math.min(avenue,forest,Math.hypot(x-10,Math.max(24-z,0,z-48)));
+  const galleryApproach=Math.hypot(x-12,Math.max(48-z,0,z-53.5));
+  return Math.min(avenue,forest,galleryApproach,Math.hypot(x-10,Math.max(24-z,0,z-48)));
 }
 function frame(p,i) {
   const [x,z]=p[i], [ax,az]=p[i-1],[bx,bz]=p[i+1];
@@ -59,6 +60,7 @@ export const CENTRAL_BUILDINGS = [
   {id:'reception',kind:'reception',x:12,z:35,y:2.1,yaw:0,w:14,d:10,terrace:3},
   {id:'restaurant',kind:'restaurant',x:-103,z:24,y:1.9,yaw:0,w:20,d:12,terrace:4},
   {id:'bar',kind:'bar',x:101,z:24,y:1.9,yaw:0,w:12,d:9,terrace:4},
+  {id:'matisse-gallery',kind:'gallery',x:12,z:60,y:terrainHeight(12,60)+.3,yaw:Math.PI,w:9,d:8,terrace:2.5},
 ];
 export const BUILDINGS = [...BUNGALOWS,...GARDEN_BUNGALOWS,...CENTRAL_BUILDINGS];
 export function localPoint(b,x,z) { const c=Math.cos(b.yaw),s=Math.sin(b.yaw); return {x:b.x+c*x+s*z,z:b.z-s*x+c*z}; }

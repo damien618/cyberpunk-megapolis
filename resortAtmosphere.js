@@ -42,7 +42,7 @@ export function createResortAtmosphere({scene,renderer,camera}) {
     skyUniforms.uCloudLit.value.setHex(current.cloudLit);skyUniforms.uCloudShade.value.setHex(current.cloudShade);skyUniforms.uCloudAlpha.value=current.cloudAlpha;skyUniforms.uCloudTime.value+=dt;
     if(systems){systems.materials.lantern.emissiveIntensity=current.lamps*2.4;systems.terrain.caustics.strength.value=current.caustics;systems.corals.setStrength(current.caustics);systems.ocean.setNight(state==='night');systems.ocean.setLagoonLight(.08+.92*Math.pow(current.intensity/2.7,1.5),current.water);
       const near=systems.props.lanterns.map(p=>({p,d:Math.hypot(pos.x-p.x,pos.z-p.z)})).sort((a,b)=>a.d-b.d).slice(0,6);
-      lights.forEach((l,i)=>{if(near[i])l.position.set(near[i].p.x,near[i].p.y,near[i].p.z);l.intensity=current.lamps*28;l.visible=current.lamps>.01&&near[i]?.d<24;});}
+      lights.forEach((l,i)=>{if(near[i])l.position.set(near[i].p.x,near[i].p.y,near[i].p.z);l.intensity=current.lamps*28*(near[i]?.p.intensityScale??1);l.visible=current.lamps>.01&&near[i]?.d<24;});}
   }
   return {skyUniforms,sun,hemi,sky,lights,clouds,setTime,update,connect(s){systems=s;},get time(){return state;}};
 }

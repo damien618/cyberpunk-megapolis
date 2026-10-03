@@ -20,9 +20,10 @@ import { buildResortProps } from './resortProps.js';
 import { buildResortVegetation } from './resortVegetation.js';
 import { createResortAtmosphere } from './resortAtmosphere.js';
 import { createWaterProbe } from './resortMovement.js';
-import { createResortInteractions } from './resortInteractions.js';
+import { createResortInteractions } from './resortInteractions.js?v=20261003-matisse-v4';
 import { createIslandSign } from './islandTravel.js';
 import { islandTime } from './islandGeography.js';
+import * as galleryInteractionModule from './resortGalleryInteraction.js?v=20261003-matisse-v4';
 
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
 renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));renderer.setSize(innerWidth,innerHeight);
@@ -66,7 +67,10 @@ const playerReady=loadingPlayer.load('girl',avatarMaterial,undefined,{deferAnima
 }).catch(e=>{console.error('[resort avatar]',e);return null;});
 const guests=createResortGuests(scene);
 const guestsReady=guests.ready.catch(e=>{console.error('[resort guests]',e);return [];});
-const interactions=createResortInteractions({ctrl,input,playerReady:()=>player,getTime:()=>atmosphere.time,onLeave:()=>{leaving=true;}});
+const interactions=createResortInteractions({ctrl,input,playerReady:()=>player,getTime:()=>atmosphere.time,onLeave:()=>{leaving=true;},renderer});
+// The optional gallery interaction may still be an empty work-in-progress module.
+const galleryInteraction=typeof galleryInteractionModule.createGalleryInteraction==='function'
+  ?galleryInteractionModule.createGalleryInteraction({scene,camera,renderer,gallery:props.gallery,input,ctrl}):null;
 const controls=document.createElement('nav');controls.id='resortTimeControls';controls.setAttribute('aria-label','Ambiance du village');
 controls.innerHTML='<button data-resort-time="day">☀ Jour</button><button data-resort-time="sunset">◒ Coucher</button><button data-resort-time="night">☾ Nuit</button>';document.body.appendChild(controls);
 document.querySelectorAll('.brief-resort .tt-btn,[data-resort-time]').forEach(b=>b.addEventListener('click',()=>setResortTime(b.dataset.time||b.dataset.resortTime)));
@@ -76,13 +80,29 @@ const pmrem=new THREE.PMREMGenerator(renderer);
 loader.load('./data/env_equirect.png',t=>{if(disposed){t.dispose();return;}t.mapping=THREE.EquirectangularReflectionMapping;t.colorSpace=THREE.SRGBColorSpace;const env=pmrem.fromEquirectangular(t);environmentTarget=env;scene.environment=env.texture;scene.environmentIntensity=.4;t.dispose();pmrem.dispose();});
 function start(){if(!started){started=true;setResortTime(atmosphere.time,true);}paused=false;overlay.style.display='none';lock();}
 window.__startResort=start;document.getElementById('startBtn').addEventListener('click',start);
-renderer.domElement.addEventListener('click',()=>{if(started&&!paused&&!leaving)lock();});
+renderer.domElement.addEventListener('click',()=>{if(started&&!paused&&!leaving&&!galleryInteraction?.isOpen&&!galleryInteraction?.hasPrompt&&!interactions.hasPrompt)lock();});
 let usedLock=false;
-document.addEventListener('pointerlockchange',()=>{usedLock=usedLock||input.locked;if(!usedLock||leaving)return;paused=!input.locked;overlay.style.display=paused?'flex':'none';interactions.prompt.hidden=paused;});
-document.addEventListener('keydown',e=>{if(e.code==='Escape'&&started&&!input.locked){paused=true;overlay.style.display='flex';}if(e.code==='Enter'&&paused)start();});
+document.addEventListener('pointerlockchange',()=>{
+  usedLock=usedLock||document.pointerLockElement!==null;
+  // Dropping the lock so prompt buttons can be clicked or paintings viewed is intentional.
+  if((galleryInteraction?.isOpen||galleryInteraction?.hasPrompt||interactions.hasPrompt||interactions.resting||leaving)&&document.pointerLockElement===null){
+    paused=false;overlay.style.display='none';return;
+  }
+  if(!usedLock||leaving)return;
+  paused=!input.locked;
+  overlay.style.display=paused?'flex':'none';
+  interactions.prompt.hidden=paused;
+});
+document.addEventListener('keydown',e=>{
+  if(galleryInteraction?.isOpen)return;
+  if(galleryInteraction?.hasPrompt&&e.code==='Escape'){galleryInteraction.dismissPrompt?.();return;}
+  if(e.code==='Escape'&&started&&!input.locked){paused=true;overlay.style.display='flex';}
+  if(e.code==='Enter'&&paused)start();
+});
 const forward=new THREE.Vector3();
 function animate(){if(disposed)return;frameId=requestAnimationFrame(animate);const dt=Math.min(.033,clock.getDelta()),t=clock.elapsedTime;
-  if(started&&!paused&&!leaving){input.updateLook(dt);rig.forward(forward,input);if(!interactions.update())ctrl.update(dt,input,input.yaw,forward);if(ctrl.pos.y < -30)ctrl.rescueTo(spawnPoint);}
+  const inArtModal=galleryInteraction?.update(camera)??false;
+  if(started&&!paused&&!leaving&&!inArtModal){input.updateLook(dt);rig.forward(forward,input);if(!interactions.update())ctrl.update(dt,input,input.yaw,forward);if(ctrl.pos.y < -30)ctrl.rescueTo(spawnPoint);}
   ocean.update(t);terrain.update(t);corals.update(t);pools.update(t);props.update(t,ocean);guests.update(dt,t,camera.position);
   if(player){player.setOutfit({hat:false,backpack:false,pants:false,shoes:false,longSleeves:false,swim:true});player.update({dt,mode:ctrl.mode,pos:ctrl.pos,vel:ctrl.vel,webOn:false,anchor:ctrl.anchor,posture:interactions.resting?'lie':undefined,facingYaw:interactions.resting?layout.HAMMOCK.yaw:undefined,elapsedTime:t});}
   if(player)player.group.rotation.x=interactions.resting?props.hammock.rotation.x:0;
@@ -93,12 +113,14 @@ function animate(){if(disposed)return;frameId=requestAnimationFrame(animate);con
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);}window.addEventListener('resize',resize);
 function dispose(){
   if(disposed)return;disposed=true;cancelAnimationFrame(frameId);window.removeEventListener('resize',resize);
+  props.gallery.dispose();
+  galleryInteraction?.dispose();
   const geometries=new Set(),mats=new Set(),textures=new Set();
   scene.traverse(o=>{if(o.geometry)geometries.add(o.geometry);for(const m of (Array.isArray(o.material)?o.material:[o.material]))if(m){mats.add(m);for(const t of Object.values(m))if(t?.isTexture)textures.add(t);}});
   textures.forEach(t=>t.dispose());geometries.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());environmentTarget?.dispose();renderer.dispose();
 }
 window.addEventListener('pagehide',event=>{if(!event.persisted)dispose();});
-window.__resort={THREE,scene,camera,renderer,ctrl,input,rig,collision,batch,bw:collision.bw,world:collision.world,layout,terrainHeight:layout.terrainHeight,waterProbe,ocean,terrain,backdrop,architecture,boardwalks,pools,props,vegetation,corals,atmosphere,interactions,spawnPoint,setResortTime,playerReady,guests,guestsReady,dispose,get player(){return player;},get time(){return atmosphere.time;}};
+window.__resort={THREE,scene,camera,renderer,ctrl,input,rig,collision,batch,bw:collision.bw,world:collision.world,layout,terrainHeight:layout.terrainHeight,waterProbe,ocean,terrain,backdrop,architecture,boardwalks,pools,props,vegetation,corals,atmosphere,interactions,galleryInteraction,spawnPoint,setResortTime,playerReady,galleryReady:props.gallery.ready,guests,guestsReady,dispose,get player(){return player;},get time(){return atmosphere.time;}};
 window.__villa=window.__resort;
 if(params.get('arrival')==='jungle'||window.__startRequested)start();
 animate();

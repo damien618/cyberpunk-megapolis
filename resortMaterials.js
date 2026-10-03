@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { seededRandom } from './resortLayout.js';
 import { createResortTextiles } from './resortTextiles.js';
+import { createGalleryMaterials } from './resortGalleryMaterials.js';
 function canvasTexture(draw, size=512) {
   const c=Object.assign(document.createElement('canvas'),{width:size,height:size});
   draw(c.getContext('2d'),size);
@@ -53,6 +54,7 @@ export function createResortMaterials(maxAniso=4) {
     blue:new THREE.MeshStandardMaterial({color:0x61bcc9,roughness:.9}),
     metal:new THREE.MeshStandardMaterial({color:0x483b2c,roughness:.7,metalness:.35}),
     lantern:new THREE.MeshStandardMaterial({color:0xffecd1,emissive:0xffb75b,emissiveIntensity:0}),
+    galleryPlaster:new THREE.MeshStandardMaterial({color:0xf0e5cf,roughness:.96}),
     pool:new THREE.MeshStandardMaterial({color:0x5cc6d6,roughness:.55}),
     fruit:new THREE.MeshStandardMaterial({color:0xffbe39,roughness:.65}),
     pink:new THREE.MeshStandardMaterial({color:0xec647f,roughness:.85,side:THREE.DoubleSide}),
@@ -76,6 +78,7 @@ export function createResortMaterials(maxAniso=4) {
   });stone.anisotropy=maxAniso;
   materials.barStone=new THREE.MeshStandardMaterial({map:stone,bumpMap:stone,bumpScale:.025,color:0xfff7e6,roughness:.45});
   materials.brass=new THREE.MeshStandardMaterial({color:0xc4a164,metalness:.72,roughness:.32});
+  Object.assign(materials,createGalleryMaterials(maxAniso,wood));
   materials.bottle=new THREE.MeshStandardMaterial({color:0x267d70,metalness:.15,roughness:.22});
   materials.ceramic=new THREE.MeshStandardMaterial({color:0xfaf6e9,roughness:.28});
   Object.assign(materials,createResortTextiles(maxAniso));

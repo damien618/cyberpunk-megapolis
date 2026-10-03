@@ -22,13 +22,13 @@ La même île est représentée par plusieurs scènes locales ; elle n'est pas u
 ### Périmètre validé
 
 - 12 bungalows sur pilotis, dont 3 suites avec piscine privée.
-- 6 bungalows-jardin et 3 bâtiments centraux : accueil, restaurant, bar.
+- 6 bungalows-jardin et 4 bâtiments centraux : accueil, restaurant, bar et galerie Matisse.
 - Tous les bungalows sont visitables ; portes ouvertes et intérieurs simples.
 - Accès depuis la promenade tropicale et depuis le menu. Débarquement du paquebot inchangé.
 - Jour, coucher de soleil et nuit sélectionnables ; transition de 3 secondes, sans horloge automatique.
 - Marche dans les faibles profondeurs et nage en surface dans le lagon et les piscines ; pas de plongée.
 - Hamac interactif ; transats, canapés et pirogues décoratifs.
-- Pas de nouvelle dépendance, achat ou téléchargement d'asset.
+- Pas de nouvelle dépendance ni achat ; seules les sept reproductions officielles Open Access de la galerie sont téléchargées et servies localement.
 
 ## 2. Implantation et construction visuelle
 
@@ -39,6 +39,12 @@ Le resort occupe une baie protégée à l'ouest de l'anse forêt/cascade. Le sec
 Convention : mer vers −Z, terre vers +Z. Zone jouable d'environ 340 × 280 m. Accueil à l'arrivée terrestre, restaurant et bar sur la plage ; avenue de sable de 3 m desservant les jardins. Deux pontons courbes desservent chacun six bungalows en épi. Les suites occupent les emplacements les plus dégagés. Trois motus décoratifs sont hors de la zone parcourable.
 
 Une branche de sentier quitte la promenade près de la lisière ouest. Un panneau et l'action E conduisent à `index.html?map=resort&arrival=jungle&time=…`, avec fondu de 650 ms. Le retour arrive hors du déclencheur, orienté vers la promenade. Les capacités de toile sont désactivées uniquement dans le resort.
+
+### Galerie Matisse
+
+Le bungalow-galerie `matisse-gallery` occupe x = 12, z = 60, face à MAEVA, avec un deck à 2,25 m, une terrasse de 2,5 m et un chemin réservé depuis l’avenue. Il présente sept reproductions locales de Matisse dans le domaine public, des cartels et un banc, sans HUD ni nouveaux PNJ. Les murs pleins possèdent une ventilation haute et une entrée de 2,2 m. À partir de 55 m, les cadres et le banc utilisent un matériau simplifié ; les tableaux restent visibles. Le restaurant conserve son propre LOD à 60 m et ses visiteurs. Sources et crédits : `textures/resort-matisse/CREDITS.md`.
+
+Vérification : `.venv/bin/python tests/resort_gallery.py`, puis la même commande avec `--headed` pour le GPU réel, et les régressions du village et du restaurant.
 
 ### Terrain et lagon
 

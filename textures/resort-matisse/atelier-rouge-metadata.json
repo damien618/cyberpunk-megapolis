@@ -1,0 +1,114 @@
+{
+  "downloadedAt": "2026-10-03T11:11:02.547534+02:00",
+  "commons": {
+    "batchcomplete": "",
+    "query": {
+      "pages": {
+        "157239654": {
+          "pageid": 157239654,
+          "ns": 6,
+          "title": "File:L'Atelier rouge, par Henri Matisse.jpg",
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "url": "https://upload.wikimedia.org/wikipedia/commons/e/ef/L%27Atelier_rouge%2C_par_Henri_Matisse.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:L%27Atelier_rouge,_par_Henri_Matisse.jpg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=157239654",
+              "sha1": "fe47150935f7623ffa6a25d0d814e209154ee4e3",
+              "extmetadata": {
+                "DateTime": {
+                  "value": "2024-12-29 00:45:31",
+                  "source": "mediawiki-metadata",
+                  "hidden": ""
+                },
+                "ObjectName": {
+                  "value": "L'Atelier rouge, par Henri Matisse",
+                  "source": "mediawiki-metadata"
+                },
+                "CommonsMetadataExtension": {
+                  "value": 1.2,
+                  "source": "extension",
+                  "hidden": ""
+                },
+                "Categories": {
+                  "value": "Author died more than 70 years ago public domain images|CC-PD-Mark|PD-old missing SDC copyright status|Media uploaded for Public Domain Day 2025 (Henri Matisse)|L'atelier rouge by Henri Matisse",
+                  "source": "commons-categories",
+                  "hidden": ""
+                },
+                "Assessments": {
+                  "value": "",
+                  "source": "commons-categories",
+                  "hidden": ""
+                },
+                "ImageDescription": {
+                  "value": "L'Atelier rouge, par Henri Matisse",
+                  "source": "commons-desc-page"
+                },
+                "DateTimeOriginal": {
+                  "value": "1911",
+                  "source": "commons-desc-page"
+                },
+                "Credit": {
+                  "value": "<a rel=\"nofollow\" class=\"external free\" href=\"https://www.moma.org/media/W1siZiIsIjQ5OTUxMCJdLFsicCIsImNvbnZlcnQiLCItcXVhbGl0eSA5MCAtcmVzaXplIDIwMDB4MTQ0MFx1MDAzZSJdXQ.jpg?sha=04d9823c81d93765\">https://www.moma.org/media/W1siZiIsIjQ5OTUxMCJdLFsicCIsImNvbnZlcnQiLCItcXVhbGl0eSA5MCAtcmVzaXplIDIwMDB4MTQ0MFx1MDAzZSJdXQ.jpg?sha=04d9823c81d93765</a>",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "Henri Matisse",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "UsageTerms": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page"
+                },
+                "AttributionRequired": {
+                  "value": "false",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "Copyrighted": {
+                  "value": "False",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "Restrictions": {
+                  "value": "",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "License": {
+                  "value": "pd",
+                  "source": "commons-templates",
+                  "hidden": ""
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "museum": null,
+  "work": {
+    "id": "atelier-rouge",
+    "artist": "Henri Matisse",
+    "file": "atelier-rouge.jpg",
+    "title": "L’Atelier rouge",
+    "date": "1911",
+    "museum": "Museum of Modern Art, New York",
+    "width": 1744,
+    "height": 1440,
+    "source": "https://www.moma.org/collection/works/78389",
+    "image": "https://upload.wikimedia.org/wikipedia/commons/e/ef/L%27Atelier_rouge%2C_par_Henri_Matisse.jpg",
+    "reproductionSource": "https://commons.wikimedia.org/wiki/File:L%27Atelier_rouge,_par_Henri_Matisse.jpg",
+    "license": "Public domain",
+    "licenseUrl": "https://creativecommons.org/publicdomain/mark/1.0/",
+    "credit": "Henri Matisse — Museum of Modern Art, New York; reproduction : Wikimedia Commons",
+    "physicalWidthCm": 219.1,
+    "displayWidth": 1.7561
+  }
+}

@@ -6,9 +6,9 @@ export function buildResortArchitecture({scene,batch,materials}) {
   const box=(b,mat,x,y,z,w,h,d,flags={})=>{const p=localPoint(b,x,z);batch.box(mat,p.x,b.y+y,p.z,w,h,d,b.yaw,flags);};
   const post=(b,x,y,z,w,h,flags={})=>{const p=localPoint(b,x,z);batch.post('pile',p.x,b.y+y,p.z,w,h,w,b.yaw,flags);};
   for(const b of BUILDINGS){
-    const central=!['garden','water'].includes(b.kind),bar=b.kind==='bar',reception=b.kind==='reception';
-    const pavilion=bar||reception,eaves=reception?3.65:2.8,frame=pavilion?'barFrame':'wood';
-    const timber=bar?'barDeck':'wood';
+    const central=!['garden','water'].includes(b.kind),bar=b.kind==='bar',reception=b.kind==='reception',restaurant=b.kind==='restaurant',gallery=b.kind==='gallery';
+    const pavilion=bar||reception||restaurant,eaves=gallery?3.1:restaurant?3.95:reception?3.65:2.8,frame=pavilion?'barFrame':'wood';
+    const timber=bar||restaurant?'barDeck':'wood';
     box(b,timber,0,-.13,0,b.w,.26,b.d,{floor:true,solid:true,groundOnly:true});
     if(!b.premium)box(b,timber,0,-.13,b.d/2+b.terrace/2,b.w,.26,b.terrace,{floor:true,solid:true,groundOnly:true});
     else { // Leave a real hole in the deck for the private pool.
@@ -17,7 +17,23 @@ export function buildResortArchitecture({scene,batch,materials}) {
       box(b,'wood',b.w/2-.1,-.13,b.d/2+b.terrace/2,.2,.26,b.terrace,{floor:true,solid:true,groundOnly:true});
     }
     // Side walls with waist-high sills and open windows; real entrance at the rear.
-    if(!pavilion)for(const s of [-1,1]){
+    if(gallery){
+      for(const s of [-1,1]){
+        box(b,'galleryPlaster',s*b.w/2,1.3,0,.16,2.6,b.d,{solid:true});
+        box(b,'barShelf',s*(b.w/2-.095),.09,0,.035,.18,b.d);
+        const wing=(b.w-2.2)/2;
+        box(b,'galleryPlaster',s*(1.1+wing/2),1.3,b.d/2,wing,2.6,.16,{solid:true});
+        box(b,'barShelf',s*(1.1+wing/2),.09,b.d/2-.095,wing,.18,.035);
+      }
+      box(b,'galleryPlaster',0,1.3,-b.d/2,b.w,2.6,.16,{solid:true});
+      box(b,'barShelf',0,.09,-b.d/2+.095,b.w,.18,.035);
+      box(b,'galleryPlaster',0,2.45,b.d/2,2.2,.3,.16,{solid:true});
+      // Open ventilation above the solid exhibition walls.
+      for(const z of [-b.d/2,b.d/2])for(let x=-b.w/2+.18;x<b.w/2;x+=.28)
+        box(b,'barShelf',x,2.8,z,.055,.4,.10);
+      for(const x of [-b.w/2,b.w/2])for(let z=-b.d/2+.18;z<b.d/2;z+=.28)
+        box(b,'barShelf',x,2.8,z,.10,.4,.055);
+    }else if(!pavilion)for(const s of [-1,1]){
       box(b,'wood',s*b.w/2,.5,0,.16,1,b.d,{solid:true});
       box(b,'wood',s*b.w/2,2.5,0,.16,.5,b.d,{solid:true});
       for(const z of [-b.d/2,0,b.d/2])box(b,'wood',s*b.w/2,1.65,z,.18,2.6,.18,{solid:true});
@@ -27,7 +43,7 @@ export function buildResortArchitecture({scene,batch,materials}) {
       box(b,'wood',s*(1.1+wing/2),2.5,b.d/2,wing,.45,.16,{solid:true});
     }
     for(const z of [-b.d/2,b.d/2])box(b,frame,0,eaves-.15,z,b.w,.18,.2,{solid:true});
-    if(reception)for(const x of [-b.w/2,b.w/2])box(b,frame,x,eaves-.15,0,.2,.18,b.d,{solid:true});
+    if(reception||restaurant||gallery)for(const x of [-b.w/2,b.w/2])box(b,frame,x,eaves-.15,0,.2,.18,b.d,{solid:true});
     // Roof frame and supports, embedded well below the visible sea bed.
     for(const x of [-b.w/2+.2,b.w/2-.2])for(const z of [-b.d/2+.2,b.d/2+.2,b.d/2+b.terrace-.2]){
       const p=localPoint(b,x,z),bottom=terrainHeight(p.x,p.z)-.5;
@@ -43,28 +59,35 @@ export function buildResortArchitecture({scene,batch,materials}) {
     for(const s of [-1,1]){box(b,bar?'barFrame':'wood',s*b.w/2,.6,b.d/2+b.terrace/2,.12,.12,b.terrace,{solid:true});}
     if(b.kind==='water')box(b,'wood',.8,.6,b.d/2+b.terrace,b.w-1.6,.12,.12,{solid:true});
     else for(const s of [-1,1]){const wing=(b.w-2.2)/2;box(b,bar?'barFrame':'wood',s*(1.1+wing/2),.6,b.d/2+b.terrace,wing,.12,.12,{solid:true});}
-    if(pavilion){
+    if(pavilion||gallery){
       // Both rail ends need supports: keep the 2.2 m entrance gap clear.
       const edge=b.d/2+b.terrace;
       for(const side of [-1,1])for(const distance of [1.1,(1.1+b.w/2)/2,b.w/2]){
         const x=side*distance,p=localPoint(b,x,edge);
         const bottom=Math.min(b.y-.26,terrainHeight(p.x,p.z)-.35),top=b.y+.78;
-        batch.box('barFrame',p.x,(bottom+top)/2,p.z,.18,top-bottom,.18,b.yaw,{solid:true});
+        batch.box(gallery?'pile':'barFrame',p.x,(bottom+top)/2,p.z,.18,top-bottom,.18,b.yaw,{solid:true});
         box(b,'barShelf',x,.81,edge,.24,.06,.24);
       }
-    }else for(const x of [-b.w/2,b.w/2])post(b,x,.45,b.d/2+b.terrace,.12,.9,{solid:true});
+    }else{
+      const edge=b.d/2+b.terrace;
+      const railPosts=b.kind==='water'?[-b.w/2,1.6-b.w/2,b.w/2]:[-b.w/2,-1.1,1.1,b.w/2];
+      for(const x of railPosts){
+        const p=localPoint(b,x,edge),bottom=Math.min(b.y-.26,terrainHeight(p.x,p.z)-.4),top=b.y+.9;
+        batch.post('pile',p.x,(bottom+top)/2,p.z,.14,top-bottom,.14,b.yaw,{solid:true});
+      }
+    }
     // An open stair to the lagoon; garden buildings have a short approach stair.
     if(b.kind==='water'){
       for(let k=0;k<13;k++)box(b,'wood',-b.w/2+.8,-.23*k,b.d/2+b.terrace+.25+k*.38,1.4,.16,.4,{floor:true,solid:true,groundOnly:true});
     }else{
-      for(const side of [-1,1]){
+      for(const side of gallery?[1]:[-1,1]){
         const edge=side<0?-b.d/2:b.d/2+b.terrace;
         const ground=localPoint(b,0,edge+side*1),base=terrainHeight(ground.x,ground.z);
         const n=Math.max(1,Math.ceil((b.y-base)/.23));
         for(let k=0;k<n;k++)box(b,'wood',0,-.23*(k+1),edge+side*(.25+k*.38),2,.18,.4,{floor:true,solid:true,groundOnly:true});
       }
     }
-    const key=`${b.w},${b.d}`,item={b,h:central?4:3.2,eaves};
+    const key=`${b.w},${b.d}`,item={b,h:gallery?3.2:central?4:3.2,eaves};
     if(!roofBins.has(key))roofBins.set(key,[]);roofBins.get(key).push(item);
   }
   for(const [key,list] of roofBins){const [w,d]=key.split(',').map(Number);
