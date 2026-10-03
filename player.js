@@ -2770,7 +2770,7 @@ export class Player {
     return this._heelDrop;
   }
 
-  applyLyingPose(withPlush = false) {
+  applyLyingPose(withPlush = false, pose = null) {
     this.poseRoot.rotation.x = -Math.PI / 2;
     this.poseRoot.position.y = this.backReach();
     // The clip underneath is a STANDING idle: weight on one leg, the other knee
@@ -2799,6 +2799,9 @@ export class Player {
       this.bones.neck_01?.rotateX(PLUSH_HEAD_TURN * 0.4);
       this.bones.head?.rotateX(PLUSH_HEAD_TURN * 0.6);
     }
+    // A recliner supports the torso on its sloped backrest, while the pelvis
+    // and heels stay on the flat seat. Arms follow the already posed trunk.
+    if (Number.isFinite(pose?.backAngle)) this.bones.spine_01?.rotateZ(-pose.backAngle);
   }
 
   applyKneelingPose(floorY) {
@@ -2886,7 +2889,7 @@ export class Player {
     if (posture === 'sit') {
       this.applySeatedPose(ctx.floorY, ctx.seatPose);
     } else if (posture === 'lie') {
-      this.applyLyingPose(this.sleepPlush.visible);
+      this.applyLyingPose(this.sleepPlush.visible, ctx.liePose);
     } else if (posture === 'kneel') {
       this.applyKneelingPose(ctx.floorY);
     }

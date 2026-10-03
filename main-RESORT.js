@@ -106,14 +106,14 @@ function animate(){if(disposed)return;frameId=requestAnimationFrame(animate);con
   ocean.update(t);terrain.update(t);corals.update(t);pools.update(t);props.update(t,ocean);guests.update(dt,t,camera.position);
   if(player){
     const target=interactions.restTarget;
-    player.group.rotation.order=target?.lieTilt?'YXZ':'XYZ';
+    player.group.rotation.order='XYZ';
     player.group.rotation.x=0;player.group.rotation.z=0;
     player.setOutfit({hat:false,backpack:false,pants:false,shoes:false,longSleeves:false,swim:true});
     player.update({dt,mode:ctrl.mode,pos:ctrl.pos,vel:ctrl.vel,webOn:false,anchor:ctrl.anchor,
       posture:interactions.posture,facingYaw:interactions.facingYaw,
-      floorY:target?.floorY,seatPose:target?.seatPose,elapsedTime:t});
-    // Tilt in the lounger local frame, independently of the hammock sway.
-    player.group.rotation.x=interactions.restState==='hammock-lie'?props.hammock.rotation.x:interactions.posture==='lie'?target?.lieTilt??0:0;
+      floorY:target?.floorY,seatPose:target?.seatPose,liePose:target?.liePose,elapsedTime:t});
+    // Only the hammock sways the whole body; the lounger bends at the spine.
+    player.group.rotation.x=interactions.restState==='hammock-lie'?props.hammock.rotation.x:0;
   }
   rig.update(dt,input,ctrl);atmosphere.update(dt,ctrl.pos);vegetation.update(camera.position,dt);architecture.update(camera.position);batch.update(camera.position);
   document.getElementById('mode').textContent=ctrl.mode;document.getElementById('speed').textContent=Math.round(ctrl.vel.length()*3.6);document.getElementById('height').textContent=ctrl.pos.y.toFixed(1);

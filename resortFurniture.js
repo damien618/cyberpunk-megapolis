@@ -5,12 +5,13 @@ import { localPoint, PLAYER_BUNGALOW } from './resortLayout.js';
 export function bungalowLoungers(b) {
   return (b.premium?[-2.6,-.9]:[-1.45,1.45]).map((x,index)=>{
     const z=b.d/2+b.terrace-1.2, seatHeight=.51;
+    const backrest={z:z-.64,height:.69,tilt:.55};
     const point=(lx,lz,y=b.y)=>({...localPoint(b,lx,lz),y});
     const exit=point(x+.8,z-.9,b.y+.015);
     return {id:`${b.id}:lounger-${index+1}`,buildingId:b.id,local:{x,z},yaw:b.yaw,
       seatHeight,world:point(x,z,b.y+seatHeight),approach:exit,exit,
       sit:point(x,z+.55,b.y+seatHeight),lie:point(x,z+.78,b.y+seatHeight),
-      lieTilt:.18,seatPose:{back:0,hipRise:.16,shinLean:0},floorY:b.y,
+      backrest,liePose:{backAngle:backrest.tilt},seatPose:{back:0,hipRise:.16,shinLean:0},floorY:b.y,
       camera:{lookHeight:.7,distance:2.8,minY:b.y+.85}};
   });
 }
@@ -121,8 +122,8 @@ export function createResortFurniture({group,batch,materials}) {
       timber(b,x,.28,z,.7,.12,1.75,true);
       soft(b,'cushion','cotton',x,lounger.seatHeight-.09,z,.66,.18,1.65);
       soft(b,'piping','stitch',x,lounger.seatHeight-.08,z,.65,1,1.63);
-      soft(b,'cushion','cotton',x,.69,z-.64,.66,.19,.67,.55);
-      soft(b,'cushion',accent,x,.84,z-.76,.48,.16,.25,.55);
+      soft(b,'cushion','cotton',x,lounger.backrest.height,lounger.backrest.z,.66,.19,.67,lounger.backrest.tilt);
+      soft(b,'cushion',accent,x,.84,z-.76,.48,.16,.25,lounger.backrest.tilt);
     }
     records.push({id:b.id,accent,bed:true,bench:true,furnitureAnchors:{bed,bench},loungers:2,loungerPoints:bungalowLoungers(b)});
   }

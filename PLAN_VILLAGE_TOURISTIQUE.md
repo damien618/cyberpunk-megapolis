@@ -112,6 +112,10 @@ boucle de props. Le vacancier de cette chambre est omis. `bungalowLoungers()`
 dans `resortFurniture.js` partage les positions de rendu et les points de pose,
 d'approche et de sortie ; `PLAYER_LOUNGER` désigne le transat de droite.
 E propose la pose assise, R la pose allongée, avec deux boutons accessibles.
+La pose allongée incline uniquement le buste selon le dossier partagé du
+transat ; le bassin et les talons restent sur l'assise horizontale.
+`tests/resort_lounger_pose.py` vérifie ces contacts sur l'avatar réel et produit
+quatre captures ciblées, dont une de nuit, dans `scratch/`.
 E, espace, ZQSD/WASD ou le bouton de réveil replacent le joueur sur la terrasse.
 Le prompt attend que le joueur quitte la zone avant de revenir. Priorité :
 réveil, voyage, meuble intérieur le plus proche, transat réservé, hamac. Les états sont exposés par
