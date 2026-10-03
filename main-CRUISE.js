@@ -772,6 +772,199 @@ const rouletteFeltTex = canvasTex(512, 256, (g, W, H) => {
   }
 });
 
+// Authentic high-stakes Blackjack & Baccarat layout felt texture
+const blackjackFeltTex = canvasTex(1024, 512, (g, W, H) => {
+  const bg = g.createRadialGradient(W / 2, H * 0.42, 60, W / 2, H / 2, W * 0.55);
+  bg.addColorStop(0, '#0f582c');
+  bg.addColorStop(0.65, '#0b4522');
+  bg.addColorStop(1, '#073017');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, W, H);
+
+  // Outer gold filigree pinstripe
+  g.strokeStyle = '#d4af37';
+  g.lineWidth = 3.5;
+  g.strokeRect(16, 16, W - 32, H - 32);
+  g.strokeStyle = '#f5e6a8';
+  g.lineWidth = 1.2;
+  g.strokeRect(22, 22, W - 44, H - 44);
+
+  // Corner decorative flourishes
+  for (const [cx, cy] of [[32, 32], [W - 32, 32], [32, H - 32], [W - 32, H - 32]]) {
+    g.strokeStyle = '#d4af37';
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.arc(cx, cy, 14, 0, Math.PI * 2);
+    g.stroke();
+  }
+
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+
+  // "BLACKJACK PAYS 3 TO 2"
+  g.font = 'bold 36px "Cinzel", "Georgia", "Times New Roman", serif';
+  g.fillStyle = '#f5e6a8';
+  g.shadowColor = 'rgba(0, 0, 0, 0.6)';
+  g.shadowBlur = 6;
+  g.shadowOffsetY = 2;
+  g.fillText('BLACKJACK PAYS 3 TO 2', W / 2, 72);
+  g.shadowBlur = 0;
+
+  // "Dealer must draw to 16 and stand on all 17s"
+  g.font = 'italic 600 18px "Georgia", serif';
+  g.fillStyle = '#e8cb75';
+  g.fillText('Dealer must draw to 16 and stand on all 17s', W / 2, 114);
+
+  // Curved Insurance Ribbon Arc
+  const arcCX = W / 2, arcCY = 340, arcR = 195;
+  g.beginPath();
+  g.arc(arcCX, arcCY, arcR, -Math.PI * 0.82, -Math.PI * 0.18);
+  g.strokeStyle = '#d4af37';
+  g.lineWidth = 30;
+  g.stroke();
+
+  g.beginPath();
+  g.arc(arcCX, arcCY, arcR - 15, -Math.PI * 0.82, -Math.PI * 0.18);
+  g.arc(arcCX, arcCY, arcR + 15, -Math.PI * 0.18, -Math.PI * 0.82, true);
+  g.strokeStyle = '#f5e6a8';
+  g.lineWidth = 1.5;
+  g.stroke();
+
+  // Insurance text along ribbon
+  g.font = 'bold 15px "Georgia", serif';
+  const insText = '★  INSURANCE PAYS 2 TO 1  ★';
+  const startAngle = -Math.PI * 0.68;
+  const endAngle = -Math.PI * 0.32;
+  for (let i = 0; i < insText.length; i++) {
+    const a = startAngle + (i / (insText.length - 1)) * (endAngle - startAngle);
+    const tx = arcCX + Math.cos(a) * arcR;
+    const ty = arcCY + Math.sin(a) * arcR;
+    g.save();
+    g.translate(tx, ty);
+    g.rotate(a + Math.PI / 2);
+    g.fillStyle = '#0a2412';
+    g.fillText(insText[i], 0, 0);
+    g.restore();
+  }
+
+  // 5 Player Betting Circles positioned along the player side
+  const numSpots = 5;
+  for (let i = 0; i < numSpots; i++) {
+    const spotAngle = -Math.PI * 0.78 + (i / (numSpots - 1)) * (Math.PI * 0.56);
+    const sx = arcCX + Math.cos(spotAngle) * (arcR + 90);
+    const sy = arcCY + Math.sin(spotAngle) * (arcR + 85);
+
+    // Main betting circle
+    g.strokeStyle = '#d4af37';
+    g.lineWidth = 3;
+    g.beginPath();
+    g.arc(sx, sy, 36, 0, Math.PI * 2);
+    g.stroke();
+
+    g.strokeStyle = '#f5e6a8';
+    g.lineWidth = 1.2;
+    g.beginPath();
+    g.arc(sx, sy, 31, 0, Math.PI * 2);
+    g.stroke();
+
+    g.font = 'bold 14px "Georgia", serif';
+    g.fillStyle = '#f5e6a8';
+    g.fillText('BET', sx, sy);
+
+    // Mini "PAIRS" side bet spot above
+    const px = sx + Math.cos(spotAngle) * -48;
+    const py = sy + Math.sin(spotAngle) * -48;
+    g.strokeStyle = '#d4af37';
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.arc(px, py, 14, 0, Math.PI * 2);
+    g.stroke();
+    g.font = '9px "Georgia", serif';
+    g.fillStyle = '#e8cb75';
+    g.fillText('PAIRS', px, py);
+  }
+
+  // Dealer Card Placement Boxes in center
+  for (let b = 0; b < 2; b++) {
+    const bx = W / 2 - 46 + b * 92;
+    const by = 145;
+    g.strokeStyle = '#d4af37';
+    g.lineWidth = 2;
+    g.strokeRect(bx - 36, by - 26, 72, 52);
+    g.strokeStyle = '#f5e6a8';
+    g.lineWidth = 1;
+    g.strokeRect(bx - 33, by - 23, 66, 46);
+  }
+
+  // Casino Royale Crest / Emblem
+  g.font = '13px "Georgia", serif';
+  g.fillStyle = 'rgba(245, 230, 168, 0.75)';
+  g.fillText('♠  CASINO ROYALE  ♦', W / 2, 195);
+});
+
+// High Stakes Salon Privé Texas Hold'em felt texture
+const pokerFeltTex = canvasTex(1024, 512, (g, W, H) => {
+  const bg = g.createRadialGradient(W / 2, H / 2, 80, W / 2, H / 2, W * 0.52);
+  bg.addColorStop(0, '#0c4d29');
+  bg.addColorStop(0.7, '#07381c');
+  bg.addColorStop(1, '#042210');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, W, H);
+
+  // Outer gold racetrack oval border
+  g.strokeStyle = '#d4af37';
+  g.lineWidth = 4;
+  g.beginPath();
+  g.ellipse(W / 2, H / 2, W * 0.46, H * 0.44, 0, 0, Math.PI * 2);
+  g.stroke();
+
+  g.strokeStyle = '#f5e6a8';
+  g.lineWidth = 1.5;
+  g.beginPath();
+  g.ellipse(W / 2, H / 2, W * 0.448, H * 0.428, 0, 0, Math.PI * 2);
+  g.stroke();
+
+  // Inner player betting line oval
+  g.strokeStyle = '#d4af37';
+  g.lineWidth = 2.5;
+  g.beginPath();
+  g.ellipse(W / 2, H / 2, W * 0.32, H * 0.28, 0, 0, Math.PI * 2);
+  g.stroke();
+
+  // Center Emblem: CASINO ROYALE SALON PRIVÉ
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+
+  g.font = 'bold 28px "Cinzel", "Georgia", "Times New Roman", serif';
+  g.fillStyle = '#f5e6a8';
+  g.shadowColor = 'rgba(0, 0, 0, 0.7)';
+  g.shadowBlur = 8;
+  g.shadowOffsetY = 2;
+  g.fillText('CASINO ROYALE', W / 2, H / 2 - 42);
+  g.shadowBlur = 0;
+
+  g.font = '600 14px "Georgia", serif';
+  g.fillStyle = '#e8cb75';
+  g.fillText('· SALON PRIVÉ · HIGH STAKES ·', W / 2, H / 2 - 16);
+
+  g.font = '20px serif';
+  g.fillStyle = '#f5e6a8';
+  g.fillText('♠   ♥   ♦   ♣', W / 2, H / 2 + 14);
+
+  // 5 Community Card placement boxes in center (Flop 1, 2, 3, Turn, River)
+  for (let i = 0; i < 5; i++) {
+    const cx = W / 2 - 160 + i * 80;
+    const cy = H / 2 + 58;
+    g.strokeStyle = 'rgba(212, 175, 55, 0.85)';
+    g.lineWidth = 1.8;
+    g.strokeRect(cx - 30, cy - 22, 60, 44);
+    g.strokeStyle = 'rgba(245, 230, 168, 0.5)';
+    g.lineWidth = 1;
+    g.strokeRect(cx - 27, cy - 19, 54, 38);
+  }
+});
+
+
 // Dynamic canvas for animated slot machine reels & flashing lights
 const slotReelCanvas = Object.assign(document.createElement('canvas'), { width: 512, height: 256 });
 const slotReelCtx = slotReelCanvas.getContext('2d');
@@ -1689,6 +1882,8 @@ const M = {
   }),
   potSoil: new THREE.MeshStandardMaterial({ color: 0x24170f, roughness: 1 }),
   rouletteFelt: new THREE.MeshStandardMaterial({ map: rouletteFeltTex, roughness: 0.92 }),
+  blackjackFelt: new THREE.MeshStandardMaterial({ map: blackjackFeltTex, roughness: 0.92 }),
+  pokerFelt: new THREE.MeshStandardMaterial({ map: pokerFeltTex, roughness: 0.92 }),
   velvetRed: new THREE.MeshStandardMaterial({ color: 0x7a1f2c, roughness: 0.9 }),
   // Backing behind the mosaic panels: a dark wine so the window glass never
   // reads through a bay, and a gap at a pilaster looks like lining, not sea.
@@ -2244,6 +2439,252 @@ G.disc = withUV2(new THREE.CircleGeometry(0.5, 32));
 // A tapered Deco leg: fat at the top, narrow at the foot, hung from its top
 // face so a leg is placed by the thing it holds up rather than by the floor.
 G.taperLeg = withUV2(new THREE.CylinderGeometry(0.5, 0.28, 1, 10).translate(0, -0.5, 0));
+
+// --- Realistic Casino Royale furniture primitives -------------------------
+// Classical turned gaming table pedestal column
+G.pedestalCol = latheGeo([
+  [0.34, 0.00], [0.34, 0.05], [0.28, 0.09], [0.22, 0.14],
+  [0.18, 0.35], [0.17, 0.55], [0.21, 0.75], [0.26, 0.85],
+  [0.32, 0.92], [0.32, 1.00], [0.00, 1.00]
+], 24);
+
+// Turned bun foot for luxury Chesterfield sofas and club armchairs
+G.bunFoot = latheGeo([
+  [0.05, 0.00], [0.12, 0.02], [0.16, 0.06], [0.17, 0.12],
+  [0.14, 0.18], [0.09, 0.22], [0.11, 0.25], [0.00, 0.25]
+], 16);
+
+// Flared weighted bell base and pedestal for casino bar and slot stools
+G.stoolPedestal = latheGeo([
+  [0.26, 0.00], [0.26, 0.04], [0.18, 0.08], [0.07, 0.12],
+  [0.05, 0.38], [0.07, 0.40], [0.05, 0.42], [0.05, 0.72],
+  [0.08, 0.76], [0.16, 0.78], [0.00, 0.78]
+], 20);
+
+// Contoured domed plush velvet seat cushion with waterfall edge
+G.domedCushion = latheGeo([
+  [0.00, 0.18], [0.12, 0.175], [0.20, 0.16], [0.24, 0.12],
+  [0.25, 0.06], [0.24, 0.02], [0.22, 0.00], [0.00, 0.00]
+], 24);
+
+// Sculpted trestle foot with rounded capsule ends
+G.trestleFoot = (() => {
+  const shape = new THREE.Shape();
+  const halfW = 0.20, halfL = 0.55, r = 0.20;
+  shape.moveTo(-halfW, halfL - r);
+  shape.absarc(0, halfL - r, r, Math.PI, 0, true);
+  shape.lineTo(halfW, -halfL + r);
+  shape.absarc(0, -halfL + r, r, 0, Math.PI, true);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.10, bevelEnabled: true, bevelSegments: 3, bevelSize: 0.025, bevelThickness: 0.025
+  });
+  geo.rotateX(-Math.PI / 2);
+  geo.center();
+  return withUV2(geo);
+})();
+
+// Blackjack & Baccarat table geometries (curved player bow, rounded corners, soft bolster)
+const _bjGeos = (() => {
+  const w = 3.8, halfW = w / 2;
+  const dealerZ = 0.82, playerZ = -1.05, cornerR = 0.35;
+
+  const outerShape = new THREE.Shape();
+  outerShape.moveTo(-halfW + cornerR, dealerZ);
+  outerShape.lineTo(halfW - cornerR, dealerZ);
+  outerShape.quadraticCurveTo(halfW, dealerZ, halfW, dealerZ - cornerR);
+  outerShape.bezierCurveTo(halfW, 0.1, halfW * 0.72, playerZ, 0, playerZ);
+  outerShape.bezierCurveTo(-halfW * 0.72, playerZ, -halfW, 0.1, -halfW, dealerZ - cornerR);
+  outerShape.quadraticCurveTo(-halfW, dealerZ, -halfW + cornerR, dealerZ);
+
+  const bolster = new THREE.ExtrudeGeometry(outerShape, {
+    depth: 0.08, bevelEnabled: true, bevelSegments: 5, bevelSize: 0.05, bevelThickness: 0.05
+  });
+  bolster.rotateX(-Math.PI / 2);
+  bolster.center();
+
+  const inW = halfW - 0.18, inDZ = dealerZ - 0.14, inPZ = playerZ + 0.18, inCornerR = 0.22;
+  const innerShape = new THREE.Shape();
+  innerShape.moveTo(-inW + inCornerR, inDZ);
+  innerShape.lineTo(inW - inCornerR, inDZ);
+  innerShape.quadraticCurveTo(inW, inDZ, inW, inDZ - inCornerR);
+  innerShape.bezierCurveTo(inW, 0.1, inW * 0.72, inPZ, 0, inPZ);
+  innerShape.bezierCurveTo(-inW * 0.72, inPZ, -inW, 0.1, -inW, inDZ - inCornerR);
+  innerShape.quadraticCurveTo(-inW, inDZ, -inW + inCornerR, inDZ);
+
+  const felt = new THREE.ShapeGeometry(innerShape, 24);
+  felt.rotateX(-Math.PI / 2);
+  felt.center();
+  const pos = felt.getAttribute('position');
+  const uvs = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    const px = pos.getX(i);
+    const pz = pos.getZ(i);
+    uvs[i * 2] = (px / inW) * 0.5 + 0.5;
+    uvs[i * 2 + 1] = (pz / (inDZ - inPZ)) + 0.5;
+  }
+  felt.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  felt.computeVertexNormals();
+
+  const apron = new THREE.ExtrudeGeometry(outerShape, {
+    depth: 0.10, bevelEnabled: true, bevelSegments: 3, bevelSize: 0.02, bevelThickness: 0.02
+  });
+  apron.rotateX(-Math.PI / 2);
+  apron.center();
+
+  return { bolster: withUV2(bolster), felt: withUV2(felt), apron: withUV2(apron) };
+})();
+G.bjBolster = _bjGeos.bolster;
+G.bjFelt = _bjGeos.felt;
+G.bjApron = _bjGeos.apron;
+
+// VIP Texas Hold'em Poker table geometries (continuous stadium racetrack oval, plush bolster)
+const _pokerGeos = (() => {
+  const halfW = 2.2, halfD = 1.3, endR = halfD, straightW = halfW - endR;
+
+  const outerShape = new THREE.Shape();
+  outerShape.moveTo(-straightW, halfD);
+  outerShape.lineTo(straightW, halfD);
+  outerShape.absarc(straightW, 0, endR, Math.PI / 2, -Math.PI / 2, true);
+  outerShape.lineTo(-straightW, -halfD);
+  outerShape.absarc(-straightW, 0, endR, -Math.PI / 2, Math.PI / 2, true);
+
+  const bolster = new THREE.ExtrudeGeometry(outerShape, {
+    depth: 0.09, bevelEnabled: true, bevelSegments: 5, bevelSize: 0.06, bevelThickness: 0.06
+  });
+  bolster.rotateX(-Math.PI / 2);
+  bolster.center();
+
+  const inD = halfD - 0.20, inEndR = inD, inStraightW = halfW - 0.20 - inEndR;
+  const innerShape = new THREE.Shape();
+  innerShape.moveTo(-inStraightW, inD);
+  innerShape.lineTo(inStraightW, inD);
+  innerShape.absarc(inStraightW, 0, inEndR, Math.PI / 2, -Math.PI / 2, true);
+  innerShape.lineTo(-inStraightW, -inD);
+  innerShape.absarc(-inStraightW, 0, inEndR, -Math.PI / 2, Math.PI / 2, true);
+
+  const felt = new THREE.ShapeGeometry(innerShape, 32);
+  felt.rotateX(-Math.PI / 2);
+  felt.center();
+  const pos = felt.getAttribute('position');
+  const uvs = new Float32Array(pos.count * 2);
+  const totalW = (inStraightW + inEndR) * 2;
+  const totalD = inD * 2;
+  for (let i = 0; i < pos.count; i++) {
+    const px = pos.getX(i);
+    const pz = pos.getZ(i);
+    uvs[i * 2] = (px + totalW / 2) / totalW;
+    uvs[i * 2 + 1] = (pz + totalD / 2) / totalD;
+  }
+  felt.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  felt.computeVertexNormals();
+
+  const apron = new THREE.ExtrudeGeometry(outerShape, {
+    depth: 0.12, bevelEnabled: true, bevelSegments: 3, bevelSize: 0.02, bevelThickness: 0.02
+  });
+  apron.rotateX(-Math.PI / 2);
+  apron.center();
+
+  return { bolster: withUV2(bolster), felt: withUV2(felt), apron: withUV2(apron) };
+})();
+G.pokerBolster = _pokerGeos.bolster;
+G.pokerFelt = _pokerGeos.felt;
+G.pokerApron = _pokerGeos.apron;
+
+// European Roulette table geometries (rounded wheel bow end, long betting table body)
+const _rouletteGeos = (() => {
+  const halfW = 1.7, backZ = -2.6, frontZ = 0.9, wheelR = halfW, cornerR = 0.35;
+
+  const shape = new THREE.Shape();
+  shape.moveTo(-halfW + cornerR, backZ);
+  shape.lineTo(halfW - cornerR, backZ);
+  shape.quadraticCurveTo(halfW, backZ, halfW, backZ + cornerR);
+  shape.lineTo(halfW, frontZ);
+  shape.absarc(0, frontZ, wheelR, 0, Math.PI, false);
+  shape.lineTo(-halfW, backZ + cornerR);
+  shape.quadraticCurveTo(-halfW, backZ, -halfW + cornerR, backZ);
+
+  const bolster = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.09, bevelEnabled: true, bevelSegments: 5, bevelSize: 0.05, bevelThickness: 0.05
+  });
+  bolster.rotateX(-Math.PI / 2);
+  bolster.center();
+
+  const apron = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.10, bevelEnabled: true, bevelSegments: 3, bevelSize: 0.02, bevelThickness: 0.02
+  });
+  apron.rotateX(-Math.PI / 2);
+  apron.center();
+
+  return { bolster: withUV2(bolster), apron: withUV2(apron) };
+})();
+G.rouletteBolster = _rouletteGeos.bolster;
+G.rouletteApron = _rouletteGeos.apron;
+
+// Luxury VIP club armchair primitives
+G.chairCushion = (() => {
+  const shape = new THREE.Shape();
+  const w = 0.62, d = 0.58, r = 0.15;
+  shape.moveTo(-w / 2 + r, -d / 2);
+  shape.lineTo(w / 2 - r, -d / 2);
+  shape.quadraticCurveTo(w / 2, -d / 2, w / 2, -d / 2 + r);
+  shape.lineTo(w / 2, d / 2 - r);
+  shape.quadraticCurveTo(w / 2, d / 2, w / 2 - r, d / 2);
+  shape.lineTo(-w / 2 + r, d / 2);
+  shape.quadraticCurveTo(-w / 2, d / 2, -w / 2, d / 2 - r);
+  shape.lineTo(-w / 2, -d / 2 + r);
+  shape.quadraticCurveTo(-w / 2, -d / 2, -w / 2 + r, -d / 2);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.12, bevelEnabled: true, bevelSegments: 4, bevelSize: 0.035, bevelThickness: 0.035
+  });
+  geo.rotateX(-Math.PI / 2);
+  geo.center();
+  return withUV2(geo);
+})();
+
+G.chairBack = (() => {
+  // Curved barrel tub backrest
+  const shape = new THREE.Shape();
+  const outerR = 0.38, innerR = 0.28;
+  shape.absarc(0, 0, outerR, 0, Math.PI, false);
+  shape.lineTo(-innerR, 0);
+  shape.absarc(0, 0, innerR, Math.PI, 0, true);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.54, bevelEnabled: true, bevelSegments: 3, bevelSize: 0.03, bevelThickness: 0.03
+  });
+  geo.center();
+  return withUV2(geo);
+})();
+
+// Chesterfield luxury sofa rounded cushion
+G.sofaCushion = (() => {
+  const shape = new THREE.Shape();
+  const w = 1.30, d = 0.88, r = 0.16;
+  shape.moveTo(-w / 2 + r, -d / 2);
+  shape.lineTo(w / 2 - r, -d / 2);
+  shape.quadraticCurveTo(w / 2, -d / 2, w / 2, -d / 2 + r);
+  shape.lineTo(w / 2, d / 2 - r);
+  shape.quadraticCurveTo(w / 2, d / 2, w / 2 - r, d / 2);
+  shape.lineTo(-w / 2 + r, d / 2);
+  shape.quadraticCurveTo(-w / 2, d / 2, -w / 2, d / 2 - r);
+  shape.lineTo(-w / 2, -d / 2 + r);
+  shape.quadraticCurveTo(-w / 2, -d / 2, -w / 2 + r, -d / 2);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.16, bevelEnabled: true, bevelSegments: 4, bevelSize: 0.04, bevelThickness: 0.04
+  });
+  geo.rotateX(-Math.PI / 2);
+  geo.center();
+  return withUV2(geo);
+})();
+
+// Curved crown marquee topper for slot machines
+G.slotTopper = (() => {
+  const geo = new THREE.CylinderGeometry(0.38, 0.38, 0.74, 18, 1, false, 0, Math.PI);
+  geo.rotateZ(Math.PI / 2);
+  return withUV2(geo);
+})();
+
 
 // Project deck UVs in metres, so seams align across differently sized slabs.
 M.teak.onBeforeCompile = shader => {
