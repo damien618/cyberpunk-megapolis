@@ -444,6 +444,13 @@ const hullPlateTex = tex('./textures/cruise/hull_plate_diffuse.webp');
 const hullPlateNormal = ntex('./textures/cruise/hull_plate_normal.webp');
 const hullPlateRoughness = tex('./textures/cruise/hull_plate_roughness.webp');
 
+// Luxury Mediterranean lido swimming pool mosaic tiles, caustics, and water ripples:
+const poolTileTex = tex('./textures/cruise/pool_tile_diffuse.webp');
+const poolTileNormal = ntex('./textures/cruise/pool_tile_normal.webp');
+const poolTileRoughness = tex('./textures/cruise/pool_tile_roughness.webp');
+const poolCausticTex = tex('./textures/cruise/pool_water_caustics.webp');
+const poolWaterNormalTex = ntex('./textures/cruise/pool_water_normal.webp');
+
 // Fine woven relief shared by carpets and upholstery, independent of motifs.
 const weaveTex = canvasTex(256, 256, (g, W, H) => {
   const pixels = g.createImageData(W, H);
@@ -2189,8 +2196,22 @@ const M = {
   }),
 
   // --- Pool ----------------------------------------------------------------
-  poolTile: new THREE.MeshStandardMaterial({ color: 0x2aa6c4, roughness: 0.24, metalness: 0.05 }),
+  poolTile: new THREE.MeshStandardMaterial({
+    map: poolTileTex,
+    normalMap: poolTileNormal,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    roughnessMap: poolTileRoughness,
+    roughness: 0.18,
+    metalness: 0.03,
+  }),
   poolCoping: new THREE.MeshStandardMaterial({ color: 0xeae2d2, roughness: 0.7 }),
+  poolLight: new THREE.MeshStandardMaterial({
+    color: 0xaef2fc,
+    emissive: 0x18d2ee,
+    emissiveIntensity: 0.35,
+    roughness: 0.15,
+    metalness: 0.10,
+  }),
 
   // --- Safety equipment ----------------------------------------------------
   // The orange is deliberately warm and slightly desaturated: it stays
@@ -2932,6 +2953,106 @@ for (const [name, width, length] of [
   };
   material.customProgramCacheKey = () => `cruise-floor-${name}-v1`;
 }
+
+// World-space mosaic tile mapping and underwater dancing caustics on pool basin
+const poolTileUniforms = {
+  uTime: { value: 0 },
+  uCausticMap: { value: poolCausticTex },
+  uCausticStrength: { value: 1.2 },
+  uPoolWaterY: { value: 0 },
+  uNightGlow: { value: 0.0 },
+};
+
+M.poolTile.onBeforeCompile = shader => {
+  shader.uniforms.uTime = poolTileUniforms.uTime;
+  shader.uniforms.uCausticMap = poolTileUniforms.uCausticMap;
+  shader.uniforms.uCausticStrength = poolTileUniforms.uCausticStrength;
+  shader.uniforms.uPoolWaterY = poolTileUniforms.uPoolWaterY;
+  shader.uniforms.uNightGlow = poolTileUniforms.uNightGlow;
+
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', `
+      #include <common>
+      varying vec3 vTileWorldPos;
+      varying vec3 vTileWorldNormal;
+    `)
+    .replace('#include <uv_vertex>', `
+      #include <uv_vertex>
+      vec4 tilePosition = vec4(position, 1.0);
+      #ifdef USE_INSTANCING
+        tilePosition = instanceMatrix * tilePosition;
+      #endif
+      tilePosition = modelMatrix * tilePosition;
+
+      vec3 tileFace = abs(normal);
+      if (tileFace.y > tileFace.x && tileFace.y > tileFace.z) {
+        vMapUv = tilePosition.xz / 1.0;
+      } else if (tileFace.z >= tileFace.x) {
+        vMapUv = tilePosition.xy / 1.0;
+      } else {
+        vMapUv = tilePosition.zy / 1.0;
+      }
+      vNormalMapUv = vMapUv;
+      vRoughnessMapUv = vMapUv;
+    `)
+    .replace('#include <begin_vertex>', `
+      #include <begin_vertex>
+      vec4 wp = vec4(position, 1.0);
+      #ifdef USE_INSTANCING
+        wp = instanceMatrix * wp;
+      #endif
+      vTileWorldPos = (modelMatrix * wp).xyz;
+      vec3 wn = normal;
+      #ifdef USE_INSTANCING
+        wn = mat3(instanceMatrix) * wn;
+      #endif
+      vTileWorldNormal = normalize(mat3(modelMatrix) * wn);
+    `);
+
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `
+      #include <common>
+      uniform float uTime;
+      uniform sampler2D uCausticMap;
+      uniform float uCausticStrength;
+      uniform float uPoolWaterY;
+      uniform float uNightGlow;
+      varying vec3 vTileWorldPos;
+      varying vec3 vTileWorldNormal;
+    `)
+    .replace('#include <opaque_fragment>', `
+      #include <opaque_fragment>
+      // Caustics are projected along each face's own plane. Projecting the
+      // walls with world XZ like the floor made the pattern constant down
+      // the wall: animated vertical streaks along the whole basin.
+      float submerged = smoothstep(0.0, 0.12, uPoolWaterY - vTileWorldPos.y);
+      if (submerged > 0.0) {
+        vec3 an = abs(normalize(vTileWorldNormal));
+        bool isFloor = an.y > 0.6;
+        vec2 cBase = isFloor ? vTileWorldPos.xz
+          : (an.x > an.z ? vTileWorldPos.zy : vTileWorldPos.xy) * vec2(1.0, 1.6);
+        vec2 cUv1 = cBase * 0.45 + vec2(uTime * 0.040, uTime * 0.026);
+        vec2 cUv2 = cBase * 0.70 + vec2(-uTime * 0.034, uTime * 0.048);
+        float c1 = texture2D(uCausticMap, cUv1).r;
+        float c2 = texture2D(uCausticMap, cUv2).g;
+        float causticVal = pow(min(c1, c2) * 2.2, 1.4);
+        // Light refracted from the surface reaches the floor focused; on a
+        // wall it grazes, so it is fainter and fades out under the waterline.
+        float faceGain = isFloor ? 1.0 : 0.35 * smoothstep(0.05, 0.45, uPoolWaterY - vTileWorldPos.y);
+        float depthFactor = clamp((uPoolWaterY - vTileWorldPos.y) / 0.85, 0.2, 1.0);
+        outgoingLight += vec3(0.32, 0.88, 0.98) * causticVal * depthFactor * faceGain * submerged * uCausticStrength;
+        // Underwater absorption: the deeper the tile, the more it turns teal.
+        float absorb = clamp((uPoolWaterY - vTileWorldPos.y) / 1.1, 0.0, 1.0) * submerged;
+        outgoingLight = mix(outgoingLight, outgoingLight * vec3(0.55, 0.88, 0.96), absorb * 0.6);
+        if (uNightGlow > 0.01) {
+          outgoingLight += vec3(0.04, 0.48, 0.65) * uNightGlow * submerged * (0.5 + 0.5 * causticVal);
+        }
+      }
+      gl_FragColor = vec4(outgoingLight, diffuseColor.a);
+    `);
+};
+M.poolTile.customProgramCacheKey = () => 'cruise-pool-tile-mosaic-v2';
+
 for (const name of ['velvetRed', 'cushionTeal', 'leatherBurgundy']) {
   M[name].bumpMap = weaveTex;
   M[name].bumpScale = 0.002;
@@ -6332,6 +6453,7 @@ const STAIR_W = 4.4;
 const POOL_X0 = -6, POOL_X1 = 6, POOL_Z_A = -8, POOL_Z_B = 10;
 const POOL_FLOOR = POOL_Y - 1.25;      // ≈ 1 m of water — a lido pool, not a tank
 const POOL_WATER = POOL_Y - 0.28;
+poolTileUniforms.uPoolWaterY.value = POOL_WATER;
 const poolBarLights = [];
 let poolBarSignMaterial = null;
 const poolBarGarlandMaterials = [
@@ -6382,10 +6504,16 @@ function syncPoolDeckVisitorLighting(night) {
   // The deck itself, laid AROUND the pool basin: four slabs, because a slab
   // with a hole in it is four slabs, and a single slab under the basin would
   // be a floor at deck level across the top of the water.
-  longSlab(M.teak, -POOL_X2, POOL_X0, POOL_Z0, POOL_Z1, POOL_Y - 0.3, POOL_Y);
-  longSlab(M.teak, POOL_X1, POOL_X2, POOL_Z0, POOL_Z1, POOL_Y - 0.3, POOL_Y);
-  longSlab(M.teak, POOL_X0, POOL_X1, POOL_Z0, POOL_Z_A, POOL_Y - 0.3, POOL_Y);
-  longSlab(M.teak, POOL_X0, POOL_X1, POOL_Z_B, POOL_Z1, POOL_Y - 0.3, POOL_Y);
+  // The slabs stop at the OUTER face of the 0.3 m basin walls. Run up to the
+  // pool's edge, their inner faces were coplanar with the tiled walls over
+  // the top 30 cm, and that band above the waterline flickered teak / tile.
+  const W = 0.3;
+  longSlab(M.teak, -POOL_X2, POOL_X0 - W, POOL_Z0, POOL_Z1, POOL_Y - 0.3, POOL_Y);
+  longSlab(M.teak, POOL_X1 + W, POOL_X2, POOL_Z0, POOL_Z1, POOL_Y - 0.3, POOL_Y);
+  longSlab(M.teak, POOL_X0 - W, POOL_X1 + W, POOL_Z0, POOL_Z_A - W, POOL_Y - 0.3, POOL_Y);
+  longSlab(M.teak, POOL_X0 - W, POOL_X1 + W, POOL_Z_B + W, POOL_Z1, POOL_Y - 0.3, POOL_Y);
+  // The aft wall is open across the walk-in steps: fill that gap at deck level.
+  slab(M.teak, -2.2, 2.2, POOL_Z_A - W, POOL_Z_A, POOL_Y - 0.3, POOL_Y);
 
   // The basin: tiled floor, tiled sides, and a coping round the rim.
   slab(M.poolTile, POOL_X0, POOL_X1, POOL_Z_A, POOL_Z_B, POOL_FLOOR - 0.25, POOL_FLOOR);
@@ -6407,6 +6535,17 @@ function syncPoolDeckVisitorLighting(night) {
     box(M.poolCoping, (POOL_X0 - 0.45 + -2.2) / 2, POOL_Y + 0.04, POOL_Z_A - 0.15, aftLeftW, 0.08, 0.6);
     const aftRightW = (POOL_X1 + 0.45) - 2.2;
     box(M.poolCoping, (2.2 + POOL_X1 + 0.45) / 2, POOL_Y + 0.04, POOL_Z_A - 0.15, aftRightW, 0.08, 0.6);
+
+    // Underwater pool lighting fixtures on port and starboard basin walls
+    for (const sx of [POOL_X0, POOL_X1]) {
+      const signX = sx < 0 ? 1 : -1;
+      for (const pz of [-2.5, 3.5]) {
+        shape(G.cyl, M.steel, sx + signX * 0.015, POOL_WATER - 0.42, pz,
+          0.30, 0.03, 0.30, { rz: Math.PI / 2 });
+        shape(G.cyl, M.poolLight, sx + signX * 0.035, POOL_WATER - 0.42, pz,
+          0.22, 0.025, 0.22, { rz: Math.PI / 2 });
+      }
+    }
   });
 
   // Steps down into the pool: 5 progressive 0.25 m steps (< 0.3 m ground-snap limit)
@@ -7496,6 +7635,13 @@ function setCruiseTime(name) {
     poolBarSignMaterial.emissiveIntensity = lidoNight ? 0.82 : 0.18;
   for (const l of poolBarLights)
     l.intensity = l.userData.base * (lidoNight ? 1 : 0.055);
+  if (M.poolLight) M.poolLight.emissiveIntensity = lidoNight ? 3.0 : 0.35;
+  if (typeof poolWaterUniforms !== 'undefined') {
+    poolWaterUniforms.uNightGlow.value = lidoNight ? 0.85 : 0.0;
+    poolTileUniforms.uNightGlow.value = lidoNight ? 0.85 : 0.0;
+    poolWaterUniforms.uSunColor.value.set(cruiseTime === 'sunset' ? 0xffc488 : 0xfff5e4);
+    poolWaterUniforms.uCausticStrength.value = lidoNight ? 0.45 : (cruiseTime === 'sunset' ? 0.85 : 1.2);
+  }
   for (const m of casinoNeon) m.emissiveIntensity = s.neon * 0.85;
   // The ballroom is feutrée at every hour, so its lamps are TRIMMED, never
   // switched: the candles and the dome are fixed emissives that ignore the
@@ -7861,6 +8007,9 @@ const hook = {
   lieDown: (...a) => lieDown(...a),
   updateLie: (...a) => updateLie(...a),
   POOL_X0, POOL_X1, POOL_Z_A, POOL_Z_B, POOL_FLOOR,
+  poolTileUniforms,
+  get poolWater() { return typeof poolWater !== 'undefined' ? poolWater : null; },
+  get poolWaterUniforms() { return typeof poolWaterUniforms !== 'undefined' ? poolWaterUniforms : null; },
   people,
   band,
   halfBeam,
@@ -9378,17 +9527,144 @@ function updateHud() {
 
 // The pool's water. On `scene`, like the sea, so it is never a floor — you
 // wade in it, and the basin's tiled bottom is what you actually stand on.
-const poolWater = new THREE.Mesh(
-  new THREE.PlaneGeometry(POOL_X1 - POOL_X0 - 0.1, POOL_Z_B - POOL_Z_A - 0.1, 24, 32),
-  new THREE.MeshStandardMaterial({
-    color: 0x39c2dc, roughness: 0.06, metalness: 0.2,
-    normalMap: waterN, normalScale: new THREE.Vector2(0.3, 0.3),
-    transparent: true, opacity: 0.72,
-  }),
-);
-poolWater.material.normalMap = waterN.clone();
-poolWater.material.normalMap.repeat.set(3, 4);
-poolWater.material.normalMap.needsUpdate = true;
+const poolWaterUniforms = {
+  uTime: { value: 0 },
+  uCausticMap: { value: poolCausticTex },
+  uNormalMap: { value: poolWaterNormalTex },
+  uSunDir: { value: sunDir },
+  uSunColor: { value: new THREE.Color(0xfff5e4) },
+  uCausticStrength: { value: 1.2 },
+  uNightGlow: { value: 0.0 },
+};
+
+const poolWaterGeo = withUV2(new THREE.PlaneGeometry(
+  POOL_X1 - POOL_X0 - 0.05,
+  POOL_Z_B - POOL_Z_A - 0.05,
+  64, 96
+));
+
+const poolWaterMat = new THREE.MeshPhysicalMaterial({
+  color: 0x1db0cf,
+  roughness: 0.02,
+  metalness: 0.05,
+  clearcoat: 1.0,
+  clearcoatRoughness: 0.02,
+  transparent: true,
+  opacity: 0.65,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+
+poolWaterMat.onBeforeCompile = shader => {
+  shader.uniforms.uTime = poolWaterUniforms.uTime;
+  shader.uniforms.uCausticMap = poolWaterUniforms.uCausticMap;
+  shader.uniforms.uNormalMap = poolWaterUniforms.uNormalMap;
+  shader.uniforms.uSunDir = poolWaterUniforms.uSunDir;
+  shader.uniforms.uSunColor = poolWaterUniforms.uSunColor;
+  shader.uniforms.uCausticStrength = poolWaterUniforms.uCausticStrength;
+  shader.uniforms.uNightGlow = poolWaterUniforms.uNightGlow;
+
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', `
+      #include <common>
+      uniform float uTime;
+      varying vec3 vWaterWorldPos;
+      varying vec3 vWaterWorldNormal;
+      varying vec2 vWaterUv;
+    `)
+    .replace('#include <begin_vertex>', `
+      #include <begin_vertex>
+      vWaterUv = uv;
+      float w1 = sin(position.x * 2.2 + uTime * 2.5) * cos(position.y * 2.4 + uTime * 1.8);
+      float w2 = sin((position.x * 1.7 - position.y * 2.0) + uTime * 2.7) * 0.55;
+      float w3 = cos(position.x * 3.6 + position.y * 3.1 - uTime * 3.1) * 0.25;
+      transformed.z += (w1 + w2 + w3) * 0.009;
+      vWaterWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+      vWaterWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+    `);
+
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `
+      #include <common>
+      uniform float uTime;
+      uniform sampler2D uCausticMap;
+      uniform sampler2D uNormalMap;
+      uniform vec3 uSunDir;
+      uniform vec3 uSunColor;
+      uniform float uCausticStrength;
+      uniform float uNightGlow;
+      varying vec3 vWaterWorldPos;
+      varying vec3 vWaterWorldNormal;
+      varying vec2 vWaterUv;
+    `)
+    .replace('#include <normal_fragment_maps>', `
+      #include <normal_fragment_maps>
+      // Ripples built in WORLD space from three scrolling scales (one slow
+      // swell, two crossing chops), then handed to three.js in view space.
+      // The old code bent the view-space normal with world axes, so the
+      // fresnel and the glints swung around whenever the camera turned.
+      vec2 wp = vWaterWorldPos.xz;
+      vec3 rn1 = texture2D(uNormalMap, wp * 0.16 + vec2(uTime * 0.018, uTime * 0.011)).xyz * 2.0 - 1.0;
+      vec3 rn2 = texture2D(uNormalMap, wp * 0.43 + vec2(-uTime * 0.031, uTime * 0.024)).xyz * 2.0 - 1.0;
+      vec3 rn3 = texture2D(uNormalMap, wp.yx * 0.97 + vec2(uTime * 0.047, -uTime * 0.039)).xyz * 2.0 - 1.0;
+      vec2 slope = rn1.xy * 0.30 + rn2.xy * 0.26 + rn3.xy * 0.14;
+      // Fade the chop with distance so it does not alias into sparkle noise.
+      float rDist = length(cameraPosition - vWaterWorldPos);
+      slope *= mix(1.0, 0.35, smoothstep(8.0, 30.0, rDist));
+      vec3 wN = normalize(vec3(slope.x, 1.0, slope.y));
+      if (!gl_FrontFacing) wN = -wN;
+      normal = normalize((viewMatrix * vec4(wN, 0.0)).xyz);
+    `)
+    .replace('#include <opaque_fragment>', `
+      #include <opaque_fragment>
+      // Caustics belong on the basin (see poolTile); on the surface only a
+      // faint shimmer of the same pattern survives, riding the ripples.
+      vec2 cUv1 = vWaterWorldPos.xz * 0.60 + wN.xz * 0.15 + vec2(uTime * 0.040, uTime * 0.028);
+      vec2 cUv2 = vWaterWorldPos.xz * 0.95 + wN.xz * 0.15 + vec2(-uTime * 0.034, uTime * 0.046);
+      float caustic = pow(min(texture2D(uCausticMap, cUv1).r, texture2D(uCausticMap, cUv2).g) * 2.0, 1.4);
+
+      vec3 V = normalize(cameraPosition - vWaterWorldPos);
+      float NdotV = clamp(dot(wN, V), 0.0, 1.0);
+      float fresnel = 0.02 + 0.98 * pow(1.0 - NdotV, 5.0);
+
+      // Body colour: clear aqua looking down, deeper teal at a glance.
+      vec3 shallowCol = vec3(0.16, 0.74, 0.86);
+      vec3 deepCol = vec3(0.03, 0.36, 0.52);
+      vec3 waterBase = mix(shallowCol, deepCol, smoothstep(0.15, 0.95, 1.0 - NdotV));
+      // Sky reflection: zenith blue up high, pale haze at the horizon.
+      vec3 R = reflect(-V, wN);
+      vec3 skyCol = mix(vec3(0.78, 0.88, 0.94), vec3(0.42, 0.64, 0.86), clamp(R.y, 0.0, 1.0));
+      skyCol *= (1.0 - uNightGlow * 0.85);
+      vec3 surf = mix(waterBase, skyCol, fresnel);
+
+      vec3 H = normalize(normalize(uSunDir) + V);
+      float NdotH = max(dot(wN, H), 0.0);
+      float sparkle = (pow(NdotH, 220.0) * 1.6 + pow(NdotH, 900.0) * 5.0) * (1.0 - uNightGlow * 0.85);
+
+      outgoingLight = mix(surf, outgoingLight, 0.2);
+      outgoingLight += uSunColor * sparkle;
+      outgoingLight += vec3(0.40, 0.92, 1.0) * caustic * 0.10 * uCausticStrength;
+
+      if (uNightGlow > 0.01) {
+        outgoingLight += vec3(0.04, 0.68, 0.88) * uNightGlow * (0.65 + 0.35 * caustic);
+      }
+
+      // Clear when looking down into it, mirror-like at a grazing angle.
+      diffuseColor.a = clamp(mix(0.42, 0.95, fresnel) + sparkle * 0.5, 0.0, 1.0);
+
+      float edgeX = min(vWaterUv.x, 1.0 - vWaterUv.x);
+      float edgeY = min(vWaterUv.y, 1.0 - vWaterUv.y);
+      float rimDist = min(edgeX, edgeY);
+      if (rimDist < 0.015) {
+        diffuseColor.a = mix(0.20, diffuseColor.a, rimDist / 0.015);
+      }
+
+      gl_FragColor = vec4(outgoingLight, diffuseColor.a);
+    `);
+};
+poolWaterMat.customProgramCacheKey = () => 'cruise-pool-water-physical-v3';
+
+const poolWater = new THREE.Mesh(poolWaterGeo, poolWaterMat);
 poolWater.rotation.x = -Math.PI / 2;
 poolWater.position.set((POOL_X0 + POOL_X1) / 2, POOL_WATER, (POOL_Z_A + POOL_Z_B) / 2);
 scene.add(poolWater);
@@ -9449,8 +9725,10 @@ function animate() {
   seaUniforms.uTime.value = t;
   waterN.offset.y = -t * 0.045;
   waterN.offset.x = Math.sin(t * 0.07) * 0.01;
-  poolWater.material.normalMap.offset.y = t * 0.02;
-  poolWater.position.y = POOL_WATER + Math.sin(t * 1.3) * 0.012;
+  poolWaterUniforms.uTime.value = t;
+  poolTileUniforms.uTime.value = t;
+  poolWater.position.y = POOL_WATER + Math.sin(t * 1.3) * 0.008;
+
   for (let i = 0; i < wakeParts.length; i++) {
     const m = wakeParts[i];
     m.material.opacity = TIME_STATES[cruiseTime].wake
