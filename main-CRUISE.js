@@ -5644,6 +5644,9 @@ const ballLights = [];
       const dropY = (dropTop + dropBot) / 2, dropH = dropTop - dropBot;
       for (const z of PIER_Z) {
         for (const dz of [-2.35, 2.35]) {
+          // The last pier lands at 59.599… (float drift), and its forward fall
+          // would poke 0.5 m through the forward bulkhead onto the promenade.
+          if (z + dz + 0.7 > z1 - WALL_T / 2) continue;
           // The fall itself, plus a narrower dark fold behind its leading
           // edge: two boxes is the cheapest thing that reads as gathered
           // cloth instead of as a painted board.
