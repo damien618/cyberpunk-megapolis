@@ -2461,10 +2461,13 @@ G.stoolPedestal = latheGeo([
   [0.08, 0.76], [0.16, 0.78], [0.00, 0.78]
 ], 20);
 
-// Contoured domed plush velvet seat cushion with waterfall edge
+// Contoured domed plush velvet seat cushion with waterfall edge. Profile runs
+// bottom to top like the other lathes: listed top-down, the faces wound
+// inward and the dome culled away, leaving a red rim round the brass pedestal
+// cap that the seated guests appeared to perch on.
 G.domedCushion = latheGeo([
-  [0.00, 0.18], [0.12, 0.175], [0.20, 0.16], [0.24, 0.12],
-  [0.25, 0.06], [0.24, 0.02], [0.22, 0.00], [0.00, 0.00]
+  [0.00, 0.00], [0.22, 0.00], [0.24, 0.02], [0.25, 0.06],
+  [0.24, 0.12], [0.20, 0.16], [0.12, 0.175], [0.00, 0.18]
 ], 24);
 
 // Sculpted trestle foot with rounded capsule ends
@@ -3657,15 +3660,38 @@ console.log('[cruise] casino room start');
   for (const sx of [-1, 1]) {
     const cx = sx * 6.4, cz = z0 + 14.5;
     prop(() => {
-      // Table base & green baize felt
-      box(M.darkWood, cx, DECK_Y + 0.44, cz, 3.4, 0.88, 5.2);
-      box(M.mahoganyGloss, cx, DECK_Y + 0.90, cz, 3.6, 0.06, 5.4);
-      box(M.leatherBurgundy, cx, DECK_Y + 0.93, cz, 3.7, 0.08, 5.5);
-      shape(G.card, M.rouletteFelt, cx, DECK_Y + 0.95, cz - 0.45, 3.0, 3.8, 1, { rx: -Math.PI / 2 });
+      // Classical turned double-pedestal base with fluted columns & trestle feet
+      for (const ox of [-0.95, 0.95]) {
+        for (const oz of [-1.2, 1.2]) {
+          shape(G.trestleFoot, M.darkWood, cx + ox, DECK_Y + 0.05, cz + oz, 0.40, 0.10, 0.95);
+          shape(G.cylBase, M.brass, cx + ox, DECK_Y, cz + oz - 0.40, 0.09, 0.11, 0.09);
+          shape(G.cylBase, M.brass, cx + ox, DECK_Y, cz + oz + 0.40, 0.09, 0.11, 0.09);
+          shape(G.pedestalCol, M.mahoganyGloss, cx + ox, DECK_Y + 0.08, cz + oz, 0.68, 0.76, 0.68);
+          shape(G.ring, M.brass, cx + ox, DECK_Y + 0.14, cz + oz, 0.50, 1.2, 0.50);
+          shape(G.ring, M.brass, cx + ox, DECK_Y + 0.78, cz + oz, 0.48, 1.2, 0.48);
+        }
+      }
+      // Modesty stretcher beams between pedestals
+      box(M.darkWood, cx, DECK_Y + 0.48, cz - 1.2, 1.4, 0.36, 0.08);
+      box(M.goldTrim, cx, DECK_Y + 0.48, cz - 1.16, 1.44, 0.40, 0.02);
+      box(M.darkWood, cx, DECK_Y + 0.48, cz + 1.2, 1.4, 0.36, 0.08);
+      box(M.goldTrim, cx, DECK_Y + 0.48, cz + 1.24, 1.44, 0.40, 0.02);
+      // Polished brass footrail along player side
+      const footX = cx + (sx > 0 ? -1.25 : 1.25);
+      shape(G.cyl, M.brass, footX, DECK_Y + 0.18, cz, 0.05, 4.4, 0.05);
 
-      // Wheel base cylinder
-      shape(G.cyl, M.darkWood, cx, DECK_Y + 0.96, cz + 1.6, 1.25, 0.12, 1.25);
-      shape(G.cyl, M.brass, cx, DECK_Y + 0.98, cz + 1.6, 1.28, 0.04, 1.28);
+      // Sculpted mahogany table apron with rounded wheel bow
+      shape(G.rouletteApron, M.darkWood, cx, DECK_Y + 0.86, cz, 1, 1, 1);
+      // Continuous rounded padded leather bolster rail
+      shape(G.rouletteBolster, M.leatherBurgundy, cx, DECK_Y + 0.94, cz, 1, 1, 1);
+
+      // Roulette felt layout surface
+      shape(G.card, M.rouletteFelt, cx, DECK_Y + 0.952, cz - 0.50, 2.9, 3.7, 1, { rx: -Math.PI / 2 });
+
+      // Recessed Roulette Wheel bowl with polished mahogany surround & brass rings
+      shape(G.cyl, M.mahoganyGloss, cx, DECK_Y + 0.95, cz + 1.6, 1.34, 0.10, 1.34);
+      shape(G.ring, M.brass, cx, DECK_Y + 0.97, cz + 1.6, 1.32, 0.8, 1.32);
+      shape(G.ring, M.brass, cx, DECK_Y + 0.985, cz + 1.6, 1.20, 0.5, 1.20);
     });
 
     // 3D Spinning Roulette Rotor Assembly
@@ -3744,11 +3770,35 @@ console.log('[cruise] casino room start');
   {
     const px = 0, pz = z0 + 25.0;
     prop(() => {
-      // Grand oval poker table with burgundy padded armrest
-      box(M.darkWood, px, DECK_Y + 0.44, pz, 4.2, 0.88, 2.6);
-      box(M.mahoganyGloss, px, DECK_Y + 0.90, pz, 4.4, 0.06, 2.8);
-      box(M.leatherBurgundy, px, DECK_Y + 0.94, pz, 4.6, 0.08, 3.0);
-      box(M.baize, px, DECK_Y + 0.96, pz, 3.8, 0.02, 2.2);
+      // Twin classical fluted pedestal columns & trestle feet
+      for (const ox of [-1.15, 1.15]) {
+        shape(G.trestleFoot, M.darkWood, px + ox, DECK_Y + 0.05, pz, 0.42, 0.10, 1.15);
+        shape(G.cylBase, M.brass, px + ox, DECK_Y, pz - 0.48, 0.10, 0.11, 0.10);
+        shape(G.cylBase, M.brass, px + ox, DECK_Y, pz + 0.48, 0.10, 0.11, 0.10);
+        shape(G.pedestalCol, M.mahoganyGloss, px + ox, DECK_Y + 0.08, pz, 0.76, 0.76, 0.76);
+        shape(G.ring, M.brass, px + ox, DECK_Y + 0.14, pz, 0.56, 1.2, 0.56);
+        shape(G.ring, M.brass, px + ox, DECK_Y + 0.78, pz, 0.54, 1.2, 0.54);
+      }
+      // Modesty panel & horizontal brass footrail
+      box(M.darkWood, px, DECK_Y + 0.48, pz, 1.7, 0.40, 0.08);
+      box(M.goldTrim, px, DECK_Y + 0.48, pz + 0.045, 1.74, 0.44, 0.02);
+      shape(G.cyl, M.brass, px, DECK_Y + 0.18, pz - 0.35, 0.05, 2.6, 0.05, { rz: Math.PI / 2 });
+
+      // Sculpted mahogany table apron
+      shape(G.pokerApron, M.darkWood, px, DECK_Y + 0.86, pz, 1, 1, 1);
+      // Continuous racetrack oval padded leather bolster rail
+      shape(G.pokerBolster, M.leatherBurgundy, px, DECK_Y + 0.94, pz, 1, 1, 1);
+      // Inset custom VIP felt with gold filigree & crest
+      shape(G.pokerFelt, M.pokerFelt, px, DECK_Y + 0.952, pz, 1, 1, 1);
+
+      // 10 Inset Brass Cup Holders around racetrack
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        const hx = px + Math.cos(a) * 1.85;
+        const hz = pz + Math.sin(a) * 1.05;
+        shape(G.cylBase, M.brass, hx, DECK_Y + 0.935, hz, 0.10, 0.035, 0.10);
+        shape(G.ring, M.brass, hx, DECK_Y + 0.955, hz, 0.11, 0.4, 0.11);
+      }
 
       // Dealt cards in the center (Royal Flush in Spades)
       for (let i = 0; i < 5; i++) {
@@ -3763,22 +3813,36 @@ console.log('[cruise] casino room start');
       box(M.goldPlaque, px + 0.7, DECK_Y + 0.985, pz + 0.45, 0.34, 0.04, 0.22);
       box(M.goldPlaque, px + 0.7, DECK_Y + 1.025, pz + 0.45, 0.34, 0.04, 0.22);
 
-      // Chips stacks and Vesper Martini glasses
+      // Chips stacks and Vesper Martini glasses on brass coasters
       for (let s = 0; s < 4; s++) {
         shape(G.cyl, M.goldPlaque, px + 1.1 + (s % 2) * 0.25, DECK_Y + 1.02, pz - 0.4 + Math.floor(s / 2) * 0.25,
           0.16, 0.12, 0.16);
       }
-      // Vesper Martinis with olives
+      shape(G.cylBase, M.brass, px - 1.4, DECK_Y + 0.965, pz - 0.6, 0.18, 0.015, 0.18);
       shape(G.cyl, M.crystalGlass, px - 1.4, DECK_Y + 1.06, pz - 0.6, 0.14, 0.20, 0.14);
+      shape(G.cylBase, M.brass, px + 1.4, DECK_Y + 0.965, pz + 0.6, 0.18, 0.015, 0.18);
       shape(G.cyl, M.crystalGlass, px + 1.4, DECK_Y + 1.06, pz + 0.6, 0.14, 0.20, 0.14);
 
-      // VIP Leather Armchairs — north row only; the south row is left clear
-      // because the standing guest NPCs occupy that space (no sit pose exists,
-      // so a chair there just gets walked through). The ox = 0 seat is also
-      // skipped: the VIP Dealer NPC stands right there.
+      // VIP Luxury Club Armchairs — north row with turned legs & curved button-tufted leather
       for (const ox of [-1.8, -0.9, 0.9, 1.8]) {
-        box(M.leatherBurgundy, px + ox, DECK_Y + 0.42, pz + 1.8, 0.68, 0.52, 0.68);
-        box(M.darkWood, px + ox, DECK_Y + 0.82, pz + 2.1, 0.68, 0.68, 0.14);
+        const chairX = px + ox, chairZ = pz + 1.85;
+        // 4 Tapered legs with brass ferrules
+        for (const [lx, lz] of [[-0.24, -0.22], [0.24, -0.22], [-0.24, 0.22], [0.24, 0.22]]) {
+          shape(G.cylBase, M.brass, chairX + lx, DECK_Y, chairZ + lz, 0.04, 0.06, 0.04);
+          shape(G.taperLeg, M.darkWood, chairX + lx, DECK_Y + 0.36, chairZ + lz, 0.065, 0.36, 0.065);
+        }
+        // Mahogany underframe with gold bead trim
+        box(M.darkWood, chairX, DECK_Y + 0.37, chairZ, 0.64, 0.06, 0.60);
+        box(M.goldTrim, chairX, DECK_Y + 0.39, chairZ, 0.66, 0.02, 0.62);
+        // Plush rounded leather seat cushion
+        shape(G.chairCushion, M.leatherBurgundy, chairX, DECK_Y + 0.46, chairZ, 1, 1, 1);
+        // Curved tub backrest wrapping sides
+        shape(G.chairBack, M.leatherBurgundy, chairX, DECK_Y + 0.72, chairZ + 0.22, 1, 1, 1, { rx: Math.PI / 2 });
+        // Polished dark mahogany outer back shell
+        shape(G.chairBack, M.darkWood, chairX, DECK_Y + 0.72, chairZ + 0.24, 1.03, 0.98, 1.03, { rx: Math.PI / 2 });
+        // Rolled scroll armrests
+        shape(G.cyl, M.leatherBurgundy, chairX - 0.31, DECK_Y + 0.58, chairZ - 0.02, 0.09, 0.44, 0.09, { rx: Math.PI / 2 });
+        shape(G.cyl, M.leatherBurgundy, chairX + 0.31, DECK_Y + 0.58, chairZ - 0.02, 0.09, 0.44, 0.09, { rx: Math.PI / 2 });
       }
 
       // VIP Brass Stanchions and Crimson Velvet Ropes delimiting Salon Privé
@@ -3800,23 +3864,67 @@ console.log('[cruise] casino room start');
   for (const sx of [-1, 1]) {
     const cx = sx * 6.8, cz = z0 + 35.0;
     prop(() => {
-      box(M.darkWood, cx, DECK_Y + 0.44, cz, 3.8, 0.88, 2.4);
-      box(M.mahoganyGloss, cx, DECK_Y + 0.90, cz, 4.0, 0.06, 2.6);
-      box(M.leatherBurgundy, cx, DECK_Y + 0.93, cz, 4.1, 0.08, 2.7);
-      box(M.baize, cx, DECK_Y + 0.95, cz, 3.6, 0.02, 2.2);
+      // Twin classical turned pedestal columns & trestle feet
+      for (const ox of [-0.95, 0.95]) {
+        shape(G.trestleFoot, M.darkWood, cx + ox, DECK_Y + 0.05, cz + 0.05, 0.42, 0.10, 1.15);
+        shape(G.cylBase, M.brass, cx + ox, DECK_Y, cz + 0.05 - 0.48, 0.10, 0.11, 0.10);
+        shape(G.cylBase, M.brass, cx + ox, DECK_Y, cz + 0.05 + 0.48, 0.10, 0.11, 0.10);
+        shape(G.pedestalCol, M.mahoganyGloss, cx + ox, DECK_Y + 0.08, cz + 0.05, 0.76, 0.76, 0.76);
+        shape(G.ring, M.brass, cx + ox, DECK_Y + 0.14, cz + 0.05, 0.56, 1.2, 0.56);
+        shape(G.ring, M.brass, cx + ox, DECK_Y + 0.78, cz + 0.05, 0.54, 1.2, 0.54);
+      }
+      // Modesty panel & horizontal brass footrail
+      box(M.darkWood, cx, DECK_Y + 0.48, cz + 0.10, 1.5, 0.40, 0.08);
+      box(M.goldTrim, cx, DECK_Y + 0.48, cz + 0.145, 1.54, 0.44, 0.02);
+      shape(G.cyl, M.brass, cx, DECK_Y + 0.18, cz - 0.35, 0.05, 2.4, 0.05, { rz: Math.PI / 2 });
 
-      // Card shoe & discard rack
-      box(M.black, cx + 1.2, DECK_Y + 1.04, cz + 0.4, 0.25, 0.16, 0.42);
-      box(M.crystalGlass, cx + 1.2, DECK_Y + 1.04, cz - 0.4, 0.22, 0.14, 0.32);
+      // Sculpted mahogany table apron with curved bow
+      shape(G.bjApron, M.darkWood, cx, DECK_Y + 0.86, cz, 1, 1, 1);
+      // Continuous rounded padded burgundy leather bolster armrest
+      shape(G.bjBolster, M.leatherBurgundy, cx, DECK_Y + 0.94, cz, 1, 1, 1);
+      // Authentic printed Blackjack felt with gold betting circles & insurance arc
+      shape(G.bjFelt, M.blackjackFelt, cx, DECK_Y + 0.952, cz, 1, 1, 1);
 
-      // Betting spots & chip stacks
-      for (let b = 0; b < 5; b++) {
-        const bx = cx - 1.2 + b * 0.60;
-        shape(G.cyl, M.goldPlaque, bx, DECK_Y + 0.99, cz - 0.3, 0.14, 0.06, 0.14);
+      // Inset brass cup holders along player arc with crystal drinkware
+      const cupAngles = [-0.65, -0.32, 0, 0.32, 0.65];
+      for (let i = 0; i < cupAngles.length; i++) {
+        const a = cupAngles[i];
+        const hx = cx + Math.sin(a) * 1.55;
+        const hz = cz - Math.cos(a) * 0.85;
+        shape(G.cylBase, M.brass, hx, DECK_Y + 0.935, hz, 0.10, 0.035, 0.10);
+        shape(G.ring, M.brass, hx, DECK_Y + 0.955, hz, 0.11, 0.4, 0.11);
+        if (i % 2 === 0) {
+          shape(G.tumblerGlass, M.crystalCut, hx, DECK_Y + 0.965, hz, 0.075, 0.095, 0.075);
+          shape(G.cylBase, M.liqWhisky, hx, DECK_Y + 0.975, hz, 0.062, 0.035, 0.062);
+        }
       }
 
-      // No stools here: the standing guest NPCs stand right where a stool
-      // row would go, and with no sit pose they'd just clip through it.
+      // Dealer Chip Tray (Rack de Jetons) in front of dealer
+      box(M.black, cx, DECK_Y + 0.965, cz + 0.55, 0.88, 0.03, 0.28);
+      box(M.brass, cx, DECK_Y + 0.965, cz + 0.55, 0.90, 0.035, 0.03);
+      // Divided rows of multi-colored casino chips in dealer tray
+      const chipMats = [M.redChip, M.blueChip, M.greenChip, M.blackChip, M.rubyPlaque, M.goldPlaque];
+      for (let c = 0; c < 6; c++) {
+        const rx = cx - 0.35 + c * 0.14;
+        shape(G.cyl, chipMats[c], rx, DECK_Y + 0.985, cz + 0.55, 0.11, 0.05, 0.24, { rx: 0.3 });
+      }
+
+      // Realistic Dealing Shoe (Sabot de Cartes) angled at 30 degrees
+      box(M.black, cx + 1.15, DECK_Y + 0.99, cz + 0.35, 0.22, 0.12, 0.40, 0.35);
+      shape(G.cyl, M.brass, cx + 1.15, DECK_Y + 1.05, cz + 0.38, 0.06, 0.18, 0.06, { rz: Math.PI / 2 + 0.35 });
+      box(M.linen, cx + 1.15, DECK_Y + 1.01, cz + 0.24, 0.16, 0.05, 0.12, 0.35);
+
+      // Discard Rack with stacked cards visible inside
+      box(M.glass, cx + 1.15, DECK_Y + 1.02, cz - 0.25, 0.22, 0.14, 0.30);
+      box(M.linen, cx + 1.15, DECK_Y + 1.00, cz - 0.25, 0.18, 0.08, 0.24);
+
+      // Multi-colored chips bet stacks on felt in front of each guest
+      for (let b = 0; b < 5; b++) {
+        const bx = cx - 1.2 + b * 0.60;
+        shape(G.cyl, M.rubyPlaque, bx, DECK_Y + 0.965, cz - 0.28, 0.12, 0.025, 0.12);
+        shape(G.cyl, M.blackChip, bx, DECK_Y + 0.985, cz - 0.28, 0.11, 0.025, 0.11);
+        shape(G.cyl, M.goldPlaque, bx, DECK_Y + 1.005, cz - 0.28, 0.10, 0.02, 0.10);
+      }
     });
 
     chandelier(cx, cz);
@@ -3827,29 +3935,69 @@ console.log('[cruise] casino room start');
   // -------------------------------------------------------------------------
   function slotBank(bx, bz, ry, count = 6) {
     prop(() => {
-      box(M.darkWood, bx, DECK_Y + 0.18, bz, count * 0.84 + 0.2, 0.36, 1.1, { ry });
+      // `box` takes its yaw as a bare number. Passing `{ ry }` made the yaw
+      // NaN, so every cabinet, plinth and console vanished and the banks were
+      // just their screens and buttons, paper thin. Everything below is placed
+      // in the bank's own frame: `off` along the row, `f` out toward the room.
+      const at = (off, f) => [
+        bx + Math.cos(ry) * off + Math.sin(ry) * f,
+        bz - Math.sin(ry) * off + Math.cos(ry) * f,
+      ];
+      // Sculpted wooden base plinth with brass molding
+      box(M.darkWood, bx, DECK_Y + 0.18, bz, count * 0.84 + 0.2, 0.36, 1.1, ry);
+      box(M.goldTrim, bx, DECK_Y + 0.34, bz, count * 0.84 + 0.24, 0.04, 1.14, ry);
+
       for (let i = 0; i < count; i++) {
         const off = (i - (count - 1) / 2) * 0.84;
-        const x = bx + Math.cos(ry) * off;
-        const z = bz - Math.sin(ry) * off;
+        const [x, z] = at(off, 0);
 
-        // Gloss black cabinet with beveled gold border
-        box(M.black, x, DECK_Y + 1.05, z, 0.76, 1.38, 0.72, { ry });
-        box(M.goldTrim, x, DECK_Y + 1.05, z, 0.78, 1.40, 0.04, { ry });
-        box(M.goldTrim, x, DECK_Y + 1.74, z, 0.74, 0.06, 0.68, { ry });
+        // Gloss black cabinet, 72 cm deep, framed in gold
+        box(M.black, x, DECK_Y + 1.05, z, 0.76, 1.38, 0.72, ry);
+        box(M.goldTrim, x, DECK_Y + 1.05, z, 0.78, 1.40, 0.04, ry);
+        box(M.goldTrim, x, DECK_Y + 1.74, z, 0.74, 0.06, 0.68, ry);
 
-        // Screen plane
-        shape(G.card, slotScreenMat, x, DECK_Y + 1.12, z + (ry > 0 ? 0.37 : -0.37), 0.72, 0.54, 1, { ry });
+        // Curved Marquee Crown Topper on top of cabinet
+        shape(G.slotTopper, M.goldTrim, x, DECK_Y + 1.80, z, 1, 0.20, 1, { ry });
+        const [lx, lz] = at(off, 0.18);
+        shape(G.cyl, M.warmLampBright, lx, DECK_Y + 1.80, lz, 0.68, 0.14, 0.08, { ry });
 
-        // Pull lever with red ball knob
-        shape(G.cyl, M.brass, x + (ry > 0 ? 0 : 0.40), DECK_Y + 1.15, z + (ry > 0 ? 0.40 : 0), 0.03, 0.42, 0.03, { ry, rz: 0.25 });
-        shape(G.sphere, M.rubyBottle, x + (ry > 0 ? 0 : 0.48), DECK_Y + 1.34, z + (ry > 0 ? 0.48 : 0), 0.08, 0.08, 0.08);
+        // Screen on the front face, the button deck jutting out below it
+        const [fx, fz] = at(off, 0.365);
+        shape(G.card, slotScreenMat, fx, DECK_Y + 1.16, fz, 0.72, 0.52, 1, { ry });
+        const [cx2, cz2] = at(off, 0.46);
+        box(M.black, cx2, DECK_Y + 0.84, cz2, 0.72, 0.08, 0.28, ry);
+        box(M.goldTrim, cx2, DECK_Y + 0.88, cz2, 0.74, 0.02, 0.30, ry);
+        // Tactile illuminated push buttons on console deck
+        const buttonColors = [M.rubyPlaque, M.emeraldPlaque, M.goldPlaque, M.blueChip, M.redChip];
+        for (let b = 0; b < 5; b++) {
+          const [btnX, btnZ] = at(off + (b - 2) * 0.12, 0.48);
+          shape(G.cyl, buttonColors[b], btnX, DECK_Y + 0.89, btnZ, 0.06, 0.02, 0.06, { ry });
+        }
 
-        // Stool in front
-        const sx = x + Math.sin(ry) * 1.0;
-        const sz = z + Math.cos(ry) * 1.0;
-        shape(G.cylBase, M.brass, sx, DECK_Y, sz, 0.09, 0.64, 0.09);
-        shape(G.cyl, M.velvetRed, sx, DECK_Y + 0.68, sz, 0.38, 0.12, 0.38);
+        // Lower payout coin hopper tray
+        const [hx, hz] = at(off, 0.40);
+        box(M.steel, hx, DECK_Y + 0.44, hz, 0.46, 0.12, 0.16, ry);
+
+        // Pull lever with red ball knob on the right flank
+        const [vx, vz] = at(off + 0.41, 0.10);
+        shape(G.cyl, M.brass, vx, DECK_Y + 1.15, vz, 0.03, 0.42, 0.03);
+        shape(G.sphere, M.rubyBottle, vx, DECK_Y + 1.38, vz, 0.08, 0.08, 0.08);
+
+        // Ergonomic Casino Slot Stool with flared bell base & footrest ring
+        const sx = x + Math.sin(ry) * 1.05;
+        const sz = z + Math.cos(ry) * 1.05;
+        shape(G.stoolPedestal, M.brass, sx, DECK_Y, sz, 1, 1, 1);
+        shape(G.ring, M.brass, sx, DECK_Y + 0.28, sz, 0.42, 0.8, 0.42);
+        shape(G.domedCushion, M.velvetRed, sx, DECK_Y + 0.68, sz, 0.95, 0.95, 0.95);
+        shape(G.ring, M.brass, sx, DECK_Y + 0.67, sz, 0.48, 0.5, 0.48);
+        // Low upright backrest on a brass post at the rim, away from the
+        // machine. It was a flat velvet puck turned across the bank, which
+        // read as a second cushion hovering beside the first.
+        const backX = sx + Math.sin(ry) * 0.23;
+        const backZ = sz + Math.cos(ry) * 0.23;
+        shape(G.cyl, M.brass, backX, DECK_Y + 0.93, backZ, 0.03, 0.18, 0.03);
+        shape(G.box, M.velvetRed, backX, DECK_Y + 1.07, backZ, 0.38, 0.18, 0.06, { ry });
+        shape(G.box, M.brass, backX, DECK_Y + 1.165, backZ, 0.40, 0.015, 0.07, { ry });
       }
     });
   }
@@ -3864,51 +4012,30 @@ console.log('[cruise] casino room start');
   {
     const backZ = z0 + 1.2;  // -58.8 against aft wall
     const barZ = z0 + 3.6;   // -56.4 counter position
-    // Stools close enough to lean on the bar: a guest's knees go under the
-    // 15 cm overhang. At +5.0 the seated shoulders were 88 cm off the edge,
-    // out of an arm's reach, and there was no way for a hand to rest on it.
     const stoolZ = z0 + 4.58; // -55.42 stools in front
 
-    // What the back bar actually pours. Each family names a lathed profile,
-    // the tint of its glass, the spirit standing inside it, its printed label
-    // and the capsule over its neck; the numbers are metres of real bottle -
-    // roughly 8 cm across the body and 30 cm to the lip.
     const BAR_BOTTLES = [
-      // Scotch: dark amber glass, cream label, black capsule.
       { geo: G.bottleWhisky, glass: M.glassAmberDark, liq: M.liqWhisky, label: M.labelScotch, foil: M.foilBlack,
         d: 0.088, h: 0.300, liqD: 0.90, fill: 0.62, labY: 0.13, labH: 0.30, neckD: 0.37, foilY: 0.80, foilH: 0.21 },
-      // Bourbon: clear flint glass, so the spirit itself carries the colour.
       { geo: G.bottleWhisky, glass: M.glassFlint, liq: M.liqRum, label: M.labelBourbon, foil: M.foilGold,
         d: 0.090, h: 0.290, liqD: 0.90, fill: 0.58, labY: 0.13, labH: 0.30, neckD: 0.37, foilY: 0.80, foilH: 0.21 },
-      // Cognac in its bellied decanter, stoppered with cork.
       { geo: G.bottleDecanter, glass: M.glassFlint, liq: M.liqCognac, label: M.labelCognac, foil: M.cork,
         d: 0.104, h: 0.265, liqD: 0.80, fill: 0.52, labY: 0.15, labH: 0.26, neckD: 0.40, foilY: 0.90, foilH: 0.14 },
-      // Vodka: tall, slim, silver screwcap.
       { geo: G.bottleVodka, glass: M.glassFlint, liq: M.liqClear, label: M.labelVodka, foil: M.foilSilver,
         d: 0.084, h: 0.318, liqD: 0.88, fill: 0.66, labY: 0.16, labH: 0.32, neckD: 0.44, foilY: 0.88, foilH: 0.16 },
-      // Gin in green glass.
       { geo: G.bottleVodka, glass: M.glassBottleGreen, liq: M.liqGin, label: M.labelGin, foil: M.foilGold,
         d: 0.086, h: 0.310, liqD: 0.88, fill: 0.64, labY: 0.16, labH: 0.32, neckD: 0.44, foilY: 0.88, foilH: 0.16 },
-      // Claret: punted Bordeaux, burgundy capsule over the cork.
       { geo: G.bottleWine, glass: M.glassBottleGreen, liq: M.liqRedWine, label: M.labelWine, foil: M.foilBurgundy,
         d: 0.078, h: 0.328, liqD: 0.86, fill: 0.60, labY: 0.17, labH: 0.30, neckD: 0.39, foilY: 0.86, foilH: 0.17 },
-      // Champagne: heavy dead-leaf glass, gold foil down the neck.
       { geo: G.bottleChampagne, glass: M.glassDeadLeaf, liq: M.liqChampagne, label: M.labelChampagne, foil: M.foilGold,
         d: 0.094, h: 0.332, liqD: 0.86, fill: 0.56, labY: 0.14, labH: 0.26, neckD: 0.48, foilY: 0.84, foilH: 0.19 },
-      // Bitter aperitivo, near-black glass over a red that still glows.
       { geo: G.bottleLiqueur, glass: M.glassSmoke, liq: M.liqCampari, label: M.labelLiqueur, foil: M.foilBurgundy,
         d: 0.090, h: 0.262, liqD: 0.90, fill: 0.66, labY: 0.15, labH: 0.28, neckD: 0.38, foilY: 0.86, foilH: 0.17 },
-      // Curacao: cobalt bottle, the shelf strip behind it doing the rest.
       { geo: G.bottleLiqueur, glass: M.glassCobalt, liq: M.liqCuracao, label: M.labelLiqueur, foil: M.foilSilver,
         d: 0.088, h: 0.268, liqD: 0.90, fill: 0.62, labY: 0.15, labH: 0.28, neckD: 0.38, foilY: 0.86, foilH: 0.17 },
-      // Absinthe.
       { geo: G.bottleLiqueur, glass: M.glassFlint, liq: M.liqAbsinthe, label: M.labelGin, foil: M.foilGold,
         d: 0.086, h: 0.272, liqD: 0.90, fill: 0.60, labY: 0.15, labH: 0.28, neckD: 0.38, foilY: 0.86, foilH: 0.17 },
     ];
-    // One bottle, four instanced parts. The spirit goes down first: three
-    // draws every opaque mesh before the transparent pass, so the liquid is
-    // already in the depth buffer when the glass wall is blended over it.
-    // Label and capsule are opaque for the same reason.
     function bottle(b, x, y, z, ry = 0) {
       const d = b.d, h = b.h;
       shape(G.cylBase, b.liq, x, y + h * 0.02, z, d * b.liqD, h * b.fill, d * b.liqD);
@@ -3923,9 +4050,7 @@ console.log('[cruise] casino room start');
       box(M.goldTrim, 0, DECK_Y + 3.6, backZ + 0.18, 14.2, 0.08, 0.08);
       box(M.goldTrim, 0, DECK_Y + 0.04, backZ + 0.18, 14.2, 0.08, 0.08);
 
-      // 3 illuminated glass shelves, stocked the way a real back bar is:
-      // bottles shoulder to shoulder in short runs of the same label, each
-      // one turned a little off square, not one lonely tube every 70 cm.
+      // 3 illuminated glass shelves
       for (let s = 0; s < 3; s++) {
         const sy = DECK_Y + 1.1 + s * 0.62;
         box(M.crystalGlass, 0, sy, backZ + 0.28, 13.4, 0.03, 0.30);
@@ -3934,8 +4059,6 @@ console.log('[cruise] casino room start');
 
         for (let i = 0; i < 62; i++) {
           const bx = -6.1 + i * 0.198;
-          // A deterministic wobble: how far the bottle is turned, and the
-          // centimetre or two it stands off the front edge of the shelf.
           const j = Math.sin((i + 1) * 12.9898 + s * 78.233) * 0.5;
           const run = Math.floor(i / 3) + s * 4;
           bottle(BAR_BOTTLES[run % BAR_BOTTLES.length],
@@ -3955,21 +4078,17 @@ console.log('[cruise] casino room start');
       shape(G.cyl, M.steel, 0, DECK_Y + 1.32, barZ, 0.28, 0.26, 0.28);
       bottle(BAR_BOTTLES[6], 0, DECK_Y + 1.36, barZ, 0.6);
 
-      // The bartender's working line: five bottles with steel pour spouts,
-      // stood on a brass tray along the back edge of the counter.
+      // The bartender's working line
       box(M.brass, -1.0, DECK_Y + 1.20, barZ - 0.34, 2.6, 0.02, 0.22);
       for (let i = 0; i < 5; i++) {
         const wx = -2.1 + i * 0.55;
         const b = BAR_BOTTLES[[0, 3, 4, 7, 1][i]];
         bottle(b, wx, DECK_Y + 1.21, barZ - 0.34, 0.4 + i);
-        // Chrome speed pourer: a short spout that leans out over the lip,
-        // not a straw standing off the neck.
         shape(G.cyl, M.pourSpout, wx + 0.012, DECK_Y + 1.21 + b.h * 1.035, barZ - 0.34,
           0.019, 0.055, 0.019, { rz: 0.30 });
       }
 
-      // Crystal on the counter: coupes, martinis and cut tumblers - the
-      // stemware is where a bar is read from, and a cylinder has no stem.
+      // Crystal stemware
       for (let i = 0; i < 11; i++) {
         const gx = -5.4 + i * 1.08;
         const t = i % 3;
@@ -3984,19 +4103,48 @@ console.log('[cruise] casino room start');
         }
       }
 
-      // 9 Red velvet and brass bar stools in front of counter
+      // 9 Luxury contoured red velvet & brass bar stools with footrest ring
       for (let i = 0; i < 9; i++) {
-        shape(G.cylBase, M.brass, -6.0 + i * 1.5, DECK_Y, stoolZ, 0.12, 0.74, 0.12);
-        shape(G.cyl, M.velvetRed, -6.0 + i * 1.5, DECK_Y + 0.78, stoolZ, 0.46, 0.16, 0.46);
+        const stX = -6.0 + i * 1.5;
+        shape(G.stoolPedestal, M.brass, stX, DECK_Y, stoolZ, 1, 1, 1);
+        shape(G.ring, M.brass, stX, DECK_Y + 0.28, stoolZ, 0.44, 0.8, 0.44);
+        // Crown at +0.92, 6 cm over BAR_STOOL_TOP: the guests' thighs sink
+        // into the dome rather than resting on its rim.
+        shape(G.domedCushion, M.velvetRed, stX, DECK_Y + 0.74, stoolZ, 1.0, 1.0, 1.0);
+        shape(G.ring, M.brass, stX, DECK_Y + 0.73, stoolZ, 0.50, 0.6, 0.50);
       }
 
-      // Side Lounge corners (Chesterfield tufted red velvet sofas & cocktail tables)
+      // Side Lounge corners (Chesterfield tufted red velvet sofas with bun feet & cocktail tables)
       for (const lx of [-9.5, 9.5]) {
-        box(M.velvetRed, lx, DECK_Y + 0.32, barZ + 0.6, 2.8, 0.48, 1.2);
-        box(M.velvetRed, lx, DECK_Y + 0.75, barZ - 0.05, 2.8, 0.60, 0.25);
-        box(M.mahoganyGloss, lx, DECK_Y + 0.38, barZ + 2.0, 1.6, 0.08, 1.0);
-        shape(G.cylBase, M.brass, lx - 0.6, DECK_Y, barZ + 2.0, 0.08, 0.36, 0.08);
-        shape(G.cylBase, M.brass, lx + 0.6, DECK_Y, barZ + 2.0, 0.08, 0.36, 0.08);
+        // 4 Turned bun feet with brass collars
+        for (const [fx, fz] of [[-1.2, -0.4], [1.2, -0.4], [-1.2, 0.4], [1.2, 0.4]]) {
+          shape(G.bunFoot, M.mahoganyGloss, lx + fx, DECK_Y, barZ + 0.6 + fz, 1, 1, 1);
+          shape(G.ring, M.brass, lx + fx, DECK_Y + 0.02, barZ + 0.6 + fz, 0.22, 0.5, 0.22);
+        }
+        // Mahogany sofa plinth frame
+        box(M.darkWood, lx, DECK_Y + 0.12, barZ + 0.6, 2.76, 0.10, 1.16);
+        box(M.goldTrim, lx, DECK_Y + 0.17, barZ + 0.6, 2.80, 0.02, 1.20);
+
+        // Deep plush double seat cushions with rounded bevels
+        shape(G.sofaCushion, M.velvetRed, lx - 0.64, DECK_Y + 0.30, barZ + 0.62, 1, 1, 1);
+        shape(G.sofaCushion, M.velvetRed, lx + 0.64, DECK_Y + 0.30, barZ + 0.62, 1, 1, 1);
+
+        // Rolled scroll armrests on left and right
+        shape(G.cyl, M.velvetRed, lx - 1.36, DECK_Y + 0.54, barZ + 0.62, 0.24, 1.10, 0.24, { rx: Math.PI / 2 });
+        shape(G.sphere, M.velvetRed, lx - 1.36, DECK_Y + 0.54, barZ + 1.17, 0.24, 0.24, 0.24);
+        shape(G.cyl, M.velvetRed, lx + 1.36, DECK_Y + 0.54, barZ + 0.62, 0.24, 1.10, 0.24, { rx: Math.PI / 2 });
+        shape(G.sphere, M.velvetRed, lx + 1.36, DECK_Y + 0.54, barZ + 1.17, 0.24, 0.24, 0.24);
+
+        // Deep tufted backrest with rolled top scroll crest
+        box(M.velvetRed, lx, DECK_Y + 0.60, barZ + 0.08, 2.50, 0.54, 0.26);
+        shape(G.cyl, M.velvetRed, lx, DECK_Y + 0.86, barZ + 0.04, 0.22, 2.56, 0.22, { rz: Math.PI / 2 });
+
+        // Cocktail Table with beveled top and curved pedestal feet
+        box(M.mahoganyGloss, lx, DECK_Y + 0.38, barZ + 2.0, 1.55, 0.06, 0.95);
+        shape(G.ring, M.goldTrim, lx, DECK_Y + 0.38, barZ + 2.0, 1.58, 0.4, 0.98);
+        shape(G.cylBase, M.brass, lx - 0.55, DECK_Y, barZ + 2.0, 0.10, 0.35, 0.10);
+        shape(G.cylBase, M.brass, lx + 0.55, DECK_Y, barZ + 2.0, 0.10, 0.35, 0.10);
+
         // Claret open on the cocktail table, two flutes beside it.
         bottle(BAR_BOTTLES[5], lx, DECK_Y + 0.42, barZ + 2.0, 0.9);
         shape(G.fluteGlass, M.crystalCut, lx - 0.34, DECK_Y + 0.42, barZ + 2.05, 0.085, 0.22, 0.085);
@@ -7844,8 +7992,9 @@ try {
     // 6. Grand Casino Royale Bar & Lounge
     stand(npcIdx++, -1.6, DECK_Y, CASINO_Z[0] + 2.3, 0, casinoStaff); // Barman 1
     stand(npcIdx++, 1.6, DECK_Y, CASINO_Z[0] + 2.3, 0, casinoStaff);  // Barman 2
-    // Stool X matches `-6 + i*1.5` in the bar prop (i = 2, 4, 6). Cushion is
-    // a 16 cm cylinder centred at DECK_Y+0.78, so the top is +0.86.
+    // Stool X matches `-6 + i*1.5` in the bar prop (i = 2, 4, 6). The domed
+    // cushion's crown is at +0.92; seating on it exactly left the guests
+    // floating a few cm clear, so they sit 6 cm lower, into the velvet.
     const BAR_STOOL_TOP = DECK_Y + 0.86;
     const BAR_STOOL_Z = CASINO_Z[0] + 4.60;
     // Arms are reached, not bent: `hand` is [out, up, forward] from the
