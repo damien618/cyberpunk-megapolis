@@ -16,6 +16,9 @@ with resort_page(viewport={'width': 1280, 'height': 800}) as (page, errors):
         beds:records.filter(r=>r.bed).length,benches:records.filter(r=>r.bench).length,
         loungers:records.reduce((sum,r)=>sum+r.loungers,0),
         sharedLoungers:records.every(r=>r.loungerPoints.length===r.loungers&&r.loungerPoints.every(p=>p.buildingId===r.id&&Object.values(p.world).every(Number.isFinite))),
+        sharedIndoor:records.every(r=>['bed','bench'].every(key=>{
+          const a=r.furnitureAnchors[key];return a.buildingId===r.id&&[a.world,a.lie,a.approach,a.exit].every(p=>Object.values(p).every(Number.isFinite));
+        })),
         finite:meshes.every(m=>Array.from(m.geometry.attributes.position.array).every(Number.isFinite)),
         textured:meshes.filter(m=>m.name.includes('cushion:')).every(m=>m.material.map&&m.material.bumpMap&&m.material.sheen>0)};
     }''')
@@ -24,6 +27,7 @@ with resort_page(viewport={'width': 1280, 'height': 800}) as (page, errors):
     check('three coordinated island palettes with woven surface relief', result['styles']==3 and result['textured'])
     check('all soft geometry finite', result['finite'])
     check('all rendered loungers expose their shared positions',result['sharedLoungers'])
+    check('all rendered beds and benches expose finite shared anchors',result['sharedIndoor'])
     check('arrow visible on pier, culled in distant landscape',result['arrowOnPier'] and result['arrowCulled'])
     (ROOT / 'scratch').mkdir(exist_ok=True)
     results=[]
@@ -31,7 +35,7 @@ with resort_page(viewport={'width': 1280, 'height': 800}) as (page, errors):
         for view in ['bed', 'bench']:
             stats=page.evaluate('''([index,view]) => {
               const v=window.__resort,b=v.layout.BUILDINGS[index];
-              const tx=-b.w/2+1.25,tz=b.d/2+.8;
+              const {x:tx,z:tz}=v.props.furniture.find(r=>r.id===b.id).furnitureAnchors.bench.local;
               const eye=view==='bed'?[1.6,1.95,1.65]:[tx+1.8,1.9,tz+2.3];
               const aim=view==='bed'?[0,.8,-.9]:[tx,.72,tz];
               const p=v.layout.localPoint(b,eye[0],eye[2]),a=v.layout.localPoint(b,aim[0],aim[2]);

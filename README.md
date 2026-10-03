@@ -126,8 +126,11 @@ premier ponton ouest, est réservé au joueur : une flèche dorée animée au-de
 du toit le repère, même la nuit. Sur sa terrasse, le transat de droite propose
 **E** pour s'asseoir et **R** pour s'allonger (prioritaire sur le retour à
 l'accueil). **E**, **Espace**, **ZQSD/WASD** ou le bouton « Se relever » ramènent
-au point sûr de la terrasse ; **Échap** met en pause. Les autres transats et
-les pirogues restent décoratifs ; la nage reste en surface.
+au point sûr de la terrasse ; **Échap** met en pause. À l'intérieur de ce
+bungalow uniquement, **E** ou le bouton d'action permet de s'allonger dans
+le lit ou sur la banquette. Les mêmes commandes de réveil ramènent sur le
+plancher, à côté du lit ou devant l'assise. Les meubles des autres bungalows
+et les pirogues restent décoratifs ; la nage reste en surface.
 
 Le bar LAGON dispose d'une façade ouverte, de poteaux ancrés sous le sable,
 d'une enseigne compacte au-dessus du passage, d'un comptoir en pierre claire

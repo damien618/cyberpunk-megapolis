@@ -67,6 +67,7 @@ export class CameraRig {
     }
 
     _look.copy(ctrl.pos);
+    if (ctrl.furnitureCamera?.target) _look.copy(ctrl.furnitureCamera.target);
     _look.y += ctrl.mode === 'lie' ? (ctrl.furnitureCamera?.lookHeight ?? 0.35)
       : ctrl.mode === 'sit' ? (ctrl.furnitureCamera?.lookHeight ?? 1.05)
       : ctrl.mode === 'kneel' ? 1.05
@@ -80,6 +81,25 @@ export class CameraRig {
       this.initialized = true;
     }
     this.smoothLook.lerp(_look, 1 - Math.exp(-11 * dt));
+
+    // Keep indoor rest framing inside the room, including its first frame.
+    // Other maps and outdoor furniture keep their existing boom behavior.
+    const room = ctrl.furnitureCamera?.interior;
+    const keepInRoom = point => {
+      if (!room) return;
+      const c = Math.cos(room.yaw), s = Math.sin(room.yaw);
+      const dx = point.x - room.x, dz = point.z - room.z;
+      const x = THREE.MathUtils.clamp(c * dx - s * dz, -room.w / 2, room.w / 2);
+      const z = THREE.MathUtils.clamp(s * dx + c * dz, -room.d / 2, room.d / 2);
+      point.x = room.x + c * x + s * z;
+      point.z = room.z - s * x + c * z;
+      point.y = THREE.MathUtils.clamp(point.y, ctrl.furnitureCamera.minY, ctrl.furnitureCamera.maxY);
+    };
+    if (room) {
+      this.smoothLook.copy(_look);
+      keepInRoom(this.smoothLook);
+      this.blendT = 0;
+    }
 
     this.forward(_dir, input);
 
@@ -188,6 +208,7 @@ export class CameraRig {
     _desired.copy(this.smoothLook).addScaledVector(_camDir, -boom);
     if (_desired.y < 0.6) _desired.y = 0.6;
     if (Number.isFinite(ctrl.furnitureCamera?.minY)) _desired.y = Math.max(_desired.y, ctrl.furnitureCamera.minY);
+    keepInRoom(_desired);
     if (ctrl.mode === 'swim' && Number.isFinite(ctrl.waterY)) _desired.y = Math.max(_desired.y, ctrl.waterY + .35);
     cam.position.copy(_desired);
 

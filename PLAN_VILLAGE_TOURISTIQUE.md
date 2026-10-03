@@ -27,7 +27,7 @@ La même île est représentée par plusieurs scènes locales ; elle n'est pas u
 - Accès depuis la promenade tropicale et depuis le menu. Débarquement du paquebot inchangé.
 - Jour, coucher de soleil et nuit sélectionnables ; transition de 3 secondes, sans horloge automatique.
 - Marche dans les faibles profondeurs et nage en surface dans le lagon et les piscines ; pas de plongée.
-- Hamac et transat du bungalow réservé interactifs ; autres transats, canapés et pirogues décoratifs.
+- Hamac, transat, lit et banquette intérieure du bungalow réservé interactifs ; meubles des autres bungalows et pirogues décoratifs.
 - Pas de nouvelle dépendance ni achat ; seules les sept reproductions officielles Open Access de la galerie sont téléchargées et servies localement.
 
 ## 2. Implantation et construction visuelle
@@ -114,10 +114,32 @@ d'approche et de sortie ; `PLAYER_LOUNGER` désigne le transat de droite.
 E propose la pose assise, R la pose allongée, avec deux boutons accessibles.
 E, espace, ZQSD/WASD ou le bouton de réveil replacent le joueur sur la terrasse.
 Le prompt attend que le joueur quitte la zone avant de revenir. Priorité :
-réveil, voyage, transat réservé, hamac. Les états sont exposés par
+réveil, voyage, meuble intérieur le plus proche, transat réservé, hamac. Les états sont exposés par
 `window.__resort.interactions`, la réservation par `window.__resort.layout`.
 Les captures ciblées `scratch/resort_player_{bungalow,sit,lie}_*.png` sont
 produites par `tests/resort_interactions.py` et restent hors du suivi Git.
+
+Le lit et la banquette intérieure de `water-1` proposent **E** ou un clic pour
+s'allonger ; **E**, espace, ZQSD/WASD ou « Se relever » restaurent le mode de
+marche au point sûr sur le plancher. `getBungalowFurnitureAnchors()` partage
+les positions locales et mondiales, orientations, hauteurs, poses et sorties
+avec le rendu instancié. Les zones exigent le mode `ground`, la bonne hauteur
+et une approche locale dans la chambre ; les 17 autres chambres restent
+décoratives. Les états `bed-lie` et `bench-lie` réutilisent la pose `lie` sans
+la modifier. La caméra de repos intérieur garde le regard orientable et
+limite sa position à la chambre, sous le toit et au-dessus du plancher.
+Les captures `scratch/resort_indoor_*.png` couvrent les deux poses, plusieurs
+angles, les sorties et la nuit ; elles restent hors du suivi Git.
+
+Validation du repos intérieur (3 octobre 2026) : les tests interactions,
+mobilier, layout, marche et interface réussissent, y compris le transat,
+le hamac et l'aller-retour jungle. Les huit captures intérieures ont été
+inspectées : points de sortie dégagés, corps sur les coussins, orientations
+correctes et interface lisible la nuit. Le cadrage de la banquette a été
+corrigé pour voir l'assise plutôt que le dossier. Maximum intérieur :
+171 appels / 658 347 triangles, ombres comprises. L'échec supplémentaire
+de nage `pileBlocks` est reproduit avec les quatre modules originaux de
+`HEAD`, avant cette évolution.
 
 Vérification du 3 octobre 2026 : interactions, mobilier, layout, marche,
 interface, touristes et galerie réussis. Les cinq captures ciblées (bungalow
