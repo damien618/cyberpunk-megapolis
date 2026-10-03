@@ -438,6 +438,49 @@ function barkTexture(a) {
   return t;
 }
 
+// Palm bark: the horizontal leaf-scar rings of a coconut trunk, long vertical
+// fibres between them, and mottled pale/dark patches. Light and near-neutral
+// so the per-instance beige tint still sets the colour. Tiles vertically
+// (set repeat.y), and every stroke wraps so the seams vanish.
+const PALM_BARK_REPEAT_Y = 9;
+function palmBarkTexture(a) {
+  const t = canvas(128, 256, (g, W, H) => {
+    let s = 11; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    g.fillStyle = rgb(222, 214, 202); g.fillRect(0, 0, W, H);
+    // soft mottling
+    for (let i = 0; i < 90; i++) {
+      const x = r() * W, y = r() * H, w = 10 + r() * 30, h = 8 + r() * 26;
+      g.fillStyle = r() < 0.5 ? 'rgba(255,250,240,0.16)' : 'rgba(120,104,86,0.14)';
+      for (const dy of [-H, 0, H]) for (const dx of [-W, 0, W]) g.fillRect(x + dx, y + dy, w, h);
+    }
+    // long fibres
+    for (let i = 0; i < 160; i++) {
+      const x = r() * W, w = 0.6 + r() * 1.6, y = r() * H, h = 30 + r() * 120;
+      g.fillStyle = r() < 0.55 ? 'rgba(96,80,64,0.30)' : 'rgba(255,250,238,0.22)';
+      for (const dy of [-H, 0]) for (const dx of [-W, 0]) g.fillRect(x + dx, y + dy, w, h);
+    }
+    // leaf-scar rings: a dark groove with a lit lip above, slightly wavy
+    const RINGS = 7;
+    for (let k = 0; k < RINGS; k++) {
+      const y0 = (k + 0.5) * H / RINGS + (r() - 0.5) * 4;
+      for (let x = 0; x < W; x += 2) {
+        const y = y0 + Math.sin(x / W * 6.283 * 2 + k) * 1.6 + (r() - 0.5) * 1.4;
+        g.fillStyle = 'rgba(62,48,36,0.62)'; g.fillRect(x, y, 2, 2.2 + r() * 1.6);
+        g.fillStyle = 'rgba(70,56,42,0.25)'; g.fillRect(x, y + 3, 2, 3 + r() * 2);
+        g.fillStyle = 'rgba(255,250,238,0.38)'; g.fillRect(x, y - 2.2, 2, 1.6);
+      }
+    }
+    // fine speckle
+    for (let i = 0; i < 500; i++) {
+      g.fillStyle = r() < 0.5 ? 'rgba(60,48,36,0.30)' : 'rgba(255,255,248,0.30)';
+      g.fillRect(r() * W, r() * H, 1 + r() * 2, 1 + r() * 2);
+    }
+  }, a);
+  t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(1, PALM_BARK_REPEAT_Y);
+  return t;
+}
+
 // A rainforest trunk: tapered, with a buttress flare at the foot.
 function trunkGeo() {
   // Three rings, bunched at the foot where the flare needs them.
@@ -823,7 +866,7 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     broad: makeLeafMaterial(tex.broad, 0.03),
     monstera: makeLeafMaterial(tex.monstera, 0.026),
     vine: makeLeafMaterial(tex.vine, 0.012),
-    palmBark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }),
+    palmBark: (() => { const m = palmBarkTexture(maxAniso); return new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, map: m, bumpMap: m, bumpScale: 1.6 }); })(),
     bark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, map: barkTexture(maxAniso) }),
     crown: makeSolidMaterial({}, 0.012),
     canopy: makeCanopyLeafMaterial(tex.canopy, 0.012),
