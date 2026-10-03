@@ -37,7 +37,6 @@ import * as jungleLayout from './jungleLayout.js';
 
 const TILE = 52;
 const UNDERGROWTH_FAR = 72;
-const CANOPY_LEAVES_FAR = 130;  // beyond, the fog leaves the bare lobe's outline
 
 // ---------------------------------------------------------------------------
 // Leaf textures.
@@ -201,46 +200,57 @@ function vineTexture(a) {
   }, a);
 }
 
-// Canopy spray: a dozen pointed leaves fanning from a twig at the foot of
-// the card, in near-greys (the instance tint brings the green), the inner,
-// lower leaves darker where the spray closes over them. No shadowBlur — see
-// the resort shrubs.
+// A dense branch cluster, not a fan of oversized leaves over a green shell.
+// Small overlapping blades cover the card with an irregular cut-out edge.
+// Near-neutral colours take the instance tint; restrained shading lets the
+// scene lights shade a coherent crown instead of isolated dark patches.
 function canopySprayTexture(a) {
   let sd = 917;
   const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
-  return canvas(256, 256, (g, S) => {
+  return canvas(512, 512, (g, S) => {
     const leafPath = (w, h) => {
       g.beginPath(); g.moveTo(0, 0);
-      g.bezierCurveTo(w * 0.62, h * 0.18, w * 0.34, h * 0.76, 0, h);
-      g.bezierCurveTo(-w * 0.34, h * 0.76, -w * 0.62, h * 0.18, 0, 0);
+      g.bezierCurveTo(w * 0.6, h * 0.2, w * 0.4, h * 0.73, 0, h);
+      g.bezierCurveTo(-w * 0.4, h * 0.73, -w * 0.6, h * 0.2, 0, 0);
+      g.closePath();
     };
     const leaves = [];
-    for (let i = 0; i < 13; i++) {
-      const t = i / 12;
-      leaves.push({ a: (t - 0.5) * 2.5 + (r() - 0.5) * 0.25, h: S * (0.34 + r() * 0.14) * (1 - Math.abs(t - 0.5) * 0.5),
-        o: S * (0.04 + r() * 0.1), tone: 150 + r() * 70, warm: (r() - 0.4) * 2 });
+    for (let branch = 0; branch < 6; branch++) {
+      const x0 = S * (0.09 + branch * 0.164), bend = (r() - 0.5) * S * 0.1;
+      const foot = S * (0.85 + r() * 0.1), reach = S * (0.61 + r() * 0.12);
+      const twig = t => [x0 + Math.sin(t * 2) * bend, foot - t * reach];
+      g.strokeStyle = '#a09b80'; g.lineWidth = 2.2;
+      g.beginPath();
+      for (let j = 0; j <= 10; j++) {
+        const [x, y] = twig(j / 10); if (j === 0) g.moveTo(x, y); else g.lineTo(x, y);
+      }
+      g.stroke();
+      for (let j = 0; j < 9; j++) for (const side of [-1, 1]) {
+        const t = 0.06 + j * 0.105 + r() * 0.035, [x, y] = twig(t);
+        const h = S * (0.13 + r() * 0.055), w = h * (0.48 + r() * 0.1);
+        leaves.push({ x, y, h, w, a: Math.PI + side * (0.8 + r() * 0.42),
+          tone: 198 + r() * 35 + t * 10, warm: (r() - 0.5) * 0.055 });
+      }
     }
-    // Outer leaves first, the upright middle ones over them.
-    leaves.sort((p, q) => Math.abs(q.a) - Math.abs(p.a));
+    leaves.sort((p, q) => q.y - p.y);
     for (const L of leaves) {
-      const w = L.h * 0.42, ox = S / 2 + Math.sin(L.a) * L.o, oy = S * 0.96 - Math.cos(L.a) * L.o;
-      g.save(); g.translate(ox, oy); g.rotate(Math.PI + L.a);
-      g.save(); g.translate(2, -4); g.fillStyle = 'rgba(0,0,0,0.35)'; leafPath(w, L.h); g.fill(); g.restore();
-      const tone = L.tone, rgbT = k => `rgb(${Math.round(k * (1 + L.warm * 0.1))},${Math.round(k)},${Math.round(k * (1 - L.warm * 0.12))})`;
-      const grd = g.createLinearGradient(-w / 2, 0, w / 2, 0);
-      grd.addColorStop(0, rgbT(tone - 40)); grd.addColorStop(0.5, rgbT(tone)); grd.addColorStop(1, rgbT(tone - 22));
-      g.fillStyle = grd; leafPath(w, L.h); g.fill();
-      g.strokeStyle = 'rgba(235,240,205,0.28)'; g.lineWidth = 1.2;
+      g.save(); g.translate(L.x, L.y); g.rotate(L.a);
+      const colour = k => rgb(k * (1 + L.warm), k, k * (1 - L.warm));
+      const grd = g.createLinearGradient(-L.w / 2, 0, L.w / 2, 0);
+      grd.addColorStop(0, colour(L.tone - 22)); grd.addColorStop(0.48, colour(L.tone)); grd.addColorStop(1, colour(L.tone - 12));
+      g.fillStyle = grd; leafPath(L.w, L.h); g.fill();
+      g.save(); g.clip();
+      g.strokeStyle = 'rgba(248,249,220,0.22)'; g.lineWidth = 0.9;
       g.beginPath(); g.moveTo(0, L.h * 0.03); g.lineTo(0, L.h * 0.92); g.stroke();
-      g.restore();
+      g.strokeStyle = 'rgba(246,248,224,0.12)'; g.lineWidth = 0.65;
+      for (let j = 0; j < 5; j++) for (const side of [-1, 1]) {
+        const y = L.h * (0.17 + j * 0.14);
+        g.beginPath(); g.moveTo(0, y);
+        g.quadraticCurveTo(side * L.w * 0.16, y + L.h * 0.04, side * L.w * 0.31, y + L.h * 0.12);
+        g.stroke();
+      }
+      g.restore(); g.restore();
     }
-    g.strokeStyle = 'rgb(96,84,62)'; g.lineWidth = 3;
-    g.beginPath(); g.moveTo(S / 2, S); g.lineTo(S / 2, S * 0.9); g.stroke();
-    g.globalCompositeOperation = 'source-atop';
-    const shade = g.createRadialGradient(S / 2, S, 0, S / 2, S, S * 0.6);
-    shade.addColorStop(0, 'rgba(8,14,4,0.55)'); shade.addColorStop(1, 'rgba(8,14,4,0)');
-    g.fillStyle = shade; g.fillRect(0, 0, S, S);
-    g.globalCompositeOperation = 'source-over';
   }, a);
 }
 
@@ -603,10 +613,8 @@ function monsteraGeo() {
   return mergeGeometries(parts);
 }
 
-// Rainforest giant's crown lobe: a lumpy blob. Solid, so it shades the
-// floor below without an alpha depth pass. Welded and smooth-shaded — the
-// leafy relief comes from the material's world-space bump (foliageBump), not
-// from facets. Detail 1: the leaf sprays over it carry the outline.
+// Crown envelope, also used to build the bushes. Tree cores use a smaller,
+// shadow-only version: the visible crown is entirely cut-out foliage.
 function crownLobeGeo(detail = 1) {
   let g = new THREE.IcosahedronGeometry(1, detail);
   g.deleteAttribute('normal'); g.deleteAttribute('uv');
@@ -631,33 +639,40 @@ function lobeSurface(v) {
   return v;
 }
 
-// The crown's leaves: ~100 spray cards spread evenly (golden spiral) over the
-// lobe's surface, a little proud of it, so the outline breaks up leaf by leaf
-// and the solid lobe only shows as shade in the gaps. Each card faces mostly
-// outward; its normals are the lobe's (blended with the card's), so the whole
-// crown shades as one volume, and a baked occlusion darkens the underside and
-// the cards sunk into the core. Own seed: the scatter's rnd stays untouched.
-function crownLeavesGeo(count = 96) {
+// Six irregular branch tips carry overlapping leaf clusters, with gaps between
+// them. This breaks the old smooth ellipsoid into a loose, leafy outline while
+// retaining the triangle count. Volume normals and mild occlusion unify their
+// lighting. A coarser version covers the distant skyline. Own seed leaves the
+// scatter untouched.
+function crownLeavesGeo(count = 96, scale = 1) {
   let sd = 4243;
   const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
   const cards = [], zAxis = new THREE.Vector3(0, 0, 1), q = new THREE.Quaternion(), spin = new THREE.Quaternion();
   const dir = new THREE.Vector3(), pos = new THREE.Vector3(), n = new THREE.Vector3(), v = new THREE.Vector3();
+  const clumps = [{ centre: new THREE.Vector3(0, 0.12, 0), radius: 0.48, tone: 0.98 }];
+  for (let i = 0; i < 5; i++) {
+    const az = i * Math.PI * 2 / 5 + (r() - 0.5) * 0.35, reach = 0.58 + r() * 0.2;
+    clumps.push({ centre: new THREE.Vector3(Math.cos(az) * reach, (r() - 0.4) * 0.25, Math.sin(az) * reach),
+      radius: 0.34 + r() * 0.13, tone: 0.9 + r() * 0.1 });
+  }
   for (let i = 0; i < count; i++) {
-    const y = 1 - 2 * (i + 0.5) / count, rad = Math.sqrt(1 - y * y), az = i * 2.39996 + r() * 0.5;
+    const ci = i % clumps.length, c = clumps[ci], j = Math.floor(i / clumps.length);
+    const total = Math.ceil((count - ci) / clumps.length);
+    const y = 1 - 2 * (j + 0.5) / total, rad = Math.sqrt(1 - y * y), az = j * 2.39996 + ci * 1.7 + r() * 0.5;
     dir.set(Math.cos(az) * rad, y, Math.sin(az) * rad);
-    const depth = 0.96 + r() * 0.16;
-    lobeSurface(pos.copy(dir)).multiplyScalar(depth);
-    // Outward normal of the squashed ellipsoid, jittered.
+    const depth = 0.94 + r() * 0.2;
+    lobeSurface(pos.copy(dir)).multiplyScalar(depth * c.radius).add(c.centre);
+    // Outward normal of each leafy branch tip, jittered.
     n.set(dir.x, dir.y / 0.55, dir.z).normalize()
-      .add(v.set(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(0.8)).normalize();
-    const size = 0.4 + r() * 0.14, card = new THREE.PlaneGeometry(size, size).translate(0, size * 0.35, 0);
+      .add(v.set(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(0.5)).normalize();
+    const size = (0.48 + r() * 0.16) * scale, card = new THREE.PlaneGeometry(size, size);
+    const P = card.getAttribute('position'), N = card.getAttribute('normal'), col = [];
+    for (let k = 0; k < P.count; k++) P.setZ(k, P.getX(k) * P.getY(k) * 0.5 / size);
     q.setFromUnitVectors(zAxis, n).multiply(spin.setFromAxisAngle(zAxis, r() * Math.PI * 2));
     card.applyQuaternion(q).translate(pos.x, pos.y, pos.z);
-    const P = card.getAttribute('position'), N = card.getAttribute('normal'), col = [];
-    const occ = (0.55 + 0.45 * THREE.MathUtils.smoothstep(dir.y, -0.7, 0.5))
-      * (0.7 + 0.3 * THREE.MathUtils.smoothstep(depth, 0.96, 1.1)) * (0.85 + r() * 0.15);
+    const occ = c.tone * (0.86 + 0.14 * THREE.MathUtils.smoothstep(dir.y, -0.7, 0.5)) * (0.95 + r() * 0.05);
     for (let k = 0; k < P.count; k++) {
-      v.fromBufferAttribute(P, k);
+      v.fromBufferAttribute(P, k).sub(c.centre);
       v.set(v.x, v.y / 0.55, v.z).normalize().multiplyScalar(0.75).addScaledVector(n, 0.25).normalize();
       N.setXYZ(k, v.x, v.y, v.z);
       col.push(occ, occ, occ);
@@ -868,7 +883,7 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     vine: makeLeafMaterial(tex.vine, 0.012),
     palmBark: (() => { const m = palmBarkTexture(maxAniso); return new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, map: m, bumpMap: m, bumpScale: 1.6 }); })(),
     bark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, map: barkTexture(maxAniso) }),
-    crown: makeSolidMaterial({}, 0.012),
+    crown: applyWind(new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }), 0.012),
     canopy: makeCanopyLeafMaterial(tex.canopy, 0.012),
     bush: applyWind(new THREE.MeshStandardMaterial({ color: 0x536345, roughness: 1 }), 0.02),
     bushLeaves: makeCanopyLeafMaterial(tex.bush, 0.02),
@@ -885,9 +900,10 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     palmTrunk: palmTrunkGeo(), palmCrown: palmCrownGeo(),
     fern: fernGeo(), fernUp: fernUprightGeo(),
     broad: broadPlantGeo(), monstera: monsteraGeo(),
-    trunk: trunkGeo(), lobeFar: crownLobeGeo(1),
+    trunk: trunkGeo(), lobeFar: crownLobeGeo(1).scale(0.72, 0.72, 0.72),
     trunkFar: new THREE.CylinderGeometry(0.3, 0.5, 1, 7, 1, true).translate(0, 0.5, 0),
-    crownLeaves: crownLeavesGeo(), bush: bushGeo().scale(0.8, 0.8, 0.8), bushLeaves: bushLeavesGeo(), grass: grassTuftGeo(),
+    crownLeaves: crownLeavesGeo(), backLeaves: crownLeavesGeo(32, 1.65),
+    bush: bushGeo().scale(0.8, 0.8, 0.8), bushLeaves: bushLeavesGeo(), grass: grassTuftGeo(),
     flower: flowerGeo(),
     vine: new THREE.PlaneGeometry(0.5, 1, 1, 4).translate(0, -0.5, 0),
   };
@@ -1135,21 +1151,23 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     { far: UNDERGROWTH_FAR, tint: { h: 0, s: 0, l: 1 } }));
   meshes.push(...tiled(group, 'understory', geo.trunk, mat.bark, understory,
     { cast: true, tint: { h: 0.08, s: 0.12, l: 0.62 } }));
-  // The leaf sprays carry the crowns' outline now, so the solid cores under
-  // them stay coarse at every distance.
+  // Internal envelopes only cast shadows; no opaque green balls are drawn.
   meshes.push(...tiled(group, 'understoryCrown', geo.lobeFar, mat.crown, understoryLobes,
     { cast: true, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
   meshes.push(...tiled(group, 'trunk', geo.trunk, mat.bark, trunks,
     { cast: true, tint: { h: 0.08, s: 0.12, l: 0.62 } }));
   meshes.push(...tiled(group, 'crown', geo.lobeFar, mat.crown, lobes,
     { cast: true, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
-  // Both statures' sprays in one list: one extra draw per tile, not two.
+  // Both statures' sprays in one list. Retain them at all visible distances
+  // so distant crowns never switch back to opaque blobs or bare trunks.
   meshes.push(...tiled(group, 'crownLeaves', geo.crownLeaves, mat.canopy, [...understoryLobes, ...lobes],
-    { far: CANOPY_LEAVES_FAR, tint: { h: 0.26, s: 0.4, l: 0.38 } }));
+    { tint: { h: 0.29, s: 0.43, l: 0.4 } }));
   meshes.push(...tiled(group, 'backTrunk', geo.trunkFar, mat.bark, backTrunks,
     { tile: 200, tint: { h: 0.08, s: 0.12, l: 0.62 } }));
   meshes.push(...tiled(group, 'backCrown', geo.lobeFar, mat.crown, backLobes,
     { tile: 200, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
+  meshes.push(...tiled(group, 'backLeaves', geo.backLeaves, mat.canopy, backLobes,
+    { tile: 200, tint: { h: 0.29, s: 0.43, l: 0.4 } }));
   meshes.push(...tiled(group, 'vine', geo.vine, mat.vine, vines, { far: UNDERGROWTH_FAR }));
   meshes.push(...tiled(group, 'fern', geo.fern, mat.fern, ferns,
     { far: UNDERGROWTH_FAR, tint: { h: 0, s: 0, l: 1 } }));
