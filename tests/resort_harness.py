@@ -15,6 +15,7 @@ def resort_page(viewport=None, url='index.html?map=resort', headless=True):
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.on('console', lambda m: print(m.text) if m.type == 'log' else None)
         page.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
+        page.on('response', lambda r: errors.append(f'HTTP {r.status}: {r.url}') if r.status>=400 else None)
         def defer(route):
             response = route.fetch()
             body = response.text().replace('\nanimate();', '\nwindow.__testAnimate = animate;')

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { addRestaurantGuestLOD } from './resortGuestLOD.js';
 import { loadGuestRig, makeVisitor, armReach, rootBoneOf } from './crowd.js?v=68';
 import { RESTAURANT_SEATS, TEPPAN_SEATS } from './resortRestaurant.js';
-import { CENTRAL_BUILDINGS, BUNGALOWS, GARDEN_BUNGALOWS, localPoint, seededRandom, terrainHeight } from './resortLayout.js';
+import { CENTRAL_BUILDINGS, BUNGALOWS, GARDEN_BUNGALOWS, PLAYER_BUNGALOW_ID, localPoint, seededRandom, terrainHeight } from './resortLayout.js';
 
 export function createResortGuests(scene) {
   const bar=CENTRAL_BUILDINGS.find(b=>b.kind==='bar'),reception=CENTRAL_BUILDINGS.find(b=>b.kind==='reception'),rnd=seededRandom(20261002),people=[];
@@ -57,6 +57,7 @@ export function createResortGuests(scene) {
     // One holidaymaker per bungalow, resting on the terrace or looking out
     // from beside the bed. Both doorways and the route to the pool stay clear.
     [...BUNGALOWS,...GARDEN_BUNGALOWS].forEach((b,i)=>{
+      if(b.id===PLAYER_BUNGALOW_ID)return;
       const seated=i%3!==1;
       const x=seated?-b.w/2+1.25:b.w/2-.85,z=seated?b.d/2+.9:1.7;
       const v=addGuest({b,x,z,yaw:seated?0:-Math.PI/2,seated,venue:'bungalow',name:'resort-bungalow-tourist'});

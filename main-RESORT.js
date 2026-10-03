@@ -91,12 +91,12 @@ document.addEventListener('pointerlockchange',()=>{
   if(!usedLock||leaving)return;
   paused=!input.locked;
   overlay.style.display=paused?'flex':'none';
-  interactions.prompt.hidden=paused;
+  if(paused)interactions.hide();
 });
 document.addEventListener('keydown',e=>{
   if(galleryInteraction?.isOpen)return;
   if(galleryInteraction?.hasPrompt&&e.code==='Escape'){galleryInteraction.dismissPrompt?.();return;}
-  if(e.code==='Escape'&&started&&!input.locked){paused=true;overlay.style.display='flex';}
+  if(e.code==='Escape'&&started&&!input.locked){paused=true;overlay.style.display='flex';interactions.hide();}
   if(e.code==='Enter'&&paused)start();
 });
 const forward=new THREE.Vector3();
@@ -104,8 +104,17 @@ function animate(){if(disposed)return;frameId=requestAnimationFrame(animate);con
   const inArtModal=galleryInteraction?.update(camera)??false;
   if(started&&!paused&&!leaving&&!inArtModal){input.updateLook(dt);rig.forward(forward,input);if(!interactions.update())ctrl.update(dt,input,input.yaw,forward);if(ctrl.pos.y < -30)ctrl.rescueTo(spawnPoint);}
   ocean.update(t);terrain.update(t);corals.update(t);pools.update(t);props.update(t,ocean);guests.update(dt,t,camera.position);
-  if(player){player.setOutfit({hat:false,backpack:false,pants:false,shoes:false,longSleeves:false,swim:true});player.update({dt,mode:ctrl.mode,pos:ctrl.pos,vel:ctrl.vel,webOn:false,anchor:ctrl.anchor,posture:interactions.resting?'lie':undefined,facingYaw:interactions.resting?layout.HAMMOCK.yaw:undefined,elapsedTime:t});}
-  if(player)player.group.rotation.x=interactions.resting?props.hammock.rotation.x:0;
+  if(player){
+    const lounger=interactions.lounger,onLounger=interactions.restState?.startsWith('lounger');
+    player.group.rotation.order=interactions.restState==='lounger-lie'?'YXZ':'XYZ';
+    player.group.rotation.x=0;player.group.rotation.z=0;
+    player.setOutfit({hat:false,backpack:false,pants:false,shoes:false,longSleeves:false,swim:true});
+    player.update({dt,mode:ctrl.mode,pos:ctrl.pos,vel:ctrl.vel,webOn:false,anchor:ctrl.anchor,
+      posture:interactions.posture,facingYaw:interactions.facingYaw,
+      floorY:onLounger?lounger.floorY:undefined,seatPose:onLounger?lounger.seatPose:undefined,elapsedTime:t});
+    // Tilt in the lounger local frame, independently of the hammock sway.
+    player.group.rotation.x=interactions.restState==='hammock-lie'?props.hammock.rotation.x:interactions.restState==='lounger-lie'?lounger.lieTilt:0;
+  }
   rig.update(dt,input,ctrl);atmosphere.update(dt,ctrl.pos);vegetation.update(camera.position,dt);architecture.update(camera.position);batch.update(camera.position);
   document.getElementById('mode').textContent=ctrl.mode;document.getElementById('speed').textContent=Math.round(ctrl.vel.length()*3.6);document.getElementById('height').textContent=ctrl.pos.y.toFixed(1);
   renderer.render(scene,camera);input.endFrame();

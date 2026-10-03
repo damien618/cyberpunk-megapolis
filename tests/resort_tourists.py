@@ -1,4 +1,4 @@
-"""Tourists occupy all rooms; walking routes stay on the sandy avenue."""
+"""Tourists occupy every unreserved room; walking routes stay on the avenue."""
 from resort_harness import resort_page, check, ROOT
 
 with resort_page(viewport={'width':1280,'height':800}) as (page, errors):
@@ -50,11 +50,13 @@ with resort_page(viewport={'width':1280,'height':800}) as (page, errors):
         const b=L.BUILDINGS.find(b=>b.id===p.buildingId),a=L.toLocal(b,p.group.position.x,p.group.position.z);
         return Math.abs(a.x)>1.1;
       });
-      return {rooms:new Set(roomGuests.map(p=>p.buildingId)).size,walkers:walkers.length,seated:seated.length,
+      const occupied=roomGuests.map(p=>p.buildingId);
+      const reservationClear=!occupied.includes(L.PLAYER_BUNGALOW_ID)&&[...L.BUNGALOWS,...L.GARDEN_BUNGALOWS].filter(b=>b.id!==L.PLAYER_BUNGALOW_ID).every(b=>occupied.includes(b.id));
+      return {reservationClear,rooms:new Set(occupied).size,walkers:walkers.length,seated:seated.length,
         smoothTurns,gaitContinuous,bareLegs,soleContact,moved:walkers.every((p,i)=>p.group.position.distanceTo(starts[i])>1),onAvenue,onGround,seatedCorrect,doorsClear};
     }''')
     print(result)
-    check('every bungalow inhabited',result['rooms']==18)
+    check('every unreserved bungalow inhabited; player terrace free',result['rooms']==17 and result['reservationClear'])
     check('six animated walkers move along the avenue',result['walkers']==6 and result['moved'] and result['onAvenue'] and result['onGround'])
     check('rounded turns and continuous offscreen gait',result['smoothTurns'] and result['gaitContinuous'])
     check('shorts expose anatomical skinned legs',result['bareLegs'])
@@ -70,7 +72,7 @@ with resort_page(viewport={'width':1280,'height':800}) as (page, errors):
             const forward=new v.THREE.Vector3(Math.sin(p.group.rotation.y),0,Math.cos(p.group.rotation.y));
             v.camera.position.copy(a).addScaledVector(forward,3.2);v.camera.position.y+=1.35;
             v.ctrl.pos.copy(a);v.camera.lookAt(a.x,a.y+.9,a.z);}
-          else {const b=L.BUNGALOWS[0],p=L.localPoint(b,0,b.d/2+b.terrace+3),a=L.localPoint(b,-b.w/2+1.25,b.d/2+.8);
+          else {const b=L.BUNGALOWS.find(b=>b.id!==L.PLAYER_BUNGALOW_ID),p=L.localPoint(b,0,b.d/2+b.terrace+3),a=L.localPoint(b,-b.w/2+1.25,b.d/2+.8);
             v.ctrl.pos.set(b.x,b.y,b.z);v.camera.position.set(p.x,b.y+2.1,p.z);v.camera.lookAt(a.x,b.y+1,a.z);}
           v.vegetation.update(v.camera.position,0);v.atmosphere.update(0,v.ctrl.pos);
           v.architecture.update(v.camera.position);v.batch.update(v.camera.position);

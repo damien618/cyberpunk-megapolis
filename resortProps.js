@@ -4,7 +4,7 @@ import { createResortFurniture } from './resortFurniture.js';
 import { buildResortRestaurant } from './resortRestaurant.js';
 import { buildReceptionDecor } from './resortReceptionDecor.js';
 import { buildResortGallery } from './resortGallery.js';
-import { BUILDINGS,HAMMOCK,localPoint,terrainHeight,BOUNDS } from './resortLayout.js';
+import { BUILDINGS,HAMMOCK,PLAYER_BUNGALOW,localPoint,terrainHeight,BOUNDS } from './resortLayout.js';
 export function buildResortProps({scene,batch,materials}) {
   const restaurantEffects=[],lanterns=[],group=new THREE.Group();scene.add(group);
   const furniture=createResortFurniture({group,batch,materials});let roomIndex=0,gallery=null;
@@ -48,6 +48,19 @@ export function buildResortProps({scene,batch,materials}) {
     if(b.kind!=='gallery'){const p=localPoint(b,b.w/2-.35,b.d/2);lantern(p.x,b.y+1.8,p.z);}
   }
   const furnitureRecords=furniture.finish();
+  // Radially symmetric arrow: remains readable from every pier direction.
+  // Its tip clears the eaves, roof and raised thatch cap at the bob minimum.
+  const arrow=new THREE.Group();arrow.name='player-bungalow-arrow';
+  const arrowMaterial=new THREE.MeshStandardMaterial({color:0xffdf49,emissive:0xffbf20,emissiveIntensity:.7,roughness:.45});
+  const shaft=new THREE.Mesh(new THREE.CylinderGeometry(.14,.14,.9,12),arrowMaterial);shaft.position.y=.5;
+  const tip=new THREE.Mesh(new THREE.ConeGeometry(.48,.65,12),arrowMaterial);tip.rotation.z=Math.PI;tip.position.y=-.275;
+  arrow.add(shaft,tip);const arrowY=PLAYER_BUNGALOW.y+7.8;
+  arrow.position.set(PLAYER_BUNGALOW.x,arrowY,PLAYER_BUNGALOW.z);group.add(arrow);
+  arrow.userData.buildingId=PLAYER_BUNGALOW.id;
+  // Reuse detail culling: beyond 100 m this small marker is no longer legible.
+  // This also keeps distant landscape views within the existing draw budget.
+  const arrowNearby=pos=>arrow.position.distanceToSquared(pos)<100*100;
+  for(const mesh of arrow.children){mesh.userData.visibleAt=arrowNearby;batch.addDetailMesh(mesh,100);}
   for(let x=-110;x<=125;x+=15){const z=45,y=terrainHeight(x,z);batch.post('wood',x,y+.55,z,.09,1.1,.09);lantern(x,y+1.2,z);}
   for(let x of [-65,65])for(let z=-20;z>-145;z-=22)lantern(x,2.25,z);
   // A discreet buoy line makes the offshore swimming limit readable.
@@ -67,5 +80,5 @@ export function buildResortProps({scene,batch,materials}) {
     const float=new THREE.Mesh(new THREE.SphereGeometry(1,12,6),materials.wood);float.scale.set(.16,.14,2.8);float.position.set(1.8,-.05,0);boat.add(float);
     boat.position.set(x,0,z);boat.rotation.y=yaw;scene.add(boat);boats.push(boat);
   }
-  return {group,lanterns,gallery,hammock,boats,furniture:furnitureRecords,update(t,ocean){restaurantEffects.forEach(effect=>effect.update(t));hammock.rotation.x=Math.sin(t*.75)*.012;boats.forEach(b=>{b.position.y=ocean.waterHeightAt(b.position.x,b.position.z,t)+.16;b.rotation.z=Math.sin(t*.65+b.position.x)*.018;});}};
+  return {group,lanterns,gallery,hammock,boats,arrow,furniture:furnitureRecords,update(t,ocean){arrow.position.y=arrowY+Math.sin(t*1.4)*.18;restaurantEffects.forEach(effect=>effect.update(t));hammock.rotation.x=Math.sin(t*.75)*.012;boats.forEach(b=>{b.position.y=ocean.waterHeightAt(b.position.x,b.position.z,t)+.16;b.rotation.z=Math.sin(t*.65+b.position.x)*.018;});}};
 }

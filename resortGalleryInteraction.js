@@ -34,6 +34,7 @@ const CSS = `
   transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s, border-color 0.2s;
   user-select: none;
 }
+.art-prompt[hidden] { display: none; pointer-events: none; }
 .art-prompt:not([hidden]) {
   opacity: 1;
   transform: translateX(-50%) translateY(0);

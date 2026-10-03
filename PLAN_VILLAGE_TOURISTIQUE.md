@@ -27,7 +27,7 @@ La même île est représentée par plusieurs scènes locales ; elle n'est pas u
 - Accès depuis la promenade tropicale et depuis le menu. Débarquement du paquebot inchangé.
 - Jour, coucher de soleil et nuit sélectionnables ; transition de 3 secondes, sans horloge automatique.
 - Marche dans les faibles profondeurs et nage en surface dans le lagon et les piscines ; pas de plongée.
-- Hamac interactif ; transats, canapés et pirogues décoratifs.
+- Hamac et transat du bungalow réservé interactifs ; autres transats, canapés et pirogues décoratifs.
 - Pas de nouvelle dépendance ni achat ; seules les sept reproductions officielles Open Access de la galerie sont téléchargées et servies localement.
 
 ## 2. Implantation et construction visuelle
@@ -104,6 +104,28 @@ Surfaces marchables : terrain, terrasses, pontons et marches. Obstacles : murs, 
 Nage : entrée vers 1,2 m, sortie sous 0,95 m pour éviter les oscillations ; vitesse 2,2 m/s. Tête au-dessus de l'eau, mouvements horizontaux, collision avec pilotis et parois. Une chute dans l'eau passe en nage. Sortie par plage ou marches, pas à travers une paroi verticale. Limite de baignade avant le large. Piscines : profondeur de 1,35 m, surface calme et escalier dans une ouverture du rebord.
 
 Hamac : E pour s'allonger ; E, espace ou déplacement pour se relever au point sûr. Échap conserve son rôle de pause. Un gestionnaire unique règle le repos et le voyage, et restaure caméra, vitesse et verrouillage du pointeur.
+
+Réservation fixe : `PLAYER_BUNGALOW_ID = 'water-1'`, bungalow standard sur
+l'eau, sans piscine, au premier embranchement ouest. La flèche 3D dorée
+`player-bungalow-arrow` pointe vers son toit et oscille doucement depuis la
+boucle de props. Le vacancier de cette chambre est omis. `bungalowLoungers()`
+dans `resortFurniture.js` partage les positions de rendu et les points de pose,
+d'approche et de sortie ; `PLAYER_LOUNGER` désigne le transat de droite.
+E propose la pose assise, R la pose allongée, avec deux boutons accessibles.
+E, espace, ZQSD/WASD ou le bouton de réveil replacent le joueur sur la terrasse.
+Le prompt attend que le joueur quitte la zone avant de revenir. Priorité :
+réveil, voyage, transat réservé, hamac. Les états sont exposés par
+`window.__resort.interactions`, la réservation par `window.__resort.layout`.
+Les captures ciblées `scratch/resort_player_{bungalow,sit,lie}_*.png` sont
+produites par `tests/resort_interactions.py` et restent hors du suivi Git.
+
+Vérification du 3 octobre 2026 : interactions, mobilier, layout, marche,
+interface, touristes et galerie réussis. Les cinq captures ciblées (bungalow
+jour/coucher/nuit, poses assise et allongée) ont été inspectées. Les 27 vues du
+test visuel respectent le plafond : maximum 250 appels et 780 843 triangles,
+ombres comprises. La flèche réutilise le culling des détails au-delà de 100 m.
+Le test supplémentaire de nage échoue sur `pileBlocks` ; le même échec a été
+reproduit avec les modules originaux de `HEAD`, avant cette modification.
 
 ## 4. Étapes courtes et testables
 

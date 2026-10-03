@@ -121,7 +121,13 @@ Accès aussi depuis le sentier signalé à l'ouest de la plage de la jungle :
 ambiances jour/coucher/nuit se choisissent dans l'écran d'accueil et les
 boutons en bas à gauche. **WASD** marche/nage, souris ou flèches pour regarder,
 **E** pour le hamac ou le retour à la forêt, **R** pour revenir à l'accueil.
-Les pirogues et les transats sont décoratifs ; la nage reste en surface.
+Le bungalow sur l'eau **water-1**, standard sans piscine et desservi par le
+premier ponton ouest, est réservé au joueur : une flèche dorée animée au-dessus
+du toit le repère, même la nuit. Sur sa terrasse, le transat de droite propose
+**E** pour s'asseoir et **R** pour s'allonger (prioritaire sur le retour à
+l'accueil). **E**, **Espace**, **ZQSD/WASD** ou le bouton « Se relever » ramènent
+au point sûr de la terrasse ; **Échap** met en pause. Les autres transats et
+les pirogues restent décoratifs ; la nage reste en surface.
 
 Le bar LAGON dispose d'une façade ouverte, de poteaux ancrés sous le sable,
 d'une enseigne compacte au-dessus du passage, d'un comptoir en pierre claire

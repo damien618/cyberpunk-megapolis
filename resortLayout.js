@@ -55,6 +55,9 @@ export const BUNGALOWS = BOARDWALKS.flatMap((p,arm)=>[30,41,52,64,76,88].map((k,
   return {id:`water-${arm*6+j+1}`,kind:'water',premium,x:f.x+nx*13,z:f.z+nz*13,y:DECK_Y,
     yaw:Math.atan2(nx,nz),w:premium?8:6,d:8,terrace:premium?5:4,branch:{x:f.x,z:f.z}};
 }));
+// Fixed reservation: the first standard room reached from the western pier.
+export const PLAYER_BUNGALOW_ID = 'water-1';
+export const PLAYER_BUNGALOW = BUNGALOWS.find(b=>b.id===PLAYER_BUNGALOW_ID);
 export const GARDEN_BUNGALOWS = [-95,-62,-29,37,70,103].map((x,i)=>({id:`garden-${i+1}`,kind:'garden',premium:false,x,z:65,y:terrainHeight(x,65)+0.3,yaw:Math.PI,w:6,d:8,terrace:3}));
 export const CENTRAL_BUILDINGS = [
   {id:'reception',kind:'reception',x:12,z:35,y:2.1,yaw:0,w:14,d:10,terrace:3},

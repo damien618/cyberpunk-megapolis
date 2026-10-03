@@ -6,9 +6,16 @@ with resort_page(viewport={'width': 1280, 'height': 800}) as (page, errors):
     result = page.evaluate('''() => {
       const v=window.__resort,records=v.props.furniture;
       const meshes=v.props.group.children.filter(m=>m.name.startsWith('resort-furniture:'));
+      const arrow=v.props.arrow,b=v.layout.PLAYER_BUNGALOW;
+      v.batch.update(new v.THREE.Vector3(b.branch.x,b.y+2,b.branch.z));
+      const arrowOnPier=arrow.children.every(m=>m.visible);
+      v.batch.update(new v.THREE.Vector3(0,10,-145));
+      const arrowCulled=arrow.children.every(m=>!m.visible);
       return {rooms:records.length,styles:new Set(records.map(r=>r.accent)).size,
+        arrowOnPier,arrowCulled,
         beds:records.filter(r=>r.bed).length,benches:records.filter(r=>r.bench).length,
         loungers:records.reduce((sum,r)=>sum+r.loungers,0),
+        sharedLoungers:records.every(r=>r.loungerPoints.length===r.loungers&&r.loungerPoints.every(p=>p.buildingId===r.id&&Object.values(p.world).every(Number.isFinite))),
         finite:meshes.every(m=>Array.from(m.geometry.attributes.position.array).every(Number.isFinite)),
         textured:meshes.filter(m=>m.name.includes('cushion:')).every(m=>m.material.map&&m.material.bumpMap&&m.material.sheen>0)};
     }''')
@@ -16,6 +23,8 @@ with resort_page(viewport={'width': 1280, 'height': 800}) as (page, errors):
     check('18 beds, 18 benches and 36 loungers', result['beds']==18 and result['benches']==18 and result['loungers']==36)
     check('three coordinated island palettes with woven surface relief', result['styles']==3 and result['textured'])
     check('all soft geometry finite', result['finite'])
+    check('all rendered loungers expose their shared positions',result['sharedLoungers'])
+    check('arrow visible on pier, culled in distant landscape',result['arrowOnPier'] and result['arrowCulled'])
     (ROOT / 'scratch').mkdir(exist_ok=True)
     results=[]
     for index in [0, 1, 2, 5, 12]:
@@ -29,6 +38,7 @@ with resort_page(viewport={'width': 1280, 'height': 800}) as (page, errors):
               v.ctrl.pos.set(b.x,b.y,b.z);v.camera.position.set(p.x,b.y+eye[1],p.z);
               v.camera.lookAt(a.x,b.y+aim[1],a.z);
               v.atmosphere.update(0,v.ctrl.pos);v.architecture.update(v.camera.position);v.batch.update(v.camera.position);
+              v.vegetation.update(v.camera.position,0);v.guests.update(0,0,v.camera.position);
               v.renderer.render(v.scene,v.camera);
               return {id:b.id,view,calls:v.renderer.info.render.calls,triangles:v.renderer.info.render.triangles};
             }''',[index,view])

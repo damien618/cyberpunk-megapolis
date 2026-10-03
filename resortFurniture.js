@@ -1,5 +1,20 @@
 import * as THREE from 'three';
-import { localPoint } from './resortLayout.js';
+import { localPoint, PLAYER_BUNGALOW } from './resortLayout.js';
+
+// Pure furniture contract, shared by rendering, poses and interaction zones.
+export function bungalowLoungers(b) {
+  return (b.premium?[-2.6,-.9]:[-1.45,1.45]).map((x,index)=>{
+    const z=b.d/2+b.terrace-1.2, seatHeight=.51;
+    const point=(lx,lz,y=b.y)=>({...localPoint(b,lx,lz),y});
+    const exit=point(x+.8,z-.9,b.y+.015);
+    return {id:`${b.id}:lounger-${index+1}`,buildingId:b.id,local:{x,z},yaw:b.yaw,
+      seatHeight,world:point(x,z,b.y+seatHeight),approach:exit,exit,
+      sit:point(x,z+.55,b.y+seatHeight),lie:point(x,z+.78,b.y+seatHeight),
+      lieTilt:.18,seatPose:{back:0,hipRise:.16,shinLean:0},floorY:b.y,
+      camera:{lookHeight:.7,distance:2.8,minY:b.y+.85}};
+  });
+}
+export const PLAYER_LOUNGER = bungalowLoungers(PLAYER_BUNGALOW)[1];
 
 function cushionGeometry() {
   const g=new THREE.BoxGeometry(1,1,1,8,4,8),p=g.attributes.position,n=g.attributes.normal;
@@ -75,15 +90,15 @@ export function createResortFurniture({group,batch,materials}) {
     soft(b,'cushion','sandCloth',tx+.75,.89,tz+.01,.47,.43,.20,.22,.18);
     // A casually draped throw covers one end, rather than the seating centre.
     soft(b,'blanket',accent,tx+.52,.785,tz+.03,.73,.65,1.02);
-    for(const x of b.premium?[-2.6,-.9]:[-1.45,1.45]){
-      const z=b.d/2+b.terrace-1.2;
+    for(const lounger of bungalowLoungers(b)){
+      const {x,z}=lounger.local;
       timber(b,x,.28,z,.7,.12,1.75,true);
-      soft(b,'cushion','cotton',x,.42,z,.66,.18,1.65);
-      soft(b,'piping','stitch',x,.43,z,.65,1,1.63);
+      soft(b,'cushion','cotton',x,lounger.seatHeight-.09,z,.66,.18,1.65);
+      soft(b,'piping','stitch',x,lounger.seatHeight-.08,z,.65,1,1.63);
       soft(b,'cushion','cotton',x,.69,z-.64,.66,.19,.67,.55);
       soft(b,'cushion',accent,x,.84,z-.76,.48,.16,.25,.55);
     }
-    records.push({id:b.id,accent,bed:true,bench:true,loungers:2});
+    records.push({id:b.id,accent,bed:true,bench:true,loungers:2,loungerPoints:bungalowLoungers(b)});
   }
   function chair(b,x,z){
     soft(b,'cushion','sandCloth',x,.48,z,.6,.19,.6);

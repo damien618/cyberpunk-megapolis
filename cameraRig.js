@@ -67,7 +67,7 @@ export class CameraRig {
     }
 
     _look.copy(ctrl.pos);
-    _look.y += ctrl.mode === 'lie' ? 0.35
+    _look.y += ctrl.mode === 'lie' ? (ctrl.furnitureCamera?.lookHeight ?? 0.35)
       : ctrl.mode === 'sit' ? (ctrl.furnitureCamera?.lookHeight ?? 1.05)
       : ctrl.mode === 'kneel' ? 1.05
       : ctrl.mode === 'ride' ? 1.18
@@ -87,7 +87,7 @@ export class CameraRig {
     if (ctrl.mode === 'sit') targetDist = ctrl.furnitureCamera?.distance ?? 1.72;
     else if (ctrl.mode === 'ride') targetDist = 5.2;
     else if (ctrl.mode === 'kneel') targetDist = 2.4;
-    else if (ctrl.mode === 'lie') targetDist = 2.35;
+    else if (ctrl.mode === 'lie') targetDist = ctrl.furnitureCamera?.distance ?? 2.35;
     this.dist += (targetDist - this.dist) * (1 - Math.exp(-4 * dt));
 
     // occlusion: snap in, ease back out. The Ferris ride looks at the bay
@@ -96,6 +96,7 @@ export class CameraRig {
     const collisionT = direction => {
       if (ctrl.mode === 'ride') return 1;
       _desired.copy(this.smoothLook).addScaledVector(direction, -this.dist);
+      if (Number.isFinite(ctrl.furnitureCamera?.minY)) _desired.y = Math.max(_desired.y, ctrl.furnitureCamera.minY);
       let result = 1;
       const ids = this.bw.queryNearby(this.smoothLook.x, this.smoothLook.z, this.dist + 12);
       for (const idx of ids) {
@@ -186,6 +187,7 @@ export class CameraRig {
     const boom = Math.max(0.05, this.dist * this.collT * 0.97);
     _desired.copy(this.smoothLook).addScaledVector(_camDir, -boom);
     if (_desired.y < 0.6) _desired.y = 0.6;
+    if (Number.isFinite(ctrl.furnitureCamera?.minY)) _desired.y = Math.max(_desired.y, ctrl.furnitureCamera.minY);
     if (ctrl.mode === 'swim' && Number.isFinite(ctrl.waterY)) _desired.y = Math.max(_desired.y, ctrl.waterY + .35);
     cam.position.copy(_desired);
 
