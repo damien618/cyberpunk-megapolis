@@ -438,6 +438,12 @@ const parquetTex = tex('./textures/nature/wood_diff.jpg');
 const parquetNormal = ntex('./textures/nature/wood_n.jpg');
 const parquetRoughness = ntex('./textures/nature/wood_r.jpg');
 
+// Ocean liner steel hull plating: horizontal strakes following sheer, staggered vertical
+// butt joints, raised weld beads, rivets, plate deflection ("oil-canning"), and satin marine paint.
+const hullPlateTex = tex('./textures/cruise/hull_plate_diffuse.webp');
+const hullPlateNormal = ntex('./textures/cruise/hull_plate_normal.webp');
+const hullPlateRoughness = tex('./textures/cruise/hull_plate_roughness.webp');
+
 // Fine woven relief shared by carpets and upholstery, independent of motifs.
 const weaveTex = canvasTex(256, 256, (g, W, H) => {
   const pixels = g.createImageData(W, H);
@@ -1897,13 +1903,32 @@ const steelRoughnessTex = canvasTex(512, 512, (g, W, H) => {
 
 const M = {
   // --- Hull and structure --------------------------------------------------
-  // Topsides. A liner's navy is nearly black in a photograph and ACTUALLY
-  // black in a render: at 0x12314f with a little metalness the whole hull went
-  // to a silhouette and the ship read as a barge. Lifted and de-metalled until
-  // it holds its colour under a high sun.
-  hullNavy: new THREE.MeshStandardMaterial({ color: 0x24557f, roughness: 0.5, metalness: 0.06 }),
-  hullBoot: new THREE.MeshStandardMaterial({ color: 0xa8362f, roughness: 0.6 }),  // boot-topping
-  hullBelow: new THREE.MeshStandardMaterial({ color: 0x8a2b2b, roughness: 0.72 }),
+  // Topsides. Authentic ocean liner steel hull with plate strakes, weld relief,
+  // rivets, pillowing ("oil-canning"), and satin marine paint response.
+  hullNavy: new THREE.MeshStandardMaterial({
+    map: hullPlateTex,
+    normalMap: hullPlateNormal,
+    normalScale: new THREE.Vector2(0.9, 0.9),
+    roughnessMap: hullPlateRoughness,
+    roughness: 0.85,
+    metalness: 0.10,
+    envMapIntensity: 1.25,
+  }),
+  funnelNavy: new THREE.MeshStandardMaterial({ color: 0x24557f, roughness: 0.5, metalness: 0.06 }),
+  hullBoot: new THREE.MeshStandardMaterial({
+    color: 0xa8362f,
+    normalMap: hullPlateNormal,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    roughness: 0.65,
+    metalness: 0.06,
+  }),
+  hullBelow: new THREE.MeshStandardMaterial({
+    color: 0x8a2b2b,
+    normalMap: hullPlateNormal,
+    normalScale: new THREE.Vector2(0.85, 0.85),
+    roughness: 0.72,
+    metalness: 0.04,
+  }),
   white: new THREE.MeshStandardMaterial({
     normalMap: concreteN, normalScale: new THREE.Vector2(0.25, 0.25),
     color: 0xf2ece0, roughness: 0.72, metalness: 0.04,
@@ -2804,6 +2829,52 @@ M.teak.onBeforeCompile = shader => {
 };
 M.teak.customProgramCacheKey = () => 'teak-world-metres-v1';
 
+// Project hull UVs in world metres so steel plate courses, sheer curve,
+// weld seams and rivets align seamlessly across all stations, flare, and bulwark panels.
+function setupHullShader(material, cacheKey) {
+  material.onBeforeCompile = shader => {
+    shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', `
+      #include <uv_vertex>
+      vec4 hullPosition = vec4(position, 1.0);
+      #ifdef USE_INSTANCING
+        hullPosition = instanceMatrix * hullPosition;
+      #endif
+      hullPosition = modelMatrix * hullPosition;
+
+      vec3 hullFace = abs(normal);
+      float sheer = max(0.0, hullPosition.z / 95.0);
+      sheer = sheer * sheer * 1.6;
+      float effY = hullPosition.y - sheer;
+
+      vec2 projUv;
+      if (hullFace.y > hullFace.x && hullFace.y > hullFace.z) {
+        // Horizontal capping / deck edge:
+        projUv = vec2(hullPosition.z / 4.8, hullPosition.x / 5.4);
+      } else if (hullFace.z >= hullFace.x) {
+        // Stem and transom (fore & aft vertical faces):
+        projUv = vec2(hullPosition.x / 4.8, effY / 5.4);
+      } else {
+        // Hull sides & bulwark (port & starboard vertical faces):
+        projUv = vec2(hullPosition.z / 4.8, effY / 5.4);
+      }
+
+      #ifdef USE_MAP
+        vMapUv = projUv;
+      #endif
+      #ifdef USE_NORMALMAP
+        vNormalMapUv = projUv;
+      #endif
+      #ifdef USE_ROUGHNESSMAP
+        vRoughnessMapUv = projUv;
+      #endif
+    `);
+  };
+  material.customProgramCacheKey = () => cacheKey;
+}
+setupHullShader(M.hullNavy, 'cruise-hull-navy-realistic-v1');
+setupHullShader(M.hullBoot, 'cruise-hull-boot-realistic-v1');
+setupHullShader(M.hullBelow, 'cruise-hull-below-realistic-v1');
+
 // Exterior stair joinery uses the same teak as the deck, but laid as it would
 // be by a shipwright. Treads remain fore-and-aft; the riser boards run across
 // the full stair width, while the closed stringer faces follow the flight.
@@ -3291,8 +3362,8 @@ function bulwarkPanel(a, b) {
   const cx = (a.hb + b.hb) / 2 - (dz / L) * (T / 2);   // inboard normal: (-dz, dx) / L
   const cz = (a.z + b.z) / 2 + (dx / L) * (T / 2);
   const y0 = DECK_Y - 0.22, y1 = DECK_Y + sheerAt((a.z + b.z) / 2) + 1.15;
-  box(M.white, cx, (y0 + y1) / 2, cz, T, y1 - y0, L + 0.08, ry);
-  box(M.white, -cx, (y0 + y1) / 2, cz, T, y1 - y0, L + 0.08, -ry);
+  box(M.hullNavy, cx, (y0 + y1) / 2, cz, T, y1 - y0, L + 0.08, ry);
+  box(M.hullNavy, -cx, (y0 + y1) / 2, cz, T, y1 - y0, L + 0.08, -ry);
 }
 
 for (let i = 0; i < EDGE.length - 1; i++) {
@@ -3338,7 +3409,7 @@ for (let i = 0; i < EDGE.length - 1; i++) {
 // opening at the very bow you could walk straight out of.
 {
   const hb = halfBeam(SHIP_L2);
-  slab(M.white, -hb, hb, SHIP_L2 - 0.55, SHIP_L2,
+  slab(M.hullNavy, -hb, hb, SHIP_L2 - 0.55, SHIP_L2,
     DECK_Y - 0.22, DECK_Y + sheerAt(SHIP_L2) + 1.15);
   slab(M.hullNavy, -hb, hb, SHIP_L2, SHIP_L2 + 0.8, 1.1, DECK_Y - 0.22);
 }
@@ -3347,7 +3418,7 @@ for (let i = 0; i < EDGE.length - 1; i++) {
 // when you walk to the rail and look over.
 slab(M.hullNavy, -halfBeam(-SHIP_L2), halfBeam(-SHIP_L2), -SHIP_L2 - 1.2, -SHIP_L2,
   0.2, DECK_Y);
-slab(M.white, -halfBeam(-SHIP_L2), halfBeam(-SHIP_L2), -SHIP_L2 - 1.2, -SHIP_L2,
+slab(M.hullNavy, -halfBeam(-SHIP_L2), halfBeam(-SHIP_L2), -SHIP_L2 - 1.2, -SHIP_L2,
   DECK_Y, DECK_Y + 1.15);
 
 // Bow flare — the topsides swelling outboard as they rise, which is what makes
@@ -4408,7 +4479,7 @@ console.log('[cruise] casino room done');
     box(M.midWood, 8.1, DECK_Y + 1.31, 0.60, 0.85, 0.24, 0.32);
     for (let i = 0; i < 3; i++) {
       box(M.linen, 7.83 + i * 0.27, DECK_Y + 1.43, 0.55, 0.21, 0.26, 0.035);
-      box(M.hullNavy, 7.83 + i * 0.27, DECK_Y + 1.45, 0.527, 0.16, 0.075, 0.008);
+      box(M.funnelNavy, 7.83 + i * 0.27, DECK_Y + 1.45, 0.527, 0.16, 0.075, 0.008);
       box(M.brass, 7.72 + i * 0.27, DECK_Y + 1.32, 0.42, 0.014, 0.23, 0.025);
     }
     box(M.lamp, 6.5, DECK_Y + 1.2, 0.55, 0.24, 0.1, 0.24);
@@ -6628,7 +6699,7 @@ function syncPoolDeckVisitorLighting(night) {
   // top. It rakes aft, which is most of what makes a funnel look fast.
   {
     const fz = -30;
-    shape(G.funnel, M.hullNavy, 0, POOL_Y + 5.5, fz, 11.0, 11.0, 7.0, { rx: -0.10 });
+    shape(G.funnel, M.funnelNavy, 0, POOL_Y + 5.5, fz, 11.0, 11.0, 7.0, { rx: -0.10 });
     shape(G.funnel, M.velvetGold, 0, POOL_Y + 9.6, fz + 0.45, 11.3, 1.7, 7.2, { rx: -0.10 });
     shape(G.funnel, M.black, 0, POOL_Y + 11.0, fz + 0.6, 11.0, 1.2, 7.0, { rx: -0.10 });
     shape(G.cyl, M.black, 0, POOL_Y + 11.5, fz + 0.65, 9.6, 0.3, 6.0, { rx: -0.10 });
