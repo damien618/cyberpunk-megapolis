@@ -244,6 +244,60 @@ function canopySprayTexture(a) {
   }, a);
 }
 
+// Small paired leaves on a twig, with warm young tips, shaded edges and fine
+// veins. Neutral tones let the instance tint supply the forest greens.
+function bushSprayTexture(a) {
+  let sd = 30741;
+  const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+  return canvas(512, 512, (g, S) => {
+    const path = (w, h) => {
+      g.beginPath(); g.moveTo(0, 0);
+      g.bezierCurveTo(w * 0.66, h * 0.16, w * 0.36, h * 0.74, 0, h);
+      g.bezierCurveTo(-w * 0.36, h * 0.74, -w * 0.66, h * 0.16, 0, 0);
+      g.closePath();
+    };
+    const stem = t => [S * (0.5 + Math.sin(t * 2.2) * 0.035), S * (0.94 - t * 0.59)];
+    g.strokeStyle = '#736b51'; g.lineWidth = 4; g.lineCap = 'round';
+    g.beginPath();
+    for (let t = 0; t <= 1.001; t += 0.1) {
+      const [x, y] = stem(t); if (t === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.stroke();
+    for (let i = 0; i < 5; i++) {
+      const t = 0.1 + i * 0.225, [x, y] = stem(t);
+      for (const side of i === 4 ? [0] : [-1, 1]) {
+        const h = S * (0.29 + r() * 0.045) * (1 - t * 0.18), w = h * (0.48 + r() * 0.08);
+        const angle = Math.PI + side * (0.78 + r() * 0.32) + (r() - 0.5) * 0.18;
+        const tone = 166 + t * 54 + r() * 18, warm = (r() - 0.35) * 0.11;
+        const colour = k => rgb(k * (1 + warm), k, k * (1 - warm));
+        g.save(); g.translate(x + 2, y + 4); g.rotate(angle);
+        g.fillStyle = 'rgba(8,14,6,0.4)'; path(w, h); g.fill(); g.restore();
+        g.save(); g.translate(x, y); g.rotate(angle);
+        const gradient = g.createLinearGradient(-w / 2, 0, w / 2, 0);
+        gradient.addColorStop(0, colour(tone - 44));
+        gradient.addColorStop(0.46, colour(tone));
+        gradient.addColorStop(1, colour(tone - 24));
+        g.fillStyle = gradient; path(w, h); g.fill();
+        g.save(); g.clip();
+        g.strokeStyle = 'rgba(238,242,202,0.3)'; g.lineWidth = 1.2;
+        g.beginPath(); g.moveTo(0, h * 0.02); g.lineTo(0, h * 0.94); g.stroke();
+        for (let j = 0; j < 6; j++) for (const dir of [-1, 1]) {
+          const y0 = h * (0.14 + j * 0.12);
+          g.beginPath(); g.moveTo(0, y0);
+          g.quadraticCurveTo(dir * w * 0.13, y0 + h * 0.06, dir * w * 0.32, y0 + h * 0.12);
+          g.stroke();
+        }
+        g.restore(); g.restore();
+      }
+    }
+    g.globalCompositeOperation = 'source-atop';
+    const shade = g.createLinearGradient(0, S, 0, S * 0.25);
+    shade.addColorStop(0, 'rgba(8,14,4,0.55)'); shade.addColorStop(1, 'rgba(8,14,4,0)');
+    g.fillStyle = shade; g.fillRect(0, 0, S, S);
+    g.globalCompositeOperation = 'source-over';
+  }, a);
+}
+
 // ---------------------------------------------------------------------------
 // Materials. The foliage bends in the vertex shader; cut-out cards also shade
 // their underside darker (a leaf seen from below is not the leaf seen from
@@ -579,6 +633,47 @@ function bushGeo() {
   return mergeGeometries([a, b]);
 }
 
+// Leaf sprays follow the same two lobes as the solid shadow-casting core.
+// Own seed preserves every plant's placement. One merged geometry per bush,
+// volume normals and baked occlusion keep the sprays lit as a leafy mound.
+function bushLeavesGeo() {
+  let sd = 6127;
+  const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+  const cards = [], axis = new THREE.Vector3(0, 0, 1);
+  const q = new THREE.Quaternion(), spin = new THREE.Quaternion();
+  const dir = new THREE.Vector3(), pos = new THREE.Vector3(), n = new THREE.Vector3(), v = new THREE.Vector3();
+  for (const [sx, sy, sz, x, y, z, count] of [[1, 0.62, 1, 0, 0.3, 0, 96], [0.66, 0.5, 0.66, 0.3, 0.55, -0.18, 48]]) {
+    const centre = new THREE.Vector3(x, y, z);
+    for (let i = 0; i < count; i++) {
+      // Cover the visible hemisphere and sides; omit the buried underside.
+      const dy = 1 - 1.3 * (i + 0.5) / count, rad = Math.sqrt(1 - dy * dy), az = i * 2.39996 + r() * 0.35;
+      dir.set(Math.cos(az) * rad, dy, Math.sin(az) * rad);
+      lobeSurface(pos.copy(dir)).multiply(v.set(sx, sy, sz)).add(v.set(x, y, z));
+      n.set(dir.x / sx, dir.y / (0.55 * sy), dir.z / sz).normalize();
+      n.add(v.set(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(0.7)).normalize();
+      // Tilt top sprays so leaves remain visible from walking eye height.
+      if (n.y > 0.76) { n.y = 0.76; n.x += Math.cos(az) * 0.5; n.z += Math.sin(az) * 0.5; n.normalize(); }
+      const size = 0.4 + r() * 0.12, card = new THREE.PlaneGeometry(size, size);
+      const P = card.getAttribute('position');
+      // A slight twist breaks the flat-card reflection without extra triangles.
+      for (let k = 0; k < P.count; k++) P.setZ(k, P.getX(k) * P.getY(k) * 0.7 / size);
+      q.setFromUnitVectors(axis, n).multiply(spin.setFromAxisAngle(axis, r() * Math.PI * 2));
+      card.applyQuaternion(q).translate(pos.x, pos.y, pos.z);
+      const N = card.getAttribute('normal'), col = [], tone = 0.86 + r() * 0.14;
+      for (let k = 0; k < P.count; k++) {
+        v.fromBufferAttribute(P, k).sub(centre);
+        v.set(v.x / sx, v.y / (0.55 * sy), v.z / sz).normalize().multiplyScalar(0.75).addScaledVector(n, 0.25).normalize();
+        N.setXYZ(k, v.x, v.y, v.z);
+        const shade = tone * (0.52 + 0.48 * THREE.MathUtils.smoothstep(P.getY(k), 0.05, 0.7));
+        col.push(shade, shade, shade);
+      }
+      card.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      cards.push(card);
+    }
+  }
+  return mergeGeometries(cards);
+}
+
 // A tuft of grass: plain green blades (no texture, no alpha) fanning from the
 // base. Cheap enough to scatter by the thousand.
 function grassTuftGeo() {
@@ -719,7 +814,7 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
   const tex = {
     frond: frondTexture(maxAniso), fern: fernTexture(maxAniso), fernUp: fernUprightTexture(maxAniso),
     broad: broadLeafTexture(maxAniso), monstera: monsteraTexture(maxAniso), vine: vineTexture(maxAniso),
-    canopy: canopySprayTexture(maxAniso),
+    canopy: canopySprayTexture(maxAniso), bush: bushSprayTexture(maxAniso),
   };
   const mat = {
     frond: makeLeafMaterial(tex.frond, 0.022),
@@ -732,7 +827,8 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     bark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, map: barkTexture(maxAniso) }),
     crown: makeSolidMaterial({}, 0.012),
     canopy: makeCanopyLeafMaterial(tex.canopy, 0.012),
-    bush: makeSolidMaterial({ rough: 0.92 }, 0.02),
+    bush: applyWind(new THREE.MeshStandardMaterial({ color: 0x536345, roughness: 1 }), 0.02),
+    bushLeaves: makeCanopyLeafMaterial(tex.bush, 0.02),
     grass: applyWind(new THREE.MeshStandardMaterial({
       color: 0xffffff, side: THREE.DoubleSide, roughness: 0.85,
     }), 0.06),
@@ -748,7 +844,7 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     broad: broadPlantGeo(), monstera: monsteraGeo(),
     trunk: trunkGeo(), lobeFar: crownLobeGeo(1),
     trunkFar: new THREE.CylinderGeometry(0.3, 0.5, 1, 7, 1, true).translate(0, 0.5, 0),
-    crownLeaves: crownLeavesGeo(), bush: bushGeo(), grass: grassTuftGeo(),
+    crownLeaves: crownLeavesGeo(), bush: bushGeo().scale(0.8, 0.8, 0.8), bushLeaves: bushLeavesGeo(), grass: grassTuftGeo(),
     flower: flowerGeo(),
     vine: new THREE.PlaneGeometry(0.5, 1, 1, 4).translate(0, -0.5, 0),
   };
@@ -939,8 +1035,8 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
   const broads = [], monsteras = [];
   for (const it of broadsAll) (rnd() < 0.45 ? monsteras : broads).push(it);
 
-  // --- Bushes: solid squashed lobes edging the forest and spotting the
-  // clearings — the mid layer the eye had nowhere to rest on.
+  // --- Bushes: shaded cores under cut-out leaf sprays edging the forest
+  // and spotting the clearings.
   const bushes = jittered(rnd, -PLAY_HALF_W - 8, PLAY_HALF_W + 8, SAND_END - 2, 152, 5.5, (x, z, r) => {
     if (!R.keepOffBuilt(x, z) || terrainSlope(x, z) > 0.7) return false;
     if (pathDistance(x, z) <= PATH_HALF_W + 1.2) return false;
@@ -1022,6 +1118,8 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     { far: UNDERGROWTH_FAR, tint: { h: 0, s: 0, l: 1 } }));
   meshes.push(...tiled(group, 'bush', geo.bush, mat.bush, bushes,
     { cast: true, tint: { h: 0.29, s: 0.4, l: 0.2 } }));
+  meshes.push(...tiled(group, 'bushLeaves', geo.bushLeaves, mat.bushLeaves, bushes,
+    { far: UNDERGROWTH_FAR, tint: { h: 0.28, s: 0.42, l: 0.34 } }));
   meshes.push(...tiled(group, 'grass', geo.grass, mat.grass, grass,
     { far: UNDERGROWTH_FAR, tint: { h: 0.26, s: 0.45, l: 0.3 } }));
   meshes.push(...tiled(group, 'flower', geo.flower, mat.flower, flowers,
