@@ -1805,6 +1805,96 @@ function bottleLabel(top, name, sub, paper, ink, accent) {
   }, { roughness: 0.76, side: THREE.FrontSide });
 }
 
+// Brushed marine stainless steel for ship railings and deck fittings.
+// Instead of a flat plain grey color, authentic nautical steel shows subtle
+// longitudinal brush lines along the tube, anisotropic specular sheen,
+// and smooth cylindrical light reflection catching the sun and sky.
+const steelTex = canvasTex(512, 512, (g, W, H) => {
+  g.fillStyle = '#b6bec6';
+  g.fillRect(0, 0, W, H);
+
+  let s = 51092;
+  const rand = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+
+  // Soft satin gradient bands across circumference
+  for (let x = 0; x < W; x += 32) {
+    const band = g.createLinearGradient(x, 0, x + 32, 0);
+    const delta = (rand() - 0.5) * 0.07;
+    band.addColorStop(0, 'rgba(255,255,255,0)');
+    band.addColorStop(0.5, delta > 0 ? `rgba(255,255,255,${delta})` : `rgba(0,0,0,${-delta})`);
+    band.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = band;
+    g.fillRect(x, 0, 32, H);
+  }
+
+  // Hairline longitudinal brushed streaks along V (axis of the tube)
+  for (let i = 0; i < 900; i++) {
+    const x = Math.floor(rand() * W);
+    const bright = rand() > 0.45;
+    const alpha = 0.02 + rand() * 0.05;
+    g.fillStyle = bright ? `rgba(255,255,255,${alpha})` : `rgba(32,40,50,${alpha * 0.75})`;
+    g.fillRect(x, 0, 1 + (rand() > 0.82 ? 1 : 0), H);
+  }
+}, 1, 4);
+
+const steelNormalTex = (() => {
+  const W = 512, H = 512;
+  const c = Object.assign(document.createElement('canvas'), { width: W, height: H });
+  const g = c.getContext('2d');
+  const imgData = g.createImageData(W, H);
+  const data = imgData.data;
+
+  // Longitudinal brushed grain along V: micro-grooves across circumference U
+  let s = 92831;
+  const rand = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const nxTable = new Float32Array(W);
+  for (let x = 0; x < W; x++) {
+    const chatter = (rand() - 0.5) * 0.22;
+    const wave = Math.sin(x * 0.08) * 0.05;
+    nxTable[x] = chatter + wave;
+  }
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const idx = (y * W + x) * 4;
+      const nx = nxTable[x];
+      const ny = Math.sin(y * 0.05 + x * 0.02) * 0.03;
+      const nz = Math.sqrt(Math.max(0.1, 1 - nx * nx - ny * ny));
+
+      data[idx]     = Math.round((nx * 0.5 + 0.5) * 255);
+      data[idx + 1] = Math.round((ny * 0.5 + 0.5) * 255);
+      data[idx + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+      data[idx + 3] = 255;
+    }
+  }
+  g.putImageData(imgData, 0, 0);
+
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(1, 4);
+  t.colorSpace = THREE.NoColorSpace;
+  t.anisotropy = maxAniso;
+  return t;
+})();
+
+const steelRoughnessTex = canvasTex(512, 512, (g, W, H) => {
+  // Base roughness ~ 0.22 (56 in 0-255) for lustrous satin specular sheen
+  g.fillStyle = '#383838';
+  g.fillRect(0, 0, W, H);
+
+  let s = 77134;
+  const rand = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+
+  // Subtle anisotropic streaks varying between high polish and satin
+  for (let i = 0; i < 550; i++) {
+    const x = Math.floor(rand() * W);
+    const bright = rand() > 0.5;
+    const alpha = 0.03 + rand() * 0.07;
+    g.fillStyle = bright ? `rgba(80,80,80,${alpha})` : `rgba(15,15,15,${alpha})`;
+    g.fillRect(x, 0, 1 + (rand() > 0.85 ? 1 : 0), H);
+  }
+}, 1, 4);
+
 const M = {
   // --- Hull and structure --------------------------------------------------
   // Topsides. A liner's navy is nearly black in a photograph and ACTUALLY
@@ -1829,7 +1919,16 @@ const M = {
   benchWood: new THREE.MeshStandardMaterial({ map: woodA, normalMap: woodN,
     normalScale: new THREE.Vector2(0.18, 0.18), color: 0xcba77a, roughness: 0.54 }),
   benchMetal: new THREE.MeshStandardMaterial({ color: 0x465760, roughness: 0.42, metalness: 0.55 }),
-  steel: new THREE.MeshStandardMaterial({ color: 0xcdd3d8, roughness: 0.42, metalness: 0.35 }),
+  steel: new THREE.MeshStandardMaterial({
+    map: steelTex,
+    normalMap: steelNormalTex,
+    normalScale: new THREE.Vector2(0.35, 0.35),
+    roughnessMap: steelRoughnessTex,
+    color: 0xc4cbd2,
+    roughness: 0.22,
+    metalness: 0.94,
+    envMapIntensity: 1.4,
+  }),
   brass: new THREE.MeshStandardMaterial({ color: 0xd8ae5c, roughness: 0.32, metalness: 0.62 }),
   artDecoEbony: new THREE.MeshStandardMaterial({
     map: woodA, normalMap: woodN, color: 0x17100e, roughness: 0.30, metalness: 0.08,
@@ -2344,6 +2443,7 @@ const G = {
   cylBase: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 16).translate(0, 0.5, 0)),
   cyl32: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 32)),
   cyl64: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 64)),
+  pipeZ: withUV2(new THREE.CylinderGeometry(0.5, 0.5, 1, 16).rotateX(Math.PI / 2)),
   sphere: withUV2(new THREE.SphereGeometry(0.5, 16, 12)),
   card: withUV2(new THREE.PlaneGeometry(1, 1)),
   cone: withUV2(new THREE.ConeGeometry(0.5, 1, 16).translate(0, 0.5, 0)),
@@ -3324,10 +3424,13 @@ shipName(0, DECK_Y - 2.4, -SHIP_L2 - 1.3, 13, 1.4, Math.PI, 'PACIFIC EMPRESS');
 function railRun(x0, x1, z0, z1, y, h = 1.05) {
   const alongX = Math.abs(x1 - x0) >= Math.abs(z1 - z0);
   const t = 0.07;
+  const ry = alongX ? Math.PI / 2 : 0;
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const span = alongX ? Math.abs(x1 - x0) : Math.abs(z1 - z0);
+  const len = span + 2 * t;
   prop(() => {
-    longSlab(M.steel, x0 - t, x1 + t, z0 - t, z1 + t, y + h - 0.06, y + h + 0.06);
-    longSlab(M.steel, x0 - t, x1 + t, z0 - t, z1 + t, y + h * 0.55 - 0.04, y + h * 0.55 + 0.04);
-    const span = alongX ? Math.abs(x1 - x0) : Math.abs(z1 - z0);
+    shape(G.pipeZ, M.steel, cx, y + h - 0.06, cz, 0.11, 0.11, len, { ry });
+    shape(G.pipeZ, M.steel, cx, y + h * 0.55, cz, 0.07, 0.07, len, { ry });
     const n = Math.max(2, Math.round(span / 2.1));
     for (let i = 0; i <= n; i++) {
       const u = i / n;
@@ -3350,8 +3453,8 @@ function railSpan(ax, az, bx, bz, y, h, acc) {
   const ry = Math.atan2(dx, dz);
   const t = 0.07;
   prop(() => {
-    box(M.steel, (ax + bx) / 2, y + h - 0.06, (az + bz) / 2, 2 * t, 0.12, L + 2 * t, ry);
-    box(M.steel, (ax + bx) / 2, y + h * 0.55, (az + bz) / 2, 2 * t, 0.08, L + 2 * t, ry);
+    shape(G.pipeZ, M.steel, (ax + bx) / 2, y + h - 0.06, (az + bz) / 2, 0.11, 0.11, L + 2 * t, { ry });
+    shape(G.pipeZ, M.steel, (ax + bx) / 2, y + h * 0.55, (az + bz) / 2, 0.07, 0.07, L + 2 * t, { ry });
     for (let d = Math.ceil(acc / RAIL_POST - 1e-6) * RAIL_POST; d <= acc + L + 1e-6; d += RAIL_POST) {
       const u = (d - acc) / L;
       shape(G.cylBase, M.steel, ax + dx * u, y, az + dz * u, 0.09, h, 0.09);
