@@ -37,7 +37,7 @@ import * as jungleLayout from './jungleLayout.js';
 
 const TILE = 52;
 const UNDERGROWTH_FAR = 72;
-const LOD_CROWN = { dist: 4 };   // tile sphere within this → detail-2 crowns (tiles are 52 m)
+const CANOPY_LEAVES_FAR = 130;  // beyond, the fog leaves the bare lobe's outline
 
 // ---------------------------------------------------------------------------
 // Leaf textures.
@@ -201,6 +201,49 @@ function vineTexture(a) {
   }, a);
 }
 
+// Canopy spray: a dozen pointed leaves fanning from a twig at the foot of
+// the card, in near-greys (the instance tint brings the green), the inner,
+// lower leaves darker where the spray closes over them. No shadowBlur — see
+// the resort shrubs.
+function canopySprayTexture(a) {
+  let sd = 917;
+  const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+  return canvas(256, 256, (g, S) => {
+    const leafPath = (w, h) => {
+      g.beginPath(); g.moveTo(0, 0);
+      g.bezierCurveTo(w * 0.62, h * 0.18, w * 0.34, h * 0.76, 0, h);
+      g.bezierCurveTo(-w * 0.34, h * 0.76, -w * 0.62, h * 0.18, 0, 0);
+    };
+    const leaves = [];
+    for (let i = 0; i < 13; i++) {
+      const t = i / 12;
+      leaves.push({ a: (t - 0.5) * 2.5 + (r() - 0.5) * 0.25, h: S * (0.34 + r() * 0.14) * (1 - Math.abs(t - 0.5) * 0.5),
+        o: S * (0.04 + r() * 0.1), tone: 150 + r() * 70, warm: (r() - 0.4) * 2 });
+    }
+    // Outer leaves first, the upright middle ones over them.
+    leaves.sort((p, q) => Math.abs(q.a) - Math.abs(p.a));
+    for (const L of leaves) {
+      const w = L.h * 0.42, ox = S / 2 + Math.sin(L.a) * L.o, oy = S * 0.96 - Math.cos(L.a) * L.o;
+      g.save(); g.translate(ox, oy); g.rotate(Math.PI + L.a);
+      g.save(); g.translate(2, -4); g.fillStyle = 'rgba(0,0,0,0.35)'; leafPath(w, L.h); g.fill(); g.restore();
+      const tone = L.tone, rgbT = k => `rgb(${Math.round(k * (1 + L.warm * 0.1))},${Math.round(k)},${Math.round(k * (1 - L.warm * 0.12))})`;
+      const grd = g.createLinearGradient(-w / 2, 0, w / 2, 0);
+      grd.addColorStop(0, rgbT(tone - 40)); grd.addColorStop(0.5, rgbT(tone)); grd.addColorStop(1, rgbT(tone - 22));
+      g.fillStyle = grd; leafPath(w, L.h); g.fill();
+      g.strokeStyle = 'rgba(235,240,205,0.28)'; g.lineWidth = 1.2;
+      g.beginPath(); g.moveTo(0, L.h * 0.03); g.lineTo(0, L.h * 0.92); g.stroke();
+      g.restore();
+    }
+    g.strokeStyle = 'rgb(96,84,62)'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(S / 2, S); g.lineTo(S / 2, S * 0.9); g.stroke();
+    g.globalCompositeOperation = 'source-atop';
+    const shade = g.createRadialGradient(S / 2, S, 0, S / 2, S, S * 0.6);
+    shade.addColorStop(0, 'rgba(8,14,4,0.55)'); shade.addColorStop(1, 'rgba(8,14,4,0)');
+    g.fillStyle = shade; g.fillRect(0, 0, S, S);
+    g.globalCompositeOperation = 'source-over';
+  }, a);
+}
+
 // ---------------------------------------------------------------------------
 // Materials. The foliage bends in the vertex shader; cut-out cards also shade
 // their underside darker (a leaf seen from below is not the leaf seen from
@@ -297,6 +340,23 @@ function makeSolidMaterial({ rough = 0.9 } = {}, amp) {
   }`);
   };
   mat.customProgramCacheKey = () => 'vegsolid:' + amp;
+  return mat;
+}
+
+// The sprays over a crown lobe: cut-out, swaying with the lobe under the
+// same wind, and lit with the volume normals baked in crownLeavesGeo — so
+// the default double-sided flip must not turn the back faces inside out.
+function makeCanopyLeafMaterial(map, amp) {
+  const mat = applyWind(new THREE.MeshStandardMaterial({
+    map, alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true, roughness: 0.8,
+  }), amp);
+  const windPatch = mat.onBeforeCompile;
+  mat.onBeforeCompile = sh => {
+    windPatch(sh);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>',
+      'float faceDirection = 1.0;\n  vec3 normal = normalize(vNormal);\n  vec3 nonPerturbedNormal = normal;');
+  };
+  mat.customProgramCacheKey = () => 'vegcanopy:' + amp;
   return mat;
 }
 
@@ -449,25 +509,66 @@ function monsteraGeo() {
 // Rainforest giant's crown lobe: a lumpy blob. Solid, so it shades the
 // floor below without an alpha depth pass. Welded and smooth-shaded — the
 // leafy relief comes from the material's world-space bump (foliageBump), not
-// from facets. `detail` 2 near the eye, 1 for the backdrop and the bushes.
-function crownLobeGeo(detail = 2) {
+// from facets. Detail 1: the leaf sprays over it carry the outline.
+function crownLobeGeo(detail = 1) {
   let g = new THREE.IcosahedronGeometry(1, detail);
   g.deleteAttribute('normal'); g.deleteAttribute('uv');
   g = mergeVertices(g);
   const p = g.getAttribute('position');
   const v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
-    v.fromBufferAttribute(p, i);
-    const k = Math.sin(v.x * 3.1 + 1.7) * Math.sin(v.y * 2.7 + 0.4) * Math.sin(v.z * 3.3 + 2.1)
-      + 0.5 * Math.sin(v.x * 5.3 - v.z * 4.1 + v.y * 2.3);
-    v.multiplyScalar(0.94 + k * 0.1);
-    v.y *= 0.55;
-    // A flatter, slightly tucked underside: crowns are lit from above.
-    if (v.y < 0) v.y *= 0.8;
+    lobeSurface(v.fromBufferAttribute(p, i));
     p.setXYZ(i, v.x, v.y, v.z);
   }
   g.computeVertexNormals();
   return g;
+}
+// A unit direction → the point on the lobe's surface.
+function lobeSurface(v) {
+  const k = Math.sin(v.x * 3.1 + 1.7) * Math.sin(v.y * 2.7 + 0.4) * Math.sin(v.z * 3.3 + 2.1)
+    + 0.5 * Math.sin(v.x * 5.3 - v.z * 4.1 + v.y * 2.3);
+  v.multiplyScalar(0.94 + k * 0.1);
+  v.y *= 0.55;
+  // A flatter, slightly tucked underside: crowns are lit from above.
+  if (v.y < 0) v.y *= 0.8;
+  return v;
+}
+
+// The crown's leaves: ~100 spray cards spread evenly (golden spiral) over the
+// lobe's surface, a little proud of it, so the outline breaks up leaf by leaf
+// and the solid lobe only shows as shade in the gaps. Each card faces mostly
+// outward; its normals are the lobe's (blended with the card's), so the whole
+// crown shades as one volume, and a baked occlusion darkens the underside and
+// the cards sunk into the core. Own seed: the scatter's rnd stays untouched.
+function crownLeavesGeo(count = 96) {
+  let sd = 4243;
+  const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+  const cards = [], zAxis = new THREE.Vector3(0, 0, 1), q = new THREE.Quaternion(), spin = new THREE.Quaternion();
+  const dir = new THREE.Vector3(), pos = new THREE.Vector3(), n = new THREE.Vector3(), v = new THREE.Vector3();
+  for (let i = 0; i < count; i++) {
+    const y = 1 - 2 * (i + 0.5) / count, rad = Math.sqrt(1 - y * y), az = i * 2.39996 + r() * 0.5;
+    dir.set(Math.cos(az) * rad, y, Math.sin(az) * rad);
+    const depth = 0.96 + r() * 0.16;
+    lobeSurface(pos.copy(dir)).multiplyScalar(depth);
+    // Outward normal of the squashed ellipsoid, jittered.
+    n.set(dir.x, dir.y / 0.55, dir.z).normalize()
+      .add(v.set(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(0.8)).normalize();
+    const size = 0.4 + r() * 0.14, card = new THREE.PlaneGeometry(size, size).translate(0, size * 0.35, 0);
+    q.setFromUnitVectors(zAxis, n).multiply(spin.setFromAxisAngle(zAxis, r() * Math.PI * 2));
+    card.applyQuaternion(q).translate(pos.x, pos.y, pos.z);
+    const P = card.getAttribute('position'), N = card.getAttribute('normal'), col = [];
+    const occ = (0.55 + 0.45 * THREE.MathUtils.smoothstep(dir.y, -0.7, 0.5))
+      * (0.7 + 0.3 * THREE.MathUtils.smoothstep(depth, 0.96, 1.1)) * (0.85 + r() * 0.15);
+    for (let k = 0; k < P.count; k++) {
+      v.fromBufferAttribute(P, k);
+      v.set(v.x, v.y / 0.55, v.z).normalize().multiplyScalar(0.75).addScaledVector(n, 0.25).normalize();
+      N.setXYZ(k, v.x, v.y, v.z);
+      col.push(occ, occ, occ);
+    }
+    card.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    cards.push(card);
+  }
+  return mergeGeometries(cards);
 }
 
 // A bush: two squashed crown lobes — solid, cheap, casts a real shadow, and
@@ -531,7 +632,7 @@ function matrixOf(it) {
   return _m.compose(_p, _q, _s);
 }
 
-function tiled(group, name, geo, mat, items, { cast = false, depth = null, far = Infinity, tint = null, tile = TILE, lod = null } = {}) {
+function tiled(group, name, geo, mat, items, { cast = false, depth = null, far = Infinity, tint = null, tile = TILE } = {}) {
   const tiles = new Map();
   for (const it of items) {
     const k = `${Math.floor(it.x / tile)},${Math.floor(it.z / tile)}`;
@@ -553,7 +654,6 @@ function tiled(group, name, geo, mat, items, { cast = false, depth = null, far =
     if (depth) im.customDepthMaterial = depth;
     im.name = `${name}@${k}`;
     im.userData.far = far;
-    im.userData.lod = lod;
     group.add(im);
     meshes.push(im);
   }
@@ -619,6 +719,7 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
   const tex = {
     frond: frondTexture(maxAniso), fern: fernTexture(maxAniso), fernUp: fernUprightTexture(maxAniso),
     broad: broadLeafTexture(maxAniso), monstera: monsteraTexture(maxAniso), vine: vineTexture(maxAniso),
+    canopy: canopySprayTexture(maxAniso),
   };
   const mat = {
     frond: makeLeafMaterial(tex.frond, 0.022),
@@ -630,6 +731,7 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     palmBark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }),
     bark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, map: barkTexture(maxAniso) }),
     crown: makeSolidMaterial({}, 0.012),
+    canopy: makeCanopyLeafMaterial(tex.canopy, 0.012),
     bush: makeSolidMaterial({ rough: 0.92 }, 0.02),
     grass: applyWind(new THREE.MeshStandardMaterial({
       color: 0xffffff, side: THREE.DoubleSide, roughness: 0.85,
@@ -646,7 +748,7 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     broad: broadPlantGeo(), monstera: monsteraGeo(),
     trunk: trunkGeo(), lobeFar: crownLobeGeo(1),
     trunkFar: new THREE.CylinderGeometry(0.3, 0.5, 1, 7, 1, true).translate(0, 0.5, 0),
-    lobe: crownLobeGeo(), bush: bushGeo(), grass: grassTuftGeo(),
+    crownLeaves: crownLeavesGeo(), bush: bushGeo(), grass: grassTuftGeo(),
     flower: flowerGeo(),
     vine: new THREE.PlaneGeometry(0.5, 1, 1, 4).translate(0, -0.5, 0),
   };
@@ -894,12 +996,17 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
     { far: UNDERGROWTH_FAR, tint: { h: 0, s: 0, l: 1 } }));
   meshes.push(...tiled(group, 'understory', geo.trunk, mat.bark, understory,
     { cast: true, tint: { h: 0.08, s: 0.12, l: 0.62 } }));
-  meshes.push(...tiled(group, 'understoryCrown', geo.lobe, mat.crown, understoryLobes,
-    { cast: true, lod: LOD_CROWN, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
+  // The leaf sprays carry the crowns' outline now, so the solid cores under
+  // them stay coarse at every distance.
+  meshes.push(...tiled(group, 'understoryCrown', geo.lobeFar, mat.crown, understoryLobes,
+    { cast: true, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
   meshes.push(...tiled(group, 'trunk', geo.trunk, mat.bark, trunks,
     { cast: true, tint: { h: 0.08, s: 0.12, l: 0.62 } }));
-  meshes.push(...tiled(group, 'crown', geo.lobe, mat.crown, lobes,
-    { cast: true, lod: LOD_CROWN, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
+  meshes.push(...tiled(group, 'crown', geo.lobeFar, mat.crown, lobes,
+    { cast: true, tint: { h: 0.27, s: 0.42, l: 0.24 } }));
+  // Both statures' sprays in one list: one extra draw per tile, not two.
+  meshes.push(...tiled(group, 'crownLeaves', geo.crownLeaves, mat.canopy, [...understoryLobes, ...lobes],
+    { far: CANOPY_LEAVES_FAR, tint: { h: 0.26, s: 0.4, l: 0.38 } }));
   meshes.push(...tiled(group, 'backTrunk', geo.trunkFar, mat.bark, backTrunks,
     { tile: 200, tint: { h: 0.08, s: 0.12, l: 0.62 } }));
   meshes.push(...tiled(group, 'backCrown', geo.lobeFar, mat.crown, backLobes,
@@ -922,7 +1029,7 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
 
   // Distance culling of the undergrowth tiles, by tile centre — and the
   // wind's clock, which is the only per-frame CPU the plants cost.
-  const culled = meshes.filter(m => Number.isFinite(m.userData.far) || m.userData.lod);
+  const culled = meshes.filter(m => Number.isFinite(m.userData.far));
   let acc = 1;
   function update(camPos, dt) {
     WIND.uWindTime.value += dt;
@@ -933,8 +1040,6 @@ export function buildJungleVegetation({ scene, rnd, maxAniso = 4, layout, rules 
       const c = m.boundingSphere.center;
       const d = Math.hypot(c.x - camPos.x, c.z - camPos.z) - m.boundingSphere.radius;
       m.visible = d < m.userData.far;
-      // Crowns trade their fine blob for the coarse one out of close view.
-      if (m.userData.lod) m.geometry = d < m.userData.lod.dist ? geo.lobe : geo.lobeFar;
     }
   }
 
