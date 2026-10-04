@@ -33,8 +33,20 @@ export function buildMonetGallery(THREE, works) {
   const loading = [];
   const floorLoader = new THREE.TextureLoader();
   const PTILE = 1.697, BTILE_W = 0.85, BTILE_L = 1.92;
+  // The frieze is built twice (long and end strips): clones share the
+  // first load's image, so each file is decoded and uploaded once.
+  const floorLoads = new Map();
   const floorTex = (file, rx, ry, srgb) => {
-    const t = floorLoader.load(`./textures/cruise-monet/${file}`);
+    let entry = floorLoads.get(file), t;
+    if (!entry) {
+      entry = { clones: [] };
+      entry.base = t = floorLoader.load(`./textures/cruise-monet/${file}`,
+        () => { for (const c of entry.clones) c.needsUpdate = true; });
+      floorLoads.set(file, entry);
+    } else {
+      t = entry.base.clone();
+      entry.clones.push(t);
+    }
     if (srgb) t.colorSpace = THREE.SRGBColorSpace;
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.anisotropy = 16;

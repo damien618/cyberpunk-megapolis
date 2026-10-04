@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildMonetGallery } from './cruiseMonetGallery.js?v=20260918-foyer-zfight1';
+import { buildMonetGallery } from './cruiseMonetGallery.js?v=20261004-shared-floor';
 import { buildCruiseOpera } from './cruiseOpera.js?v=20260918-opera-stage-stairs';
 import { createKabukiShow, CUES as KABUKI_CUES } from './cruiseKabuki.js?v=20260917-kabuki';
 import { grandStairLayout, treadHalf, buildGrandStair } from './cruiseGrandStair.js?v=20261004-aft-grand-stair';
@@ -77,10 +77,17 @@ const slotReplayYes = document.getElementById('slotReplayYes');
 const slotReplayNo = document.getElementById('slotReplayNo');
 const slotReels = [0, 1, 2].map(i => document.getElementById(`slotReel${i}`));
 
+// Log depth writes gl_FragDepth in every shader, which turns early-Z off: every
+// hidden fragment behind the house walls got the full 17-light physical shade.
+// Measured on an M3, 1280×800: 6–7 fps with it, 25–29 without. (three r169's
+// reverseDepthBuffer would keep more far precision, but its shadow pass
+// breaks: the sun stops casting.) ?logdepth brings the old buffer back if
+// distant flicker ever shows.
+const PERF = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
   powerPreference: 'high-performance',
-  logarithmicDepthBuffer: true,
+  logarithmicDepthBuffer: PERF.has('logdepth'),
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -232,8 +239,24 @@ loader.load('./data/env_equirect.png', t => {
   t.dispose();
 });
 
+// One download, one decode and one GPU upload per file: a second request for
+// the same URL (the promenade teak and the atrium parquet are the same wood)
+// gets a clone sharing the image Source, with its own repeat.
+const sharedLoads = new Map();
+function loadShared(url) {
+  let entry = sharedLoads.get(url);
+  if (!entry) {
+    entry = { clones: [] };
+    entry.base = loader.load(url, () => { for (const c of entry.clones) c.needsUpdate = true; });
+    sharedLoads.set(url, entry);
+    return entry.base;
+  }
+  const t = entry.base.clone();
+  entry.clones.push(t);
+  return t;
+}
 function tex(url, rx = 1, ry = 1) {
-  const t = loader.load(url);
+  const t = loadShared(url);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(rx, ry);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -241,7 +264,7 @@ function tex(url, rx = 1, ry = 1) {
   return t;
 }
 function ntex(url, rx = 1, ry = 1) {
-  const t = loader.load(url);
+  const t = loadShared(url);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(rx, ry);
   t.anisotropy = maxAniso;
@@ -9677,6 +9700,68 @@ const poolWater = new THREE.Mesh(poolWaterGeo, poolWaterMat);
 poolWater.rotation.x = -Math.PI / 2;
 poolWater.position.set((POOL_X0 + POOL_X1) / 2, POOL_WATER, (POOL_Z_A + POOL_Z_B) / 2);
 scene.add(poolWater);
+
+// ---------------------------------------------------------------------------
+// Texture memory. Once a texture is on the GPU, the decoded copy the page
+// keeps of it — an <img>, a glTF ImageBitmap, a painted canvas — only serves
+// a re-upload that never comes. Measured 2026-10-04: ~860 MB of the renderer
+// process's 1.3 GB, two thirds of it the passengers' dyed atlases and the
+// gallery's paintings. Every 15 s, sources that are uploaded and did not
+// change since the previous sweep are let go. The stand-in reports
+// complete:false, which three answers by keeping the image already on the
+// GPU. A canvas that its owner still holds and paints again (the slot reels
+// once you are back in the casino) is restored from the weak reference on
+// its next needsUpdate; nobody can repaint one that has been collected.
+// ---------------------------------------------------------------------------
+const sourceSweepVersion = new WeakMap();
+function isReleasableImage(img) {
+  return img instanceof HTMLImageElement || img instanceof HTMLCanvasElement
+    || (typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap);
+}
+function releaseSource(source) {
+  const img = source.data;
+  const ref = img instanceof ImageBitmap ? null : new WeakRef(img);
+  source.data = { width: img.width, height: img.height, complete: false };
+  Object.defineProperty(source, 'needsUpdate', {
+    configurable: true,
+    set(value) {
+      if (value !== true) return;
+      const back = ref?.deref();
+      if (back) { delete this.needsUpdate; this.data = back; }
+      this.version++;
+    },
+  });
+  if (img instanceof ImageBitmap) img.close();
+}
+function releaseUploadedImages() {
+  const bySource = new Map();
+  scene.traverse(o => {
+    const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    for (const m of mats) for (const key in m) {
+      const t = m[key];
+      if (!t?.isTexture || t.isRenderTargetTexture || t.isVideoTexture) continue;
+      if (!isReleasableImage(t.source.data)) continue;
+      let users = bySource.get(t.source);
+      if (!users) bySource.set(t.source, (users = new Set()));
+      users.add(t);
+    }
+  });
+  for (const [source, users] of bySource) {
+    const stable = sourceSweepVersion.get(source) === source.version;
+    sourceSweepVersion.set(source, source.version);
+    if (!stable) continue;
+    if (source.data instanceof HTMLImageElement && !source.data.complete) continue;
+    let uploaded = true;
+    for (const t of users) {
+      if (renderer.properties.get(t).__version !== t.version) { uploaded = false; break; }
+    }
+    if (uploaded) releaseSource(source);
+  }
+}
+setInterval(releaseUploadedImages, 15000);
+// With the decoded copies gone, three's own context restore would re-upload
+// stand-ins. A lost GPU context starts the voyage over instead.
+renderer.domElement.addEventListener('webglcontextlost', () => location.reload());
 
 let moveDt = 1 / 60;
 function animate() {
