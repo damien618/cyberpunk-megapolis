@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { buildMonetGallery } from './cruiseMonetGallery.js?v=20260918-foyer-zfight1';
 import { buildCruiseOpera } from './cruiseOpera.js?v=20260918-opera-stage-stairs';
 import { createKabukiShow, CUES as KABUKI_CUES } from './cruiseKabuki.js?v=20260917-kabuki';
+import { grandStairLayout, treadHalf, buildGrandStair } from './cruiseGrandStair.js?v=20261004-aft-grand-stair';
 import { buildVerneMuseum } from './cruiseMuseum.js?v=20260908-signs7';
 import { Player } from './player.js?v=20260919-priority-animations';
 import { harmoniseHair } from './hair.js?v=11';
@@ -6399,45 +6400,51 @@ const ballLights = [];
 }
 
 // ---------------------------------------------------------------------------
-// The aft stair — the only way between the promenade deck and the pool deck.
-// Two flights with a landing, climbing the aft face of the house, and the pool
-// deck is cantilevered aft over it on four columns to give the top a landing.
+// The aft GRAND STAIR — the only way between the promenade deck and the pool
+// deck. White marble, flared at the foot and drawn in as it climbs, two
+// flights and a half landing, bronze candelabra on the curtail newels; the
+// design notes (and what was left out as unrealistic outdoors) are in
+// cruiseGrandStair.js. The pool deck is cantilevered aft over its head on
+// four columns, so the upper flight lands straight on the deck edge.
+//
+// Here only the invisible collision is emitted, from the same layout: the
+// curved marble has no honest AABB, so the walkable treads are axis-aligned
+// groundOnly slabs and the strings are solid prop boxes.
 // ---------------------------------------------------------------------------
-const STAIR_W = 4.4;
+const AFT_STAIR = grandStairLayout({ deckY: DECK_Y, topY: POOL_Y, zTop: POOL_Z0 });
+const STAIR_W = 2 * AFT_STAIR.upperHalf;   // clear width where it meets the deck rail
 {
-  const rise = (POOL_Y - DECK_Y) / 20;      // 20 treads over 7.5 m
-  const tread = 0.62;
-  const zBottom = -78;
+  const L = AFT_STAIR;
+  const hidden = new THREE.MeshBasicMaterial({ visible: false });
   groundOnly(() => {
-    for (let i = 0; i < 20; i++) {
-      const z0 = zBottom + i * tread;
-      const top = DECK_Y + (i + 1) * rise;
-      // Each tread reaches back under the one before it so the flight is solid
-      // to the ground probe rather than 20 floating slabs.
-      slab(M.stairTeak, -STAIR_W / 2, STAIR_W / 2,
-        z0, z0 + tread + 0.06, DECK_Y - 0.4, top);
+    for (let k = 1; k < L.N; k++) {
+      const hw = treadHalf(L, k), top = DECK_Y + k * L.rise;
+      // Each tread reaches back under the next so the flight is solid to the
+      // ground probe rather than floating slabs.
+      slab(hidden, -hw, hw, L.nosingZ(k), L.nosingZ(k + 1) + 0.06, DECK_Y - 0.02, top);
+      const R = L.curtail[k];
+      // The curtail curls round the newels, as their inscribed rectangles.
+      if (R) for (const sx of [-1, 1])
+        slab(hidden, sx * hw, sx * (hw + 0.8 * R), L.newelZ - 0.6 * R, L.newelZ + 0.6 * R,
+          DECK_Y - 0.02, top);
     }
   });
-  // The top tread finishes at z ≈ -65.6, which is already under the pool
-  // deck's aft cantilever (POOL_Z0 = -66) — so the flight lands straight on
-  // it and needs no landing slab of its own.
-  // Handrails up both sides of the flight, raked with it — a continuous
-  // tube, not a flight of horizontal boxes.
   prop(() => {
-    const H = 0.92, Hmid = 0.50, n = 20;
-    const zTop = zBottom + n * tread;
-    for (const sx of [-1, 1]) {
-      const x = sx * (STAIR_W / 2 + 0.10);
-      rakedPipe(M.steel, x, DECK_Y + H, zBottom, POOL_Y + H, zTop, 0.07);
-      rakedPipe(M.steel, x, DECK_Y + Hmid, zBottom, POOL_Y + Hmid, zTop, 0.05);
-      newelPost(M.steel, x, DECK_Y, zBottom, H);
-      newelPost(M.steel, x, POOL_Y, zTop, H);
-      for (let i = 2; i < n; i += 2) {
-        const z = zBottom + i * tread;
-        shape(G.cylBase, M.steel, x, DECK_Y + i * rise, z, 0.07, H, 0.07);
-      }
+    // Strings: solid to 1.05 m above the nosings, in 30 cm lengths that
+    // follow the flare and the pitch.
+    for (let z = L.newelZ; z < L.zTop - 0.01; z += 0.3) {
+      const zm = Math.min(z + 0.15, L.zTop - 0.15);
+      const yTop = L.pitchY(Math.min(z + 0.3, L.zTop)) + 1.05;
+      for (const sx of [-1, 1])
+        box(hidden, sx * (L.halfWidth(zm) + L.STRING_T / 2), (DECK_Y + yTop) / 2, zm,
+          L.STRING_T, yTop - DECK_Y, 0.3);
     }
+    for (const sx of [-1, 1])
+      shape(G.cylBase, hidden, sx * L.newelX, DECK_Y, L.newelZ, 0.6, 2.4, 0.6);
   });
+  world.add(buildGrandStair(L, { bulb: M.lidoBulb }));
+}
+{
   // The four columns carrying the cantilever.
   prop(() => {
     for (const cx of [-11, 11]) for (const cz of [-62.5, -65.5])
