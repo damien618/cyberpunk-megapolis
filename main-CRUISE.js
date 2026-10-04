@@ -6853,13 +6853,15 @@ function syncPoolDeckVisitorLighting(night) {
     shape(G.funnel, M.black, 0, POOL_Y + 11.0, fz + 0.6, 11.0, 1.2, 7.0, { rx: -0.10 });
     shape(G.cyl, M.black, 0, POOL_Y + 11.5, fz + 0.65, 9.6, 0.3, 6.0, { rx: -0.10 });
     prop(() => {
-      // Whistle and the platform round the base.
+      // Whistle, and a low steel casing coaming where the funnel meets the
+      // deck. The coaming SITS on the deck and hugs the funnel's footprint
+      // (the rake carries the base ≈0.55 m forward of fz): it was once a
+      // slab floating 32 cm up, wider than the funnel, railed on two sides
+      // only — a platform nobody could climb onto, guarded on half its edge.
       for (const dx of [-1.2, 1.2])
         shape(G.cyl, M.brass, dx, POOL_Y + 10.4, fz - 3.0, 0.5, 1.3, 0.5);
-      box(M.steel, 0, POOL_Y + 0.4, fz, 13.0, 0.16, 9.0);
+      box(M.steel, 0, POOL_Y + 0.12, fz + 0.55, 11.6, 0.24, 7.6);
     });
-    railRun(-6.5, 6.5, fz - 4.5, fz - 4.5, POOL_Y + 0.48, 1.0);
-    railRun(-6.5, 6.5, fz + 4.5, fz + 4.5, POOL_Y + 0.48, 1.0);
   }
 
   // Sun deck aft of the funnel, and the observation deck forward.
